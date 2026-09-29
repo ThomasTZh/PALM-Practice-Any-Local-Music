@@ -7,10 +7,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 0 (Reproducible foundation)
 - **Gate:** A passed → starting B
-- **Work package:** M0.5 (SQLite storage foundation)
-- **Next action:** implement `src/basseparate/storage/` (sqlite3 connection,
-  WAL, `PRAGMA user_version`, migration 0→1, repository layer for
-  projects/assets/project_assets).
+- **Work package:** M0.6 (Backend lifecycle and HTTP API)
+- **Next action:** implement `src/basseparate/app.py` (create_app factory,
+  FastAPI lifespan), `src/basseparate/api/` (health, system, projects routes),
+  session token creation.
 
 ## Completed requirements (with evidence)
 
@@ -47,10 +47,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   traversal/NUL/absolute rejection, AudioMetadata), `domain/confidence.py`
   (Confidence: kind/value invariant, alternatives, review_state). 53 unit
   tests pass.
+- M0.5: `storage/paths.py` (moved from `storage.py`), `storage/db.py`
+  (sqlite3 connection, WAL, synchronous=FULL, foreign_keys, busy_timeout,
+  `PRAGMA user_version`, migration 0→1 with projects/assets/project_assets
+  tables, rejects newer schema), `storage/repository.py` (ProjectRepository:
+  create_project, get_project, list_projects, register_asset, attach_asset;
+  per-operation connections, parameterized SQL, immutable domain records).
+  69 unit tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.5 SQLite storage (Gate B).
 - M0.6 API; M0.7 auth (Gate C).
 - M0.8 browser shell + generated client (Gate D).
 - M0.9 worker probe; M0.10 launcher/dev.py (Gate E).
