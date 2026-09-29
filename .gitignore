@@ -1,0 +1,48 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+playwright-report/
+test-results/
+
+# Local runtime storage (all app-owned categories when --storage-root is used)
+storage/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Models, media, generated audio
+models/
+media/
+stems/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Logs and local diagnostic/evidence reports
+logs/
+docs/evidence/
+
+# User-supplied recordings (preserved, never tracked)
+audio2test/
+
+# OS / editor noise
+.DS_Store
+*.swp
