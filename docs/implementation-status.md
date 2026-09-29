@@ -7,9 +7,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 0 (Reproducible foundation)
 - **Gate:** A passed → starting B
-- **Work package:** M0.7 (Loopback auth and request protection)
-- **Next action:** implement bearer-token authentication middleware,
-  Origin/Host check, bind enforcement in CLI serve command.
+- **Work package:** M0.8 (Browser shell and generated client)
+- **Next action:** implement React frontend shell (header, connection
+  indicator, project list, new-project button, empty-project view,
+  runtime-status panel, error notifications), token bootstrap from URL
+  fragment, sessionStorage persistence, generated API client.
 
 ## Completed requirements (with evidence)
 
@@ -59,10 +61,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `api/errors.py` (consistent error envelope, ApiError hierarchy),
   `api/middleware.py` (request-ID tracing), `api/idempotency.py`
   (in-memory key→project store). 85 unit tests pass.
+- M0.7: `api/security.py` (SecurityMiddleware: bearer token auth with
+  hmac.compare_digest, Host/Origin loopback validation, conservative
+  rate limiting on failed auth, CSP/nosniff/referrer/COOP/COEP security
+  headers; health route unauthenticated). 95 unit tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.7 auth (Gate C).
 - M0.8 browser shell + generated client (Gate D).
 - M0.9 worker probe; M0.10 launcher/dev.py (Gate E).
 - M0.11 docs/licenses; M0.12 verification matrix + package smoke (Gate F).

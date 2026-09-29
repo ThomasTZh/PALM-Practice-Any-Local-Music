@@ -26,6 +26,7 @@ from basseparate.api.errors import ApiError, create_error_response
 from basseparate.api.idempotency import IdempotencyStore
 from basseparate.api.middleware import RequestTracingMiddleware
 from basseparate.api.routes import router
+from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
 from basseparate.storage import (
     ProjectRepository,
@@ -43,6 +44,9 @@ def create_app(config: AppConfig) -> FastAPI:
     Safe to call multiple times for isolated test instances.
     """
 
+    # Generate session token at creation time so middleware can use it.
+    session_token = secrets.token_urlsafe(32)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # --- Startup ---
@@ -54,7 +58,7 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.storage_paths = paths
         app.state.repository = ProjectRepository(paths.database_path)
         app.state.idempotency_store = IdempotencyStore()
-        app.state.session_token = secrets.token_urlsafe(32)
+        app.state.session_token = session_token
         app.state.ready = True
         log.info("basseparate service ready (api v%d)", API_VERSION)
 
@@ -70,9 +74,13 @@ def create_app(config: AppConfig) -> FastAPI:
         version=str(API_VERSION),
         lifespan=lifespan,
     )
+    app.state.session_token = session_token
 
     # Request tracing (outermost middleware).
     app.add_middleware(RequestTracingMiddleware)
+
+    # Security: bearer auth, Host/Origin validation, rate limiting.
+    app.add_middleware(SecurityMiddleware, session_token=session_token)
 
     # API error handler.
     @app.exception_handler(ApiError)
