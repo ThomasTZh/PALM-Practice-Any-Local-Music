@@ -6,11 +6,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 0 (Reproducible foundation)
-- **Gate:** A (M0.1–M0.2)
-- **Work package:** M0.1 (preservation + structure)
-- **Next action:** M0.2 — create `pyproject.toml` + `uv.lock`, verify `uv sync --locked`;
-  install pnpm via a supported method, scaffold `frontend/`, `pnpm-lock.yaml`,
-  verify `pnpm install --frozen-lockfile`.
+- **Gate:** A passed → starting B
+- **Work package:** M0.3 (configuration, paths, diagnostics)
+- **Next action:** implement `src/basseparate/config.py` (AppConfig, precedence
+  CLI > env > TOML > defaults), `storage.py` (platformdirs + `--storage-root`),
+  `diagnostics.py` + `basseparate doctor`.
 
 ## Completed requirements (with evidence)
 
@@ -22,10 +22,22 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - M0.1: `.gitignore`, `.editorconfig`, `.python-version` (3.11.15), `.node-version` (22.22.2) created.
 - M0.1: Git initialized on branch `main` (no placeholder `.git` existed; workspace writable).
   Repo-local identity set (`basseparate-dev`) because none existed.
+- M0.1: ADR-0001 (8 foundation decisions) in `docs/decisions/`.
+- M0.2: `pyproject.toml` (Hatchling, src layout, console script, `>=3.11,<3.12`),
+  `uv.lock` generated, `uv sync --locked` passes; stale lockfile correctly
+  refused (verified by temporary fastapi bump).
+- M0.2: Python 3.11.15 (uv-managed); system Python untouched; no ML packages in lock.
+- M0.2: pnpm 12.8.1 installed in user prefix `~/.npm-global` (no corepack on
+  system; PATH line appended to `~/.bashrc`); pinned in root `packageManager`.
+- M0.2: `frontend/` scaffold (Vite 8.3.1, React 19.3.0, TS 5.9.3, ESLint 10,
+  Prettier, Vitest 5, RTL, jsdom, Playwright 1.63, openapi-typescript/fetch);
+  `pnpm-lock.yaml` generated; `pnpm install --frozen-lockfile` passes;
+  `pnpm run build` produces `frontend/dist`.
+- M0.2: toolchain manifest `docs/toolchain.json`; WASM boundary recorded in
+  `docs/architecture.md`.
 
 ## Remaining (Milestone 0)
 
-- M0.2 environments + locks (Gate A) — in progress next.
 - M0.3 config/paths/doctor; M0.4 schemas; M0.5 SQLite (Gate B).
 - M0.6 API; M0.7 auth (Gate C).
 - M0.8 browser shell + generated client (Gate D).
