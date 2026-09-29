@@ -7,10 +7,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 0 (Reproducible foundation)
 - **Gate:** A passed → starting B
-- **Work package:** M0.6 (Backend lifecycle and HTTP API)
-- **Next action:** implement `src/basseparate/app.py` (create_app factory,
-  FastAPI lifespan), `src/basseparate/api/` (health, system, projects routes),
-  session token creation.
+- **Work package:** M0.7 (Loopback auth and request protection)
+- **Next action:** implement bearer-token authentication middleware,
+  Origin/Host check, bind enforcement in CLI serve command.
 
 ## Completed requirements (with evidence)
 
@@ -54,10 +53,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   create_project, get_project, list_projects, register_asset, attach_asset;
   per-operation connections, parameterized SQL, immutable domain records).
   69 unit tests pass.
+- M0.6: `app.py` (create_app factory, FastAPI lifespan: storage init, DB
+  migration, session token, readiness flag), `api/routes.py` (health,
+  system, projects CRUD, modules, models; idempotency-key support),
+  `api/errors.py` (consistent error envelope, ApiError hierarchy),
+  `api/middleware.py` (request-ID tracing), `api/idempotency.py`
+  (in-memory key→project store). 85 unit tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.6 API; M0.7 auth (Gate C).
+- M0.7 auth (Gate C).
 - M0.8 browser shell + generated client (Gate D).
 - M0.9 worker probe; M0.10 launcher/dev.py (Gate E).
 - M0.11 docs/licenses; M0.12 verification matrix + package smoke (Gate F).
