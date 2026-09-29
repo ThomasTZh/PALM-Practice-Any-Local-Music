@@ -1,0 +1,9 @@
+{
+  "name": "basseparate",
+  "version": "0.1.0-dev",
+  "private": true,
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

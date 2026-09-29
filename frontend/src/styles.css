@@ -1,0 +1,32 @@
+:root {
+  --bg: #101418;
+  --panel: #1a2129;
+  --text: #e6ebf0;
+  --muted: #9aa7b4;
+  --accent: #4da3ff;
+  --ok: #3fb96f;
+  --warn: #d9a13b;
+  --error: #e05d5d;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shell {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
