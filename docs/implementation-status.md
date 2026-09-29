@@ -7,10 +7,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 0 (Reproducible foundation)
 - **Gate:** A passed → starting B
-- **Work package:** M0.3 (configuration, paths, diagnostics)
-- **Next action:** implement `src/basseparate/config.py` (AppConfig, precedence
-  CLI > env > TOML > defaults), `storage.py` (platformdirs + `--storage-root`),
-  `diagnostics.py` + `basseparate doctor`.
+- **Work package:** M0.5 (SQLite storage foundation)
+- **Next action:** implement `src/basseparate/storage/` (sqlite3 connection,
+  WAL, `PRAGMA user_version`, migration 0→1, repository layer for
+  projects/assets/project_assets).
 
 ## Completed requirements (with evidence)
 
@@ -35,10 +35,22 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `pnpm run build` produces `frontend/dist`.
 - M0.2: toolchain manifest `docs/toolchain.json`; WASM boundary recorded in
   `docs/architecture.md`.
+- M0.3: `config.py` (AppConfig, CLI>env>TOML>defaults precedence, loopback-only
+  bind validation), `storage.py` (XDG paths, `--storage-root`, owner-only
+  permissions on data/runtime), `diagnostics.py` (non-mutating doctor checks:
+  python, platform, RAM, storage, ffmpeg, node/pnpm, GPU, frontend-build,
+  sqlite), `cli.py` (`version` + `doctor` commands). 22 unit tests pass.
+- M0.4: `domain/common.py` (UUID, UTC timestamp, SHA-256, Revision,
+  SamplePosition, HalfOpenInterval primitives), `domain/project.py`
+  (ProjectRecord: empty/ready status, name validation, source-field
+  co-presence), `domain/asset.py` (AssetRecord: relative path rules,
+  traversal/NUL/absolute rejection, AudioMetadata), `domain/confidence.py`
+  (Confidence: kind/value invariant, alternatives, review_state). 53 unit
+  tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.3 config/paths/doctor; M0.4 schemas; M0.5 SQLite (Gate B).
+- M0.5 SQLite storage (Gate B).
 - M0.6 API; M0.7 auth (Gate C).
 - M0.8 browser shell + generated client (Gate D).
 - M0.9 worker probe; M0.10 launcher/dev.py (Gate E).
