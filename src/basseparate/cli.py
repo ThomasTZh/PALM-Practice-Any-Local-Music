@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from basseparate import (
     API_VERSION,
@@ -32,6 +33,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="explicit storage root (all categories placed beneath it)",
     )
+
+    subparsers.add_parser(
+        "worker-probe",
+        help="run the model-free worker probe (handshake, ping, shutdown)",
+    )
     return parser
 
 
@@ -56,6 +62,38 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return exit_code_for(checks)
 
 
+def _cmd_worker_probe() -> int:
+    from basseparate.worker import (
+        CapabilitiesMessage,
+        WorkerSupervisor,
+        WorkerSupervisorError,
+        make_describe,
+    )
+
+    try:
+        with WorkerSupervisor(cwd=Path.cwd()) as sup:
+            hello = sup.wait_for_handshake()
+            print(
+                f"handshake ok: worker={hello.payload.worker} "
+                f"protocol v{hello.payload.protocol_version}"
+            )
+            sup.send(make_describe())
+            caps = sup.receive(timeout=5.0)
+            if not isinstance(caps, CapabilitiesMessage):
+                raise WorkerSupervisorError(f"expected capabilities, got {caps.type!r}")
+            for cap in caps.payload.capabilities:
+                print(f"capability: {cap.id} — {cap.description}")
+            sup.ping()
+            print("ping ok")
+            sup.shutdown()
+            print("shutdown ok")
+    except WorkerSupervisorError as exc:
+        print(f"worker probe failed: {exc}", file=sys.stderr)
+        return 1
+    print("worker probe passed")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -63,6 +101,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_version()
     if args.command == "doctor":
         return _cmd_doctor(args)
+    if args.command == "worker-probe":
+        return _cmd_worker_probe()
     raise AssertionError(f"unhandled command: {args.command!r}")
 
 

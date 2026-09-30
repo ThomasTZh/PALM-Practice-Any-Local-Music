@@ -6,11 +6,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 0 (Reproducible foundation)
-- **Gate:** A passed → starting B
-- **Work package:** M0.9 (Worker protocol and model-free probe)
-- **Next action:** define worker protocol (JSON-RPC over stdio, schema-
-  versioned messages), implement model-free probe command, validate the
-  subprocess boundary without loading any model.
+- **Gate:** E in progress
+- **Work package:** M0.10 (Launcher / dev.py)
+- **Next action:** implement `serve` CLI command and `scripts/dev.py`
+  launcher that starts the backend on a loopback port and opens the
+  browser shell; validate the full local loop end-to-end.
 
 ## Completed requirements (with evidence)
 
@@ -64,11 +64,27 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   hmac.compare_digest, Host/Origin loopback validation, conservative
   rate limiting on failed auth, CSP/nosniff/referrer/COOP/COEP security
   headers; health route unauthenticated). 95 unit tests pass.
+- M0.8: `scripts/export_openapi.py` (OpenAPI export from create_app),
+  `contracts/openapi.json` + `frontend/src/api/schema.ts` (generated),
+  `frontend/src/auth.ts` (token bootstrap from URL fragment → sessionStorage),
+  `frontend/src/api/client.ts` (openapi-fetch wrapper with auth header),
+  `frontend/src/App.tsx` (8-state browser shell: connecting, connected
+  empty, connected with projects, creating, empty project, backend
+  unavailable, session expired, API error; new-project workflow),
+  `scripts/check_contract.py` (deterministic drift check), static mount
+  in `app.py`. 95 py + 17 js tests pass; live browser acceptance passed.
+- M0.9: `worker/protocol.py` (newline-delimited JSON envelope, typed
+  messages, 1 MiB limit, version validation), `worker/probe_worker.py`
+  (model-free diagnostic: hello, describe→capabilities, ping→pong,
+  shutdown→stopped, stderr-only logging, EOF shutdown),
+  `worker/supervisor.py` (subprocess launch via sys.executable,
+  concurrent stdout/stderr readers, handshake timeout, graceful
+  shutdown with terminate/kill escalation, child reaping),
+  `cli.py` `worker-probe` command. 123 unit tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.8 browser shell + generated client (Gate D).
-- M0.9 worker probe; M0.10 launcher/dev.py (Gate E).
+- M0.10 launcher/dev.py (Gate E).
 - M0.11 docs/licenses; M0.12 verification matrix + package smoke (Gate F).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
