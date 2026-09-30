@@ -344,3 +344,149 @@ class TestShutdown:
             if proc2.poll() is None:
                 proc2.kill()
                 proc2.wait()
+
+
+class TestLifecycleGaps:
+    """M0.12 section 13.7: remaining lifecycle scenarios."""
+
+    def test_independent_second_instance_different_root(self, tmp_path: Path) -> None:
+        """Scenario 6: two instances with different storage roots run simultaneously."""
+        storage_a = tmp_path / "storage_a"
+        storage_b = tmp_path / "storage_b"
+        proc_a = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "basseparate.cli",
+                "serve",
+                "--no-browser",
+                "--port",
+                "18781",
+                "--storage-root",
+                str(storage_a),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        proc_b = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "basseparate.cli",
+                "serve",
+                "--no-browser",
+                "--port",
+                "18782",
+                "--storage-root",
+                str(storage_b),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        try:
+            time.sleep(3)
+            assert proc_a.poll() is None, "instance A should be running"
+            assert proc_b.poll() is None, "instance B should be running"
+        finally:
+            for proc in (proc_a, proc_b):
+                if proc.poll() is None:
+                    proc.send_signal(signal.SIGTERM)
+            for proc in (proc_a, proc_b):
+                proc.wait(timeout=10)
+
+    def test_abrupt_termination_then_restart(self, tmp_path: Path) -> None:
+        """Scenario 9: SIGKILL the server, then restart on the same storage root."""
+        storage = tmp_path / "storage"
+        proc1 = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "basseparate.cli",
+                "serve",
+                "--no-browser",
+                "--port",
+                "18783",
+                "--storage-root",
+                str(storage),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        time.sleep(3)
+        assert proc1.poll() is None
+        proc1.kill()
+        proc1.wait(timeout=5)
+
+        proc2 = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "basseparate.cli",
+                "serve",
+                "--no-browser",
+                "--port",
+                "18783",
+                "--storage-root",
+                str(storage),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        try:
+            time.sleep(3)
+            assert proc2.poll() is None, "server should restart after SIGKILL"
+            proc2.send_signal(signal.SIGTERM)
+            proc2.wait(timeout=10)
+            assert proc2.returncode == 0
+        finally:
+            if proc2.poll() is None:
+                proc2.kill()
+                proc2.wait()
+
+    def test_browser_launch_failure_backend_still_usable(self, tmp_path: Path) -> None:
+        """Scenario 10: webbrowser.open fails but backend remains serving."""
+        port = 18796
+        script = (
+            "import sys, webbrowser\n"
+            "webbrowser.open = lambda *a, **kw: False\n"
+            "from basseparate.config import resolve_config\n"
+            "import basseparate.serve\n"
+            f"config = resolve_config(cli={{'storage_root': {str(tmp_path / 's')!r}, "
+            f"'port': {port}, 'open_browser': True}})\n"
+            "sys.exit(basseparate.serve.run_server(config))\n"
+        )
+        script_file = tmp_path / "probe.py"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.Popen(
+            [sys.executable, str(script_file)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.5)
+            if proc.poll() is not None:
+                stderr = proc.stderr.read().decode()
+                pytest.fail(
+                    f"backend exited with code {proc.returncode}: {stderr[-500:]}"
+                )
+            import urllib.request
+
+            resp = urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/v1/health", timeout=5
+            )
+            assert resp.status == 200
+            proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=10)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()

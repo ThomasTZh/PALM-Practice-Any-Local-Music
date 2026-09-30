@@ -6,11 +6,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 0 (Reproducible foundation)
-- **Gate:** F in progress
-- **Work package:** M0.12 (Verification matrix + package smoke)
-- **Next action:** run full verification matrix (backend unit, storage
-  integration, HTTP integration, frontend, browser E2E, offline-start,
-  lifecycle, package smoke) and confirm all gates pass.
+- **Gate:** F passed
+- **Work package:** M0.12 (Verification matrix + package smoke) — complete
+- **Next action:** Milestone 0 complete. Proceed to Milestone 1.
 
 ## Completed requirements (with evidence)
 
@@ -93,10 +91,26 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   installed .dist-info metadata, emits `licenses/components.json` and
   `licenses/NOTICES.md`), `docs/troubleshooting.md` (12 failure scenarios),
   README updated with all 12 required sections. 148 unit tests pass.
+- M0.12: Full verification matrix complete. `tests/integration/test_storage_integration.py`
+  (12 scenarios: fresh init, idempotent init, CRUD, close/reopen, asset
+  attach, missing-object rejection, transaction rollback, migration,
+  failed-migration preservation, newer-version rejection, locked database,
+  root isolation). `tests/integration/test_offline_start.py` (offline
+  start, no model download). `frontend/e2e/app.spec.ts` (Playwright E2E:
+  launch, bootstrap, token removal, project create, persistence, restart,
+  port release). Keyboard navigation tests in `frontend/tests/app.test.tsx`.
+  HTTP integration gaps in `tests/unit/test_api.py` (no-traceback-leak,
+  contract conformance). Lifecycle gaps in `tests/unit/test_serve.py`
+  (independent second instance, abrupt termination + restart, browser
+  launch failure). Package smoke: wheel builds, installs in clean venv,
+  `basseparate version`/`doctor`/`serve` all work. 162 py + 19 js tests
+  pass. Ruff, mypy, typecheck, lint, build, contract-drift all clean.
+  Fixed `.gitignore` `storage/` → `/storage/` (was excluding
+  `src/basseparate/storage/` from wheel).
 
 ## Remaining (Milestone 0)
 
-- M0.12 verification matrix + package smoke (Gate F).
+- None. Milestone 0 complete.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

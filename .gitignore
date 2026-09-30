@@ -19,7 +19,7 @@ playwright-report/
 test-results/
 
 # Local runtime storage (all app-owned categories when --storage-root is used)
-storage/
+/storage/
 *.db
 *.db-wal
 *.db-shm

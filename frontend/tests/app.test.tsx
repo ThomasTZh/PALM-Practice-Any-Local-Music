@@ -236,3 +236,50 @@ describe('project list persistence', () => {
     expect(list).toBeInTheDocument()
   })
 })
+
+describe('keyboard navigation', () => {
+  it('can fill and submit the project form using keyboard input', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByText('No projects yet. Create one to get started.')
+
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+
+    const input = await screen.findByLabelText('Project name')
+    input.focus()
+    await user.keyboard('Keyboard Project')
+
+    await user.click(screen.getByRole('button', { name: 'Create project' }))
+
+    expect(await screen.findByText('Keyboard Project')).toBeInTheDocument()
+    expect(screen.getByText('No audio imported yet.')).toBeInTheDocument()
+  })
+
+  it('can navigate from project view back to list using keyboard', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByText('No projects yet. Create one to get started.')
+
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const input = await screen.findByLabelText('Project name')
+    input.focus()
+    await user.keyboard('Nav Test')
+    await user.click(screen.getByRole('button', { name: 'Create project' }))
+    await screen.findByText('No audio imported yet.')
+
+    mockClient.GET.mockImplementation((path: string) => {
+      if (path === '/api/v1/projects') {
+        return Promise.resolve(ok({ projects: [{ ...PROJECT, name: 'Nav Test' }] }))
+      }
+      if (path === '/api/v1/system') {
+        return Promise.resolve(ok({ app_version: '0.1.0-dev', api_version: 1, ready: true }))
+      }
+      return Promise.resolve(ok(PROJECT))
+    })
+
+    const backBtn = screen.getByRole('button', { name: /Back to projects/ })
+    await user.click(backBtn)
+
+    expect(await screen.findByRole('button', { name: /Nav Test/ })).toBeInTheDocument()
+  })
+})

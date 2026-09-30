@@ -42,6 +42,9 @@ packages = ["src/basseparate"]
 [tool.hatch.build.targets.wheel.force-include]
 "frontend/dist" = "basseparate/web/static"
 
+[tool.hatch.build.targets.sdist]
+include = ["src", "frontend/dist", "README.md"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

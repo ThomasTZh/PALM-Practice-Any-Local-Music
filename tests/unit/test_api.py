@@ -217,3 +217,64 @@ class TestSecurity:
         """CLI requests without Origin header should work with valid token."""
         resp = client.get("/api/v1/projects", headers=auth_headers)
         assert resp.status_code == 200
+
+
+class TestNoTracebackLeak:
+    """Scenario 9: internal exceptions do not leak tracebacks."""
+
+    def test_500_does_not_contain_traceback(self, client: TestClient, auth_headers: dict) -> None:
+        resp = client.get(
+            "/api/v1/projects/not-a-valid-uuid",
+            headers=auth_headers,
+        )
+        body = resp.text
+        assert "Traceback" not in body
+        assert 'File "' not in body
+        assert ".py" not in body
+
+    def test_error_envelope_is_consistent(self, client: TestClient, auth_headers: dict) -> None:
+        resp = client.get(f"/api/v1/projects/{uuid.uuid4()}", headers=auth_headers)
+        data = resp.json()
+        assert "error" in data
+        assert "code" in data["error"]
+        assert "message" in data["error"]
+        assert "request_id" in data["error"]
+
+
+class TestContractConformance:
+    """Scenario 10: API responses match generated contracts."""
+
+    def test_health_response_matches_schema(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/health")
+        data = resp.json()
+        assert set(data.keys()) == {"status", "api_version"}
+        assert data["status"] == "ready"
+        assert data["api_version"] == 1
+
+    def test_project_response_has_all_contract_fields(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        resp = client.post("/api/v1/projects", json={"name": "Contract"}, headers=auth_headers)
+        data = resp.json()
+        expected_fields = {
+            "schema_version",
+            "id",
+            "name",
+            "created_at",
+            "updated_at",
+            "revision",
+            "source_asset_id",
+            "sample_rate",
+            "duration_samples",
+            "status",
+        }
+        assert expected_fields <= set(data.keys())
+
+    def test_error_response_matches_envelope(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/projects")
+        data = resp.json()
+        assert "error" in data
+        err = data["error"]
+        assert "code" in err
+        assert "message" in err
+        assert "request_id" in err
