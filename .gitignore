@@ -46,3 +46,6 @@ audio2test/
 # OS / editor noise
 .DS_Store
 *.swp
+
+# Playwright MCP scratch
+.playwright-mcp/

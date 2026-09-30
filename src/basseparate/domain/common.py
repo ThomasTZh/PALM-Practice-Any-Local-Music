@@ -27,7 +27,25 @@ from pydantic import (
 
 JS_SAFE_INTEGER_MAX = 9_007_199_254_740_991  # 2**53 - 1
 
-Uuid = Annotated[UUID, Field(description="UUID identifier, serialized as a string")]
+
+def _validate_uuid(value: object) -> UUID:
+    if isinstance(value, UUID):
+        return value
+    if isinstance(value, str):
+        return UUID(value)
+    raise ValueError(f"expected UUID, got {type(value).__name__}")
+
+
+def _serialize_uuid(value: UUID) -> str:
+    return str(value)
+
+
+Uuid = Annotated[
+    UUID,
+    BeforeValidator(_validate_uuid),
+    PlainSerializer(_serialize_uuid, return_type=str, when_used="json"),
+    Field(description="UUID identifier, serialized as a string"),
+]
 Revision = Annotated[StrictInt, Field(ge=0, description="Nonnegative integer revision")]
 
 

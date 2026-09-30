@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.common import Revision, SamplePosition, SampleRate, UtcTimestamp, Uuid
@@ -81,7 +80,3 @@ class ProjectRecord(BaseModel):
             raise ValueError("a ready project must have a source_asset_id")
         if self.status == ProjectStatus.EMPTY and self.source_asset_id is not None:
             raise ValueError("an empty project must not have a source_asset_id")
-
-    @field_serializer("id", "source_asset_id")
-    def _serialize_uuid(self, v: UUID | None) -> str | None:
-        return str(v) if v is not None else None

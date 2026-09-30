@@ -18,8 +18,10 @@ import logging
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
+from starlette.staticfiles import StaticFiles
 
 from basseparate import API_VERSION
 from basseparate.api.errors import ApiError, create_error_response
@@ -36,6 +38,21 @@ from basseparate.storage import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _static_dir() -> Path | None:
+    """Locate the built frontend assets.
+
+    Prefers package data (wheel install layout ``basseparate/web/static``)
+    and falls back to the source tree ``frontend/dist`` for development.
+    """
+    package_static = Path(__file__).resolve().parent / "web" / "static"
+    if (package_static / "index.html").is_file():
+        return package_static
+    source_static = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if (source_static / "index.html").is_file():
+        return source_static
+    return None
 
 
 def create_app(config: AppConfig) -> FastAPI:
@@ -90,5 +107,11 @@ def create_app(config: AppConfig) -> FastAPI:
 
     # Routes.
     app.include_router(router)
+
+    # Static frontend shell, served from the backend origin (M0.8).
+    # Mounted after the API router so /api/* routes take precedence.
+    static_dir = _static_dir()
+    if static_dir is not None:
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
     return app

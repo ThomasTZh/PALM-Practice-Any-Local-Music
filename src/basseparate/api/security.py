@@ -1,11 +1,15 @@
 """Loopback authentication and request protection (M0.7).
 
-- Bearer token authentication for all protected routes.
+- Bearer token authentication for all API routes except health.
 - Host and Origin validation.
 - Rate limiting on failed authentication attempts.
-- Security headers for static responses.
+- Security headers on all responses.
 
-The health route remains unauthenticated.
+The health route and the static frontend shell (non-``/api`` paths)
+remain unauthenticated: the shell carries no data, and the session
+token reaches the browser via the URL fragment, which cannot be sent
+as a request header on document navigation. All data access requires
+the bearer token.
 """
 
 from __future__ import annotations
@@ -78,8 +82,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         path = request.url.path
 
-        # Public paths skip authentication.
-        if path not in PUBLIC_PATHS:
+        # The static frontend shell is public (no data in the document).
+        # Only /api/* routes require authentication.
+        if path.startswith("/api/") and path not in PUBLIC_PATHS:
             # Host validation.
             host = request.headers.get("host", "")
             if not self._is_allowed_host(host):

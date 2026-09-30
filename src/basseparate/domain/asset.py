@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from basseparate.domain.common import (
     Revision,
@@ -94,7 +93,3 @@ class AssetRecord(BaseModel):
     @classmethod
     def _validate_path(cls, v: str) -> str:
         return _validate_relative_path(v)
-
-    @field_serializer("id")
-    def _serialize_uuid(self, v: UUID) -> str:
-        return str(v)

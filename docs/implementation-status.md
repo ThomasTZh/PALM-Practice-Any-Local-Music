@@ -7,11 +7,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 0 (Reproducible foundation)
 - **Gate:** A passed → starting B
-- **Work package:** M0.8 (Browser shell and generated client)
-- **Next action:** implement React frontend shell (header, connection
-  indicator, project list, new-project button, empty-project view,
-  runtime-status panel, error notifications), token bootstrap from URL
-  fragment, sessionStorage persistence, generated API client.
+- **Work package:** M0.9 (Worker protocol and model-free probe)
+- **Next action:** define worker protocol (JSON-RPC over stdio, schema-
+  versioned messages), implement model-free probe command, validate the
+  subprocess boundary without loading any model.
 
 ## Completed requirements (with evidence)
 
