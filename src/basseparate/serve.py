@@ -26,6 +26,7 @@ import uvicorn
 
 from basseparate.app import _static_dir, create_app
 from basseparate.config import AppConfig
+from basseparate.logging import setup_logging
 from basseparate.storage import (
     StorageError,
     initialize_storage_paths,
@@ -93,6 +94,9 @@ def run_server(config: AppConfig) -> int:
     except StorageError as exc:
         print(f"storage error: {exc}", file=sys.stderr)
         return 1
+
+    # 3. Configure logging (console + rotating file in state directory).
+    setup_logging(config.log_level, paths.state / "logs")
 
     try:
         lock_fd = acquire_instance_lock(paths.runtime)

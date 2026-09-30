@@ -16,6 +16,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from basseparate.logging import bind_request_id
+
 log = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -23,8 +25,9 @@ REQUEST_ID_HEADER = "X-Request-ID"
 
 class RequestTracingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Any) -> Response:
-        request_id = request.headers.get(REQUEST_ID_HEADER, str(uuid.uuid4()))
+        request_id = request.headers.get(REQUEST_ID_HEADER, uuid.uuid4().hex[:16])
         request.state.request_id = request_id
+        bind_request_id(request_id)
 
         start = time.monotonic()
         response: Response = await call_next(request)

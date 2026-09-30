@@ -6,10 +6,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 0 (Reproducible foundation)
-- **Gate:** E passed → starting M0.11
-- **Work package:** M0.11 (Logging, licenses, and documentation)
-- **Next action:** implement structured logging with rotation, generate
-  `licenses/components.json`, write README and troubleshooting guide.
+- **Gate:** F in progress
+- **Work package:** M0.12 (Verification matrix + package smoke)
+- **Next action:** run full verification matrix (backend unit, storage
+  integration, HTTP integration, frontend, browser E2E, offline-start,
+  lifecycle, package smoke) and confirm all gates pass.
 
 ## Completed requirements (with evidence)
 
@@ -86,10 +87,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `cli.py` `serve` command (--no-browser, --port, --storage-root),
   `scripts/dev.py` (setup, dev, build, check, test, test-browser,
   contracts, licenses). 136 unit tests pass.
+- M0.11: `logging.py` (structured console + rotating JSON file logs, 5 MiB
+  rotation, 5 backups, token/authorization redaction, request-ID binding),
+  `scripts/generate_licenses.py` (parses uv.lock + pnpm-lock.yaml, queries
+  installed .dist-info metadata, emits `licenses/components.json` and
+  `licenses/NOTICES.md`), `docs/troubleshooting.md` (12 failure scenarios),
+  README updated with all 12 required sections. 148 unit tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.11 docs/licenses; M0.12 verification matrix + package smoke (Gate F).
+- M0.12 verification matrix + package smoke (Gate F).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
