@@ -6,11 +6,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 0 (Reproducible foundation)
-- **Gate:** E in progress
-- **Work package:** M0.10 (Launcher / dev.py)
-- **Next action:** implement `serve` CLI command and `scripts/dev.py`
-  launcher that starts the backend on a loopback port and opens the
-  browser shell; validate the full local loop end-to-end.
+- **Gate:** E passed → starting M0.11
+- **Work package:** M0.11 (Logging, licenses, and documentation)
+- **Next action:** implement structured logging with rotation, generate
+  `licenses/components.json`, write README and troubleshooting guide.
 
 ## Completed requirements (with evidence)
 
@@ -81,10 +80,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   concurrent stdout/stderr readers, handshake timeout, graceful
   shutdown with terminate/kill escalation, child reaping),
   `cli.py` `worker-probe` command. 123 unit tests pass.
+- M0.10: `serve.py` (run_server: static asset check, fcntl advisory lock
+  on storage root, uvicorn loopback bind, readiness wait, browser open
+  with graceful fallback, SIGINT/SIGTERM shutdown, lock release),
+  `cli.py` `serve` command (--no-browser, --port, --storage-root),
+  `scripts/dev.py` (setup, dev, build, check, test, test-browser,
+  contracts, licenses). 136 unit tests pass.
 
 ## Remaining (Milestone 0)
 
-- M0.10 launcher/dev.py (Gate E).
 - M0.11 docs/licenses; M0.12 verification matrix + package smoke (Gate F).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)

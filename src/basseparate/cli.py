@@ -38,6 +38,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "worker-probe",
         help="run the model-free worker probe (handshake, ping, shutdown)",
     )
+
+    serve = subparsers.add_parser("serve", help="start the local backend and open the browser")
+    serve.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="do not open a browser tab; print the bootstrap URL instead",
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="loopback port to bind (default 8765)",
+    )
+    serve.add_argument(
+        "--storage-root",
+        default=None,
+        help="explicit storage root (all categories placed beneath it)",
+    )
     return parser
 
 
@@ -94,6 +112,28 @@ def _cmd_worker_probe() -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from basseparate.serve import ServeError, run_server
+
+    try:
+        config = resolve_config(
+            cli={
+                "port": args.port,
+                "storage_root": args.storage_root,
+                "open_browser": not args.no_browser,
+            }
+        )
+    except ConfigError as exc:
+        print(f"configuration error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        return run_server(config)
+    except ServeError as exc:
+        print(f"serve error: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -103,6 +143,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_doctor(args)
     if args.command == "worker-probe":
         return _cmd_worker_probe()
+    if args.command == "serve":
+        return _cmd_serve(args)
     raise AssertionError(f"unhandled command: {args.command!r}")
 
 
