@@ -1,6 +1,236 @@
 {
   "components": {
     "schemas": {
+      "AudioStreamInfo": {
+        "description": "One audio stream reported by ffprobe (global stream index).",
+        "properties": {
+          "channel_count": {
+            "minimum": 1.0,
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "channel_layout": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Layout"
+          },
+          "codec": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Codec",
+            "type": "string"
+          },
+          "estimated_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Seconds"
+          },
+          "index": {
+            "description": "Global stream index in the container",
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "sample_rate": {
+            "minimum": 1.0,
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "start_timestamp_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Timestamp Seconds"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "index",
+          "codec",
+          "sample_rate",
+          "channel_count"
+        ],
+        "title": "AudioStreamInfo",
+        "type": "object"
+      },
+      "CancelImportResponse": {
+        "properties": {
+          "import_id": {
+            "format": "uuid",
+            "title": "Import Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "state"
+        ],
+        "title": "CancelImportResponse",
+        "type": "object"
+      },
+      "ChunkAckResponse": {
+        "properties": {
+          "chunk_bytes": {
+            "title": "Chunk Bytes",
+            "type": "integer"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "chunk_bytes"
+        ],
+        "title": "ChunkAckResponse",
+        "type": "object"
+      },
+      "CompleteImportResponse": {
+        "properties": {
+          "import_id": {
+            "format": "uuid",
+            "title": "Import Id",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "source_sha256",
+          "state"
+        ],
+        "title": "CompleteImportResponse",
+        "type": "object"
+      },
+      "CreateImportRequest": {
+        "properties": {
+          "declared_byte_count": {
+            "minimum": 1.0,
+            "title": "Declared Byte Count",
+            "type": "integer"
+          },
+          "filename": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "filename",
+          "declared_byte_count"
+        ],
+        "title": "CreateImportRequest",
+        "type": "object"
+      },
+      "CreateImportResponse": {
+        "properties": {
+          "chunk_size": {
+            "title": "Chunk Size",
+            "type": "integer"
+          },
+          "import_id": {
+            "format": "uuid",
+            "title": "Import Id",
+            "type": "string"
+          },
+          "max_import_bytes": {
+            "title": "Max Import Bytes",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "project_id",
+          "chunk_size",
+          "max_import_bytes",
+          "state"
+        ],
+        "title": "CreateImportResponse",
+        "type": "object"
+      },
       "CreateProjectRequest": {
         "properties": {
           "name": {
@@ -47,6 +277,134 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "ImportListResponse": {
+        "properties": {
+          "imports": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRecord"
+            },
+            "title": "Imports",
+            "type": "array"
+          }
+        },
+        "required": [
+          "imports"
+        ],
+        "title": "ImportListResponse",
+        "type": "object"
+      },
+      "ImportRecord": {
+        "description": "One import session targeting a single project.",
+        "properties": {
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "declared_byte_count": {
+            "minimum": 0.0,
+            "title": "Declared Byte Count",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "filename": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_ids": {
+            "default": [],
+            "items": {
+              "description": "UUID identifier, serialized as a string",
+              "type": "string"
+            },
+            "title": "Job Ids",
+            "type": "array"
+          },
+          "probe_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProbeResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "received_byte_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Received Byte Count",
+            "type": "integer"
+          },
+          "selected_stream_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Stream Index"
+          },
+          "source_sha256": {
+            "anyOf": [
+              {
+                "description": "SHA-256 hash, lowercase hexadecimal",
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha256"
+          },
+          "transfer_state": {
+            "$ref": "#/components/schemas/TransferState",
+            "default": "created"
+          },
+          "updated_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "filename",
+          "declared_byte_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ImportRecord",
+        "type": "object"
+      },
       "ModelListResponse": {
         "properties": {
           "models": {
@@ -73,6 +431,87 @@
           }
         },
         "title": "ModuleListResponse",
+        "type": "object"
+      },
+      "ProbeResult": {
+        "description": "Validated ffprobe output, reduced to the metadata we retain.",
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "audio_streams": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AudioStreamInfo"
+            },
+            "maxItems": 64,
+            "title": "Audio Streams",
+            "type": "array"
+          },
+          "byte_count": {
+            "minimum": 0.0,
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "estimated_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Seconds"
+          },
+          "ffmpeg_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Ffmpeg Version",
+            "type": "string"
+          },
+          "ffprobe_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Ffprobe Version",
+            "type": "string"
+          },
+          "format_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Format Name",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "format_name",
+          "byte_count",
+          "ffmpeg_version",
+          "ffprobe_version"
+        ],
+        "title": "ProbeResult",
         "type": "object"
       },
       "ProjectListResponse": {
@@ -301,6 +740,17 @@
         "title": "SystemResponse",
         "type": "object"
       },
+      "TransferState": {
+        "enum": [
+          "created",
+          "uploading",
+          "complete",
+          "cancelled",
+          "failed"
+        ],
+        "title": "TransferState",
+        "type": "string"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -374,6 +824,213 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/v1/imports": {
+      "post": {
+        "operationId": "create_import_api_v1_imports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Import"
+      }
+    },
+    "/api/v1/imports/{import_id}": {
+      "get": {
+        "operationId": "get_import_api_v1_imports__import_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Import"
+      }
+    },
+    "/api/v1/imports/{import_id}/cancel": {
+      "post": {
+        "operationId": "cancel_import_api_v1_imports__import_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Import"
+      }
+    },
+    "/api/v1/imports/{import_id}/chunks": {
+      "put": {
+        "operationId": "upload_chunk_api_v1_imports__import_id__chunks_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": true,
+            "schema": {
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChunkAckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Chunk"
+      }
+    },
+    "/api/v1/imports/{import_id}/complete": {
+      "post": {
+        "operationId": "complete_import_api_v1_imports__import_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Import"
       }
     },
     "/api/v1/models": {
@@ -504,6 +1161,46 @@
           }
         },
         "summary": "Get Project"
+      }
+    },
+    "/api/v1/projects/{project_id}/imports": {
+      "get": {
+        "operationId": "list_project_imports_api_v1_projects__project_id__imports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Project Imports"
       }
     },
     "/api/v1/system": {

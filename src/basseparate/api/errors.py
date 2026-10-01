@@ -64,6 +64,85 @@ class StorageContentionError(ApiError):
         )
 
 
+class ImportNotFoundError(ApiError):
+    def __init__(self, import_id: str) -> None:
+        super().__init__(
+            code="IMPORT_NOT_FOUND",
+            message=f"The requested import does not exist: {import_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class ProjectNotEmptyError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="PROJECT_NOT_EMPTY",
+            message="The project already has a source; imports are only "
+            "allowed into empty projects",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class ImportStateError(ApiError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="IMPORT_STATE",
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class OffsetMismatchError(ApiError):
+    def __init__(self, expected: int, requested: int) -> None:
+        super().__init__(
+            code="OFFSET_MISMATCH",
+            message=f"Expected chunk offset {expected}, got {requested}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            details={"expected_offset": expected, "requested_offset": requested},
+        )
+
+
+class ChunkConflictError(ApiError):
+    def __init__(self, offset: int) -> None:
+        super().__init__(
+            code="CHUNK_CONFLICT",
+            message=f"The chunk at offset {offset} does not match the already acknowledged bytes",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"offset": offset},
+        )
+
+
+class ChunkSizeError(ApiError):
+    def __init__(self, maximum: int, received: int) -> None:
+        super().__init__(
+            code="CHUNK_SIZE",
+            message=f"A chunk of {received} bytes exceeds the {maximum} byte limit",
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            details={"maximum_bytes": maximum, "received_bytes": received},
+        )
+
+
+class ImportSizeLimitError(ApiError):
+    def __init__(self, maximum: int, declared: int) -> None:
+        super().__init__(
+            code="IMPORT_SIZE_LIMIT",
+            message=f"The declared size of {declared} bytes exceeds the "
+            f"{maximum} byte import limit",
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            details={"maximum_bytes": maximum, "declared_bytes": declared},
+        )
+
+
+class InsufficientDiskSpaceError(ApiError):
+    def __init__(self, needed: int, free: int) -> None:
+        super().__init__(
+            code="INSUFFICIENT_DISK_SPACE",
+            message=f"The transfer needs about {needed} bytes but only {free} are free",
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            details={"needed_bytes": needed, "free_bytes": free},
+        )
+
+
 @dataclass(frozen=True)
 class ErrorEnvelope:
     code: str

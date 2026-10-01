@@ -308,3 +308,96 @@ button:hover:not(:disabled) {
 .runtime-panel dd {
   margin: 0;
 }
+
+/* Import panel */
+.import-panel {
+  margin-top: 1rem;
+}
+
+.import-dropzone {
+  border: 2px dashed var(--muted);
+  border-radius: 0.5rem;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.import-dropzone:hover,
+.import-dropzone.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.import-dropzone p {
+  margin: 0.25rem 0;
+}
+
+.import-recovery {
+  background: color-mix(in srgb, var(--warn) 10%, var(--panel));
+  border: 1px solid var(--warn);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.import-recovery ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.import-multi-prompt {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.import-multi-prompt ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.import-multi-prompt button {
+  background: none;
+  color: var(--accent);
+  padding: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.import-progress {
+  padding: 1rem 0;
+}
+
+.progress-bar {
+  background: var(--bg);
+  border-radius: 0.375rem;
+  height: 0.75rem;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  background: var(--accent);
+  height: 100%;
+  transition: width 0.2s;
+}
+
+.import-error {
+  background: color-mix(in srgb, var(--error) 10%, var(--panel));
+  border: 1px solid var(--error);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+.import-cancelled {
+  color: var(--muted);
+  padding: 0.5rem 0;
+  font-size: 0.9rem;
+}

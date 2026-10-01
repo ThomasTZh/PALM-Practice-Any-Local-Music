@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createApiClient, errorMessage } from './api/client'
+import {
+  listProjectImports,
+  uploadFile,
+  type IncompleteImport,
+  type UploadState,
+} from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
 import type { ConnectionState, ProjectSummary } from './types'
 
@@ -134,6 +140,178 @@ function ProjectListItem({
         <span className="project-status">{project.status === 'empty' ? 'Empty' : 'Ready'}</span>
       </button>
     </li>
+  )
+}
+
+function ImportPanel({
+  projectId,
+  onImported,
+}: {
+  projectId: string
+  onImported: () => void
+}) {
+  const [uploadState, setUploadState] = useState<UploadState>({ kind: 'idle' })
+  const [incomplete, setIncomplete] = useState<IncompleteImport[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  const [multiFilePrompt, setMultiFilePrompt] = useState<File[] | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const loadIncomplete = useCallback(async () => {
+    try {
+      const imports = await listProjectImports(projectId)
+      setIncomplete(imports)
+    } catch {
+      setIncomplete([])
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    loadIncomplete()
+  }, [loadIncomplete])
+
+  const startUpload = useCallback(
+    async (file: File) => {
+      const controller = new AbortController()
+      abortRef.current = controller
+      setUploadState({ kind: 'uploading', progress: { bytesUploaded: 0, totalBytes: file.size, chunkIndex: 0, totalChunks: 1 } })
+      try {
+        await uploadFile({
+          projectId,
+          file,
+          signal: controller.signal,
+          onProgress: setUploadState,
+        })
+        onImported()
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setUploadState({ kind: 'cancelled' })
+        } else {
+          setUploadState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+        }
+      }
+    },
+    [projectId, onImported],
+  )
+
+  const handleFiles = useCallback(
+    (files: FileList | File[]) => {
+      const arr = Array.from(files)
+      if (arr.length === 0) return
+      if (arr.length > 1) {
+        setMultiFilePrompt(arr)
+        return
+      }
+      startUpload(arr[0])
+    },
+    [startUpload],
+  )
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      if (e.dataTransfer.files.length > 0) {
+        handleFiles(e.dataTransfer.files)
+      }
+    },
+    [handleFiles],
+  )
+
+  const handleCancel = useCallback(async () => {
+    abortRef.current?.abort()
+    setUploadState({ kind: 'cancelled' })
+  }, [])
+
+  const progress =
+    uploadState.kind === 'uploading'
+      ? Math.round((uploadState.progress.bytesUploaded / uploadState.progress.totalBytes) * 100)
+      : 0
+
+  return (
+    <div className="import-panel" aria-label="Import audio">
+      {incomplete.length > 0 && uploadState.kind === 'idle' && (
+        <div className="import-recovery" role="alert">
+          <p>Transfer interrupted. {incomplete.length} incomplete import{incomplete.length > 1 ? 's' : ''} found.</p>
+          <ul>
+            {incomplete.map((i) => (
+              <li key={i.id}>
+                {i.filename}: {i.receivedByteCount} / {i.declaredByteCount} bytes
+              </li>
+            ))}
+          </ul>
+          <p className="muted">Select the same file to resume, or start a new import.</p>
+        </div>
+      )}
+
+      {multiFilePrompt && (
+        <div className="import-multi-prompt" role="dialog" aria-label="Multiple files selected">
+          <p>Multiple files selected. Choose one to import:</p>
+          <ul>
+            {multiFilePrompt.map((f, i) => (
+              <li key={i}>
+                <button type="button" onClick={() => { setMultiFilePrompt(null); startUpload(f) }}>
+                  {f.name} ({(f.size / 1024 / 1024).toFixed(1)} MiB)
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setMultiFilePrompt(null)}>Cancel</button>
+        </div>
+      )}
+
+      {uploadState.kind === 'idle' && !multiFilePrompt && (
+        <div
+          className={`import-dropzone ${dragOver ? 'drag-over' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click() }}
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Drop an audio file here or click to browse"
+        >
+          <p>Drop an audio or video file here</p>
+          <p className="muted">or click to browse</p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*,video/*"
+            style={{ display: 'none' }}
+            onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }}
+          />
+        </div>
+      )}
+
+      {(uploadState.kind === 'uploading' || uploadState.kind === 'completing') && (
+        <div className="import-progress" role="status" aria-live="polite">
+          <div className="progress-bar">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+          <p>
+            {uploadState.kind === 'completing'
+              ? 'Finalizing…'
+              : `${progress}% (${(uploadState.progress.bytesUploaded / 1024 / 1024).toFixed(1)} / ${(uploadState.progress.totalBytes / 1024 / 1024).toFixed(1)} MiB)`}
+          </p>
+          <button type="button" onClick={handleCancel}>Cancel</button>
+        </div>
+      )}
+
+      {uploadState.kind === 'error' && (
+        <div className="import-error" role="alert">
+          <p>Import failed: {uploadState.message}</p>
+          <button type="button" onClick={() => setUploadState({ kind: 'idle' })}>Try again</button>
+        </div>
+      )}
+
+      {uploadState.kind === 'cancelled' && (
+        <div className="import-cancelled">
+          <p>Import cancelled.</p>
+          <button type="button" onClick={() => setUploadState({ kind: 'idle' })}>Dismiss</button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -330,15 +508,24 @@ export default function App() {
                 ← Back to projects
               </button>
               <h2>{view.project.name}</h2>
-              <p className="empty-state">No audio imported yet.</p>
-              <dl className="project-meta">
-                <dt>Status</dt>
-                <dd>{view.project.status === 'empty' ? 'Empty' : 'Ready'}</dd>
-                <dt>Created</dt>
-                <dd>{new Date(view.project.created_at).toLocaleString()}</dd>
-                <dt>Updated</dt>
-                <dd>{new Date(view.project.updated_at).toLocaleString()}</dd>
-              </dl>
+              {view.project.status === 'empty' ? (
+                <ImportPanel
+                  projectId={view.project.id}
+                  onImported={loadProjects}
+                />
+              ) : (
+                <>
+                  <p className="empty-state">No audio imported yet.</p>
+                  <dl className="project-meta">
+                    <dt>Status</dt>
+                    <dd>Ready</dd>
+                    <dt>Created</dt>
+                    <dd>{new Date(view.project.created_at).toLocaleString()}</dd>
+                    <dt>Updated</dt>
+                    <dd>{new Date(view.project.updated_at).toLocaleString()}</dd>
+                  </dl>
+                </>
+              )}
             </section>
           )}
         </main>

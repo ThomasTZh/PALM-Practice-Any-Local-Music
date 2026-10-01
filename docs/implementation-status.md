@@ -7,9 +7,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate)
-- **Work package:** M1.1 (Validate prerequisites + extend contracts) — complete
-- **Next action:** M1.2 (Bounded local file transfer: upload protocol, chunks,
-  retry, resume, cancel).
+- **Work package:** M1.2 (Bounded local file transfer) — backend + frontend complete
+- **Next action:** M1.3 (ffprobe inspection, audio-stream selection, canonical
+  decode) or M1.2 verification/commit.
 
 ## Completed requirements (with evidence)
 
@@ -114,6 +114,60 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.2 — Bounded local file transfer (complete)
+
+**Backend:**
+- `config.py`: `import_chunk_bytes` (default 8 MiB, min 1 MiB),
+  `max_import_bytes` (default 20 GiB); chunk ≤ max validation.
+- `uploads.py` (new): `UploadManager` — bounded streaming reads (256 KiB
+  internal), SHA-256 incremental hashing, per-import `asyncio.Lock`,
+  manifest durability (tmp + `Path.replace`), fsync before manifest update,
+  crash-residue truncation on reload, disk-space reservation (declared + 2 GiB
+  headroom), cancel cleanup (delete temp media + manifest).
+- `api/import_routes.py` (new): `POST /api/v1/imports` (create session,
+  filename control-char validation, project-empty guard, size limit),
+  `PUT /api/v1/imports/{id}/chunks?offset=...` (streaming body, offset
+  validation, idempotent replay, conflict detection),
+  `GET /api/v1/imports/{id}`, `GET /api/v1/projects/{id}/imports`,
+  `POST /api/v1/imports/{id}/complete` (full-file SHA-256 verification),
+  `POST /api/v1/imports/{id}/cancel`.
+- `api/errors.py`: 8 new import/upload error classes
+  (`ImportNotFoundError`, `ProjectNotEmptyError`, `ImportStateError`,
+  `OffsetMismatchError`, `ChunkConflictError`, `ChunkSizeError`,
+  `ImportSizeLimitError`, `InsufficientDiskSpaceError`).
+- `app.py`: wired `ImportRepository` + `UploadManager` into app state;
+  included `import_router`.
+- `storage/__init__.py`: exported `ImportRepository`.
+- Tests: `tests/unit/test_imports.py` (6 test classes: create, chunk,
+  complete, cancel, reload-recovery, concurrency). 237 py tests pass.
+
+**Frontend:**
+- `src/api/uploader.ts` (new): `sha256Hex` (Web Crypto),
+  `createImportSession`, `uploadChunk`, `completeImport`, `cancelImport`,
+  `listProjectImports`, `uploadFile` (8 MiB chunks via `File.slice()`,
+  sequential upload, 3 retries per chunk with backoff, AbortController
+  cancellation, resume from server-side offset).
+- `src/App.tsx`: `ImportPanel` component — drag-and-drop zone, file picker,
+  multi-file selection prompt, progress bar with percentage, cancel button,
+  error/cancelled states, reload-recovery banner listing incomplete imports.
+  Shown for empty projects only.
+- `src/styles.css`: import panel styles (dropzone, progress bar, recovery
+  banner, multi-file prompt, error/cancelled states).
+- `tests/app.test.tsx`: updated 5 assertions from "No audio imported yet."
+  to import dropzone; added `/imports` path to mock GET handler.
+  19 js tests pass.
+
+**Verification (all green):**
+- `uv run --locked pytest tests/ -q`: 237 passed
+- `uv run --locked ruff check src tests`: clean
+- `uv run --locked ruff format --check src tests`: clean
+- `uv run --locked mypy`: clean
+- `scripts/check_contract.py`: OK
+- `pnpm run typecheck`: clean
+- `pnpm run lint`: clean
+- `pnpm run test`: 19 passed
+- `pnpm run build`: clean
 
 ### M1.1 — Validate prerequisites + extend contracts (complete)
 

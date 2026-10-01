@@ -21,6 +21,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Import */
+        post: operations["create_import_api_v1_imports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Import */
+        get: operations["get_import_api_v1_imports__import_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/{import_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Import */
+        post: operations["cancel_import_api_v1_imports__import_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/{import_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upload Chunk */
+        put: operations["upload_chunk_api_v1_imports__import_id__chunks_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/{import_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Import */
+        post: operations["complete_import_api_v1_imports__import_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models": {
         parameters: {
             query?: never;
@@ -90,6 +175,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Project Imports */
+        get: operations["list_project_imports_api_v1_projects__project_id__imports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system": {
         parameters: {
             query?: never;
@@ -111,6 +213,103 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AudioStreamInfo
+         * @description One audio stream reported by ffprobe (global stream index).
+         */
+        AudioStreamInfo: {
+            /** Channel Count */
+            channel_count: number;
+            /** Channel Layout */
+            channel_layout?: string | null;
+            /** Codec */
+            codec: string;
+            /** Estimated Duration Seconds */
+            estimated_duration_seconds?: number | null;
+            /**
+             * Index
+             * @description Global stream index in the container
+             */
+            index: number;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Language */
+            language?: string | null;
+            /** Sample Rate */
+            sample_rate: number;
+            /** Start Timestamp Seconds */
+            start_timestamp_seconds?: number | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** CancelImportResponse */
+        CancelImportResponse: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** State */
+            state: string;
+        };
+        /** ChunkAckResponse */
+        ChunkAckResponse: {
+            /** Chunk Bytes */
+            chunk_bytes: number;
+            /**
+             * Idempotent Replay
+             * @default false
+             */
+            idempotent_replay: boolean;
+            /** Offset */
+            offset: number;
+        };
+        /** CompleteImportResponse */
+        CompleteImportResponse: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** State */
+            state: string;
+        };
+        /** CreateImportRequest */
+        CreateImportRequest: {
+            /** Declared Byte Count */
+            declared_byte_count: number;
+            /** Filename */
+            filename: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
+        /** CreateImportResponse */
+        CreateImportResponse: {
+            /** Chunk Size */
+            chunk_size: number;
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** Max Import Bytes */
+            max_import_bytes: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** State */
+            state: string;
+        };
         /** CreateProjectRequest */
         CreateProjectRequest: {
             /** Name */
@@ -128,6 +327,60 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ImportListResponse */
+        ImportListResponse: {
+            /** Imports */
+            imports: components["schemas"]["ImportRecord"][];
+        };
+        /**
+         * ImportRecord
+         * @description One import session targeting a single project.
+         */
+        ImportRecord: {
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            /** Declared Byte Count */
+            declared_byte_count: number;
+            /** Error */
+            error?: string | null;
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /**
+             * Job Ids
+             * @default []
+             */
+            job_ids: string[];
+            probe_result?: components["schemas"]["ProbeResult"] | null;
+            /**
+             * Project Id
+             * @description UUID identifier, serialized as a string
+             */
+            project_id: string;
+            /**
+             * Received Byte Count
+             * @default 0
+             */
+            received_byte_count: number;
+            /** Selected Stream Index */
+            selected_stream_index?: number | null;
+            /** Source Sha256 */
+            source_sha256?: string | null;
+            /** @default created */
+            transfer_state: components["schemas"]["TransferState"];
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
+        };
         /** ModelListResponse */
         ModelListResponse: {
             /** Models */
@@ -141,6 +394,31 @@ export interface components {
             modules?: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * ProbeResult
+         * @description Validated ffprobe output, reduced to the metadata we retain.
+         */
+        ProbeResult: {
+            /** Artist */
+            artist?: string | null;
+            /**
+             * Audio Streams
+             * @default []
+             */
+            audio_streams: components["schemas"]["AudioStreamInfo"][];
+            /** Byte Count */
+            byte_count: number;
+            /** Estimated Duration Seconds */
+            estimated_duration_seconds?: number | null;
+            /** Ffmpeg Version */
+            ffmpeg_version: string;
+            /** Ffprobe Version */
+            ffprobe_version: string;
+            /** Format Name */
+            format_name: string;
+            /** Title */
+            title?: string | null;
         };
         /** ProjectListResponse */
         ProjectListResponse: {
@@ -235,6 +513,11 @@ export interface components {
             /** Ready */
             ready: boolean;
         };
+        /**
+         * TransferState
+         * @enum {string}
+         */
+        TransferState: "created" | "uploading" | "complete" | "cancelled" | "failed";
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -278,6 +561,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    create_import_api_v1_imports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_import_api_v1_imports__import_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_import_api_v1_imports__import_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_chunk_api_v1_imports__import_id__chunks_put: {
+        parameters: {
+            query: {
+                offset: number;
+            };
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkAckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_import_api_v1_imports__import_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -393,6 +835,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_imports_api_v1_projects__project_id__imports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportListResponse"];
                 };
             };
             /** @description Validation Error */

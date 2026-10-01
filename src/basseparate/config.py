@@ -26,6 +26,10 @@ class ConfigError(ValueError):
     """Raised when the resolved configuration is invalid."""
 
 
+DEFAULT_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024  # 8 MiB
+DEFAULT_MAX_IMPORT_BYTES = 20 * 1024**3  # 20 GiB
+
+
 @dataclass(frozen=True, slots=True)
 class AppConfig:
     bind_address: str
@@ -38,6 +42,8 @@ class AppConfig:
     worker_handshake_timeout_seconds: float
     worker_graceful_stop_timeout_seconds: float
     database_busy_timeout_seconds: float
+    import_chunk_bytes: int
+    max_import_bytes: int
     storage_root: Path | None
     config_file: Path
 
@@ -52,6 +58,8 @@ class AppConfig:
             f"worker_handshake_timeout={self.worker_handshake_timeout_seconds}s "
             f"worker_graceful_stop_timeout={self.worker_graceful_stop_timeout_seconds}s "
             f"database_busy_timeout={self.database_busy_timeout_seconds}s "
+            f"import_chunk_bytes={self.import_chunk_bytes} "
+            f"max_import_bytes={self.max_import_bytes} "
             f"storage_root={self.storage_root}"
         )
 
@@ -81,6 +89,8 @@ _FIELDS: tuple[_FieldSpec, ...] = (
     _FieldSpec("worker_handshake_timeout_seconds", float, 5.0),
     _FieldSpec("worker_graceful_stop_timeout_seconds", float, 5.0),
     _FieldSpec("database_busy_timeout_seconds", float, 5.0),
+    _FieldSpec("import_chunk_bytes", int, DEFAULT_IMPORT_CHUNK_BYTES),
+    _FieldSpec("max_import_bytes", int, DEFAULT_MAX_IMPORT_BYTES),
 )
 
 
@@ -156,6 +166,19 @@ def _validate(values: dict[str, object]) -> None:
         assert isinstance(value, float)
         if value <= 0:
             raise ConfigError(f"{name} must be positive, got {value}")
+
+    chunk = values["import_chunk_bytes"]
+    max_bytes = values["max_import_bytes"]
+    assert isinstance(chunk, int)
+    assert isinstance(max_bytes, int)
+    if chunk < 1024 * 1024:
+        raise ConfigError(f"import_chunk_bytes must be at least 1 MiB, got {chunk}")
+    if chunk > max_bytes:
+        raise ConfigError(
+            f"import_chunk_bytes ({chunk}) must not exceed max_import_bytes ({max_bytes})"
+        )
+    if max_bytes < chunk:
+        raise ConfigError(f"max_import_bytes must be at least import_chunk_bytes, got {max_bytes}")
 
     root = values["storage_root"]
     if root is not None:

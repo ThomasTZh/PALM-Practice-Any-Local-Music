@@ -50,6 +50,9 @@ beforeEach(() => {
     if (path === '/api/v1/projects') {
       return Promise.resolve(ok({ projects: [] }))
     }
+    if (path === '/api/v1/projects/{project_id}/imports') {
+      return Promise.resolve(ok({ imports: [] }))
+    }
     return Promise.resolve(ok(PROJECT))
   })
   mockClient.POST.mockImplementation(
@@ -142,7 +145,7 @@ describe('new project workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Create project' }))
 
     expect(await screen.findByText('My First Project')).toBeInTheDocument()
-    expect(screen.getByText('No audio imported yet.')).toBeInTheDocument()
+    expect(screen.getByText('Drop an audio or video file here')).toBeInTheDocument()
     expect(mockClient.POST).toHaveBeenCalledWith('/api/v1/projects', {
       body: { name: 'My First Project' },
     })
@@ -206,7 +209,7 @@ describe('new project workflow', () => {
       response: { ok: true, status: 201 },
       data: { ...PROJECT, name: 'Pending' },
     })
-    await screen.findByText('No audio imported yet.')
+    await screen.findByText('Drop an audio or video file here')
   })
 })
 
@@ -219,7 +222,7 @@ describe('project list persistence', () => {
     await user.click(screen.getByRole('button', { name: 'New project' }))
     await user.type(screen.getByLabelText('Project name'), 'Persisted')
     await user.click(screen.getByRole('button', { name: 'Create project' }))
-    await screen.findByText('No audio imported yet.')
+    await screen.findByText('Drop an audio or video file here')
 
     // Simulate reload by going back to the list, which re-fetches.
     mockClient.GET.mockImplementation((path: string) => {
@@ -252,7 +255,7 @@ describe('keyboard navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Create project' }))
 
     expect(await screen.findByText('Keyboard Project')).toBeInTheDocument()
-    expect(screen.getByText('No audio imported yet.')).toBeInTheDocument()
+    expect(screen.getByText('Drop an audio or video file here')).toBeInTheDocument()
   })
 
   it('can navigate from project view back to list using keyboard', async () => {
@@ -265,7 +268,7 @@ describe('keyboard navigation', () => {
     input.focus()
     await user.keyboard('Nav Test')
     await user.click(screen.getByRole('button', { name: 'Create project' }))
-    await screen.findByText('No audio imported yet.')
+    await screen.findByText('Drop an audio or video file here')
 
     mockClient.GET.mockImplementation((path: string) => {
       if (path === '/api/v1/projects') {

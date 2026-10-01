@@ -26,16 +26,19 @@ from starlette.staticfiles import StaticFiles
 from basseparate import API_VERSION
 from basseparate.api.errors import ApiError, create_error_response
 from basseparate.api.idempotency import IdempotencyStore
+from basseparate.api.import_routes import router as import_router
 from basseparate.api.middleware import RequestTracingMiddleware
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
 from basseparate.storage import (
+    ImportRepository,
     ProjectRepository,
     initialize_database,
     initialize_storage_paths,
     resolve_storage_paths,
 )
+from basseparate.uploads import UploadManager
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +77,12 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.config = config
         app.state.storage_paths = paths
         app.state.repository = ProjectRepository(paths.database_path)
+        app.state.import_repository = ImportRepository(paths.database_path)
+        app.state.upload_manager = UploadManager(
+            uploads_dir=paths.runtime / "uploads",
+            chunk_size=config.import_chunk_bytes,
+            max_import_bytes=config.max_import_bytes,
+        )
         app.state.idempotency_store = IdempotencyStore()
         app.state.session_token = session_token
         app.state.ready = True
@@ -107,6 +116,7 @@ def create_app(config: AppConfig) -> FastAPI:
 
     # Routes.
     app.include_router(router)
+    app.include_router(import_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

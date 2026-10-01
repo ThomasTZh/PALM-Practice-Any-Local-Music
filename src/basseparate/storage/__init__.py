@@ -14,10 +14,11 @@ from basseparate.storage.paths import (
     initialize_storage_paths,
     resolve_storage_paths,
 )
-from basseparate.storage.repository import ProjectRepository
+from basseparate.storage.repository import ImportRepository, ProjectRepository
 
 __all__ = [
     "DatabaseError",
+    "ImportRepository",
     "ProjectRepository",
     "StorageError",
     "StoragePaths",
