@@ -7,9 +7,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate)
-- **Work package:** M1.2 (Bounded local file transfer) — backend + frontend complete
-- **Next action:** M1.3 (ffprobe inspection, audio-stream selection, canonical
-  decode) or M1.2 verification/commit.
+- **Work package:** M1.3 (ffprobe inspection, audio-stream selection) — complete
+- **Last commit:** M1.3 commit (see git log; follows `ef005a7`)
+- **Next action:** M1.4 (attach imported source to project) per
+  `projectPlans/milestone1.md`.
 
 ## Completed requirements (with evidence)
 
@@ -164,6 +165,65 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - `uv run --locked ruff format --check src tests`: clean
 - `uv run --locked mypy`: clean
 - `scripts/check_contract.py`: OK
+- `pnpm run typecheck`: clean
+- `pnpm run lint`: clean
+- `pnpm run test`: 19 passed
+- `pnpm run build`: clean
+
+### M1.3 — Inspect media and select audio streams (complete)
+
+**Backend:**
+- `media/probe.py` (new): `probe_media(path, timeout_seconds=30.0)` runs
+  ffprobe via `asyncio.create_subprocess_exec` (argument array, stdin
+  DEVNULL, 30 s `asyncio.timeout`, 10 MiB bounded stdout/stderr reads,
+  process kill on timeout/failure). `parse_probe_data` maps ffprobe JSON to
+  `ProbeResult`/`AudioStreamInfo` (on-disk size fallback for byte count,
+  title/artist tags, per-stream index/codec/rate/channels/layout/language/
+  title/default-disposition/duration/start-time). `tool_versions()` caches
+  ffmpeg/ffprobe versions per process. Application limits enforced:
+  8 kHz–192 kHz, 1–8 channels. Typed errors: `ProbeTimeoutError`,
+  `ProbeFailedError`, `NoAudioStreamError`, `UnsupportedMediaError`.
+  Channel layout derived from channel count (mono/stereo/5.1/7.1) when the
+  container does not expose it (FFmpeg 7+ dropped the field for many formats).
+- `api/errors.py`: 5 new API errors — `NoAudioStreamError` (NO_AUDIO_STREAM,
+  422), `UnsupportedMediaError` (UNSUPPORTED_MEDIA, 422),
+  `ProbeTimeoutError` (PROBE_TIMEOUT, 504), `ProbeFailedError` (PROBE_FAILED,
+  500), `StreamSelectionError` (INVALID_STREAM_SELECTION, 422, details carry
+  the available stream indices).
+- `api/import_routes.py`: `complete` now probes the finished part file after
+  hash verification; stores `ProbeResult` via `ImportRepository.set_probe_result`;
+  auto-selects the single audio stream; leaves selection open for multi-stream
+  files; marks the import FAILED (with error text) on no-audio/timeout/failure/
+  unsupported-media and returns the matching API error. New route
+  `POST /api/v1/imports/{id}/select-stream` (body `{stream_index}`) validates
+  COMPLETE state + known stream index and persists the selection.
+  `CompleteImportResponse` now carries `probe_result` and
+  `selected_stream_index`.
+- Tests: `tests/unit/test_probe.py` (new; real ffmpeg/ffprobe against
+  generated WAV/PNG fixtures: mono, stereo layout, no-audio, 4 kHz rejection,
+  9-channel rejection, missing file, 1 ms timeout, garbage bytes, version
+  cache, parse-data fallbacks) and `TestProbeIntegration` in
+  `tests/unit/test_imports.py` (single-stream auto-select, multi-stream
+  deferral, select-stream persistence, invalid index 422, pre-complete 409,
+  no-audio → failed, unsupported rate → failed). M1.2 complete/cancel tests
+  now upload generated WAV bytes.
+
+**Frontend:**
+- `src/api/uploader.ts`: `UploadResult` extended with `selectedStreamIndex`
+  + `audioStreams` summaries; new `selectStream(importId, streamIndex)`.
+- `src/App.tsx`: `ImportPanel` shows a stream-selection dialog after
+  completion when the server leaves the choice open (>1 audio streams);
+  lists index, title/language/codec, layout/channels, sample rate,
+  highlights the default-disposition stream; selection calls
+  `select-stream` then proceeds.
+- `src/styles.css`: `.import-stream-dialog` + `.stream-default` styles.
+
+**Verification (all green):**
+- `uv run --locked pytest tests/ -q`: 260 passed
+- `uv run --locked ruff check src tests`: clean
+- `uv run --locked ruff format --check src tests`: clean
+- `uv run --locked mypy`: clean
+- `scripts/check_contract.py`: OK (contracts + `schema.ts` regenerated)
 - `pnpm run typecheck`: clean
 - `pnpm run lint`: clean
 - `pnpm run test`: 19 passed

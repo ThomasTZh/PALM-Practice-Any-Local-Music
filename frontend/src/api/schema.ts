@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/imports/{import_id}/select-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Select Stream */
+        post: operations["select_stream_api_v1_imports__import_id__select_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models": {
         parameters: {
             query?: never;
@@ -274,6 +291,9 @@ export interface components {
              * Format: uuid
              */
             import_id: string;
+            probe_result?: components["schemas"]["ProbeResult"] | null;
+            /** Selected Stream Index */
+            selected_stream_index?: number | null;
             /** Source Sha256 */
             source_sha256: string;
             /** State */
@@ -504,6 +524,11 @@ export interface components {
          * @enum {string}
          */
         ProjectStatus: "empty" | "ready";
+        /** SelectStreamRequest */
+        SelectStreamRequest: {
+            /** Stream Index */
+            stream_index: number;
+        };
         /** SystemResponse */
         SystemResponse: {
             /** Api Version */
@@ -711,6 +736,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompleteImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_stream_api_v1_imports__import_id__select_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectStreamRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportRecord"];
                 };
             };
             /** @description Validation Error */

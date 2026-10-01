@@ -26,11 +26,31 @@ from basseparate.api.errors import (
     ImportSizeLimitError,
     ImportStateError,
     InsufficientDiskSpaceError,
+    NoAudioStreamError,
     OffsetMismatchError,
+    ProbeFailedError,
+    ProbeTimeoutError,
     ProjectNotEmptyError,
     ProjectNotFoundError,
+    StreamSelectionError,
+    UnsupportedMediaError,
 )
-from basseparate.domain.import_record import ImportRecord, TransferState
+from basseparate.domain.import_record import ImportRecord, ProbeResult, TransferState
+from basseparate.media.probe import (
+    NoAudioStreamError as MediaNoAudioStreamError,
+)
+from basseparate.media.probe import (
+    ProbeFailedError as MediaProbeFailedError,
+)
+from basseparate.media.probe import (
+    ProbeTimeoutError as MediaProbeTimeoutError,
+)
+from basseparate.media.probe import (
+    UnsupportedMediaError as MediaUnsupportedMediaError,
+)
+from basseparate.media.probe import (
+    probe_media,
+)
 from basseparate.storage import ImportRepository, ProjectRepository
 from basseparate.uploads import (
     ChunkAck,
@@ -88,6 +108,12 @@ class CompleteImportResponse(BaseModel):
     import_id: uuid.UUID
     source_sha256: str
     state: str
+    probe_result: ProbeResult | None = None
+    selected_stream_index: int | None = None
+
+
+class SelectStreamRequest(BaseModel):
+    stream_index: int = Field(ge=0)
 
 
 class CancelImportResponse(BaseModel):
@@ -239,15 +265,56 @@ async def complete_import(import_id: uuid.UUID, request: Request) -> CompleteImp
         )
 
     source_sha256 = await uploads.hash_completed_file(import_id)
+
+    try:
+        probe = await probe_media(uploads.part_path_for(import_id))
+    except MediaNoAudioStreamError as exc:
+        _imports(request).update_transfer_state(import_id, TransferState.FAILED, error=str(exc))
+        raise NoAudioStreamError(str(exc)) from exc
+    except MediaProbeTimeoutError as exc:
+        _imports(request).update_transfer_state(import_id, TransferState.FAILED, error=str(exc))
+        raise ProbeTimeoutError() from exc
+    except MediaProbeFailedError as exc:
+        _imports(request).update_transfer_state(import_id, TransferState.FAILED, error=str(exc))
+        raise ProbeFailedError(str(exc)) from exc
+    except MediaUnsupportedMediaError as exc:
+        _imports(request).update_transfer_state(import_id, TransferState.FAILED, error=str(exc))
+        raise UnsupportedMediaError(str(exc)) from exc
+
     updated = _imports(request).update_transfer_state(
         import_id,
         TransferState.COMPLETE,
         received_byte_count=record.declared_byte_count,
         source_sha256=source_sha256,
     )
+    updated = _imports(request).set_probe_result(import_id, probe)
+    if len(probe.audio_streams) == 1:
+        updated = _imports(request).set_selected_stream(import_id, probe.audio_streams[0].index)
     return CompleteImportResponse(
-        import_id=import_id, source_sha256=source_sha256, state=updated.transfer_state.value
+        import_id=import_id,
+        source_sha256=source_sha256,
+        state=updated.transfer_state.value,
+        probe_result=updated.probe_result,
+        selected_stream_index=updated.selected_stream_index,
     )
+
+
+@router.post("/imports/{import_id}/select-stream", response_model=ImportRecord)
+async def select_stream(
+    import_id: uuid.UUID, body: SelectStreamRequest, request: Request
+) -> ImportRecord:
+    record = _require_import(request, import_id)
+    if record.transfer_state != TransferState.COMPLETE:
+        raise ImportStateError(
+            f"import is {record.transfer_state.value}; a stream can only be selected "
+            "after the transfer is complete"
+        )
+    if record.probe_result is None:
+        raise ImportStateError("the import has no probe result")
+    available = sorted(s.index for s in record.probe_result.audio_streams)
+    if body.stream_index not in available:
+        raise StreamSelectionError(body.stream_index, available)
+    return _imports(request).set_selected_stream(import_id, body.stream_index)
 
 
 @router.post("/imports/{import_id}/cancel", response_model=CancelImportResponse)

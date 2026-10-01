@@ -27,10 +27,10 @@ test-results/
 *.sqlite3-wal
 *.sqlite3-shm
 
-# Models, media, generated audio
-models/
-media/
-stems/
+# Models, media, generated audio (root-anchored so src packages are not excluded)
+/models/
+/media/
+/stems/
 *.pt
 *.pth
 *.ckpt

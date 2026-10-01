@@ -152,6 +152,27 @@
             "title": "Import Id",
             "type": "string"
           },
+          "probe_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProbeResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selected_stream_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Stream Index"
+          },
           "source_sha256": {
             "title": "Source Sha256",
             "type": "string"
@@ -717,6 +738,20 @@
         "title": "ProjectStatus",
         "type": "string"
       },
+      "SelectStreamRequest": {
+        "properties": {
+          "stream_index": {
+            "minimum": 0.0,
+            "title": "Stream Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stream_index"
+        ],
+        "title": "SelectStreamRequest",
+        "type": "object"
+      },
       "SystemResponse": {
         "properties": {
           "api_version": {
@@ -1031,6 +1066,56 @@
           }
         },
         "summary": "Complete Import"
+      }
+    },
+    "/api/v1/imports/{import_id}/select-stream": {
+      "post": {
+        "operationId": "select_stream_api_v1_imports__import_id__select_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectStreamRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select Stream"
       }
     },
     "/api/v1/models": {

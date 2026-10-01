@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createApiClient, errorMessage } from './api/client'
 import {
   listProjectImports,
+  selectStream,
   uploadFile,
+  type AudioStreamSummary,
   type IncompleteImport,
   type UploadState,
 } from './api/uploader'
@@ -154,6 +156,11 @@ function ImportPanel({
   const [incomplete, setIncomplete] = useState<IncompleteImport[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [multiFilePrompt, setMultiFilePrompt] = useState<File[] | null>(null)
+  const [streamChoice, setStreamChoice] = useState<{
+    importId: string
+    streams: AudioStreamSummary[]
+  } | null>(null)
+  const [selecting, setSelecting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -176,13 +183,17 @@ function ImportPanel({
       abortRef.current = controller
       setUploadState({ kind: 'uploading', progress: { bytesUploaded: 0, totalBytes: file.size, chunkIndex: 0, totalChunks: 1 } })
       try {
-        await uploadFile({
+        const result = await uploadFile({
           projectId,
           file,
           signal: controller.signal,
           onProgress: setUploadState,
         })
-        onImported()
+        if (result.selectedStreamIndex === null && result.audioStreams.length > 1) {
+          setStreamChoice({ importId: result.importId, streams: result.audioStreams })
+        } else {
+          onImported()
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           setUploadState({ kind: 'cancelled' })
@@ -223,6 +234,27 @@ function ImportPanel({
     setUploadState({ kind: 'cancelled' })
   }, [])
 
+  const handleSelectStream = useCallback(
+    async (streamIndex: number) => {
+      if (!streamChoice) return
+      setSelecting(true)
+      try {
+        await selectStream(streamChoice.importId, streamIndex)
+        setStreamChoice(null)
+        onImported()
+      } catch (err) {
+        setStreamChoice(null)
+        setUploadState({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        })
+      } finally {
+        setSelecting(false)
+      }
+    },
+    [streamChoice, onImported],
+  )
+
   const progress =
     uploadState.kind === 'uploading'
       ? Math.round((uploadState.progress.bytesUploaded / uploadState.progress.totalBytes) * 100)
@@ -260,7 +292,33 @@ function ImportPanel({
         </div>
       )}
 
-      {uploadState.kind === 'idle' && !multiFilePrompt && (
+      {streamChoice && (
+        <div className="import-stream-dialog" role="dialog" aria-label="Choose audio stream">
+          <p>
+            This file contains {streamChoice.streams.length} audio streams.
+            Choose the one to import:
+          </p>
+          <ul>
+            {streamChoice.streams.map((s) => (
+              <li key={s.index}>
+                <button
+                  type="button"
+                  disabled={selecting}
+                  onClick={() => handleSelectStream(s.index)}
+                  className={s.isDefault ? 'stream-default' : undefined}
+                >
+                  Stream {s.index}: {s.title ?? s.language ?? s.codec}
+                  {s.isDefault ? ' (default)' : ''}
+                  {' — '}
+                  {s.channelLayout ?? `${s.channelCount} ch`}, {s.sampleRate} Hz
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {uploadState.kind === 'idle' && !multiFilePrompt && !streamChoice && (
         <div
           className={`import-dropzone ${dragOver ? 'drag-over' : ''}`}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}

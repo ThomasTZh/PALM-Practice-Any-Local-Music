@@ -20,9 +20,22 @@ export interface UploadProgress {
   totalChunks: number
 }
 
+export interface AudioStreamSummary {
+  index: number
+  codec: string
+  sampleRate: number
+  channelCount: number
+  channelLayout: string | null
+  language: string | null
+  title: string | null
+  isDefault: boolean
+}
+
 export interface UploadResult {
   importId: string
   sourceSha256: string
+  selectedStreamIndex: number | null
+  audioStreams: AudioStreamSummary[]
 }
 
 export type UploadState =
@@ -89,7 +102,37 @@ export async function completeImport(
   if (!res.response.ok || !res.data) {
     throw new Error(errorMessage(res.error, `Complete failed (${res.response.status})`))
   }
-  return { importId: res.data.import_id, sourceSha256: res.data.source_sha256 }
+  const probe = res.data.probe_result
+  return {
+    importId: res.data.import_id,
+    sourceSha256: res.data.source_sha256,
+    selectedStreamIndex: res.data.selected_stream_index ?? null,
+    audioStreams: (probe?.audio_streams ?? []).map((s) => ({
+      index: s.index,
+      codec: s.codec,
+      sampleRate: s.sample_rate,
+      channelCount: s.channel_count,
+      channelLayout: s.channel_layout ?? null,
+      language: s.language ?? null,
+      title: s.title ?? null,
+      isDefault: s.is_default,
+    })),
+  }
+}
+
+export async function selectStream(
+  importId: string,
+  streamIndex: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await client.POST('/api/v1/imports/{import_id}/select-stream', {
+    params: { path: { import_id: importId } },
+    body: { stream_index: streamIndex },
+    signal,
+  })
+  if (!res.response.ok) {
+    throw new Error(errorMessage(res.error, `Stream selection failed (${res.response.status})`))
+  }
 }
 
 export async function cancelImport(importId: string, signal?: AbortSignal): Promise<void> {

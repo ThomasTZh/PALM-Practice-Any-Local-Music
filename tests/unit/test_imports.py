@@ -1,9 +1,12 @@
-"""Tests for the M1.2 bounded local file transfer (import routes)."""
+"""Tests for the M1.2 bounded local file transfer and M1.3 probe integration."""
 
 from __future__ import annotations
 
 import hashlib
+import struct
+import subprocess
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +15,61 @@ from basseparate.app import create_app
 from basseparate.config import AppConfig, resolve_config
 
 BASE_URL = "http://127.0.0.1:8765"
+
+# A 1x1 PNG: a valid container with no audio streams.
+_PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c626001000000ffff03000006000557"
+    "bfabd40000000049454e44ae426082"
+)
+
+
+def _make_wav(pcm: bytes | None = None, sample_rate: int = 44100, channels: int = 1) -> bytes:
+    """Build a minimal valid 16-bit PCM WAV file."""
+    if pcm is None:
+        pcm = b"\x00\x00" * 4410  # 100 ms of silence
+    byte_rate = sample_rate * channels * 2
+    block_align = channels * 2
+    header = (
+        b"RIFF"
+        + struct.pack("<I", 36 + len(pcm))
+        + b"WAVE"
+        + b"fmt "
+        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, byte_rate, block_align, 16)
+        + b"data"
+        + struct.pack("<I", len(pcm))
+    )
+    return header + pcm
+
+
+def _make_multi_audio_file(tmp_path: Path) -> bytes:
+    """Build a Matroska file with two audio streams using ffmpeg."""
+    out = tmp_path / "multi.mkv"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "quiet",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=0.2",
+            "-map",
+            "0:a",
+            "-map",
+            "1:a",
+            "-c:a",
+            "pcm_s16le",
+            str(out),
+        ],
+        check=True,
+    )
+    return out.read_bytes()
 
 
 @pytest.fixture()
@@ -326,7 +384,7 @@ class TestChunkUpload:
 
     def test_chunks_rejected_after_completion(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
-        data = b"c" * 64
+        data = _make_wav(pcm=b"\x00\x00" * 32)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 32)
         done = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
@@ -347,7 +405,7 @@ class TestCompleteImport:
         self, client: TestClient, auth_headers: dict
     ) -> None:
         project_id = _make_project(client, auth_headers)
-        data = bytes(reversed(range(256))) * 333
+        data = _make_wav(pcm=bytes(reversed(range(256))) * 166)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 64 * 1024)
 
@@ -372,7 +430,7 @@ class TestCompleteImport:
 
     def test_complete_twice_rejected(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
-        data = b"e" * 32
+        data = _make_wav(pcm=b"\x00\x00" * 16)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 16)
         assert (
@@ -415,7 +473,7 @@ class TestCancelImport:
 
     def test_cancel_completed_rejected(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
-        data = b"g" * 16
+        data = _make_wav(pcm=b"\x00\x00" * 8)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 8)
         client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
@@ -543,3 +601,135 @@ class TestConcurrency:
 
         state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
         assert state["received_byte_count"] == 3000
+
+
+def _complete_upload(
+    client: TestClient,
+    auth_headers: dict,
+    project_id: str,
+    data: bytes,
+) -> tuple[str, dict]:
+    import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
+    _upload_chunks(client, auth_headers, import_id, data, 4096)
+    resp = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    return import_id, resp.json()
+
+
+class TestProbeIntegration:
+    def test_complete_single_stream_auto_selects(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        data = _make_wav()
+        import_id, body = _complete_upload(client, auth_headers, project_id, data)
+
+        assert body["state"] == "complete"
+        probe = body["probe_result"]
+        assert probe["format_name"] == "wav"
+        assert probe["byte_count"] == len(data)
+        assert probe["ffmpeg_version"]
+        assert probe["ffprobe_version"]
+        assert len(probe["audio_streams"]) == 1
+        stream = probe["audio_streams"][0]
+        assert stream["index"] == 0
+        assert stream["codec"] == "pcm_s16le"
+        assert stream["sample_rate"] == 44100
+        assert stream["channel_count"] == 1
+        assert body["selected_stream_index"] == 0
+
+        state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
+        assert state["transfer_state"] == "complete"
+        assert state["probe_result"]["format_name"] == "wav"
+        assert state["selected_stream_index"] == 0
+
+    def test_complete_multi_stream_defers_selection(
+        self, client: TestClient, auth_headers: dict, tmp_path: Path
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        data = _make_multi_audio_file(tmp_path)
+        _, body = _complete_upload(client, auth_headers, project_id, data)
+
+        probe = body["probe_result"]
+        assert len(probe["audio_streams"]) == 2
+        assert body["selected_stream_index"] is None
+
+    def test_select_stream_persists(
+        self, client: TestClient, auth_headers: dict, tmp_path: Path
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        data = _make_multi_audio_file(tmp_path)
+        import_id, _ = _complete_upload(client, auth_headers, project_id, data)
+
+        resp = client.post(
+            f"/api/v1/imports/{import_id}/select-stream",
+            json={"stream_index": 1},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["selected_stream_index"] == 1
+
+        state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
+        assert state["selected_stream_index"] == 1
+
+    def test_select_stream_invalid_index_rejected(
+        self, client: TestClient, auth_headers: dict, tmp_path: Path
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        data = _make_multi_audio_file(tmp_path)
+        import_id, _ = _complete_upload(client, auth_headers, project_id, data)
+
+        resp = client.post(
+            f"/api/v1/imports/{import_id}/select-stream",
+            json={"stream_index": 5},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "INVALID_STREAM_SELECTION"
+        assert resp.json()["error"]["details"]["available_streams"] == [0, 1]
+
+    def test_select_stream_before_complete_rejected(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        import_id = _make_import(client, auth_headers, project_id, size=1000)["import_id"]
+
+        resp = client.post(
+            f"/api/v1/imports/{import_id}/select-stream",
+            json={"stream_index": 0},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "IMPORT_STATE"
+
+    def test_complete_no_audio_stream_marks_failed(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        import_id = _make_import(client, auth_headers, project_id, size=len(_PNG_BYTES))[
+            "import_id"
+        ]
+        _upload_chunks(client, auth_headers, import_id, _PNG_BYTES, 1024)
+
+        resp = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "NO_AUDIO_STREAM"
+
+        state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
+        assert state["transfer_state"] == "failed"
+        assert state["error"] is not None
+
+    def test_complete_unsupported_sample_rate_marks_failed(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        data = _make_wav(sample_rate=4000)
+        import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
+        _upload_chunks(client, auth_headers, import_id, data, 4096)
+
+        resp = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "UNSUPPORTED_MEDIA"
+
+        state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
+        assert state["transfer_state"] == "failed"

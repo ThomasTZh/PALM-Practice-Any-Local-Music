@@ -143,6 +143,58 @@ class InsufficientDiskSpaceError(ApiError):
         )
 
 
+class NoAudioStreamError(ApiError):
+    def __init__(self, detail: str = "") -> None:
+        message = "The file contains no usable audio streams"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(
+            code="NO_AUDIO_STREAM",
+            message=message,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
+class UnsupportedMediaError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            code="UNSUPPORTED_MEDIA",
+            message=f"Unsupported media: {detail}",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
+class ProbeTimeoutError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="PROBE_TIMEOUT",
+            message="Media inspection timed out; the file may be too complex or damaged",
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+        )
+
+
+class ProbeFailedError(ApiError):
+    def __init__(self, detail: str = "") -> None:
+        message = "Media inspection failed"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(
+            code="PROBE_FAILED",
+            message=message,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+class StreamSelectionError(ApiError):
+    def __init__(self, requested: int, available: list[int]) -> None:
+        super().__init__(
+            code="INVALID_STREAM_SELECTION",
+            message=f"Audio stream {requested} is not in this file",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"requested_stream": requested, "available_streams": available},
+        )
+
+
 @dataclass(frozen=True)
 class ErrorEnvelope:
     code: str

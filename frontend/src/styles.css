@@ -370,6 +370,33 @@ button:hover:not(:disabled) {
   font-size: 0.9rem;
 }
 
+.import-stream-dialog {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.import-stream-dialog ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.import-stream-dialog button {
+  background: none;
+  color: var(--accent);
+  padding: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.import-stream-dialog button.stream-default {
+  font-weight: 600;
+}
+
 .import-progress {
   padding: 1rem 0;
 }
