@@ -64,7 +64,37 @@ class TestInitialization:
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         conn.close()
-        assert {"projects", "assets", "project_assets"} <= tables
+        assert {"projects", "assets", "project_assets", "imports", "representations"} <= tables
+
+    def test_schema_version_is_2(self, db_path: Path) -> None:
+        conn = sqlite3.connect(str(db_path))
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        conn.close()
+        assert version == 2
+
+    def test_projects_table_has_m1_columns(self, db_path: Path) -> None:
+        conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
+        conn.close()
+        assert {
+            "duration_frames",
+            "canonical_asset_id",
+            "source_stream_index",
+            "source_channel_count",
+            "source_channel_layout",
+            "decode_profile_version",
+            "waveform_status",
+            "monitoring_asset_id",
+            "source_metadata",
+        } <= columns
+        assert "duration_samples" not in columns
+
+    def test_assets_table_frame_count_column(self, db_path: Path) -> None:
+        conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(assets)")}
+        conn.close()
+        assert "audio_frame_count" in columns
+        assert "audio_sample_count" not in columns
 
 
 class TestProjectRepository:
@@ -129,7 +159,7 @@ class TestAssetRepository:
         audio = AudioMetadata(
             sample_rate=44100,
             channel_count=2,
-            sample_count=88200,
+            frame_count=88200,
             sample_format="s16le",
         )
         asset = self._make_asset(audio=audio)

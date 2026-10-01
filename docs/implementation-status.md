@@ -5,10 +5,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Current position
 
-- **Milestone:** 0 (Reproducible foundation)
-- **Gate:** F passed
-- **Work package:** M0.12 (Verification matrix + package smoke) — complete
-- **Next action:** Milestone 0 complete. Proceed to Milestone 1.
+- **Milestone:** 1 (Import, waveform, and original playback)
+- **Gate:** F passed (Milestone 0 exit gate)
+- **Work package:** M1.1 (Validate prerequisites + extend contracts) — complete
+- **Next action:** M1.2 (Bounded local file transfer: upload protocol, chunks,
+  retry, resume, cancel).
 
 ## Completed requirements (with evidence)
 
@@ -111,6 +112,42 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Remaining (Milestone 0)
 
 - None. Milestone 0 complete.
+
+## Milestone 1 progress
+
+### M1.1 — Validate prerequisites + extend contracts (complete)
+
+- Prerequisites verified green before edits: 162 py + 19 js tests, contract
+  drift check, worker probe.
+- `src/basseparate/__init__.py`: `DATABASE_SCHEMA_VERSION = 2`,
+  `PROJECT_SCHEMA_VERSION = 2` (API/worker protocol versions unchanged).
+- `domain/project.py`: renamed `duration_samples` → `duration_frames`; added
+  `WaveformStatus` (none/pending/ready), `canonical_asset_id`,
+  `monitoring_asset_id`, `source_stream_index`, `source_channel_count`,
+  `source_channel_layout`, `decode_profile_version`, `waveform_status`,
+  `source_metadata`; togetherness rule for all source fields; rate bounds
+  8k–192k Hz, channel bounds 1–8; empty status forbids source fields.
+- `domain/asset.py`: `AudioMetadata.sample_count` → `frame_count`.
+- `domain/import_record.py` (new): `TransferState` (created/uploading/
+  complete/cancelled/failed), `AudioStreamInfo`, `ProbeResult`,
+  `ImportRecord` (received ≤ declared; complete ⇒ hash + full bytes;
+  cancelled/failed ⇒ error; filename 1–512 chars, no control chars).
+- `domain/representation.py` (new): `RepresentationRole` (canonical/
+  monitoring_downmix/playback_rate), `TimeMapping`, `RepresentationProvenance`,
+  `AudioRepresentation` (M1 PCM fixed to f32le interleaved; `transform_key`
+  is a SHA-256 identity hash).
+- `storage/db.py`: migration 1→2 (column renames, new `projects` columns,
+  `imports` + `representations` tables, 3 indexes).
+- `storage/repository.py`: `SCHEMA_VERSION = 2`; `ProjectRepository` updated
+  for new columns; new `ImportRepository`, `RepresentationRepository`.
+- `pyproject.toml`: `numpy>=2.0,<3.0` (resolved 2.4.6); lock + licenses
+  regenerated (44 components).
+- Contracts regenerated (`contracts/openapi.json`, `frontend/src/api/schema.ts`);
+  drift check OK.
+- Tests: updated `test_project.py`, `test_asset.py`, `test_api.py`,
+  `test_storage_db.py`; new `test_import_record.py`, `test_representation.py`,
+  `test_repository_m1.py`. 210 py + 19 js tests pass; ruff, format, mypy,
+  typecheck, lint, build all clean.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

@@ -92,14 +92,38 @@
         "type": "object"
       },
       "ProjectRecord": {
-        "description": "A persisted working project.\n\nAn empty project has ``status == \"empty\"``, ``source_asset_id`` is null,\nand both source timing fields are null.",
+        "description": "A persisted working project.\n\nAn empty project has ``status == \"empty\"`` and all source fields\nnull. A ready project has the original-file asset, the canonical\nPCM asset, and complete source timing/channel metadata.",
         "properties": {
+          "canonical_asset_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Asset Id"
+          },
           "created_at": {
             "description": "UTC timestamp in ISO 8601 form",
             "title": "Created At",
             "type": "string"
           },
-          "duration_samples": {
+          "decode_profile_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decode Profile Version"
+          },
+          "duration_frames": {
             "anyOf": [
               {
                 "description": "Integer source sample position (never milliseconds)",
@@ -111,12 +135,25 @@
                 "type": "null"
               }
             ],
-            "title": "Duration Samples"
+            "description": "Decoded frame count of the canonical audio (authoritative)",
+            "title": "Duration Frames"
           },
           "id": {
             "description": "UUID identifier, serialized as a string",
             "title": "Id",
             "type": "string"
+          },
+          "monitoring_asset_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Asset Id"
           },
           "name": {
             "maxLength": 200,
@@ -142,10 +179,11 @@
                 "type": "null"
               }
             ],
+            "description": "Selected source stream sample rate in Hz",
             "title": "Sample Rate"
           },
           "schema_version": {
-            "default": 1,
+            "default": 2,
             "description": "Project schema version",
             "minimum": 1.0,
             "title": "Schema Version",
@@ -163,6 +201,52 @@
             ],
             "title": "Source Asset Id"
           },
+          "source_channel_count": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Channel Count"
+          },
+          "source_channel_layout": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Channel Layout"
+          },
+          "source_metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Source metadata summary (format, title, artist, ...)",
+            "title": "Source Metadata",
+            "type": "object"
+          },
+          "source_stream_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Stream Index"
+          },
           "status": {
             "$ref": "#/components/schemas/ProjectStatus",
             "default": "empty"
@@ -171,6 +255,10 @@
             "description": "UTC timestamp in ISO 8601 form",
             "title": "Updated At",
             "type": "string"
+          },
+          "waveform_status": {
+            "$ref": "#/components/schemas/WaveformStatus",
+            "default": "none"
           }
         },
         "required": [
@@ -252,6 +340,15 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WaveformStatus": {
+        "enum": [
+          "none",
+          "pending",
+          "ready"
+        ],
+        "title": "WaveformStatus",
+        "type": "string"
       }
     }
   },

@@ -39,7 +39,7 @@ class AudioMetadata(BaseModel):
 
     sample_rate: int = Field(ge=1, description="Sample rate in Hz")
     channel_count: int = Field(ge=1, description="Number of audio channels")
-    sample_count: int = Field(ge=0, description="Total sample frames")
+    frame_count: int = Field(ge=0, description="Total sample frames")
     sample_format: str = Field(
         min_length=1,
         description="Sample format identifier (e.g. 's16le', 'f32le')",

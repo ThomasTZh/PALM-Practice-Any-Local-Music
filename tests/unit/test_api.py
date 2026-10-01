@@ -83,8 +83,8 @@ class TestProjects:
         assert data["revision"] == 0
         assert data["source_asset_id"] is None
         assert data["sample_rate"] is None
-        assert data["duration_samples"] is None
-        assert data["schema_version"] == 1
+        assert data["duration_frames"] is None
+        assert data["schema_version"] == 2
         uuid.UUID(data["id"])
 
     def test_create_project_trims_name(self, client: TestClient, auth_headers: dict) -> None:
@@ -264,8 +264,11 @@ class TestContractConformance:
             "updated_at",
             "revision",
             "source_asset_id",
+            "canonical_asset_id",
             "sample_rate",
-            "duration_samples",
+            "duration_frames",
+            "source_channel_count",
+            "waveform_status",
             "status",
         }
         assert expected_fields <= set(data.keys())

@@ -1,7 +1,12 @@
-"""Project record schema (M0.4).
+"""Project record schema (M0.4, extended M1.1).
 
-An empty project is a valid, persisted state. Source timing fields
-(sample_rate, duration_samples) are present together or both null.
+An empty project is a valid, persisted state. All source fields
+(sample_rate, duration_frames, channel count/layout, stream index,
+decode profile, asset references) are present together or all null.
+
+Import-job state is deliberately separate from project source
+readiness: a project may have usable canonical audio while waveform
+generation is still running (``waveform_status == "pending"``).
 """
 
 from __future__ import annotations
@@ -18,9 +23,19 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 NameStr = str
 
+MAX_CHANNEL_COUNT = 8
+MIN_SAMPLE_RATE = 8_000
+MAX_SAMPLE_RATE = 192_000
+
 
 class ProjectStatus(StrEnum):
     EMPTY = "empty"
+    READY = "ready"
+
+
+class WaveformStatus(StrEnum):
+    NONE = "none"
+    PENDING = "pending"
     READY = "ready"
 
 
@@ -35,16 +50,12 @@ def _validate_name(name: str) -> str:
     return trimmed
 
 
-def _check_source_fields_together(sample_rate: int | None, duration_samples: int | None) -> None:
-    if (sample_rate is None) != (duration_samples is None):
-        raise ValueError("sample_rate and duration_samples must be present together or both null")
-
-
 class ProjectRecord(BaseModel):
     """A persisted working project.
 
-    An empty project has ``status == "empty"``, ``source_asset_id`` is null,
-    and both source timing fields are null.
+    An empty project has ``status == "empty"`` and all source fields
+    null. A ready project has the original-file asset, the canonical
+    PCM asset, and complete source timing/channel metadata.
     """
 
     model_config = ConfigDict(frozen=True, str_strip_whitespace=False)
@@ -59,24 +70,91 @@ class ProjectRecord(BaseModel):
     created_at: UtcTimestamp
     updated_at: UtcTimestamp
     revision: Revision = Field(default=0)
-    source_asset_id: Uuid | None = None
-    sample_rate: SampleRate | None = None
-    duration_samples: SamplePosition | None = None
     status: ProjectStatus = ProjectStatus.EMPTY
+
+    # Source readiness (all present together or all null).
+    source_asset_id: Uuid | None = None
+    canonical_asset_id: Uuid | None = None
+    monitoring_asset_id: Uuid | None = None
+    source_stream_index: int | None = Field(default=None, ge=0)
+    sample_rate: SampleRate | None = Field(
+        default=None,
+        description="Selected source stream sample rate in Hz",
+    )
+    duration_frames: SamplePosition | None = Field(
+        default=None,
+        description="Decoded frame count of the canonical audio (authoritative)",
+    )
+    source_channel_count: int | None = Field(default=None, ge=1, le=MAX_CHANNEL_COUNT)
+    source_channel_layout: str | None = Field(default=None, min_length=1, max_length=64)
+    decode_profile_version: int | None = Field(default=None, ge=1)
+    waveform_status: WaveformStatus = WaveformStatus.NONE
+    source_metadata: dict[str, str] = Field(
+        default_factory=dict,
+        description="Source metadata summary (format, title, artist, ...)",
+    )
 
     @field_validator("name", mode="before")
     @classmethod
     def _trim_and_validate_name(cls, v: str) -> str:
         return _validate_name(v)
 
-    @field_validator("status", mode="before")
-    @classmethod
-    def _status_matches_source_fields(cls, v: str, info: object) -> str:
-        return v
-
     def model_post_init(self, __context: object) -> None:
-        _check_source_fields_together(self.sample_rate, self.duration_samples)
+        self._check_source_fields_together()
+        self._check_status_consistency()
+        self._check_sample_rate_bounds()
+
+    def _check_source_fields_together(self) -> None:
+        optional_source_fields: tuple[object, ...] = (
+            self.source_asset_id,
+            self.canonical_asset_id,
+            self.source_stream_index,
+            self.sample_rate,
+            self.duration_frames,
+            self.source_channel_count,
+            self.source_channel_layout,
+            self.decode_profile_version,
+        )
+        present = [f is not None for f in optional_source_fields]
+        if any(present) and not all(present):
+            missing = [
+                name
+                for name, value in zip(
+                    (
+                        "source_asset_id",
+                        "canonical_asset_id",
+                        "source_stream_index",
+                        "sample_rate",
+                        "duration_frames",
+                        "source_channel_count",
+                        "source_channel_layout",
+                        "decode_profile_version",
+                    ),
+                    optional_source_fields,
+                    strict=True,
+                )
+                if value is None
+            ]
+            raise ValueError(
+                "all source fields must be present together or all null; missing: "
+                + ", ".join(missing)
+            )
+        if self.monitoring_asset_id is not None and self.canonical_asset_id is None:
+            raise ValueError("monitoring_asset_id requires canonical_asset_id")
+        if self.waveform_status != WaveformStatus.NONE and self.canonical_asset_id is None:
+            raise ValueError("waveform_status requires canonical_asset_id")
+
+    def _check_status_consistency(self) -> None:
         if self.status == ProjectStatus.READY and self.source_asset_id is None:
-            raise ValueError("a ready project must have a source_asset_id")
+            raise ValueError("a ready project must have source and canonical assets")
         if self.status == ProjectStatus.EMPTY and self.source_asset_id is not None:
-            raise ValueError("an empty project must not have a source_asset_id")
+            raise ValueError("an empty project must not have source fields")
+
+    def _check_sample_rate_bounds(self) -> None:
+        if self.sample_rate is not None and not (
+            MIN_SAMPLE_RATE <= self.sample_rate <= MAX_SAMPLE_RATE
+        ):
+            raise ValueError(
+                f"source sample rate {self.sample_rate} Hz is outside the supported "
+                f"range {MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz"
+            )

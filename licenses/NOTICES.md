@@ -1,6 +1,6 @@
 # basseparate — Dependency Notices
 
-Generated: 2026-09-30T20:07:33.541000+00:00
+Generated: 2026-10-01T19:42:13.379994+00:00
 
 Milestone 0 bundles **no model weights**.
 The application itself is **private and unpublished**.
@@ -26,6 +26,7 @@ The application itself is **private and unpublished**.
 | librt | 0.16.0 | MIT | transitive |
 | mypy | 2.3.1 | MIT | direct |
 | mypy-extensions | 1.1.0 | MIT | transitive |
+| numpy | 2.4.6 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | direct |
 | opentelemetry-api | 1.45.0 | Apache-2.0 | transitive |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | transitive |
 | pathspec | 1.1.1 | unresolved | transitive |

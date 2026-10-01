@@ -151,22 +151,32 @@ export interface components {
          * ProjectRecord
          * @description A persisted working project.
          *
-         *     An empty project has ``status == "empty"``, ``source_asset_id`` is null,
-         *     and both source timing fields are null.
+         *     An empty project has ``status == "empty"`` and all source fields
+         *     null. A ready project has the original-file asset, the canonical
+         *     PCM asset, and complete source timing/channel metadata.
          */
         ProjectRecord: {
+            /** Canonical Asset Id */
+            canonical_asset_id?: string | null;
             /**
              * Created At
              * @description UTC timestamp in ISO 8601 form
              */
             created_at: string;
-            /** Duration Samples */
-            duration_samples?: number | null;
+            /** Decode Profile Version */
+            decode_profile_version?: number | null;
+            /**
+             * Duration Frames
+             * @description Decoded frame count of the canonical audio (authoritative)
+             */
+            duration_frames?: number | null;
             /**
              * Id
              * @description UUID identifier, serialized as a string
              */
             id: string;
+            /** Monitoring Asset Id */
+            monitoring_asset_id?: string | null;
             /** Name */
             name: string;
             /**
@@ -175,16 +185,32 @@ export interface components {
              * @default 0
              */
             revision: number;
-            /** Sample Rate */
+            /**
+             * Sample Rate
+             * @description Selected source stream sample rate in Hz
+             */
             sample_rate?: number | null;
             /**
              * Schema Version
              * @description Project schema version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             /** Source Asset Id */
             source_asset_id?: string | null;
+            /** Source Channel Count */
+            source_channel_count?: number | null;
+            /** Source Channel Layout */
+            source_channel_layout?: string | null;
+            /**
+             * Source Metadata
+             * @description Source metadata summary (format, title, artist, ...)
+             */
+            source_metadata?: {
+                [key: string]: string;
+            };
+            /** Source Stream Index */
+            source_stream_index?: number | null;
             /** @default empty */
             status: components["schemas"]["ProjectStatus"];
             /**
@@ -192,6 +218,8 @@ export interface components {
              * @description UTC timestamp in ISO 8601 form
              */
             updated_at: string;
+            /** @default none */
+            waveform_status: components["schemas"]["WaveformStatus"];
         };
         /**
          * ProjectStatus
@@ -220,6 +248,11 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * WaveformStatus
+         * @enum {string}
+         */
+        WaveformStatus: "none" | "pending" | "ready";
     };
     responses: never;
     parameters: never;

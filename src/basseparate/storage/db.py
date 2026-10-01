@@ -113,6 +113,77 @@ def _migration_0_to_1(conn: sqlite3.Connection) -> None:
 
 register_migration(1, _migration_0_to_1)
 
+_MIGRATION_2_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE projects RENAME COLUMN duration_samples TO duration_frames",
+    """
+    ALTER TABLE projects ADD COLUMN canonical_asset_id TEXT
+    """,
+    "ALTER TABLE projects ADD COLUMN source_stream_index INTEGER",
+    "ALTER TABLE projects ADD COLUMN source_channel_count INTEGER",
+    "ALTER TABLE projects ADD COLUMN source_channel_layout TEXT",
+    "ALTER TABLE projects ADD COLUMN decode_profile_version INTEGER",
+    """
+    ALTER TABLE projects ADD COLUMN waveform_status TEXT NOT NULL DEFAULT 'none'
+        CHECK (waveform_status IN ('none', 'pending', 'ready'))
+    """,
+    "ALTER TABLE projects ADD COLUMN monitoring_asset_id TEXT",
+    "ALTER TABLE projects ADD COLUMN source_metadata TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE assets RENAME COLUMN audio_sample_count TO audio_frame_count",
+    """
+    CREATE TABLE IF NOT EXISTS imports (
+        id                   TEXT PRIMARY KEY,
+        project_id           TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        filename             TEXT NOT NULL,
+        declared_byte_count  INTEGER NOT NULL,
+        received_byte_count  INTEGER NOT NULL DEFAULT 0,
+        source_sha256        TEXT,
+        transfer_state       TEXT NOT NULL DEFAULT 'created'
+                             CHECK (transfer_state IN
+                                    ('created', 'uploading', 'complete',
+                                     'cancelled', 'failed')),
+        probe_result         TEXT,
+        selected_stream_index INTEGER,
+        job_ids              TEXT NOT NULL DEFAULT '[]',
+        error                TEXT,
+        created_at           TEXT NOT NULL,
+        updated_at           TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS representations (
+        asset_id          TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+        parent_asset_id   TEXT REFERENCES assets(id) ON DELETE SET NULL,
+        role              TEXT NOT NULL
+                          CHECK (role IN ('canonical', 'monitoring_downmix',
+                                          'playback_rate')),
+        sample_rate       INTEGER NOT NULL,
+        channel_count     INTEGER NOT NULL,
+        channel_layout    TEXT,
+        frame_count       INTEGER NOT NULL,
+        encoding          TEXT NOT NULL DEFAULT 'f32le',
+        interleaving      TEXT NOT NULL DEFAULT 'interleaved',
+        transform_key     TEXT NOT NULL,
+        project_rate      INTEGER NOT NULL,
+        representation_rate INTEGER NOT NULL,
+        tool              TEXT NOT NULL,
+        tool_version      TEXT NOT NULL,
+        profile_version   INTEGER NOT NULL,
+        created_at        TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_imports_project ON imports(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_representations_parent ON representations(parent_asset_id)",
+    "CREATE INDEX IF NOT EXISTS idx_representations_role ON representations(role)",
+)
+
+
+def _migration_1_to_2(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_2_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(2, _migration_1_to_2)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
@@ -146,9 +217,7 @@ def initialize_database(db_path: Path) -> None:
         conn.close()
 
 
-def _apply_migrations(
-    conn: sqlite3.Connection, from_version: int, to_version: int
-) -> None:
+def _apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
     for target in range(from_version + 1, to_version + 1):
         migration = _MIGRATIONS.get(target)
         if migration is None:

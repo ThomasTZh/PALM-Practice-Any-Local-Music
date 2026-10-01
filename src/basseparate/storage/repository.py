@@ -1,4 +1,4 @@
-"""Repository layer for projects and assets (M0.5).
+"""Repository layer for projects, assets, imports, representations (M0.5/M1.1).
 
 Creates connections within each operation. Returns immutable domain
 records. Uses parameterized SQL throughout.
@@ -6,16 +6,29 @@ records. Uses parameterized SQL throughout.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from basseparate.domain.asset import AssetRecord, AssetRole
-from basseparate.domain.project import ProjectRecord, ProjectStatus
+from basseparate.domain.import_record import (
+    AudioStreamInfo,
+    ImportRecord,
+    ProbeResult,
+    TransferState,
+)
+from basseparate.domain.project import ProjectRecord, ProjectStatus, WaveformStatus
+from basseparate.domain.representation import (
+    AudioRepresentation,
+    RepresentationProvenance,
+    RepresentationRole,
+    TimeMapping,
+)
 from basseparate.storage.db import DatabaseError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _open(db_path: Path) -> sqlite3.Connection:
@@ -26,6 +39,10 @@ def _open(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
 def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
     return ProjectRecord(
         schema_version=row["schema_version"],
@@ -34,10 +51,74 @@ def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         revision=row["revision"],
-        source_asset_id=uuid.UUID(row["source_asset_id"]) if row["source_asset_id"] else None,
-        sample_rate=row["sample_rate"],
-        duration_samples=row["duration_samples"],
         status=ProjectStatus(row["status"]),
+        source_asset_id=uuid.UUID(row["source_asset_id"]) if row["source_asset_id"] else None,
+        canonical_asset_id=(
+            uuid.UUID(row["canonical_asset_id"]) if row["canonical_asset_id"] else None
+        ),
+        monitoring_asset_id=(
+            uuid.UUID(row["monitoring_asset_id"]) if row["monitoring_asset_id"] else None
+        ),
+        source_stream_index=row["source_stream_index"],
+        sample_rate=row["sample_rate"],
+        duration_frames=row["duration_frames"],
+        source_channel_count=row["source_channel_count"],
+        source_channel_layout=row["source_channel_layout"],
+        decode_profile_version=row["decode_profile_version"],
+        waveform_status=WaveformStatus(row["waveform_status"]),
+        source_metadata=json.loads(row["source_metadata"]),
+    )
+
+
+def _row_to_probe_result(value: str | None) -> ProbeResult | None:
+    if value is None:
+        return None
+    data = json.loads(value)
+    streams = tuple(AudioStreamInfo(**s) for s in data.pop("audio_streams"))
+    return ProbeResult(audio_streams=streams, **data)
+
+
+def _row_to_import(row: sqlite3.Row) -> ImportRecord:
+    return ImportRecord(
+        id=uuid.UUID(row["id"]),
+        project_id=uuid.UUID(row["project_id"]),
+        filename=row["filename"],
+        declared_byte_count=row["declared_byte_count"],
+        received_byte_count=row["received_byte_count"],
+        source_sha256=row["source_sha256"],
+        transfer_state=TransferState(row["transfer_state"]),
+        probe_result=_row_to_probe_result(row["probe_result"]),
+        selected_stream_index=row["selected_stream_index"],
+        job_ids=tuple(uuid.UUID(j) for j in json.loads(row["job_ids"])),
+        error=row["error"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_representation(row: sqlite3.Row) -> AudioRepresentation:
+    return AudioRepresentation(
+        asset_id=uuid.UUID(row["asset_id"]),
+        parent_asset_id=(uuid.UUID(row["parent_asset_id"]) if row["parent_asset_id"] else None),
+        role=RepresentationRole(row["role"]),
+        sample_rate=row["sample_rate"],
+        channel_count=row["channel_count"],
+        channel_layout=row["channel_layout"],
+        frame_count=row["frame_count"],
+        encoding=row["encoding"],
+        interleaving=row["interleaving"],
+        content_hash=row["content_hash"],
+        transform_key=row["transform_key"],
+        time_mapping=TimeMapping(
+            project_rate=row["project_rate"],
+            representation_rate=row["representation_rate"],
+        ),
+        provenance=RepresentationProvenance(
+            tool=row["tool"],
+            tool_version=row["tool_version"],
+            profile_version=row["profile_version"],
+            created_at=row["created_at"],
+        ),
     )
 
 
@@ -52,14 +133,14 @@ class ProjectRepository:
         self._db_path = db_path
 
     def create_project(self, name: str) -> ProjectRecord:
-        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        now = _now()
         project_id = str(uuid.uuid4())
         conn = _open(self._db_path)
         try:
             conn.execute(
                 """
                 INSERT INTO projects (id, name, created_at, updated_at, revision,
-                                      source_asset_id, sample_rate, duration_samples,
+                                      source_asset_id, sample_rate, duration_frames,
                                       status, schema_version)
                 VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL, 'empty', ?)
                 """,
@@ -78,9 +159,7 @@ class ProjectRepository:
     def get_project(self, project_id: uuid.UUID) -> ProjectRecord | None:
         conn = _open(self._db_path)
         try:
-            row = conn.execute(
-                "SELECT * FROM projects WHERE id = ?", (str(project_id),)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (str(project_id),)).fetchone()
             return _row_to_project(row) if row else None
         finally:
             conn.close()
@@ -88,9 +167,7 @@ class ProjectRepository:
     def list_projects(self) -> list[ProjectRecord]:
         conn = _open(self._db_path)
         try:
-            rows = conn.execute(
-                "SELECT * FROM projects ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
             return [_row_to_project(r) for r in rows]
         finally:
             conn.close()
@@ -104,7 +181,7 @@ class ProjectRepository:
                 INSERT INTO assets (id, content_hash, role, relative_path,
                                     media_type, byte_count, created_at,
                                     audio_sample_rate, audio_channel_count,
-                                    audio_sample_count, audio_sample_format,
+                                    audio_frame_count, audio_sample_format,
                                     revision)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -118,7 +195,7 @@ class ProjectRepository:
                     asset.created_at.isoformat().replace("+00:00", "Z"),
                     audio.sample_rate if audio else None,
                     audio.channel_count if audio else None,
-                    audio.sample_count if audio else None,
+                    audio.frame_count if audio else None,
                     audio.sample_format if audio else None,
                     asset.revision,
                 ),
@@ -129,9 +206,7 @@ class ProjectRepository:
         finally:
             conn.close()
 
-    def attach_asset(
-        self, project_id: uuid.UUID, asset_id: uuid.UUID, role: AssetRole
-    ) -> None:
+    def attach_asset(self, project_id: uuid.UUID, asset_id: uuid.UUID, role: AssetRole) -> None:
         conn = _open(self._db_path)
         try:
             conn.execute(
@@ -144,5 +219,237 @@ class ProjectRepository:
             conn.execute("COMMIT")
         except sqlite3.IntegrityError as exc:
             raise DatabaseError(f"cannot attach asset: {exc}") from exc
+        finally:
+            conn.close()
+
+
+class ImportRepository:
+    """Synchronous repository for import sessions."""
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    def create_import(
+        self,
+        project_id: uuid.UUID,
+        filename: str,
+        declared_byte_count: int,
+    ) -> ImportRecord:
+        now = _now()
+        import_id = str(uuid.uuid4())
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO imports (id, project_id, filename, declared_byte_count,
+                                     received_byte_count, transfer_state,
+                                     job_ids, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 0, 'created', '[]', ?, ?)
+                """,
+                (import_id, str(project_id), filename, declared_byte_count, now, now),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create import: {exc}") from exc
+        finally:
+            conn.close()
+
+        record = self.get_import(uuid.UUID(import_id))
+        assert record is not None
+        return record
+
+    def get_import(self, import_id: uuid.UUID) -> ImportRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute("SELECT * FROM imports WHERE id = ?", (str(import_id),)).fetchone()
+            return _row_to_import(row) if row else None
+        finally:
+            conn.close()
+
+    def list_imports_for_project(self, project_id: uuid.UUID) -> list[ImportRecord]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT * FROM imports WHERE project_id = ? ORDER BY created_at DESC",
+                (str(project_id),),
+            ).fetchall()
+            return [_row_to_import(r) for r in rows]
+        finally:
+            conn.close()
+
+    def update_transfer_state(
+        self,
+        import_id: uuid.UUID,
+        state: TransferState,
+        received_byte_count: int | None = None,
+        source_sha256: str | None = None,
+        error: str | None = None,
+    ) -> ImportRecord:
+        conn = _open(self._db_path)
+        try:
+            sets = ["transfer_state = ?", "updated_at = ?"]
+            params: list[object] = [state.value, _now()]
+            if received_byte_count is not None:
+                sets.append("received_byte_count = ?")
+                params.append(received_byte_count)
+            if source_sha256 is not None:
+                sets.append("source_sha256 = ?")
+                params.append(source_sha256)
+            if error is not None:
+                sets.append("error = ?")
+                params.append(error)
+            params.append(str(import_id))
+            cur = conn.execute(f"UPDATE imports SET {', '.join(sets)} WHERE id = ?", params)
+            if cur.rowcount != 1:
+                raise DatabaseError(f"import {import_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_import(import_id)
+        assert record is not None
+        return record
+
+    def set_probe_result(self, import_id: uuid.UUID, probe: ProbeResult) -> ImportRecord:
+        payload = {
+            "format_name": probe.format_name,
+            "estimated_duration_seconds": probe.estimated_duration_seconds,
+            "byte_count": probe.byte_count,
+            "title": probe.title,
+            "artist": probe.artist,
+            "ffmpeg_version": probe.ffmpeg_version,
+            "ffprobe_version": probe.ffprobe_version,
+            "audio_streams": [s.model_dump() for s in probe.audio_streams],
+        }
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                "UPDATE imports SET probe_result = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(payload), _now(), str(import_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"import {import_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_import(import_id)
+        assert record is not None
+        return record
+
+    def set_selected_stream(self, import_id: uuid.UUID, stream_index: int) -> ImportRecord:
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                "UPDATE imports SET selected_stream_index = ?, updated_at = ? WHERE id = ?",
+                (stream_index, _now(), str(import_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"import {import_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_import(import_id)
+        assert record is not None
+        return record
+
+    def add_job_id(self, import_id: uuid.UUID, job_id: uuid.UUID) -> ImportRecord:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT job_ids FROM imports WHERE id = ?", (str(import_id),)
+            ).fetchone()
+            if row is None:
+                raise DatabaseError(f"import {import_id} not found")
+            jobs: list[str] = json.loads(row["job_ids"])
+            jobs.append(str(job_id))
+            conn.execute(
+                "UPDATE imports SET job_ids = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(jobs), _now(), str(import_id)),
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_import(import_id)
+        assert record is not None
+        return record
+
+
+class RepresentationRepository:
+    """Synchronous repository for audio representation metadata."""
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    def register_representation(self, representation: AudioRepresentation) -> None:
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO representations (asset_id, parent_asset_id, role,
+                                             sample_rate, channel_count,
+                                             channel_layout, frame_count,
+                                             encoding, interleaving,
+                                             transform_key, project_rate,
+                                             representation_rate, tool,
+                                             tool_version, profile_version,
+                                             created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(representation.asset_id),
+                    str(representation.parent_asset_id) if representation.parent_asset_id else None,
+                    representation.role.value,
+                    representation.sample_rate,
+                    representation.channel_count,
+                    representation.channel_layout,
+                    representation.frame_count,
+                    representation.encoding,
+                    representation.interleaving,
+                    representation.transform_key,
+                    representation.time_mapping.project_rate,
+                    representation.time_mapping.representation_rate,
+                    representation.provenance.tool,
+                    representation.provenance.tool_version,
+                    representation.provenance.profile_version,
+                    representation.provenance.created_at.isoformat().replace("+00:00", "Z"),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot register representation: {exc}") from exc
+        finally:
+            conn.close()
+
+    def get_representation(self, asset_id: uuid.UUID) -> AudioRepresentation | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT r.*, a.content_hash FROM representations r
+                JOIN assets a ON a.id = r.asset_id
+                WHERE r.asset_id = ?
+                """,
+                (str(asset_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            return _row_to_representation(row)
+        finally:
+            conn.close()
+
+    def list_representations_for_asset(
+        self, parent_asset_id: uuid.UUID
+    ) -> list[AudioRepresentation]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT r.*, a.content_hash FROM representations r
+                JOIN assets a ON a.id = r.asset_id
+                WHERE r.parent_asset_id = ?
+                ORDER BY r.created_at
+                """,
+                (str(parent_asset_id),),
+            ).fetchall()
+            return [_row_to_representation(row) for row in rows]
         finally:
             conn.close()

@@ -45,7 +45,7 @@ def test_asset_with_audio_metadata() -> None:
     audio = AudioMetadata(
         sample_rate=48000,
         channel_count=2,
-        sample_count=96_000,
+        frame_count=96_000,
         sample_format="s16le",
     )
     a = _make_asset(audio=audio)

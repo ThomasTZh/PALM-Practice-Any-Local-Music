@@ -475,14 +475,10 @@ class TestLifecycleGaps:
                 time.sleep(0.5)
             if proc.poll() is not None:
                 stderr = proc.stderr.read().decode()
-                pytest.fail(
-                    f"backend exited with code {proc.returncode}: {stderr[-500:]}"
-                )
+                pytest.fail(f"backend exited with code {proc.returncode}: {stderr[-500:]}")
             import urllib.request
 
-            resp = urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/api/v1/health", timeout=5
-            )
+            resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=5)
             assert resp.status == 200
             proc.send_signal(signal.SIGTERM)
             proc.wait(timeout=10)
