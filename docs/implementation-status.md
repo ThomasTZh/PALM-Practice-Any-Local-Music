@@ -7,10 +7,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate)
-- **Work package:** M1.3 (ffprobe inspection, audio-stream selection) — complete
-- **Last commit:** `17d68f5` — M1.3 (ffprobe inspection, audio-stream selection)
-- **Next action:** M1.4 (attach imported source to project) per
-  `projectPlans/milestone1.md`.
+- **Work package:** M1.4 (durable media jobs) — started, research phase
+- **Last commit:** `2ad3462` — ledger hash fix; `17d68f5` — M1.3 (ffprobe, stream selection)
+- **Next action:** M1.4 (durable media jobs) per `projectPlans/milestone1.md` §6.
+  Research done (see M1.4 note below); no M1.4 code written yet. Working tree clean.
 
 ## Completed requirements (with evidence)
 
@@ -228,6 +228,66 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - `pnpm run lint`: clean
 - `pnpm run test`: 19 passed
 - `pnpm run build`: clean
+
+### M1.4 — Durable media jobs (started; research only, no code yet)
+
+Spec: `projectPlans/milestone1.md` §6 (lines 384–473). Gate B covers M1.4–M1.6.
+
+**Scope (from spec):**
+- Worker protocol v2: add `run`, `progress`, `completed`, `failed`, `cancel`,
+  `cancelled` messages. Keep version negotiation explicit.
+- Job types (no model jobs yet): probe, canonical decode, monitoring downmix,
+  playback-rate conversion, waveform generation.
+- Durable states: `queued → running → completed | failed | cancelling → cancelled`.
+  On restart: `queued` stays queued; `running`/`cancelling` → `interrupted`;
+  interrupted ops restart from a safe boundary; completed assets stay reusable.
+- Ownership: backend owns SQLite writes; workers get validated paths/params,
+  write only to assigned staging, emit progress + result metadata; backend
+  verifies + publishes; workers never attach an asset to a project.
+- Scheduling: 1 media job at a time; API/playback stay responsive; bound
+  FFmpeg/numeric threads to 4; CPU-heavy waveform work outside the API process;
+  playback prep > optional cache rebuild; don't cancel a shared job because one
+  tab closed.
+- Progress stages: transferring, verifying, inspecting, decoding,
+  preparing playback, building waveform, ready. Determinate % only with a real
+  denominator; else processed time/bytes + indeterminate.
+- Cancellation: set state → notify worker → graceful FFmpeg terminate → wait
+  ≤5 s → force kill → reap both subprocesses → remove incomplete staging →
+  retain committed source for retry → never publish partial PCM.
+- **Acceptance:** a failed/cancelled job cannot corrupt a prior completed asset.
+
+**Existing infrastructure to build on (read, not modified):**
+- `worker/protocol.py`: v1 envelope (`WORKER_PROTOCOL_VERSION=1` in
+  `basseparate/__init__.py`), discriminated `WorkerMsg` union, `decode_message`,
+  `make_*` builders, 1 MiB limit. Add v2 message types + bump to 2 (negotiation).
+- `worker/supervisor.py`: `WorkerSupervisor` (spawn, concurrent readers,
+  handshake, ping, shutdown w/ terminate→kill, reap), `probe_command()`.
+- `worker/probe_worker.py`: reference worker main-loop pattern (read stdin line,
+  size-check, decode, version-check, `_handle` → exit code).
+- `storage/db.py`: `register_migration(target, fn)`; current
+  `DATABASE_SCHEMA_VERSION=2`. M1.4 needs migration 2→3 (a `media_jobs` table).
+- `storage/repository.py`: per-op connection pattern (`_open`, `_now`),
+  `ImportRepository.add_job_id` already links import→job ids.
+- `domain/import_record.py`: `ImportRecord.job_ids` already present.
+- `api/app.py`: `create_app` lifespan wires repos into `app.state`; add a
+  `JobManager`/`JobRepository` there. `api/import_routes.py` is the model for
+  route + `app.state` accessor helpers.
+- `api/errors.py`: `ApiError` hierarchy for new job errors.
+
+**Planned approach (not started):**
+1. Bump `WORKER_PROTOCOL_VERSION` → 2; add v2 protocol messages (run/progress/
+   completed/failed/cancel/cancelled) with explicit negotiation.
+2. `domain/media_job.py`: `JobType`, `JobState`, `MediaJob` record.
+3. `storage/db.py` migration 2→3: `media_jobs` table + index.
+4. `storage/repository.py`: `JobRepository` (create/get/list, state transitions,
+   progress, restart-on-recovery → `interrupted`).
+5. `jobs/` package: `JobManager` (single active job, queue, thread cap=4,
+   cancel w/ subprocess cleanup) + a v2 media worker.
+6. `api/job_routes.py`: get job, list project jobs, cancel job; wire into app.
+7. Tests: protocol v2, job state machine, recovery-on-restart, cancellation
+   cleanup, no-partial-publish acceptance.
+
+**Blocked:** none.
 
 ### M1.1 — Validate prerequisites + extend contracts (complete)
 
