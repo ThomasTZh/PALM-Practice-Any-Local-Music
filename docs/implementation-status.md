@@ -8,7 +8,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate)
 - **Work package:** M1.3 (ffprobe inspection, audio-stream selection) — complete
-- **Last commit:** M1.3 commit (see git log; follows `ef005a7`)
+- **Last commit:** `17d68f5` — M1.3 (ffprobe inspection, audio-stream selection)
 - **Next action:** M1.4 (attach imported source to project) per
   `projectPlans/milestone1.md`.
 
