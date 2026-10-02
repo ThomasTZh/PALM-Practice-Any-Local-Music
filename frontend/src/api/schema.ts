@@ -123,6 +123,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_v1_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_api_v1_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models": {
         parameters: {
             query?: never;
@@ -203,6 +237,24 @@ export interface paths {
         get: operations["list_project_imports_api_v1_projects__project_id__imports_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Project Jobs */
+        get: operations["list_project_jobs_api_v1_projects__project_id__jobs_get"];
+        put?: never;
+        /** Create Job */
+        post: operations["create_job_api_v1_projects__project_id__jobs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -330,6 +382,15 @@ export interface components {
             /** State */
             state: string;
         };
+        /** CreateJobRequest */
+        CreateJobRequest: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            job_type: components["schemas"]["JobType"];
+        };
         /** CreateProjectRequest */
         CreateProjectRequest: {
             /** Name */
@@ -395,6 +456,76 @@ export interface components {
             source_sha256?: string | null;
             /** @default created */
             transfer_state: components["schemas"]["TransferState"];
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
+        };
+        /** JobListResponse */
+        JobListResponse: {
+            /** Jobs */
+            jobs: components["schemas"]["MediaJob"][];
+        };
+        /**
+         * JobStage
+         * @description Progress stages reported by workers (milestone1.md §6.6).
+         * @enum {string}
+         */
+        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "building_waveform" | "ready";
+        /**
+         * JobState
+         * @enum {string}
+         */
+        JobState: "queued" | "running" | "completed" | "failed" | "cancelling" | "cancelled" | "interrupted";
+        /**
+         * JobType
+         * @enum {string}
+         */
+        JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform";
+        /**
+         * MediaJob
+         * @description One durable media-processing job.
+         */
+        MediaJob: {
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            /** Error */
+            error?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** Import Id */
+            import_id?: string | null;
+            job_type: components["schemas"]["JobType"];
+            /**
+             * Max Threads
+             * @default 4
+             */
+            max_threads: number;
+            /** Progress Detail */
+            progress_detail?: string | null;
+            /** Progress Fraction */
+            progress_fraction?: number | null;
+            /**
+             * Project Id
+             * @description UUID identifier, serialized as a string
+             */
+            project_id: string;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            stage?: components["schemas"]["JobStage"] | null;
+            /** @default queued */
+            state: components["schemas"]["JobState"];
             /**
              * Updated At
              * @description UTC timestamp in ISO 8601 form
@@ -784,6 +915,68 @@ export interface operations {
             };
         };
     };
+    get_job_api_v1_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_v1_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_models_api_v1_models_get: {
         parameters: {
             query?: never;
@@ -926,6 +1119,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_jobs_api_v1_projects__project_id__jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_job_api_v1_projects__project_id__jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaJob"];
                 };
             };
             /** @description Validation Error */

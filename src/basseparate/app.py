@@ -19,6 +19,7 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import cast
 
 from fastapi import FastAPI, Request
 from starlette.staticfiles import StaticFiles
@@ -27,12 +28,15 @@ from basseparate import API_VERSION
 from basseparate.api.errors import ApiError, create_error_response
 from basseparate.api.idempotency import IdempotencyStore
 from basseparate.api.import_routes import router as import_router
+from basseparate.api.job_routes import router as job_router
 from basseparate.api.middleware import RequestTracingMiddleware
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
+from basseparate.jobs import JobManager, build_import_publisher
 from basseparate.storage import (
     ImportRepository,
+    JobRepository,
     ProjectRepository,
     initialize_database,
     initialize_storage_paths,
@@ -85,13 +89,23 @@ def create_app(config: AppConfig) -> FastAPI:
         )
         app.state.idempotency_store = IdempotencyStore()
         app.state.session_token = session_token
+        app.state.job_repository = JobRepository(paths.database_path)
+        app.state.job_manager = JobManager(
+            repository=cast(JobRepository, app.state.job_repository),
+            staging_root=paths.runtime / "jobs",
+            source_path_for=app.state.upload_manager.part_path_for,
+            publisher=build_import_publisher(cast(ImportRepository, app.state.import_repository)),
+        )
         app.state.ready = True
         log.info("basseparate service ready (api v%d)", API_VERSION)
+
+        await app.state.job_manager.start()
 
         yield
 
         # --- Shutdown ---
         app.state.ready = False
+        await app.state.job_manager.stop()
         app.state.idempotency_store.clear()
         log.info("basseparate service stopped")
 
@@ -117,6 +131,7 @@ def create_app(config: AppConfig) -> FastAPI:
     # Routes.
     app.include_router(router)
     app.include_router(import_router)
+    app.include_router(job_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

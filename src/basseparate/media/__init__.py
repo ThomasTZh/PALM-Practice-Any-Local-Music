@@ -3,6 +3,7 @@
 from basseparate.media.probe import (
     DEFAULT_PROBE_TIMEOUT_SECONDS,
     NoAudioStreamError,
+    ProbeCancelledError,
     ProbeError,
     ProbeFailedError,
     ProbeTimeoutError,
@@ -14,6 +15,7 @@ from basseparate.media.probe import (
 __all__ = [
     "DEFAULT_PROBE_TIMEOUT_SECONDS",
     "NoAudioStreamError",
+    "ProbeCancelledError",
     "ProbeError",
     "ProbeFailedError",
     "ProbeTimeoutError",

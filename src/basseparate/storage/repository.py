@@ -1,4 +1,5 @@
-"""Repository layer for projects, assets, imports, representations (M0.5/M1.1).
+"""Repository layer for projects, assets, imports, representations, jobs
+(M0.5/M1.1/M1.4).
 
 Creates connections within each operation. Returns immutable domain
 records. Uses parameterized SQL throughout.
@@ -11,13 +12,22 @@ import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.asset import AssetRecord, AssetRole
 from basseparate.domain.import_record import (
     AudioStreamInfo,
     ImportRecord,
     ProbeResult,
     TransferState,
+)
+from basseparate.domain.media_job import (
+    JobStage,
+    JobState,
+    JobType,
+    MediaJob,
+    assert_transition,
 )
 from basseparate.domain.project import ProjectRecord, ProjectStatus, WaveformStatus
 from basseparate.domain.representation import (
@@ -27,8 +37,6 @@ from basseparate.domain.representation import (
     TimeMapping,
 )
 from basseparate.storage.db import DatabaseError
-
-SCHEMA_VERSION = 2
 
 
 def _open(db_path: Path) -> sqlite3.Connection:
@@ -122,6 +130,25 @@ def _row_to_representation(row: sqlite3.Row) -> AudioRepresentation:
     )
 
 
+def _row_to_job(row: sqlite3.Row) -> MediaJob:
+    return MediaJob(
+        id=uuid.UUID(row["id"]),
+        project_id=uuid.UUID(row["project_id"]),
+        import_id=uuid.UUID(row["import_id"]) if row["import_id"] else None,
+        job_type=JobType(row["job_type"]),
+        state=JobState(row["state"]),
+        stage=JobStage(row["stage"]) if row["stage"] else None,
+        progress_fraction=row["progress_fraction"],
+        progress_detail=row["progress_detail"],
+        result=json.loads(row["result"]) if row["result"] else None,
+        error_code=row["error_code"],
+        error=row["error"],
+        max_threads=row["max_threads"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 class ProjectRepository:
     """Synchronous repository for project and asset operations.
 
@@ -144,7 +171,7 @@ class ProjectRepository:
                                       status, schema_version)
                 VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL, 'empty', ?)
                 """,
-                (project_id, name.strip(), now, now, SCHEMA_VERSION),
+                (project_id, name.strip(), now, now, PROJECT_SCHEMA_VERSION),
             )
             conn.execute("COMMIT")
         except sqlite3.IntegrityError as exc:
@@ -371,6 +398,199 @@ class ImportRepository:
         record = self.get_import(import_id)
         assert record is not None
         return record
+
+
+class JobRepository:
+    """Synchronous repository for durable media jobs (M1.4).
+
+    The backend owns every job state write. State transitions are
+    validated against the job state machine; invalid transitions raise
+    ``InvalidJobTransition``.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    def create_job(
+        self,
+        project_id: uuid.UUID,
+        job_type: JobType,
+        import_id: uuid.UUID | None = None,
+        max_threads: int = 4,
+    ) -> MediaJob:
+        now = _now()
+        job_id = str(uuid.uuid4())
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO media_jobs (id, project_id, import_id, job_type, state,
+                                        max_threads, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    str(project_id),
+                    str(import_id) if import_id else None,
+                    job_type.value,
+                    max_threads,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create job: {exc}") from exc
+        finally:
+            conn.close()
+
+        record = self.get_job(uuid.UUID(job_id))
+        assert record is not None
+        return record
+
+    def get_job(self, job_id: uuid.UUID) -> MediaJob | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute("SELECT * FROM media_jobs WHERE id = ?", (str(job_id),)).fetchone()
+            return _row_to_job(row) if row else None
+        finally:
+            conn.close()
+
+    def list_jobs_for_project(self, project_id: uuid.UUID) -> list[MediaJob]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT * FROM media_jobs WHERE project_id = ? ORDER BY created_at",
+                (str(project_id),),
+            ).fetchall()
+            return [_row_to_job(r) for r in rows]
+        finally:
+            conn.close()
+
+    def list_jobs_by_state(self, state: JobState) -> list[MediaJob]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT * FROM media_jobs WHERE state = ? ORDER BY created_at",
+                (state.value,),
+            ).fetchall()
+            return [_row_to_job(r) for r in rows]
+        finally:
+            conn.close()
+
+    def _current_state(self, job_id: uuid.UUID, conn: sqlite3.Connection) -> JobState:
+        row = conn.execute("SELECT state FROM media_jobs WHERE id = ?", (str(job_id),)).fetchone()
+        if row is None:
+            raise DatabaseError(f"job {job_id} not found")
+        return JobState(row["state"])
+
+    def set_state(self, job_id: uuid.UUID, state: JobState) -> MediaJob:
+        """Transition a job to ``state``, validating the state machine."""
+        conn = _open(self._db_path)
+        try:
+            current = self._current_state(job_id, conn)
+            assert_transition(current, state)
+            cur = conn.execute(
+                "UPDATE media_jobs SET state = ?, updated_at = ? WHERE id = ?",
+                (state.value, _now(), str(job_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"job {job_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_job(job_id)
+        assert record is not None
+        return record
+
+    def set_progress(
+        self,
+        job_id: uuid.UUID,
+        stage: JobStage | None = None,
+        fraction: float | None = None,
+        detail: str | None = None,
+    ) -> MediaJob:
+        conn = _open(self._db_path)
+        try:
+            self._current_state(job_id, conn)
+            sets = ["updated_at = ?"]
+            params: list[object] = [_now()]
+            if stage is not None:
+                sets.append("stage = ?")
+                params.append(stage.value)
+            if fraction is not None:
+                sets.append("progress_fraction = ?")
+                params.append(fraction)
+            if detail is not None:
+                sets.append("progress_detail = ?")
+                params.append(detail)
+            params.append(str(job_id))
+            cur = conn.execute(f"UPDATE media_jobs SET {', '.join(sets)} WHERE id = ?", params)
+            if cur.rowcount != 1:
+                raise DatabaseError(f"job {job_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_job(job_id)
+        assert record is not None
+        return record
+
+    def complete_job(self, job_id: uuid.UUID, result: dict[str, Any]) -> MediaJob:
+        """Mark a job completed with its verified result payload."""
+        conn = _open(self._db_path)
+        try:
+            current = self._current_state(job_id, conn)
+            assert_transition(current, JobState.COMPLETED)
+            cur = conn.execute(
+                "UPDATE media_jobs SET state = 'completed', stage = 'ready', "
+                "result = ?, progress_fraction = 1, updated_at = ? WHERE id = ?",
+                (json.dumps(result), _now(), str(job_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"job {job_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_job(job_id)
+        assert record is not None
+        return record
+
+    def fail_job(self, job_id: uuid.UUID, code: str, message: str) -> MediaJob:
+        """Mark a job failed with a structured error."""
+        conn = _open(self._db_path)
+        try:
+            current = self._current_state(job_id, conn)
+            assert_transition(current, JobState.FAILED)
+            cur = conn.execute(
+                "UPDATE media_jobs SET state = 'failed', error_code = ?, error = ?, "
+                "updated_at = ? WHERE id = ?",
+                (code, message[:2000], _now(), str(job_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"job {job_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        record = self.get_job(job_id)
+        assert record is not None
+        return record
+
+    def mark_interrupted(self) -> int:
+        """Flip running/cancelling jobs to interrupted (application restart).
+
+        Returns the number of jobs flipped.
+        """
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                "UPDATE media_jobs SET state = 'interrupted', updated_at = ? "
+                "WHERE state IN ('running', 'cancelling')",
+                (_now(),),
+            )
+            conn.execute("COMMIT")
+            return cur.rowcount
+        finally:
+            conn.close()
 
 
 class RepresentationRepository:

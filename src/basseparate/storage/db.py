@@ -184,6 +184,48 @@ def _migration_1_to_2(conn: sqlite3.Connection) -> None:
 
 register_migration(2, _migration_1_to_2)
 
+_MIGRATION_3_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS media_jobs (
+        id                 TEXT PRIMARY KEY,
+        project_id         TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        import_id          TEXT REFERENCES imports(id) ON DELETE SET NULL,
+        job_type           TEXT NOT NULL
+                           CHECK (job_type IN ('probe', 'canonical_decode',
+                                               'monitoring_downmix', 'playback_rate',
+                                               'waveform')),
+        state              TEXT NOT NULL DEFAULT 'queued'
+                           CHECK (state IN ('queued', 'running', 'completed',
+                                           'failed', 'cancelling', 'cancelled',
+                                           'interrupted')),
+        stage              TEXT
+                           CHECK (stage IN ('transferring', 'verifying', 'inspecting',
+                                            'decoding', 'preparing_playback',
+                                            'building_waveform', 'ready')),
+        progress_fraction  REAL CHECK (progress_fraction IS NULL
+                                       OR (progress_fraction >= 0
+                                           AND progress_fraction <= 1)),
+        progress_detail    TEXT,
+        result             TEXT,
+        error_code         TEXT,
+        error              TEXT,
+        max_threads        INTEGER NOT NULL DEFAULT 4,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_media_jobs_project ON media_jobs(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_media_jobs_state ON media_jobs(state)",
+)
+
+
+def _migration_2_to_3(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_3_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(3, _migration_2_to_3)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.

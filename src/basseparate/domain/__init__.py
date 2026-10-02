@@ -27,6 +27,16 @@ from basseparate.domain.import_record import (
     ProbeResult,
     TransferState,
 )
+from basseparate.domain.media_job import (
+    ALLOWED_TRANSITIONS,
+    TERMINAL_STATES,
+    InvalidJobTransition,
+    JobStage,
+    JobState,
+    JobType,
+    MediaJob,
+    assert_transition,
+)
 from basseparate.domain.project import (
     MAX_CHANNEL_COUNT,
     MAX_SAMPLE_RATE,
@@ -43,6 +53,8 @@ from basseparate.domain.representation import (
 )
 
 __all__ = [
+    "ALLOWED_TRANSITIONS",
+    "InvalidJobTransition",
     "JS_SAFE_INTEGER_MAX",
     "AssetRecord",
     "AssetRole",
@@ -54,6 +66,12 @@ __all__ = [
     "ConfidenceKind",
     "HalfOpenInterval",
     "ImportRecord",
+    "JobState",
+    "JobStage",
+    "JobType",
+    "MediaJob",
+    "TERMINAL_STATES",
+    "assert_transition",
     "MAX_CHANNEL_COUNT",
     "MAX_SAMPLE_RATE",
     "MIN_SAMPLE_RATE",

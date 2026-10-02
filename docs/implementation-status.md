@@ -6,11 +6,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 1 (Import, waveform, and original playback)
-- **Gate:** F passed (Milestone 0 exit gate)
-- **Work package:** M1.4 (durable media jobs) — started, research phase
-- **Last commit:** `2ad3462` — ledger hash fix; `17d68f5` — M1.3 (ffprobe, stream selection)
-- **Next action:** M1.4 (durable media jobs) per `projectPlans/milestone1.md` §6.
-  Research done (see M1.4 note below); no M1.4 code written yet. Working tree clean.
+- **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
+- **Work package:** M1.4 (durable media jobs) — complete
+- **Last commit:** `5880133` — M1.4 research notes. The M1.4 code + this ledger
+  update land in the commit that follows it.
+- **Next action:** M1.5 (decode canonical audio) per `projectPlans/milestone1.md` §7.
+  Working tree clean.
 
 ## Completed requirements (with evidence)
 
@@ -229,63 +230,105 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - `pnpm run test`: 19 passed
 - `pnpm run build`: clean
 
-### M1.4 — Durable media jobs (started; research only, no code yet)
+### M1.4 — Durable media jobs (complete)
 
 Spec: `projectPlans/milestone1.md` §6 (lines 384–473). Gate B covers M1.4–M1.6.
+Plan: `projectPlans/m1.4-plan.md` (8 phases).
 
-**Scope (from spec):**
-- Worker protocol v2: add `run`, `progress`, `completed`, `failed`, `cancel`,
-  `cancelled` messages. Keep version negotiation explicit.
-- Job types (no model jobs yet): probe, canonical decode, monitoring downmix,
-  playback-rate conversion, waveform generation.
-- Durable states: `queued → running → completed | failed | cancelling → cancelled`.
-  On restart: `queued` stays queued; `running`/`cancelling` → `interrupted`;
-  interrupted ops restart from a safe boundary; completed assets stay reusable.
-- Ownership: backend owns SQLite writes; workers get validated paths/params,
-  write only to assigned staging, emit progress + result metadata; backend
-  verifies + publishes; workers never attach an asset to a project.
-- Scheduling: 1 media job at a time; API/playback stay responsive; bound
-  FFmpeg/numeric threads to 4; CPU-heavy waveform work outside the API process;
-  playback prep > optional cache rebuild; don't cancel a shared job because one
-  tab closed.
-- Progress stages: transferring, verifying, inspecting, decoding,
-  preparing playback, building waveform, ready. Determinate % only with a real
-  denominator; else processed time/bytes + indeterminate.
-- Cancellation: set state → notify worker → graceful FFmpeg terminate → wait
-  ≤5 s → force kill → reap both subprocesses → remove incomplete staging →
-  retain committed source for retry → never publish partial PCM.
-- **Acceptance:** a failed/cancelled job cannot corrupt a prior completed asset.
+**Domain:**
+- `domain/media_job.py` (new): `JobType` (probe, canonical_decode,
+  monitoring_downmix, playback_rate, waveform), `JobState` (queued, running,
+  completed, failed, cancelling, cancelled, interrupted), `JobStage`, frozen
+  `MediaJob`, `ALLOWED_TRANSITIONS` + `assert_transition` +
+  `InvalidJobTransition`, `TERMINAL_STATES`. `queued → failed` is allowed
+  (a job whose source is missing fails before it starts).
 
-**Existing infrastructure to build on (read, not modified):**
-- `worker/protocol.py`: v1 envelope (`WORKER_PROTOCOL_VERSION=1` in
-  `basseparate/__init__.py`), discriminated `WorkerMsg` union, `decode_message`,
-  `make_*` builders, 1 MiB limit. Add v2 message types + bump to 2 (negotiation).
-- `worker/supervisor.py`: `WorkerSupervisor` (spawn, concurrent readers,
-  handshake, ping, shutdown w/ terminate→kill, reap), `probe_command()`.
-- `worker/probe_worker.py`: reference worker main-loop pattern (read stdin line,
-  size-check, decode, version-check, `_handle` → exit code).
-- `storage/db.py`: `register_migration(target, fn)`; current
-  `DATABASE_SCHEMA_VERSION=2`. M1.4 needs migration 2→3 (a `media_jobs` table).
-- `storage/repository.py`: per-op connection pattern (`_open`, `_now`),
-  `ImportRepository.add_job_id` already links import→job ids.
-- `domain/import_record.py`: `ImportRecord.job_ids` already present.
-- `api/app.py`: `create_app` lifespan wires repos into `app.state`; add a
-  `JobManager`/`JobRepository` there. `api/import_routes.py` is the model for
-  route + `app.state` accessor helpers.
-- `api/errors.py`: `ApiError` hierarchy for new job errors.
+**Protocol v2:**
+- `WORKER_PROTOCOL_VERSION` → 2. Six new message types: `run`, `progress`,
+  `completed`, `failed`, `cancel`, `cancelled`. Explicit negotiation via
+  `assert_protocol_version(hello)` + `ProtocolVersionMismatch` in
+  `worker/supervisor.py`. `ERR_NOT_IMPLEMENTED = "JOB_TYPE_NOT_IMPLEMENTED"`.
+- `worker/supervisor.py`: `media_worker_command()`; `_stdin_lock` serializes
+  concurrent `send()`/`send_raw()` writes (route tasks and the scheduler can
+  both send).
 
-**Planned approach (not started):**
-1. Bump `WORKER_PROTOCOL_VERSION` → 2; add v2 protocol messages (run/progress/
-   completed/failed/cancel/cancelled) with explicit negotiation.
-2. `domain/media_job.py`: `JobType`, `JobState`, `MediaJob` record.
-3. `storage/db.py` migration 2→3: `media_jobs` table + index.
-4. `storage/repository.py`: `JobRepository` (create/get/list, state transitions,
-   progress, restart-on-recovery → `interrupted`).
-5. `jobs/` package: `JobManager` (single active job, queue, thread cap=4,
-   cancel w/ subprocess cleanup) + a v2 media worker.
-6. `api/job_routes.py`: get job, list project jobs, cancel job; wire into app.
-7. Tests: protocol v2, job state machine, recovery-on-restart, cancellation
-   cleanup, no-partial-publish acceptance.
+**Storage:**
+- `DATABASE_SCHEMA_VERSION` → 3; migration 2→3: `media_jobs` table (CHECK
+  constraints on job_type/state, FK `project_id` CASCADE, `import_id`
+  SET NULL, indexes on `project_id` + `state`).
+- `storage/repository.py`: `JobRepository` (create_job, get_job,
+  list_jobs_for_project, set_state with transition assertion, set_progress,
+  complete_job, fail_job, mark_interrupted). `PROJECT_SCHEMA_VERSION` stays 2
+  (separate from the DB schema version). Fixed a latent bug: the repository's
+  `SCHEMA_VERSION` constant was written into the `projects.schema_version`
+  column; it now uses `PROJECT_SCHEMA_VERSION`.
+
+**Worker + manager:**
+- `worker/media_worker.py` (new): main thread reads stdin; one job thread for
+  the active job; all stdout writes under `_stdout_lock`; staging removed on
+  cancel/fail; `shutdown` cancels + joins (≤15 s) then emits `stopped`.
+  `probe` executes via `probe_media`; the other four types return
+  `JOB_TYPE_NOT_IMPLEMENTED` (real execution lands in M1.5–M1.7).
+- `media/probe.py`: `probe_media` accepts an optional `cancel_event`;
+  `ProbeCancelledError`; polls the event every 0.1 s; on cancel: graceful
+  `terminate()` → wait ≤5 s → `kill()` (`TERMINATE_GRACE_SECONDS = 5.0`).
+- `jobs/manager.py` (new): async `JobManager` in the API process. `start()`:
+  spawn worker → handshake → `assert_protocol_version` → `mark_interrupted()`
+  → reload queued jobs FIFO → scheduler task (one job at a time). `stop()`:
+  cancel scheduler → stop supervisor. Injectables: `worker_command`,
+  `source_path_for`, `publisher`. Staging at `staging_root/job_id.hex/staging`;
+  `_cleanup_stale_staging()` at startup. `_publish` verifies
+  `ProbeResult(**result)` before `complete_job`; the publisher runs only after
+  the state is durably `completed`. Worker exit → `interrupted`;
+  timeout/error → `failed`. The scheduler loop is exception-safe: one bad job
+  cannot kill scheduling (failed as `INTERNAL_ERROR` and the loop continues).
+- `build_import_publisher(import_repository)`: for completed probe jobs with
+  an import_id, persists the probe result + auto-selects the single stream.
+
+**API (no frontend UI in M1.4 — job API + generated schema only, per spec):**
+- `api/job_routes.py` (new): `GET /api/v1/jobs/{id}`,
+  `GET /api/v1/projects/{id}/jobs`, `POST /api/v1/projects/{id}/jobs` (201;
+  import_id required; import must exist, belong to the project, and be
+  COMPLETE; linked via `ImportRepository.add_job_id`),
+  `POST /api/v1/jobs/{id}/cancel` (terminal → no-op; queued → cancelled;
+  running → cancelling → worker finalizes → cancelled + staging cleaned).
+- `api/errors.py`: `JobNotFoundError` (404), `InvalidJobType` (422),
+  `JobRequestError` (422).
+- `app.py` lifespan: `app.state.job_repository` + `app.state.job_manager`
+  (staging `paths.runtime/jobs`, `source_path_for=UploadManager.part_path_for`,
+  import publisher); `job_router` included. The app now spawns the media
+  worker subprocess at startup (~50 ms; affects all TestClient-based tests).
+
+**Tests:**
+- `tests/unit/test_media_job.py` (new): model + full transition map.
+- `tests/unit/test_job_repository.py` (new): CRUD, transitions, progress/
+  result, `mark_interrupted`, FK cascade/SET NULL.
+- `tests/unit/test_worker_protocol.py`: extended with v2 job-message
+  roundtrips.
+- `tests/integration/test_media_worker.py` (new): real worker subprocess —
+  probe to completion, unimplemented type, in-flight cancel + staging cleanup,
+  shutdown-while-running, missing source. Deterministic cancel tests use a
+  fake slow `ffprobe` (`exec sleep 30`; PATH prepended before `start()`),
+  because real ffprobe is sub-second on all local files (it estimates
+  duration, it does not scan).
+- `tests/integration/test_job_manager.py` (new): probe to completion +
+  publisher, unimplemented type, cancel queued/running, restart →
+  interrupted, stale staging cleanup, acceptance: a completed result survives
+  a later failure; a cancelled job publishes nothing.
+- `tests/unit/test_job_routes.py` (new): create/list/get/cancel via TestClient
+  with the full M1.2 upload flow; 404/409/422 cases.
+
+**Verification (all green):**
+- `uv run --locked pytest tests/ -q`: 358 passed
+- `uv run --locked ruff check src tests`: clean
+- `uv run --locked ruff format --check src tests`: clean
+- `uv run --locked mypy`: clean
+- `scripts/check_contract.py`: OK (contracts + `schema.ts` regenerated;
+  job routes + MediaJob schemas added)
+- `pnpm run typecheck`: clean
+- `pnpm run lint`: clean
+- `pnpm run test`: 19 passed
+- `pnpm run build`: clean
 
 **Blocked:** none.
 

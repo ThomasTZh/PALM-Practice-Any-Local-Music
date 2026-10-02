@@ -24,13 +24,16 @@ from basseparate.worker import (
     ErrorMessage,
     HelloMessage,
     PongMessage,
+    ProtocolVersionMismatch,
     StoppedMessage,
     WorkerExitedError,
     WorkerSupervisor,
     WorkerSupervisorError,
     WorkerTimeoutError,
     assert_no_leftover,
+    assert_protocol_version,
     make_describe,
+    make_hello,
     make_ping,
     worker_message_adapter,
 )
@@ -85,7 +88,24 @@ class TestHandshake:
         hello = sup.wait_for_handshake()
         assert isinstance(hello, HelloMessage)
         assert hello.payload.worker == "probe"
-        assert hello.payload.protocol_version == 1
+        assert hello.payload.protocol_version == 2
+
+    def test_version_negotiation_accepts_matching_hello(self) -> None:
+        hello = make_hello("probe")
+        assert_protocol_version(hello)  # must not raise
+
+    def test_version_negotiation_rejects_mismatched_hello(self) -> None:
+        raw = make_hello("probe")
+        stale = worker_message_adapter.validate_python(
+            {
+                "protocol_version": 1,
+                "message_id": str(raw.message_id),
+                "type": "hello",
+                "payload": {"worker": "probe", "protocol_version": 1},
+            }
+        )
+        with pytest.raises(ProtocolVersionMismatch):
+            assert_protocol_version(stale)
 
     def test_missing_handshake_times_out_and_reaps(self, tmp_path: Path) -> None:
         script = _write_worker_script(tmp_path, "import time\ntime.sleep(30)\n")

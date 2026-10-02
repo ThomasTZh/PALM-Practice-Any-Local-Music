@@ -64,13 +64,41 @@ class TestInitialization:
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         conn.close()
-        assert {"projects", "assets", "project_assets", "imports", "representations"} <= tables
+        assert {
+            "projects",
+            "assets",
+            "project_assets",
+            "imports",
+            "representations",
+            "media_jobs",
+        } <= tables
 
-    def test_schema_version_is_2(self, db_path: Path) -> None:
+    def test_schema_version_is_3(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 2
+        assert version == 3
+
+    def test_media_jobs_table_shape(self, db_path: Path) -> None:
+        conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(media_jobs)")}
+        conn.close()
+        assert {
+            "id",
+            "project_id",
+            "import_id",
+            "job_type",
+            "state",
+            "stage",
+            "progress_fraction",
+            "progress_detail",
+            "result",
+            "error_code",
+            "error",
+            "max_threads",
+            "created_at",
+            "updated_at",
+        } <= columns
 
     def test_projects_table_has_m1_columns(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))

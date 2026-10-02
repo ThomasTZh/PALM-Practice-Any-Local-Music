@@ -21,6 +21,7 @@ from pathlib import Path
 
 from basseparate.worker.protocol import (
     MAX_MESSAGE_BYTES,
+    PROTOCOL_VERSION,
     HelloMessage,
     MalformedMessageError,
     PongMessage,
@@ -70,9 +71,31 @@ class OversizedWorkerMessage(WorkerSupervisorError):
     """The worker emitted a line larger than MAX_MESSAGE_BYTES."""
 
 
+class ProtocolVersionMismatch(WorkerSupervisorError):
+    """The worker speaks a different protocol version than this supervisor."""
+
+    def __init__(self, worker_version: int) -> None:
+        super().__init__(
+            f"worker protocol version {worker_version} is not supported "
+            f"(this build speaks v{PROTOCOL_VERSION})"
+        )
+        self.worker_version = worker_version
+
+
+def assert_protocol_version(hello: HelloMessage) -> None:
+    """Explicit version negotiation: reject a hello with a mismatched version."""
+    if hello.payload.protocol_version != PROTOCOL_VERSION:
+        raise ProtocolVersionMismatch(hello.payload.protocol_version)
+
+
 def probe_command() -> list[str]:
     """Argument array for the built-in probe worker."""
     return [sys.executable, "-m", "basseparate.worker.probe_worker"]
+
+
+def media_worker_command() -> list[str]:
+    """Argument array for the built-in media worker (M1.4)."""
+    return [sys.executable, "-m", "basseparate.worker.media_worker"]
 
 
 class WorkerSupervisor:
@@ -91,6 +114,7 @@ class WorkerSupervisor:
         self._out_queue: queue.Queue[object] = queue.Queue()
         self._stderr_lines: list[str] = []
         self._stderr_lock = threading.Lock()
+        self._stdin_lock = threading.Lock()
         self._stdout_thread: threading.Thread | None = None
         self._stderr_thread: threading.Thread | None = None
         self._last_pid: int | None = None
@@ -184,8 +208,9 @@ class WorkerSupervisor:
             raise WorkerSupervisorError("refusing to send an oversized message")
         assert proc.stdin is not None
         try:
-            proc.stdin.write(data)
-            proc.stdin.flush()
+            with self._stdin_lock:
+                proc.stdin.write(data)
+                proc.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
             raise WorkerExitedError(proc.poll()) from exc
 
@@ -196,8 +221,9 @@ class WorkerSupervisor:
             raise WorkerExitedError(proc.returncode)
         assert proc.stdin is not None
         try:
-            proc.stdin.write(line + b"\n")
-            proc.stdin.flush()
+            with self._stdin_lock:
+                proc.stdin.write(line + b"\n")
+                proc.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
             raise WorkerExitedError(proc.poll()) from exc
 

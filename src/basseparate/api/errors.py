@@ -185,6 +185,33 @@ class ProbeFailedError(ApiError):
         )
 
 
+class JobNotFoundError(ApiError):
+    def __init__(self, job_id: str) -> None:
+        super().__init__(
+            code="JOB_NOT_FOUND",
+            message=f"The requested job does not exist: {job_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class InvalidJobType(ApiError):
+    def __init__(self, job_type: str) -> None:
+        super().__init__(
+            code="INVALID_JOB_TYPE",
+            message=f"Unknown or unsupported job type: {job_type}",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
+class JobRequestError(ApiError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="JOB_REQUEST",
+            message=message,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
 class StreamSelectionError(ApiError):
     def __init__(self, requested: int, available: list[int]) -> None:
         super().__init__(

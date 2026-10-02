@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json
 import re
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ from basseparate.domain.import_record import AudioStreamInfo, ProbeResult
 DEFAULT_PROBE_TIMEOUT_SECONDS = 30.0
 MAX_PROBE_OUTPUT_BYTES = 10 * 1024 * 1024  # 10 MiB per stream
 _VERSION_TIMEOUT_SECONDS = 10.0
+TERMINATE_GRACE_SECONDS = 5.0
+_CANCEL_POLL_SECONDS = 0.1
 
 # Application limits (not claims about FFmpeg's capabilities).
 MIN_SAMPLE_RATE = 8_000
@@ -60,6 +63,10 @@ class UnsupportedMediaError(ProbeError):
     """The media is outside the supported sample-rate/channel envelope."""
 
 
+class ProbeCancelledError(ProbeError):
+    """The probe was cancelled before it completed."""
+
+
 async def _read_bounded(stream: asyncio.StreamReader, limit: int) -> bytes:
     """Read a subprocess stream, refusing output beyond ``limit`` bytes."""
     chunks: list[bytes] = []
@@ -79,6 +86,27 @@ def _kill(proc: asyncio.subprocess.Process) -> None:
         proc.kill()
 
 
+async def _wait_for_cancel(cancel_event: threading.Event) -> None:
+    """Poll a threading.Event until cancellation is requested."""
+    while not cancel_event.is_set():
+        await asyncio.sleep(_CANCEL_POLL_SECONDS)
+
+
+async def _terminate_gracefully(
+    proc: asyncio.subprocess.Process,
+    timeout: float = TERMINATE_GRACE_SECONDS,
+) -> None:
+    """Terminate gracefully, escalating to kill. Always reaps (milestone1.md §6.7)."""
+    if proc.returncode is None:
+        proc.terminate()
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+    if proc.returncode is None:
+        proc.kill()
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+
+
 async def _tool_version(name: str) -> str:
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -92,7 +120,7 @@ async def _tool_version(name: str) -> str:
         raise ProbeFailedError(f"could not launch {name}: {exc}") from exc
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=_VERSION_TIMEOUT_SECONDS)
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         _kill(proc)
         raise ProbeFailedError(f"{name} -version timed out") from None
     if proc.returncode != 0:
@@ -214,9 +242,7 @@ def parse_probe_data(
             audio_streams.append(_parse_audio_stream(stream))
 
     if not audio_streams:
-        raise NoAudioStreamError(
-            f"the file contains no audio streams (format: {format_name})"
-        )
+        raise NoAudioStreamError(f"the file contains no audio streams (format: {format_name})")
 
     for stream in audio_streams:
         if not MIN_SAMPLE_RATE <= stream.sample_rate <= MAX_SAMPLE_RATE:
@@ -248,12 +274,16 @@ def parse_probe_data(
 async def probe_media(
     path: Path,
     timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+    cancel_event: threading.Event | None = None,
 ) -> ProbeResult:
     """Probe a local media file and return its validated metadata.
 
     Raises ``ProbeTimeoutError``, ``ProbeFailedError``,
-    ``NoAudioStreamError``, or ``UnsupportedMediaError``.
+    ``NoAudioStreamError``, ``UnsupportedMediaError``, or
+    ``ProbeCancelledError`` (when ``cancel_event`` is set).
     """
+    if cancel_event is not None and cancel_event.is_set():
+        raise ProbeCancelledError("probe was cancelled before it started")
     if not path.is_file():
         raise ProbeFailedError(f"media file not found: {path.name}")
 
@@ -284,24 +314,49 @@ async def probe_media(
         _kill(proc)
         raise ProbeFailedError("ffprobe subprocess streams are unavailable")
 
-    try:
-        async with asyncio.timeout(timeout_seconds):
-            stdout, stderr = await asyncio.gather(
+    read_output: list[bytes] = []
+
+    async def _read_all() -> None:
+        read_output[:] = list(
+            await asyncio.gather(
                 _read_bounded(stdout_stream, MAX_PROBE_OUTPUT_BYTES),
                 _read_bounded(stderr_stream, MAX_PROBE_OUTPUT_BYTES),
             )
+        )
+
+    cancel_task: asyncio.Task[None] | None = None
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            read_task = asyncio.ensure_future(_read_all())
+            if cancel_event is not None:
+                cancel_task = asyncio.ensure_future(_wait_for_cancel(cancel_event))
+            waitables: set[asyncio.Task[None]] = {read_task}
+            if cancel_task is not None:
+                waitables.add(cancel_task)
+            done, _pending = await asyncio.wait(
+                waitables,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancel_task is not None and cancel_task in done:
+                read_task.cancel()
+                with contextlib.suppress(BaseException):
+                    await read_task
+                await _terminate_gracefully(proc)
+                raise ProbeCancelledError("probe was cancelled")
+            if cancel_task is not None:
+                cancel_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cancel_task
+            read_task.result()
+            stdout, stderr = read_output[0], read_output[1]
             returncode = await proc.wait()
-    except (TimeoutError, asyncio.TimeoutError) as exc:
-        _kill(proc)
-        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
-            await asyncio.wait_for(proc.wait(), timeout=5.0)
+    except TimeoutError as exc:
+        await _terminate_gracefully(proc)
         raise ProbeTimeoutError(
             f"ffprobe did not finish within {timeout_seconds:g} seconds"
         ) from exc
     except ProbeFailedError:
-        _kill(proc)
-        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
-            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        await _terminate_gracefully(proc)
         raise
 
     if returncode != 0:

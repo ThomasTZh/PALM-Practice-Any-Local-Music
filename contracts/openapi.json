@@ -252,6 +252,24 @@
         "title": "CreateImportResponse",
         "type": "object"
       },
+      "CreateJobRequest": {
+        "properties": {
+          "import_id": {
+            "format": "uuid",
+            "title": "Import Id",
+            "type": "string"
+          },
+          "job_type": {
+            "$ref": "#/components/schemas/JobType"
+          }
+        },
+        "required": [
+          "job_type",
+          "import_id"
+        ],
+        "title": "CreateJobRequest",
+        "type": "object"
+      },
       "CreateProjectRequest": {
         "properties": {
           "name": {
@@ -424,6 +442,191 @@
           "updated_at"
         ],
         "title": "ImportRecord",
+        "type": "object"
+      },
+      "JobListResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "JobListResponse",
+        "type": "object"
+      },
+      "JobStage": {
+        "description": "Progress stages reported by workers (milestone1.md \u00a76.6).",
+        "enum": [
+          "transferring",
+          "verifying",
+          "inspecting",
+          "decoding",
+          "preparing_playback",
+          "building_waveform",
+          "ready"
+        ],
+        "title": "JobStage",
+        "type": "string"
+      },
+      "JobState": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelling",
+          "cancelled",
+          "interrupted"
+        ],
+        "title": "JobState",
+        "type": "string"
+      },
+      "JobType": {
+        "enum": [
+          "probe",
+          "canonical_decode",
+          "monitoring_downmix",
+          "playback_rate",
+          "waveform"
+        ],
+        "title": "JobType",
+        "type": "string"
+      },
+      "MediaJob": {
+        "description": "One durable media-processing job.",
+        "properties": {
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Id"
+          },
+          "job_type": {
+            "$ref": "#/components/schemas/JobType"
+          },
+          "max_threads": {
+            "default": 4,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Threads",
+            "type": "integer"
+          },
+          "progress_detail": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Detail"
+          },
+          "progress_fraction": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Fraction"
+          },
+          "project_id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState",
+            "default": "queued"
+          },
+          "updated_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "job_type",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MediaJob",
         "type": "object"
       },
       "ModelListResponse": {
@@ -1118,6 +1321,86 @@
         "summary": "Select Stream"
       }
     },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job"
+      }
+    },
     "/api/v1/models": {
       "get": {
         "operationId": "list_models_api_v1_models_get",
@@ -1286,6 +1569,94 @@
           }
         },
         "summary": "List Project Imports"
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs": {
+      "get": {
+        "operationId": "list_project_jobs_api_v1_projects__project_id__jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Project Jobs"
+      },
+      "post": {
+        "operationId": "create_job_api_v1_projects__project_id__jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Job"
       }
     },
     "/api/v1/system": {

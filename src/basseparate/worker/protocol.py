@@ -1,4 +1,4 @@
-"""Worker protocol: newline-delimited JSON message envelope (M0.9).
+"""Worker protocol: newline-delimited JSON message envelope (M0.9/M1.4).
 
 Transport:
 - Parent sends requests through the worker's stdin.
@@ -6,19 +6,24 @@ Transport:
 - Worker sends logs through stderr only.
 
 No pickle, no shared Python objects, no large inline binary arrays.
-Analysis execution and cancellation messages are reserved for the
-milestone that implements real jobs.
+
+Protocol version 2 (M1.4) adds the durable-job messages: ``run``,
+``progress``, ``completed``, ``failed``, ``cancel``, ``cancelled``.
+Version negotiation is explicit: ``hello`` carries the worker's protocol
+version and every message carries one; peers reject mismatches.
 """
 
 from __future__ import annotations
 
+from pathlib import PurePath
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
 from basseparate import WORKER_PROTOCOL_VERSION
 from basseparate.domain.common import Uuid
+from basseparate.domain.media_job import JobStage, JobType
 
 PROTOCOL_VERSION = WORKER_PROTOCOL_VERSION
 
@@ -31,6 +36,7 @@ ERR_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
 ERR_UNKNOWN_TYPE = "UNKNOWN_MESSAGE_TYPE"
 ERR_OVERSIZED = "OVERSIZED_MESSAGE"
 ERR_INTERNAL = "WORKER_INTERNAL_ERROR"
+ERR_NOT_IMPLEMENTED = "JOB_TYPE_NOT_IMPLEMENTED"
 
 
 class WorkerProtocolError(Exception):
@@ -101,6 +107,78 @@ class ErrorPayload(BaseModel):
     request_id: Uuid | None = None
 
 
+def _validate_absolute_path(value: str) -> str:
+    if not PurePath(value).is_absolute():
+        raise ValueError("path must be absolute; workers only receive validated paths")
+    return value
+
+
+class RunPayload(BaseModel):
+    """Request to execute one media job (backend → worker)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: Uuid
+    job_type: JobType
+    source_path: str = Field(min_length=1)
+    staging_dir: str = Field(min_length=1)
+    max_threads: int = Field(default=4, ge=1, le=32)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("source_path", "staging_dir")
+    @classmethod
+    def _check_paths(cls, v: str) -> str:
+        return _validate_absolute_path(v)
+
+
+class ProgressPayload(BaseModel):
+    """A progress report for a running job (worker → backend)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: Uuid
+    stage: JobStage
+    #: Determinate fraction in [0, 1]; None means indeterminate.
+    fraction: float | None = Field(default=None, ge=0, le=1)
+    detail: str | None = Field(default=None, max_length=512)
+
+
+class CompletedPayload(BaseModel):
+    """A job finished successfully (worker → backend)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: Uuid
+    result: dict[str, Any]
+
+
+class FailedPayload(BaseModel):
+    """A job failed (worker → backend)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: Uuid
+    code: str = Field(min_length=1, max_length=64)
+    message: str = Field(max_length=2000)
+
+
+class CancelPayload(BaseModel):
+    """Request to cancel a running job (backend → worker)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: Uuid
+
+
+class CancelledPayload(BaseModel):
+    """Confirmation that a job was cancelled (worker → backend)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: Uuid
+    staging_removed: bool
+
+
 class WorkerMessage(BaseModel):
     """Base envelope. Use the typed subclasses in practice."""
 
@@ -156,6 +234,36 @@ class ErrorMessage(WorkerMessage):
     payload: ErrorPayload
 
 
+class RunMessage(WorkerMessage):
+    type: Literal["run"] = "run"
+    payload: RunPayload
+
+
+class ProgressMessage(WorkerMessage):
+    type: Literal["progress"] = "progress"
+    payload: ProgressPayload
+
+
+class CompletedMessage(WorkerMessage):
+    type: Literal["completed"] = "completed"
+    payload: CompletedPayload
+
+
+class FailedMessage(WorkerMessage):
+    type: Literal["failed"] = "failed"
+    payload: FailedPayload
+
+
+class CancelMessage(WorkerMessage):
+    type: Literal["cancel"] = "cancel"
+    payload: CancelPayload
+
+
+class CancelledMessage(WorkerMessage):
+    type: Literal["cancelled"] = "cancelled"
+    payload: CancelledPayload
+
+
 WorkerMsg = Annotated[
     HelloMessage
     | DescribeMessage
@@ -164,7 +272,13 @@ WorkerMsg = Annotated[
     | PongMessage
     | ShutdownMessage
     | StoppedMessage
-    | ErrorMessage,
+    | ErrorMessage
+    | RunMessage
+    | ProgressMessage
+    | CompletedMessage
+    | FailedMessage
+    | CancelMessage
+    | CancelledMessage,
     Field(discriminator="type"),
 ]
 
@@ -255,4 +369,66 @@ def make_error(
         message_id=uuid4(),
         request_id=request_id,
         payload=ErrorPayload(code=code, message=message),
+    )
+
+
+def make_run(
+    job_id: Uuid,
+    job_type: JobType,
+    source_path: str,
+    staging_dir: str,
+    max_threads: int = 4,
+    parameters: dict[str, Any] | None = None,
+) -> RunMessage:
+    return RunMessage(
+        message_id=uuid4(),
+        payload=RunPayload(
+            job_id=job_id,
+            job_type=job_type,
+            source_path=source_path,
+            staging_dir=staging_dir,
+            max_threads=max_threads,
+            parameters=parameters or {},
+        ),
+    )
+
+
+def make_progress(
+    job_id: Uuid,
+    stage: JobStage,
+    fraction: float | None = None,
+    detail: str | None = None,
+) -> ProgressMessage:
+    return ProgressMessage(
+        message_id=uuid4(),
+        payload=ProgressPayload(job_id=job_id, stage=stage, fraction=fraction, detail=detail),
+    )
+
+
+def make_completed(job_id: Uuid, result: dict[str, Any]) -> CompletedMessage:
+    return CompletedMessage(
+        message_id=uuid4(),
+        payload=CompletedPayload(job_id=job_id, result=result),
+    )
+
+
+def make_failed(
+    job_id: Uuid,
+    code: str,
+    message: str,
+) -> FailedMessage:
+    return FailedMessage(
+        message_id=uuid4(),
+        payload=FailedPayload(job_id=job_id, code=code, message=message),
+    )
+
+
+def make_cancel(job_id: Uuid) -> CancelMessage:
+    return CancelMessage(message_id=uuid4(), payload=CancelPayload(job_id=job_id))
+
+
+def make_cancelled(job_id: Uuid, staging_removed: bool = True) -> CancelledMessage:
+    return CancelledMessage(
+        message_id=uuid4(),
+        payload=CancelledPayload(job_id=job_id, staging_removed=staging_removed),
     )
