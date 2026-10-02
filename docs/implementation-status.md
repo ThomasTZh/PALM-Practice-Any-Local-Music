@@ -8,8 +8,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
 - **Work package:** M1.4 (durable media jobs) — complete
-- **Last commit:** `5880133` — M1.4 research notes. The M1.4 code + this ledger
-  update land in the commit that follows it.
+- **Last commit:** `d5be576` — M1.4 (durable media jobs); `5880133` — M1.4
+  research notes; `17d68f5` — M1.3 (ffprobe, stream selection).
 - **Next action:** M1.5 (decode canonical audio) per `projectPlans/milestone1.md` §7.
   Working tree clean.
 
