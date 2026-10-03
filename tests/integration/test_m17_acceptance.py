@@ -46,6 +46,7 @@ from basseparate.storage import (
     ProjectRepository,
     RepresentationRepository,
     StoragePaths,
+    WaveformCacheRepository,
 )
 from basseparate.storage.db import initialize_database
 
@@ -138,6 +139,7 @@ def env(tmp_path: Path) -> dict:
         "imports": ImportRepository(db),
         "jobs": JobRepository(db),
         "representations": RepresentationRepository(db),
+        "waveform_caches": WaveformCacheRepository(db, paths.cache),
     }
 
 
@@ -247,9 +249,14 @@ class TestPipeline:
             staging_pcm_path=str(staged),
         )
         job = env["jobs"].create_job(project_id, JobType.PLAYBACK_RATE)
-        build_publishers(env["imports"], env["projects"], env["representations"], env["paths"])(
-            job, result.model_dump(mode="json")
-        )
+        build_publishers(
+            env["imports"],
+            env["projects"],
+            env["representations"],
+            env["paths"],
+            env["jobs"],
+            env["waveform_caches"],
+        )(job, result.model_dump(mode="json"))
 
         # The representation resolves under the canonical parent at 48 kHz.
         rep = env["representations"].find_playback(canonical.id, 48000)

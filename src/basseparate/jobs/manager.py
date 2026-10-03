@@ -33,6 +33,7 @@ from basseparate.domain.representation import (
     MonitoringDownmixResult,
     PlaybackRateResult,
 )
+from basseparate.domain.waveform import WaveformResult
 from basseparate.storage import JobRepository
 from basseparate.worker import (
     CancelledMessage,
@@ -78,7 +79,12 @@ class ParameterResolutionError(Exception):
 
 #: Job types whose worker parameters are built from project/import state.
 _PARAMETERIZED_JOB_TYPES = frozenset(
-    {JobType.CANONICAL_DECODE, JobType.MONITORING_DOWNMIX, JobType.PLAYBACK_RATE}
+    {
+        JobType.CANONICAL_DECODE,
+        JobType.MONITORING_DOWNMIX,
+        JobType.PLAYBACK_RATE,
+        JobType.WAVEFORM,
+    }
 )
 
 
@@ -119,6 +125,7 @@ class JobManager:
         self._queue: asyncio.Queue[uuid.UUID] = asyncio.Queue()
         self._scheduler_task: asyncio.Task[None] | None = None
         self._active_job_id: uuid.UUID | None = None
+        self._known_job_ids: set[uuid.UUID] = set()
 
     @property
     def active_job_id(self) -> uuid.UUID | None:
@@ -155,6 +162,7 @@ class JobManager:
 
         queued = await asyncio.to_thread(self._repo.list_jobs_by_state, JobState.QUEUED)
         for job in queued:
+            self._known_job_ids.add(job.id)
             await self._queue.put(job.id)
         self._scheduler_task = asyncio.create_task(self._scheduler_loop(), name="job-scheduler")
         log.info("job manager started (%d queued job(s) reloaded)", len(queued))
@@ -229,6 +237,7 @@ class JobManager:
     async def _scheduler_loop(self) -> None:
         while True:
             job_id = await self._queue.get()
+            self._known_job_ids.add(job_id)
             job = await asyncio.to_thread(self._repo.get_job, job_id)
             if job is None or job.state is not JobState.QUEUED:
                 continue  # cancelled while queued, or removed
@@ -320,6 +329,9 @@ class JobManager:
                 current = await asyncio.to_thread(self._repo.get_job, job_id)
                 if current is not None and current.state is JobState.CANCELLING:
                     await asyncio.to_thread(self._repo.set_state, job_id, JobState.CANCELLED)
+            # A publisher may have queued follow-up jobs out-of-band (M1.8
+            # auto-queues a WAVEFORM job after a decode); pick them up.
+            await self._enqueue_newly_queued()
             self._clean_staging(staging_dir)
             cleaned = True
         except WorkerExitedError:
@@ -340,6 +352,19 @@ class JobManager:
             self._active_job_id = None
             if not cleaned:
                 self._clean_staging(staging_dir)
+
+    async def _enqueue_newly_queued(self) -> None:
+        """Queue durable jobs created outside ``create_job`` (M1.8 auto-queue).
+
+        Publishers run synchronously in a worker thread and can only write
+        the database row; the scheduler must discover and enqueue the new
+        job itself.
+        """
+        queued = await asyncio.to_thread(self._repo.list_jobs_by_state, JobState.QUEUED)
+        for job in queued:
+            if job.id not in self._known_job_ids:
+                self._known_job_ids.add(job.id)
+                await self._queue.put(job.id)
 
     async def _await_job_completion(
         self, supervisor: WorkerSupervisor, job_id: uuid.UUID
@@ -394,6 +419,8 @@ class JobManager:
                 MonitoringDownmixResult(**result)
             elif job.job_type is JobType.PLAYBACK_RATE:
                 PlaybackRateResult(**result)
+            elif job.job_type is JobType.WAVEFORM:
+                WaveformResult(**result)
         except (ValueError, TypeError) as exc:
             log.warning("job %s result failed verification: %s", job_id, exc)
             with contextlib.suppress(Exception):

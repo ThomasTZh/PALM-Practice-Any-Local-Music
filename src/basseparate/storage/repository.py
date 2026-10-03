@@ -1,5 +1,5 @@
-"""Repository layer for projects, assets, imports, representations, jobs
-(M0.5/M1.1/M1.4).
+"""Repository layer for projects, assets, imports, representations, jobs,
+and waveform caches (M0.5/M1.1/M1.4/M1.8).
 
 Creates connections within each operation. Returns immutable domain
 records. Uses parameterized SQL throughout.
@@ -36,6 +36,7 @@ from basseparate.domain.representation import (
     RepresentationRole,
     TimeMapping,
 )
+from basseparate.domain.waveform import WaveformCacheRecord, WaveformLevelSummary, WaveformResult
 from basseparate.storage.db import DatabaseError
 
 
@@ -151,6 +152,21 @@ def _row_to_representation(row: sqlite3.Row) -> AudioRepresentation:
             profile_version=row["profile_version"],
             created_at=row["created_at"],
         ),
+    )
+
+
+def _row_to_waveform_cache(row: sqlite3.Row) -> WaveformCacheRecord:
+    return WaveformCacheRecord(
+        id=uuid.UUID(row["id"]),
+        asset_id=uuid.UUID(row["asset_id"]),
+        cache_version=row["cache_version"],
+        source_hash=row["source_hash"],
+        sample_rate=row["sample_rate"],
+        frame_count=row["frame_count"],
+        channel_count=row["channel_count"],
+        levels=tuple(WaveformLevelSummary(**item) for item in json.loads(row["levels_json"])),
+        manifest_path=row["manifest_path"],
+        created_at=row["created_at"],
     )
 
 
@@ -997,5 +1013,102 @@ class RepresentationRepository:
                 (str(parent_asset_id),),
             ).fetchall()
             return [_row_to_representation(row) for row in rows]
+        finally:
+            conn.close()
+
+
+class WaveformCacheRepository:
+    """Synchronous repository for waveform cache rows (M1.8).
+
+    One row per canonical asset pins the final on-disk cache to the asset.
+    The on-disk manifest remains the source of truth for progressive tile
+    availability; this row only records that a complete, validated cache
+    exists. The worker never touches the database (M1.4 boundary).
+    """
+
+    def __init__(self, db_path: Path, cache_root: Path) -> None:
+        self._db_path = db_path
+        self._cache_root = cache_root
+
+    @staticmethod
+    def _relative_manifest_path(manifest_path: str, cache_root: Path) -> str:
+        """Anchor an absolute manifest path under the cache category.
+
+        Stored storage-relative (``cache/waveforms/<hash>/manifest.json``)
+        so ``StoragePaths.resolve_asset_path`` can resolve it back for both
+        the explicit-storage-root and default XDG layouts.
+        """
+        absolute = Path(manifest_path)
+        if not absolute.is_absolute():
+            raise DatabaseError(f"waveform manifest path is not absolute: {manifest_path}")
+        try:
+            relative = absolute.relative_to(cache_root)
+        except ValueError as exc:
+            raise DatabaseError(
+                f"waveform manifest {manifest_path} is outside cache root {cache_root}"
+            ) from exc
+        return f"cache/{relative.as_posix()}"
+
+    def register(self, asset_id: uuid.UUID, result: WaveformResult) -> WaveformCacheRecord:
+        """Pin a completed waveform cache to its asset (idempotent).
+
+        An existing row for the asset wins; a row pinning a different source
+        hash is a corruption and is rejected.
+        """
+        manifest_path = self._relative_manifest_path(result.manifest_path, self._cache_root)
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO waveform_caches (id, asset_id, cache_version,
+                                                       source_hash, sample_rate,
+                                                       frame_count, channel_count,
+                                                       levels_json, manifest_path,
+                                                       created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(asset_id),
+                    result.cache_version,
+                    result.source_hash,
+                    result.sample_rate,
+                    result.frame_count,
+                    result.channel_count,
+                    json.dumps([level.model_dump() for level in result.levels], sort_keys=True),
+                    manifest_path,
+                    _now(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot register waveform cache: {exc}") from exc
+        finally:
+            conn.close()
+
+        record = self.get_for_asset(asset_id)
+        assert record is not None
+        if record.source_hash != result.source_hash:
+            raise DatabaseError(
+                f"waveform cache for asset {asset_id} pins a different source hash"
+            )
+        return record
+
+    def get_for_asset(self, asset_id: uuid.UUID) -> WaveformCacheRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT * FROM waveform_caches WHERE asset_id = ?", (str(asset_id),)
+            ).fetchone()
+            return _row_to_waveform_cache(row) if row else None
+        finally:
+            conn.close()
+
+    def delete_for_asset(self, asset_id: uuid.UUID) -> None:
+        """Remove the cache row (rebuild path for corrupt caches, spec §10.4)."""
+        conn = _open(self._db_path)
+        try:
+            conn.execute("DELETE FROM waveform_caches WHERE asset_id = ?", (str(asset_id),))
+            conn.execute("COMMIT")
         finally:
             conn.close()

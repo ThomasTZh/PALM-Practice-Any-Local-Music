@@ -38,6 +38,26 @@ def test_explicit_storage_root_places_all_categories(tmp_path) -> None:
     assert paths.runtime == tmp_path / "root" / "runtime"
 
 
+def test_resolve_asset_path_anchors_category_prefixes(tmp_path) -> None:
+    paths = resolve_storage_paths(tmp_path / "root")
+    assert (
+        paths.resolve_asset_path("data/assets/ab.pcm")
+        == tmp_path / "root" / "data" / "assets" / "ab.pcm"
+    )
+    assert (
+        paths.resolve_asset_path("runtime/uploads/x.part")
+        == tmp_path / "root" / "runtime" / "uploads" / "x.part"
+    )
+    assert (
+        paths.resolve_asset_path("cache/waveforms/ab/manifest.json")
+        == tmp_path / "root" / "cache" / "waveforms" / "ab" / "manifest.json"
+    )
+    assert (
+        paths.resolve_asset_path("misc/other.txt")
+        == tmp_path / "root" / "state" / "misc" / "other.txt"
+    )
+
+
 def test_initialize_creates_directories_with_owner_only_sensitive_dirs(tmp_path) -> None:
     paths = resolve_storage_paths(tmp_path / "root")
     initialize_storage_paths(paths)

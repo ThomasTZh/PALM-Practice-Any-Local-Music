@@ -242,6 +242,32 @@ def _migration_3_to_4(conn: sqlite3.Connection) -> None:
 
 register_migration(4, _migration_3_to_4)
 
+_MIGRATION_5_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS waveform_caches (
+        id              TEXT PRIMARY KEY,
+        asset_id        TEXT NOT NULL UNIQUE REFERENCES assets(id) ON DELETE CASCADE,
+        cache_version   INTEGER NOT NULL,
+        source_hash     TEXT NOT NULL,
+        sample_rate     INTEGER NOT NULL,
+        frame_count     INTEGER NOT NULL,
+        channel_count   INTEGER NOT NULL,
+        levels_json     TEXT NOT NULL,
+        manifest_path   TEXT NOT NULL,
+        created_at      TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_waveform_caches_source_hash ON waveform_caches(source_hash)",
+)
+
+
+def _migration_4_to_5(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_5_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(5, _migration_4_to_5)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.

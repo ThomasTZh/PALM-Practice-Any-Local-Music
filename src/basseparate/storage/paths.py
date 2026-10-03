@@ -37,14 +37,17 @@ class StoragePaths:
         """Resolve an asset's ``relative_path`` to an absolute path.
 
         Relative paths are anchored per category (``data/...`` →
-        ``self.data``, ``runtime/...`` → ``self.runtime``), which works for
-        both the explicit-storage-root layout and the default XDG layout.
+        ``self.data``, ``runtime/...`` → ``self.runtime``, ``cache/...`` →
+        ``self.cache``), which works for both the explicit-storage-root
+        layout and the default XDG layout.
         """
         parts = Path(relative_path).parts
         if parts and parts[0] == "data":
             return self.data.joinpath(*parts[1:])
         if parts and parts[0] == "runtime":
             return self.runtime.joinpath(*parts[1:])
+        if parts and parts[0] == "cache":
+            return self.cache.joinpath(*parts[1:])
         return self.state / relative_path
 
 

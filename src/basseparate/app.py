@@ -50,6 +50,7 @@ from basseparate.storage import (
     ProjectRepository,
     RepresentationRepository,
     StoragePaths,
+    WaveformCacheRepository,
     initialize_database,
     initialize_storage_paths,
     resolve_storage_paths,
@@ -205,19 +206,44 @@ def _playback_parameters_for(
     }
 
 
+def _waveform_parameters_for(
+    job: MediaJob, projects: ProjectRepository, paths: StoragePaths
+) -> dict[str, Any]:
+    """Worker parameters for a waveform pyramid build (M1.8).
+
+    The source is the canonical PCM asset; the cache is keyed by its
+    content hash under the storage cache category.
+    """
+    if job.job_type is not JobType.WAVEFORM:
+        return {}
+    _project, asset = _canonical_pcm_asset(job, projects)
+    audio = asset.audio
+    assert audio is not None
+    return {
+        "source_path": str(paths.resolve_asset_path(asset.relative_path)),
+        "source_hash": asset.content_hash,
+        "sample_rate": audio.sample_rate,
+        "frame_count": audio.frame_count,
+        "channel_count": audio.channel_count,
+        "cache_dir": str(paths.cache / "waveforms" / asset.content_hash),
+    }
+
+
 def _job_parameters_for(
     job: MediaJob,
     imports: ImportRepository,
     projects: ProjectRepository,
     paths: StoragePaths,
 ) -> dict[str, Any]:
-    """Worker parameters for any job type (M1.4 decode, M1.7 derived)."""
+    """Worker parameters for any job type (M1.4 decode, M1.7/M1.8 derived)."""
     if job.job_type is JobType.CANONICAL_DECODE:
         return _decode_parameters_for(job, imports)
     if job.job_type is JobType.MONITORING_DOWNMIX:
         return _downmix_parameters_for(job, projects, paths)
     if job.job_type is JobType.PLAYBACK_RATE:
         return _playback_parameters_for(job, projects, paths)
+    if job.job_type is JobType.WAVEFORM:
+        return _waveform_parameters_for(job, projects, paths)
     return {}
 
 
@@ -266,6 +292,8 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.job_repository = JobRepository(paths.database_path)
         representation_repository = RepresentationRepository(paths.database_path)
         app.state.representation_repository = representation_repository
+        cache_repository = WaveformCacheRepository(paths.database_path, paths.cache)
+        app.state.waveform_cache_repository = cache_repository
         import_repository = cast(ImportRepository, app.state.import_repository)
         app.state.job_manager = JobManager(
             repository=cast(JobRepository, app.state.job_repository),
@@ -276,6 +304,8 @@ def create_app(config: AppConfig) -> FastAPI:
                 cast(ProjectRepository, app.state.repository),
                 representation_repository,
                 paths,
+                cast(JobRepository, app.state.job_repository),
+                cache_repository,
             ),
             parameters_for=lambda job: _job_parameters_for(
                 job,

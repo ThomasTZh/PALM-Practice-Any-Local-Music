@@ -51,6 +51,19 @@ from basseparate.domain.representation import (
     RepresentationRole,
     TimeMapping,
 )
+from basseparate.domain.waveform import (
+    AGGREGATION,
+    BASE_BUCKET_FRAMES,
+    TILE_BUCKETS,
+    WAVEFORM_CACHE_VERSION,
+    WaveformCacheRecord,
+    WaveformLevelSummary,
+    WaveformManifest,
+    WaveformResult,
+    expected_levels,
+    tile_byte_count,
+    validate_manifest,
+)
 
 __all__ = [
     "ALLOWED_TRANSITIONS",
@@ -89,5 +102,16 @@ __all__ = [
     "TransferState",
     "UtcTimestamp",
     "Uuid",
+    "WaveformCacheRecord",
+    "WaveformLevelSummary",
+    "WaveformManifest",
+    "WaveformResult",
     "WaveformStatus",
+    "AGGREGATION",
+    "BASE_BUCKET_FRAMES",
+    "TILE_BUCKETS",
+    "WAVEFORM_CACHE_VERSION",
+    "expected_levels",
+    "tile_byte_count",
+    "validate_manifest",
 ]

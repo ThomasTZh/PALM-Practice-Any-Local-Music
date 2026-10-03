@@ -24,13 +24,16 @@ from basseparate.domain.representation import (
     TimeMapping,
     compute_transform_key,
 )
+from basseparate.domain.waveform import BASE_BUCKET_FRAMES, WaveformResult
 from basseparate.jobs import PublishError, build_publishers
+from basseparate.media.waveform import build_waveform_cache
 from basseparate.storage import (
     ImportRepository,
     JobRepository,
     ProjectRepository,
     RepresentationRepository,
     StoragePaths,
+    WaveformCacheRepository,
 )
 from basseparate.storage.db import initialize_database
 
@@ -61,6 +64,7 @@ def env(tmp_path: Path) -> dict:
         "imports": ImportRepository(db),
         "jobs": JobRepository(db),
         "representations": RepresentationRepository(db),
+        "waveform_caches": WaveformCacheRepository(db, paths.cache),
     }
 
 
@@ -227,7 +231,12 @@ def _playback_result_dict(*, staging_path: str) -> dict:
 
 def _publisher(env: dict):
     return build_publishers(
-        env["imports"], env["projects"], env["representations"], env["paths"]
+        env["imports"],
+        env["projects"],
+        env["representations"],
+        env["paths"],
+        env["jobs"],
+        env["waveform_caches"],
     )
 
 
@@ -428,3 +437,89 @@ class TestPublishPlayback:
             conn.close()
         assert asset_count == 1
         assert rep_count == 1
+
+
+def _waveform_result(env: dict, pcm: AssetRecord, *, source_hash: str | None = None) -> dict:
+    """A real on-disk cache for the asset, as the worker would report it."""
+    audio = pcm.audio
+    assert audio is not None
+    cache_dir = env["paths"].cache / "waveforms" / pcm.content_hash
+    manifest = build_waveform_cache(
+        env["paths"].resolve_asset_path(pcm.relative_path),
+        cache_dir,
+        source_hash=pcm.content_hash,
+        sample_rate=audio.sample_rate,
+        frame_count=audio.frame_count,
+        channel_count=audio.channel_count,
+    )
+    return WaveformResult(
+        cache_version=manifest.cache_version,
+        source_hash=source_hash if source_hash is not None else manifest.source_hash,
+        sample_rate=manifest.sample_rate,
+        frame_count=manifest.frame_count,
+        channel_count=manifest.channel_count,
+        final_bucket_frames=manifest.frame_count % BASE_BUCKET_FRAMES
+        or BASE_BUCKET_FRAMES,
+        levels=manifest.levels,
+        manifest_path=str((cache_dir / "manifest.json").resolve()),
+    ).model_dump(mode="json")
+
+
+class TestPublishWaveform:
+    """M1.8: the waveform cache publisher verifies on disk, then registers."""
+
+    def test_publish_registers_cache_row(self, env: dict) -> None:
+        project_id, pcm = _seed_ready_project(env, channels=2, layout="stereo")
+        job = env["jobs"].create_job(project_id, JobType.WAVEFORM)
+        _publisher(env)(job, _waveform_result(env, pcm))
+
+        record = env["waveform_caches"].get_for_asset(pcm.id)
+        assert record is not None
+        assert record.asset_id == pcm.id
+        assert record.source_hash == pcm.content_hash
+        assert record.manifest_path == f"cache/waveforms/{pcm.content_hash}/manifest.json"
+        assert [lv.bucket_count for lv in record.levels] == [69]  # ceil(4410 / 64)
+        manifest = env["paths"].resolve_asset_path(record.manifest_path)
+        assert manifest.is_file()
+
+    def test_republish_is_idempotent(self, env: dict) -> None:
+        import sqlite3
+
+        project_id, pcm = _seed_ready_project(env, channels=2, layout="stereo")
+        publish = _publisher(env)
+        publish(env["jobs"].create_job(project_id, JobType.WAVEFORM), _waveform_result(env, pcm))
+        publish(env["jobs"].create_job(project_id, JobType.WAVEFORM), _waveform_result(env, pcm))
+
+        conn = sqlite3.connect(env["db"])
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM waveform_caches WHERE asset_id = ?", (str(pcm.id),)
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert count == 1
+        assert env["waveform_caches"].get_for_asset(pcm.id) is not None
+
+    def test_rejects_non_final_manifest(self, env: dict) -> None:
+        import json
+
+        project_id, pcm = _seed_ready_project(env, channels=2, layout="stereo")
+        result = _waveform_result(env, pcm)
+        manifest_path = Path(result["manifest_path"])
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        data["final"] = False
+        manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+        job = env["jobs"].create_job(project_id, JobType.WAVEFORM)
+        with pytest.raises(PublishError, match="not final"):
+            _publisher(env)(job, result)
+        assert env["waveform_caches"].get_for_asset(pcm.id) is None
+
+    def test_rejects_hash_mismatch(self, env: dict) -> None:
+        project_id, pcm = _seed_ready_project(env, channels=2, layout="stereo")
+        result = _waveform_result(env, pcm, source_hash="f" * 64)
+
+        job = env["jobs"].create_job(project_id, JobType.WAVEFORM)
+        with pytest.raises(PublishError, match="does not match"):
+            _publisher(env)(job, result)
+        assert env["waveform_caches"].get_for_asset(pcm.id) is None

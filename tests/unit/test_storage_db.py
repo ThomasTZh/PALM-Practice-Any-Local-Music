@@ -11,12 +11,13 @@ import pytest
 
 from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
 from basseparate.domain.project import ProjectStatus
+from basseparate.domain.waveform import WaveformResult, expected_levels
 from basseparate.storage.db import (
     DatabaseError,
     UnsupportedSchemaVersion,
     initialize_database,
 )
-from basseparate.storage.repository import ProjectRepository
+from basseparate.storage.repository import ProjectRepository, WaveformCacheRepository
 
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
 FAKE_HASH = "b" * 64
@@ -71,13 +72,14 @@ class TestInitialization:
             "imports",
             "representations",
             "media_jobs",
+            "waveform_caches",
         } <= tables
 
-    def test_schema_version_is_4(self, db_path: Path) -> None:
+    def test_schema_version_is_5(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 4
+        assert version == 5
 
     def test_media_jobs_table_shape(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
@@ -126,6 +128,23 @@ class TestInitialization:
         conn.close()
         assert "audio_frame_count" in columns
         assert "audio_sample_count" not in columns
+
+    def test_waveform_caches_table_shape(self, db_path: Path) -> None:
+        conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(waveform_caches)")}
+        conn.close()
+        assert {
+            "id",
+            "asset_id",
+            "cache_version",
+            "source_hash",
+            "sample_rate",
+            "frame_count",
+            "channel_count",
+            "levels_json",
+            "manifest_path",
+            "created_at",
+        } <= columns
 
 
 class TestProjectRepository:
@@ -231,3 +250,122 @@ class TestAssetRepository:
         repo.register_asset(asset)
         with pytest.raises(DatabaseError, match="cannot attach asset"):
             repo.attach_asset(uuid.uuid4(), asset.id, AssetRole.SOURCE_PCM)
+
+
+def _cache_asset(content_hash: str = FAKE_HASH) -> AssetRecord:
+    return AssetRecord(
+        id=uuid.uuid4(),
+        content_hash=content_hash,
+        role=AssetRole.SOURCE_PCM,
+        relative_path="assets/test.pcm",
+        media_type="audio/x-pcm",
+        byte_count=640 * 2 * 4,
+        created_at=NOW,
+    )
+
+
+def _cache_result(cache_root: Path, source_hash: str = FAKE_HASH) -> WaveformResult:
+    manifest = cache_root / "waveforms" / source_hash / "manifest.json"
+    return WaveformResult(
+        cache_version=1,
+        source_hash=source_hash,
+        sample_rate=44100,
+        frame_count=640,
+        channel_count=2,
+        final_bucket_frames=64,
+        levels=expected_levels(640),
+        manifest_path=str(manifest),
+    )
+
+
+class TestWaveformCacheRepository:
+    @pytest.fixture()
+    def cache_root(self, tmp_path: Path) -> Path:
+        return tmp_path / "cache"
+
+    @pytest.fixture()
+    def projects(self, db_path: Path) -> ProjectRepository:
+        return ProjectRepository(db_path)
+
+    @pytest.fixture()
+    def repo(self, db_path: Path, cache_root: Path) -> WaveformCacheRepository:
+        return WaveformCacheRepository(db_path, cache_root)
+
+    def _registered_asset(
+        self, projects: ProjectRepository, content_hash: str = FAKE_HASH
+    ) -> AssetRecord:
+        asset = _cache_asset(content_hash)
+        projects.register_asset(asset)
+        return asset
+
+    def test_register_and_get_round_trip(
+        self, repo: WaveformCacheRepository, projects: ProjectRepository
+    ) -> None:
+        asset = self._registered_asset(projects)
+        record = repo.register(asset.id, _cache_result(repo._cache_root))
+        assert record.asset_id == asset.id
+        assert record.source_hash == FAKE_HASH
+        assert record.manifest_path == f"cache/waveforms/{FAKE_HASH}/manifest.json"
+        assert [lv.bucket_count for lv in record.levels] == [10]
+
+        fetched = repo.get_for_asset(asset.id)
+        assert fetched is not None
+        assert fetched == record
+
+    def test_register_idempotent(
+        self, repo: WaveformCacheRepository, projects: ProjectRepository
+    ) -> None:
+        asset = self._registered_asset(projects)
+        first = repo.register(asset.id, _cache_result(repo._cache_root))
+        second = repo.register(asset.id, _cache_result(repo._cache_root))
+        assert second.id == first.id
+        assert second.created_at == first.created_at
+
+    def test_register_rejects_source_hash_mismatch(
+        self, repo: WaveformCacheRepository, projects: ProjectRepository
+    ) -> None:
+        asset = self._registered_asset(projects)
+        repo.register(asset.id, _cache_result(repo._cache_root))
+        other_hash = "c" * 64
+        with pytest.raises(DatabaseError, match="different source hash"):
+            repo.register(asset.id, _cache_result(repo._cache_root, source_hash=other_hash))
+
+    def test_register_rejects_manifest_outside_cache_root(
+        self,
+        repo: WaveformCacheRepository,
+        projects: ProjectRepository,
+        tmp_path: Path,
+    ) -> None:
+        asset = self._registered_asset(projects)
+        outside = _cache_result(tmp_path / "elsewhere")
+        with pytest.raises(DatabaseError, match="outside cache root"):
+            repo.register(asset.id, outside)
+
+    def test_register_requires_existing_asset(self, repo: WaveformCacheRepository) -> None:
+        with pytest.raises(DatabaseError, match="cannot register waveform cache"):
+            repo.register(uuid.uuid4(), _cache_result(repo._cache_root))
+
+    def test_get_for_asset_none(self, repo: WaveformCacheRepository) -> None:
+        assert repo.get_for_asset(uuid.uuid4()) is None
+
+    def test_delete_for_asset(
+        self, repo: WaveformCacheRepository, projects: ProjectRepository
+    ) -> None:
+        asset = self._registered_asset(projects)
+        repo.register(asset.id, _cache_result(repo._cache_root))
+        repo.delete_for_asset(asset.id)
+        assert repo.get_for_asset(asset.id) is None
+        # Deleting again is a no-op.
+        repo.delete_for_asset(asset.id)
+
+    def test_cascade_when_asset_deleted(
+        self, repo: WaveformCacheRepository, projects: ProjectRepository
+    ) -> None:
+        asset = self._registered_asset(projects)
+        repo.register(asset.id, _cache_result(repo._cache_root))
+        conn = sqlite3.connect(str(repo._db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("DELETE FROM assets WHERE id = ?", (str(asset.id),))
+        conn.execute("COMMIT")
+        conn.close()
+        assert repo.get_for_asset(asset.id) is None

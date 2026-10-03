@@ -19,6 +19,7 @@ from basseparate.storage.repository import (
     JobRepository,
     ProjectRepository,
     RepresentationRepository,
+    WaveformCacheRepository,
 )
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "StorageError",
     "StoragePaths",
     "UnsupportedSchemaVersion",
+    "WaveformCacheRepository",
     "default_storage_paths",
     "initialize_database",
     "initialize_storage_paths",

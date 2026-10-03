@@ -7,9 +7,10 @@ Routes (all authenticated, loopback-only):
 - POST /api/v1/jobs/{job_id}/cancel — request cancellation
 
 Every job derives from a completed import. The ``probe``,
-``canonical_decode``, ``monitoring_downmix``, and ``playback_rate`` job
-types are fully executable; the remaining types are durably tracked and
-fail with ``JOB_TYPE_NOT_IMPLEMENTED`` until their milestones land.
+``canonical_decode``, ``monitoring_downmix``, ``playback_rate``, and
+``waveform`` job types are fully executable; the remaining types are
+durably tracked and fail with ``JOB_TYPE_NOT_IMPLEMENTED`` until their
+milestones land.
 Creating a ``canonical_decode`` job requires the import to have a selected
 audio stream (422 ``NO_STREAM_SELECTION`` otherwise). Creating a
 ``playback_rate`` job requires ``target_sample_rate`` (8000-192000 Hz);

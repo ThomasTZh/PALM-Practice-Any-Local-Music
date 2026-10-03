@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import shutil
 import sys
 import threading
@@ -26,9 +27,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from basseparate.domain.common import Uuid
+from basseparate.domain.common import JS_SAFE_INTEGER_MAX, Uuid
 from basseparate.domain.media_job import JobStage, JobType
 from basseparate.domain.representation import MonitoringDownmixResult, PlaybackRateResult
+from basseparate.domain.waveform import BASE_BUCKET_FRAMES, WaveformResult
 from basseparate.media.decode import (
     DecodeCancelledError,
     DecodeError,
@@ -64,6 +66,11 @@ from basseparate.media.probe import (
     ProbeTimeoutError,
     UnsupportedMediaError,
     probe_media,
+)
+from basseparate.media.waveform import (
+    WaveformCancelledError,
+    WaveformError,
+    build_waveform_cache,
 )
 from basseparate.worker.protocol import (
     ERR_INTERNAL,
@@ -364,6 +371,83 @@ def _run_playback_rate(payload: RunPayload, cancel_event: threading.Event) -> No
     _send(make_completed(job_id, result.model_dump(mode="json")))
 
 
+def _run_waveform(payload: RunPayload, cancel_event: threading.Event) -> None:
+    """Execute a waveform job: pyramid cache on disk, result metadata only.
+
+    The worker writes tiles and the manifest under the assigned cache
+    directory and never touches the database (M1.4 boundary). The backend
+    re-verifies the final manifest and a spot-checked tile before it
+    registers the cache row.
+    """
+    job_id = payload.job_id
+    _send(make_progress(job_id, JobStage.BUILDING_WAVEFORM, None, "starting waveform build"))
+    parameters = payload.parameters
+    try:
+        source_path = _as_str_param(parameters, "source_path", 4096)
+        source_hash = _as_str_param(parameters, "source_hash", 64)
+        if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
+            raise ValueError("source_hash must be 64 lowercase hex characters")
+        sample_rate = _as_int_param(parameters, "sample_rate", 8_000, 192_000)
+        frame_count = _as_int_param(parameters, "frame_count", 1, JS_SAFE_INTEGER_MAX)
+        channel_count = _as_int_param(parameters, "channel_count", 1, 8)
+        cache_dir = _as_str_param(parameters, "cache_dir", 4096)
+    except ValueError as exc:
+        _send(make_failed(job_id, "WAVEFORM_PARAMETERS", f"invalid waveform parameters: {exc}"))
+        return
+
+    source = Path(source_path)
+    if not source.is_file():
+        _send(
+            make_failed(job_id, "WAVEFORM_SOURCE_MISSING", f"source PCM not found: {source_path}")
+        )
+        return
+    expected_bytes = frame_count * channel_count * 4
+    try:
+        actual_bytes = source.stat().st_size
+    except OSError as exc:
+        _send(
+            make_failed(
+                job_id, "WAVEFORM_SOURCE_MISSING", f"cannot stat source PCM: {exc}"
+            )
+        )
+        return
+    if actual_bytes != expected_bytes:
+        _send(
+            make_failed(
+                job_id,
+                "WAVEFORM_SOURCE_SIZE_MISMATCH",
+                f"source PCM is {actual_bytes} bytes; expected {expected_bytes} "
+                f"for {frame_count} frames x {channel_count} channels",
+            )
+        )
+        return
+
+    manifest = build_waveform_cache(
+        source,
+        Path(cache_dir),
+        source_hash=source_hash,
+        sample_rate=sample_rate,
+        frame_count=frame_count,
+        channel_count=channel_count,
+        cancel_event=cancel_event,
+        on_progress=lambda fraction: _send(
+            make_progress(job_id, JobStage.BUILDING_WAVEFORM, fraction, "building pyramid")
+        ),
+    )
+    result = WaveformResult(
+        cache_version=manifest.cache_version,
+        source_hash=manifest.source_hash,
+        sample_rate=manifest.sample_rate,
+        frame_count=manifest.frame_count,
+        channel_count=manifest.channel_count,
+        final_bucket_frames=manifest.frame_count % BASE_BUCKET_FRAMES or BASE_BUCKET_FRAMES,
+        levels=manifest.levels,
+        manifest_path=str((Path(cache_dir) / "manifest.json").resolve()),
+    )
+    # The backend verifies this payload before publishing it.
+    _send(make_completed(job_id, result.model_dump(mode="json")))
+
+
 def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
     """Run one job to a terminal report. Never raises out of the thread."""
     job_id = payload.job_id
@@ -376,15 +460,24 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
             _run_monitoring_downmix(payload, cancel_event)
         elif payload.job_type is JobType.PLAYBACK_RATE:
             _run_playback_rate(payload, cancel_event)
+        elif payload.job_type is JobType.WAVEFORM:
+            _run_waveform(payload, cancel_event)
         else:
-            _send(
+            # Defensive: every protocol-v2 type is implemented, but a newer
+            # protocol version may carry a type this worker does not know.
+            _send(  # type: ignore[unreachable]
                 make_failed(
                     job_id,
                     ERR_NOT_IMPLEMENTED,
                     f"job type {payload.job_type.value!r} is implemented in a later milestone",
                 )
             )
-    except (ProbeCancelledError, DecodeCancelledError, DerivedCancelledError):
+    except (
+        ProbeCancelledError,
+        DecodeCancelledError,
+        DerivedCancelledError,
+        WaveformCancelledError,
+    ):
         removed = _remove_staging(payload.staging_dir)
         _log(f"job {job_id} cancelled; staging removed={removed}")
         _send(make_cancelled(job_id, staging_removed=removed))
@@ -400,6 +493,11 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} failed: {_derived_error_code(exc)}: {exc}")
         _send(make_failed(job_id, _derived_error_code(exc), str(exc)))
+    except WaveformError as exc:
+        # The engine already removed the cache directory on failure.
+        _remove_staging(payload.staging_dir)
+        _log(f"job {job_id} failed: WAVEFORM_FAILED: {exc}")
+        _send(make_failed(job_id, "WAVEFORM_FAILED", str(exc)))
     except Exception as exc:  # noqa: BLE001 - last-resort guard inside the job thread
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} crashed: {exc!r}")

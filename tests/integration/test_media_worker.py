@@ -1,13 +1,17 @@
-"""Media worker subprocess tests (M1.4, extended M1.5).
+"""Media worker subprocess tests (M1.4, extended M1.5/M1.8).
 
 Runs the real ``basseparate.worker.media_worker`` as a child process and
 drives it through the v2 protocol: probe to completion, canonical decode
-to completion (real ffmpeg), decode parameter validation, unimplemented
-job types, and cancellation of running jobs.
+to completion (real ffmpeg), decode parameter validation, waveform pyramid
+builds (M1.8), and cancellation of running jobs. The not-implemented
+dispatch branch is covered by ``tests/unit/test_media_worker_dispatch.py``
+(no protocol-v2 job type is left unimplemented after M1.8).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import struct
 import threading
 import uuid
@@ -17,7 +21,6 @@ import pytest
 
 from basseparate.domain.media_job import JobStage, JobType
 from basseparate.worker import (
-    ERR_NOT_IMPLEMENTED,
     CancelledMessage,
     CapabilitiesMessage,
     CompletedMessage,
@@ -146,21 +149,6 @@ class TestProbeJob:
         assert result["format_name"] == "wav"
         assert result["byte_count"] == wav.stat().st_size
         assert len(result["audio_streams"]) == 1
-
-    def test_unimplemented_job_type_fails(
-        self, supervisor: WorkerSupervisor, tmp_path: Path
-    ) -> None:
-        supervisor.wait_for_handshake()
-        job_id = uuid.uuid4()
-        supervisor.send(
-            make_run(
-                job_id, JobType.WAVEFORM, str(tmp_path / "x.part"), str(tmp_path / "s")
-            )
-        )
-        msg = supervisor.receive(15.0)
-        assert isinstance(msg, FailedMessage)
-        assert msg.payload.job_id == job_id
-        assert msg.payload.code == ERR_NOT_IMPLEMENTED
 
     def test_probe_missing_source_fails(self, supervisor: WorkerSupervisor, tmp_path: Path) -> None:
         supervisor.wait_for_handshake()
@@ -361,6 +349,225 @@ class TestDecodeJob:
             assert final.payload.job_id == job_id
             assert final.payload.staging_removed is True
             assert not staging.exists()
+        finally:
+            sup.stop()
+        assert_no_leftover(sup.pid)
+
+
+class TestWaveformJob:
+    """M1.8: waveform pyramid jobs through the worker protocol."""
+
+    @staticmethod
+    def _pcm_path(tmp_path: Path, frames: int = 64 * 100, channels: int = 2) -> Path:
+        import numpy as np
+
+        rng = np.random.default_rng(7)
+        samples = (rng.random((frames, channels), dtype="<f8") - 0.5).astype("<f4")
+        path = tmp_path / "canonical.pcm"
+        path.write_bytes(samples.tobytes())
+        return path
+
+    def _waveform_params(
+        self, source: Path, cache_dir: Path, channel_count: int = 2, **overrides: object
+    ) -> dict:
+        data = source.read_bytes()
+        frames = len(data) // (channel_count * 4)
+        params: dict = {
+            "source_path": str(source),
+            "source_hash": hashlib.sha256(data).hexdigest(),
+            "sample_rate": 44100,
+            "frame_count": frames,
+            "channel_count": channel_count,
+            "cache_dir": str(cache_dir),
+        }
+        params.update(overrides)
+        return params
+
+    def _run_to_terminal(
+        self, sup: WorkerSupervisor, job_id: uuid.UUID
+    ) -> tuple[list[object], object]:
+        messages: list[object] = []
+        for _ in range(30):
+            msg = sup.receive(15.0)
+            messages.append(msg)
+            if isinstance(msg, (CompletedMessage, FailedMessage, CancelledMessage)):
+                break
+        return messages, messages[-1]
+
+    def test_waveform_completes_with_result(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        source = self._pcm_path(tmp_path)
+        cache_dir = tmp_path / "cache" / "waveforms" / "unit"
+        job_id = uuid.uuid4()
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.WAVEFORM,
+                str(source),
+                str(tmp_path / "s"),
+                parameters=self._waveform_params(source, cache_dir),
+            )
+        )
+
+        messages, final = self._run_to_terminal(supervisor, job_id)
+        assert any(
+            isinstance(m, ProgressMessage) and m.payload.stage is JobStage.BUILDING_WAVEFORM
+            for m in messages
+        )
+        assert isinstance(final, CompletedMessage), f"expected completed, got {type(final)}"
+        result = final.payload.result
+        assert result["source_hash"] == hashlib.sha256(source.read_bytes()).hexdigest()
+        assert result["frame_count"] == 6400
+        assert result["channel_count"] == 2
+        assert result["final_bucket_frames"] == 64
+        assert [lv["tile_count"] for lv in result["levels"]] == [1]
+        manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+        assert manifest["final"] is True
+        assert manifest["available_tiles"] == {"0": [[0, 0]]}
+        tile = (cache_dir / "level_0" / "tile_000000.bin")
+        assert tile.is_file()
+        assert tile.stat().st_size == 100 * 2 * 8
+
+    def test_waveform_multi_tile_pyramid(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        source = self._pcm_path(tmp_path, frames=1_200_000)
+        cache_dir = tmp_path / "cache" / "waveforms" / "long"
+        job_id = uuid.uuid4()
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.WAVEFORM,
+                str(source),
+                str(tmp_path / "s"),
+                parameters=self._waveform_params(source, cache_dir),
+            )
+        )
+
+        _, final = self._run_to_terminal(supervisor, job_id)
+        assert isinstance(final, CompletedMessage), f"expected completed, got {type(final)}"
+        result = final.payload.result
+        assert [lv["tile_count"] for lv in result["levels"]] == [5, 2, 1]
+        assert (cache_dir / "level_2" / "tile_000000.bin").is_file()
+
+    def test_waveform_missing_parameters_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        source = self._pcm_path(tmp_path)
+        job_id = uuid.uuid4()
+        supervisor.send(make_run(job_id, JobType.WAVEFORM, str(source), str(tmp_path / "s")))
+
+        _, final = self._run_to_terminal(supervisor, job_id)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "WAVEFORM_PARAMETERS"
+
+    def test_waveform_invalid_parameters_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        source = self._pcm_path(tmp_path)
+        job_id = uuid.uuid4()
+        params = self._waveform_params(source, tmp_path / "c", source_hash="nothex")
+        supervisor.send(
+            make_run(
+                job_id, JobType.WAVEFORM, str(source), str(tmp_path / "s"), parameters=params
+            )
+        )
+
+        _, final = self._run_to_terminal(supervisor, job_id)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "WAVEFORM_PARAMETERS"
+
+    def test_waveform_size_mismatch_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        source = self._pcm_path(tmp_path)
+        job_id = uuid.uuid4()
+        params = self._waveform_params(
+            source, tmp_path / "c", frame_count=10**9  # far beyond the file
+        )
+        supervisor.send(
+            make_run(
+                job_id, JobType.WAVEFORM, str(source), str(tmp_path / "s"), parameters=params
+            )
+        )
+
+        _, final = self._run_to_terminal(supervisor, job_id)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "WAVEFORM_SOURCE_SIZE_MISMATCH"
+
+    def test_waveform_hash_mismatch_fails_and_cleans_cache(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        source = self._pcm_path(tmp_path)
+        cache_dir = tmp_path / "cache" / "waveforms" / "mismatch"
+        job_id = uuid.uuid4()
+        params = self._waveform_params(source, cache_dir, source_hash="f" * 64)
+        supervisor.send(
+            make_run(
+                job_id, JobType.WAVEFORM, str(source), str(tmp_path / "s"), parameters=params
+            )
+        )
+
+        _, final = self._run_to_terminal(supervisor, job_id)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "WAVEFORM_FAILED"
+        assert "hash mismatch" in final.payload.message
+        # A failed run leaves no partial cache behind.
+        assert not cache_dir.exists()
+
+    def test_waveform_cancel_running_cleans_cache(
+        self, tmp_path: Path
+    ) -> None:
+        """In-flight cancel: a large file keeps the build alive long enough."""
+        sup = WorkerSupervisor(command=media_worker_command(), cwd=tmp_path)
+        sup.start()
+        try:
+            sup.wait_for_handshake()
+            source = self._pcm_path(tmp_path, frames=8_000_000)
+            cache_dir = tmp_path / "cache" / "waveforms" / "cancelled"
+            job_id = uuid.uuid4()
+            sup.send(
+                make_run(
+                    job_id,
+                    JobType.WAVEFORM,
+                    str(source),
+                    str(tmp_path / "s"),
+                    parameters=self._waveform_params(source, cache_dir),
+                )
+            )
+
+            saw_progress = False
+            for _ in range(20):
+                msg = sup.receive(15.0)
+                if (
+                    isinstance(msg, ProgressMessage)
+                    and msg.payload.stage is JobStage.BUILDING_WAVEFORM
+                ):
+                    saw_progress = True
+                    break
+            assert saw_progress
+
+            from basseparate.worker import make_cancel
+
+            sup.send(make_cancel(job_id))
+
+            final = None
+            for _ in range(20):
+                msg = sup.receive(15.0)
+                if isinstance(msg, (CancelledMessage, CompletedMessage, FailedMessage)):
+                    final = msg
+                    break
+            assert isinstance(final, CancelledMessage), f"expected cancelled, got {type(final)}"
+            assert final.payload.job_id == job_id
+            # The engine removes the cache directory on cancellation.
+            assert not cache_dir.exists()
         finally:
             sup.stop()
         assert_no_leftover(sup.pid)

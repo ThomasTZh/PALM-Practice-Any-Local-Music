@@ -1,5 +1,5 @@
 """Backend publishers for verified job results (M1.4 probe, M1.5 decode,
-M1.7 monitoring downmix and playback rate).
+M1.7 monitoring downmix and playback rate, M1.8 waveform cache).
 
 The publisher is the only code path that moves decoded audio into the
 content-addressed asset store and attaches assets to a project. The
@@ -28,7 +28,7 @@ from basseparate.domain.import_record import (
     ProbeResult,
     TransferState,
 )
-from basseparate.domain.media_job import JobType, MediaJob
+from basseparate.domain.media_job import JobState, JobType, MediaJob
 from basseparate.domain.representation import (
     AudioRepresentation,
     CanonicalDecodeResult,
@@ -41,17 +41,26 @@ from basseparate.domain.representation import (
     compute_playback_key,
     compute_transform_key,
 )
+from basseparate.domain.waveform import (
+    WaveformManifest,
+    WaveformResult,
+    tile_byte_count,
+    validate_manifest,
+)
 from basseparate.media.decode import mime_type_for_format
 from basseparate.media.downmix import (
     MATRIX_VERSION,
     manual_matrix,
     standard_51_matrix,
 )
+from basseparate.media.waveform import validate_tile_bytes
 from basseparate.storage import (
     ImportRepository,
+    JobRepository,
     ProjectRepository,
     RepresentationRepository,
     StoragePaths,
+    WaveformCacheRepository,
 )
 
 #: A publisher receives the job (still RUNNING) and its verified result dict.
@@ -205,6 +214,7 @@ def _publish_decode(
     projects: ProjectRepository,
     representations: RepresentationRepository,
     paths: StoragePaths,
+    job_repository: JobRepository,
 ) -> None:
     """Publish a canonical decode: assets + representation + project attach.
 
@@ -306,6 +316,10 @@ def _publish_decode(
         decode_profile_version=decode.profile_version,
         source_metadata=source_metadata,
     )
+
+    # Auto-queue the waveform pyramid (spec §10.3.1): the only place a
+    # WAVEFORM job is created automatically.
+    _queue_waveform_if_needed(job_repository, job.project_id, job.import_id)
 
 
 def _publish_downmix(
@@ -454,13 +468,90 @@ def _publish_playback(
         representations.register_representation(representation)
 
 
+def _publish_waveform(
+    job: MediaJob,
+    result: dict[str, Any],
+    projects: ProjectRepository,
+    cache_repository: WaveformCacheRepository,
+) -> None:
+    """Publish a waveform pyramid cache: verify on disk, then register (M1.8).
+
+    The worker never touches the database; this is the only path that pins
+    the final cache to the canonical asset. The manifest must be final and
+    match the asset hash, and the last level-0 tile is spot-checked
+    (spec §10.4) before the row is written.
+    """
+    waveform = WaveformResult(**result)
+    project = projects.get_project(job.project_id)
+    if project is None:
+        raise PublishError(f"project {job.project_id} no longer exists")
+    if project.canonical_asset_id is None:
+        raise PublishError("the project has no canonical asset")
+    canonical = projects.get_asset(project.canonical_asset_id)
+    if canonical is None:
+        raise PublishError("the project's canonical asset is missing")
+    if canonical.content_hash != waveform.source_hash:
+        raise PublishError(
+            f"waveform cache hash {waveform.source_hash} does not match the "
+            f"canonical asset hash {canonical.content_hash}"
+        )
+
+    manifest_path = Path(waveform.manifest_path)
+    if not manifest_path.is_file():
+        raise PublishError(f"waveform manifest is missing: {waveform.manifest_path}")
+    manifest = WaveformManifest.model_validate_json(manifest_path.read_bytes())
+    if not manifest.final:
+        raise PublishError("waveform manifest is not final")
+    validate_manifest(manifest, source_hash=waveform.source_hash)
+
+    # Spot-check the last tile of level 0 (spec §10.4).
+    level0 = manifest.levels[0]
+    tile_path = manifest_path.parent / "level_0" / f"tile_{level0.tile_count - 1:06d}.bin"
+    if not tile_path.is_file():
+        raise PublishError(f"waveform tile is missing: {tile_path}")
+    validate_tile_bytes(
+        tile_path.read_bytes(),
+        tile_byte_count(level0.final_tile_buckets, waveform.channel_count),
+        waveform.channel_count,
+    )
+
+    # Idempotent: an existing row for the asset wins.
+    cache_repository.register(canonical.id, waveform)
+
+
+def _queue_waveform_if_needed(
+    job_repository: JobRepository,
+    project_id: uuid.UUID,
+    import_id: uuid.UUID | None,
+) -> None:
+    """Auto-queue a WAVEFORM job after a canonical decode (spec §10.3.1).
+
+    Skipped while the project has a WAVEFORM job that is live or completed
+    (re-decode safe); a previously failed or cancelled build is retried by
+    queueing a fresh job.
+    """
+    live_states = frozenset(
+        {JobState.QUEUED, JobState.RUNNING, JobState.CANCELLING, JobState.COMPLETED}
+    )
+    existing = job_repository.list_jobs_for_project(project_id)
+    if any(j.job_type is JobType.WAVEFORM and j.state in live_states for j in existing):
+        return
+    job_repository.create_job(
+        project_id=project_id,
+        job_type=JobType.WAVEFORM,
+        import_id=import_id,
+    )
+
+
 def build_publishers(
     import_repository: ImportRepository,
     project_repository: ProjectRepository,
     representation_repository: RepresentationRepository,
     paths: StoragePaths,
+    job_repository: JobRepository,
+    cache_repository: WaveformCacheRepository,
 ) -> Publisher:
-    """Dispatch verified job results to their publisher (M1.4-M1.7)."""
+    """Dispatch verified job results to their publisher (M1.4-M1.8)."""
 
     def publish(job: MediaJob, result: dict[str, Any]) -> None:
         if job.job_type is JobType.PROBE:
@@ -473,6 +564,7 @@ def build_publishers(
                 project_repository,
                 representation_repository,
                 paths,
+                job_repository,
             )
         elif job.job_type is JobType.MONITORING_DOWNMIX:
             _publish_downmix(
@@ -490,7 +582,13 @@ def build_publishers(
                 representation_repository,
                 paths,
             )
-        # WAVEFORM has no publisher yet (M1.8).
+        elif job.job_type is JobType.WAVEFORM:
+            _publish_waveform(
+                job,
+                result,
+                project_repository,
+                cache_repository,
+            )
 
     return publish
 

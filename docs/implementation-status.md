@@ -7,14 +7,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.7 (monitoring channels + playback-rate
-  representations) — complete (Phases 1–7); next: M1.8
-- **Last commit:** `af6ad7f` — M1.7 (monitoring + playback rate);
+- **Work package:** M1.8 (waveform pyramid) — complete; plan in
+  `projectPlans/m1.8-plan.md`
+- **Last commit:** `<M1.8_COMMIT>` — M1.8 (waveform pyramid);
+  `825e884` — M1.7 ledger hash;
+  `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
-  `b1d92d1` — M1.5 (decode canonical audio); `ae11417` — M1.6 ledger hash;
-  `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.8 per `projectPlans/milestone1.md` §10 — build the
-  waveform pyramid (the last unimplemented job type, `WAVEFORM`).
+  `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
+- **Next action:** M1.9 — define the media HTTP interfaces
+  (`projectPlans/milestone1.md` §11): routes over the M1.8 waveform
+  caches (progressive tile streaming), bounded media APIs. Rendering is
+  M1.10.
 
 ## Completed requirements (with evidence)
 
@@ -119,6 +122,61 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.8 — Waveform pyramid (complete)
+
+Spec: `projectPlans/milestone1.md` §10. Plan:
+`projectPlans/m1.8-plan.md`. Backend-only: cache layout, streaming
+generator, progressive publication, validation, memory bound, `WAVEFORM`
+job type (last unimplemented one). Routes: M1.9; rendering: M1.10.
+
+Key design points (see plan):
+- Cache: `cache/waveforms/<source_hash>/` — `manifest.json` (atomic
+  rewrites) + `level_L/tile_XXXXXX.bin` (4096 buckets/tile; bucket =
+  per-channel signed min/max, f32le; level L bucket = `64·4^L` frames).
+- On-disk manifest is the source of truth for progressive tile
+  availability; the worker never touches the DB (M1.4 boundary).
+- Streaming engine: bounded 4 MiB blocks, per-level partial-bucket
+  buffers (≤ 4096+3), groups of 4 aggregate up, no zero padding of
+  partial buckets, atomic tile writes + manifest updates per tile.
+- Failure/cancel → delete the whole cache dir (cheap rebuild).
+- Schema v5: `waveform_caches` table (one row per canonical asset).
+- `build_publishers` gains `job_repository` + `cache_repository` params
+  (auto-queue a WAVEFORM job after canonical commit).
+- No new routes in M1.8; no contract regen.
+
+Phases (all complete):
+1. `domain/waveform.py` — frozen models (manifest/level summary/result/
+   cache record), geometry (`expected_levels`, `tile_byte_count`),
+   `validate_manifest`; exported from `domain/__init__.py`.
+2. `media/waveform.py` — streaming engine (`build_waveform_cache`),
+   `validate_tile_bytes`, `WaveformError`/`WaveformFailedError`/
+   `WaveformCancelledError`; 37 unit tests in `tests/unit/test_waveform.py`.
+3. Schema v5 (`waveform_caches` + `idx_waveform_caches_source_hash`),
+   `WaveformCacheRepository` (idempotent `register` with hash/manifest
+   guards, `get_for_asset`, `delete_for_asset`; manifest stored relative
+   as `cache/waveforms/<hash>/manifest.json`), `cache` prefix in
+   `resolve_asset_path`; 40 storage tests.
+4. Worker `_run_waveform` (parameter validation `WAVEFORM_PARAMETERS`,
+   missing/size-mismatch/hash-mismatch guards, progress, cancel + whole
+   cache-dir cleanup) + dispatch; `JOB_TYPE_NOT_IMPLEMENTED` coverage
+   moved to a synthetic-type dispatch test
+   (`tests/unit/test_media_worker_dispatch.py`); 7 worker integration
+   tests.
+5. Manager: WAVEFORM in `_PARAMETERIZED_JOB_TYPES` (default guard
+   `NO_CANONICAL`), `WaveformResult` verification; publisher
+   `_publish_waveform` (final manifest + hash match + level-0 last-tile
+   spot-check → idempotent `register`) and `_queue_waveform_if_needed`
+   (skips live/completed WAVEFORM jobs, retries after failed/cancelled);
+   `build_publishers(imports, projects, representations, paths,
+   jobs, waveform_caches)`; `app.py` wiring (`_waveform_parameters_for`
+   with `cache_dir`, `app.state.waveform_cache_repository`); manager
+   picks up out-of-band queued jobs after each publish
+   (`_enqueue_newly_queued` + `_known_job_ids`); 13 publisher + 32
+   manager integration tests (incl. end-to-end decode → auto-queued
+   WAVEFORM → registered cache row).
+6. Full verification: 600 backend tests pass (538 at M1.7); `ruff check
+   src/ tests/` clean; mypy strict clean (45 files).
 
 ### M1.7 — Monitoring channels + playback-rate representations (complete)
 

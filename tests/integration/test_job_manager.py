@@ -1,9 +1,10 @@
-"""JobManager integration tests (M1.4).
+"""JobManager integration tests (M1.4, extended M1.8).
 
 Covers the durable scheduling loop end to end: probe to completion with
-publishing, unimplemented job types, cancellation of queued and running
-jobs, restart recovery, and the acceptance property that a completed
-result survives a later failed job.
+publishing, parameterized job failures, cancellation of queued and running
+jobs, restart recovery, decode auto-queueing of the waveform pyramid, and
+the acceptance property that a completed result survives a later failed
+job.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from basseparate.storage import (
     ProjectRepository,
     RepresentationRepository,
     StoragePaths,
+    WaveformCacheRepository,
 )
 from basseparate.storage.db import initialize_database
 
@@ -174,6 +176,7 @@ def env(tmp_path: Path):
         "import": import_record,
         "source": source,
         "source_path_for": source_path_for,
+        "waveform_caches": WaveformCacheRepository(db, paths.cache),
     }
 
 
@@ -239,7 +242,8 @@ class TestProbeCompletion:
 
         asyncio.run(scenario())
 
-    def test_unimplemented_type_fails(self, env: dict) -> None:
+    def test_waveform_without_canonical_fails(self, env: dict) -> None:
+        """M1.8: WAVEFORM is parameterized; no canonical audio means NO_CANONICAL."""
         async def scenario() -> None:
             mgr = _make_manager(env)
             await mgr.start()
@@ -249,7 +253,7 @@ class TestProbeCompletion:
                 )
                 final = await _wait_terminal(mgr, job.id)
                 assert final.state is JobState.FAILED
-                assert final.error_code == "JOB_TYPE_NOT_IMPLEMENTED"
+                assert final.error_code == "NO_CANONICAL"
             finally:
                 await mgr.stop()
 
@@ -727,7 +731,14 @@ class TestParameterResolvers:
         staged = staging / "monitoring.pcm"
         staged.write_bytes(stereo)
         downmix_job = self._job(env, project_id, JobType.MONITORING_DOWNMIX)
-        build_publishers(env["imports"], env["projects"], env["representations"], env["paths"])(
+        build_publishers(
+            env["imports"],
+            env["projects"],
+            env["representations"],
+            env["paths"],
+            env["jobs"],
+            env["waveform_caches"],
+        )(
             downmix_job,
             {
                 "frame_count": 4410,
@@ -756,6 +767,31 @@ class TestParameterResolvers:
         assert params["source_pcm_path"] == str(monitoring_path)
         assert params["channel_count"] == 2
 
+    def test_waveform_parameters(self, env: dict) -> None:
+        project_id, pcm_path = self._seed_ready(env, channels=2, layout="stereo")
+        job = self._job(env, project_id, JobType.WAVEFORM)
+        params = self._resolvers(env)(job)
+        canonical = env["projects"].get_project(project_id)
+        asset = env["projects"].get_asset(canonical.canonical_asset_id)
+        assert asset is not None
+        assert params["source_path"] == str(pcm_path)
+        assert params["source_hash"] == asset.content_hash
+        assert params["sample_rate"] == 44100
+        assert params["frame_count"] == 4410
+        assert params["channel_count"] == 2
+        assert params["cache_dir"] == str(
+            env["paths"].cache / "waveforms" / asset.content_hash
+        )
+
+    def test_waveform_no_canonical(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        project = env["projects"].create_project("no canonical")
+        job = env["jobs"].create_job(project.id, JobType.WAVEFORM)
+        with pytest.raises(ParameterResolutionError) as excinfo:
+            self._resolvers(env)(job)
+        assert excinfo.value.code == "NO_CANONICAL"
+
 
 class TestDecodeCompletion:
     """M1.5: canonical decode end to end with the real worker + ffmpeg."""
@@ -768,6 +804,8 @@ class TestDecodeCompletion:
                 env["projects"],
                 env["representations"],
                 env["paths"],
+                env["jobs"],
+                env["waveform_caches"],
             ),
             parameters_for=lambda job: _decode_parameters_for(job, env["imports"]),
         )
@@ -959,6 +997,8 @@ class TestDecodeCompletion:
                     env["projects"],
                     env["representations"],
                     env["paths"],
+                    env["jobs"],
+                    env["waveform_caches"],
                 ),
                 parameters_for=lambda job: {},
             )
@@ -1013,6 +1053,89 @@ class TestDecodeCompletion:
                 assert asset_count == 0
                 staging = env["root"] / "jobs" / job.id.hex / "staging"
                 assert not staging.exists()
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+
+class TestDecodeAutoQueuesWaveform:
+    """M1.8: a canonical decode auto-queues the waveform pyramid job."""
+
+    def _manager(self, env: dict) -> JobManager:
+        return _make_manager(
+            env,
+            publisher=build_publishers(
+                env["imports"],
+                env["projects"],
+                env["representations"],
+                env["paths"],
+                env["jobs"],
+                env["waveform_caches"],
+            ),
+            parameters_for=lambda job: _job_parameters_for(
+                job, env["imports"], env["projects"], env["paths"]
+            ),
+        )
+
+    async def _probe_first(self, env: dict, mgr: JobManager) -> None:
+        probe = await mgr.create_job(
+            env["project"].id, JobType.PROBE, import_id=env["import"].id
+        )
+        final = await _wait_terminal(mgr, probe.id)
+        assert final.state is JobState.COMPLETED
+
+    def test_decode_auto_queues_and_completes_waveform(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = self._manager(env)
+            await mgr.start()
+            try:
+                await self._probe_first(env, mgr)
+                decode = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                final = await _wait_terminal(mgr, decode.id)
+                assert final.state is JobState.COMPLETED
+                assert final.result is not None
+
+                # The decode publisher auto-queued a WAVEFORM job and the
+                # scheduler ran it to completion on the real worker.
+                jobs = env["jobs"].list_jobs_for_project(env["project"].id)
+                waveform_jobs = [j for j in jobs if j.job_type is JobType.WAVEFORM]
+                assert len(waveform_jobs) == 1
+                wave = await _wait_terminal(mgr, waveform_jobs[0].id)
+                assert wave.state is JobState.COMPLETED
+
+                project = env["projects"].get_project(env["project"].id)
+                assert project.canonical_asset_id is not None
+                record = env["waveform_caches"].get_for_asset(project.canonical_asset_id)
+                assert record is not None
+                assert record.source_hash == final.result["content_hash"]
+                manifest = env["paths"].resolve_asset_path(record.manifest_path)
+                assert manifest.is_file()
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_redecode_does_not_duplicate_waveform_job(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = self._manager(env)
+            await mgr.start()
+            try:
+                await self._probe_first(env, mgr)
+                first = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                await _wait_terminal(mgr, first.id)
+                second = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                await _wait_terminal(mgr, second.id)
+
+                jobs = env["jobs"].list_jobs_for_project(env["project"].id)
+                waveform_jobs = [j for j in jobs if j.job_type is JobType.WAVEFORM]
+                assert len(waveform_jobs) == 1
             finally:
                 await mgr.stop()
 

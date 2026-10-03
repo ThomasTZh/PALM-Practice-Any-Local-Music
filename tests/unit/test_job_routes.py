@@ -424,9 +424,10 @@ class TestCancelJob:
         assert resp.status_code == 404
         assert resp.json()["error"]["code"] == "JOB_NOT_FOUND"
 
-    def test_cancel_unimplemented_job_type_fails_cleanly(
+    def test_cancel_waveform_without_canonical_fails_cleanly(
         self, client: TestClient, auth_headers: dict
     ) -> None:
+        """M1.8: WAVEFORM is parameterized; no canonical audio -> NO_CANONICAL."""
         project_id = _make_project(client, auth_headers)
         import_id = _complete_import(client, auth_headers, project_id, _make_wav())
         resp = client.post(
@@ -437,4 +438,4 @@ class TestCancelJob:
         job_id = resp.json()["id"]
         final = _wait_for_job(client, auth_headers, job_id)
         assert final["state"] == "failed"
-        assert final["error_code"] == "JOB_TYPE_NOT_IMPLEMENTED"
+        assert final["error_code"] == "NO_CANONICAL"
