@@ -7,12 +7,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
-- **Work package:** M1.5 (decode canonical audio) — complete; next: M1.6
-- **Last commit:** `b1d92d1` — M1.5 (decode canonical audio);
-  `71a18e7` — M1.4 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.6 per `projectPlans/milestone1.md` §8 (lines 557–646):
-  content-addressed refinement, transformation-key spec, dedup policy, disk
-  budgeting. Working tree clean.
+- **Work package:** M1.6 (asset publication, hashing, disk budgeting) —
+  complete; next: M1.7
+- **Last commit:** `<M1.6_COMMIT>` — M1.6 (disk budget + acceptance tests);
+  `b1d92d1` — M1.5 (decode canonical audio); `71a18e7` — M1.4 ledger hash;
+  `d5be576` — M1.4 (durable media jobs).
+- **Next action:** M1.7 per `projectPlans/milestone1.md` §9 (monitoring
+  channels and playback-rate representations). Working tree clean.
 
 ## Completed requirements (with evidence)
 
@@ -230,6 +231,54 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - `pnpm run lint`: clean
 - `pnpm run test`: 19 passed
 - `pnpm run build`: clean
+
+### M1.6 — Asset publication, hashing, and disk budgeting (complete)
+
+Spec: `projectPlans/milestone1.md` §8 (lines 557–646). Gate B covers
+M1.4–M1.6. Plan: `projectPlans/m1.6-plan.md`.
+
+**Scope analysis:** most of §8 landed with M1.5 — content-addressed storage
+(`data/assets/<hash>.pcm`, dual identity: content hash + transformation
+key), the v1 transformation key (all seven canonical-decode elements), the
+publication sequence (staging on the destination volume → validate → hash →
+atomic same-filesystem rename → asset row → transactional project attach →
+complete only after commit), hash-based dedup (originals by source hash,
+canonical by content hash; never filename/size), and the cleanup boundary
+(source/canonical preserved, no GC, stale staging removed only after
+recovery). M1.6 closed the remaining gaps:
+
+**Disk budget (§8.5):**
+- `media/decode.py`: `PUBLISH_RESERVE_BYTES = 2 GiB`;
+  `_required_free_bytes` now budgets retained original + `1.25 ×` canonical
+  PCM estimate + the 2 GiB free-space reserve (64 MiB floor). Milestone 1
+  has no monitoring/playback representations or waveform caches, so their
+  budget is zero. `decode_canonical` passes the source file size as the
+  retained original.
+
+**Dedup policy (§8.4.2):**
+- `_ensure_pcm_asset` documents that content-hash reuse is the stronger
+  form of the transformation-key rule (identical bytes ⇒ identical key for
+  a deterministic pipeline).
+
+**Acceptance tests:**
+- `tests/unit/test_decode.py` `TestDiskBudget` (3): exact budget
+  arithmetic; no-estimate floor; fake low-free `shutil.disk_usage` →
+  `InsufficientDiskSpaceError` before ffmpeg starts, no output file.
+- `tests/integration/test_job_manager.py`
+  `test_crash_between_publish_and_commit_recovers`: decode → delete asset +
+  representation rows (file survives) → re-decode → same hash, fresh asset
+  row, on-disk file byte-identical (reused, not re-written), project ready
+  with the new canonical asset id. This is §8.3's "unreferenced complete
+  asset, not a broken project" plus the acceptance property "reopening
+  reuses existing assets".
+
+**Verification:**
+- `pytest tests/unit tests/integration -q`: 424 passed
+- `ruff check src/ tests/`: clean
+- `mypy`: clean (40 files)
+
+**Commit:** `<M1.6_COMMIT>` (implementation); ledger hash in the following
+commit.
 
 ### M1.5 — Decode canonical audio (complete)
 

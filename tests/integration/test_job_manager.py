@@ -590,6 +590,67 @@ class TestDecodeCompletion:
 
         asyncio.run(scenario())
 
+    def test_crash_between_publish_and_commit_recovers(self, env: dict) -> None:
+        """milestone1.md §8.3: a crash after the rename but before the DB
+        commit leaves an unreferenced complete asset, not a broken project.
+        Re-decoding re-registers the asset and re-attaches the project,
+        reusing the on-disk file."""
+        async def scenario() -> None:
+            import hashlib
+            import sqlite3
+
+            mgr = self._decode_manager(env)
+            await mgr.start()
+            try:
+                await self._probe_first(env, mgr)
+                first = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                first_final = await _wait_terminal(mgr, first.id)
+                assert first_final.state is JobState.COMPLETED
+                assert first_final.result is not None
+                content_hash = first_final.result["content_hash"]
+                pcm = env["projects"].get_asset_by_hash(content_hash)
+                assert pcm is not None
+                on_disk = env["paths"].data / "assets" / f"{content_hash}.pcm"
+                bytes_before = on_disk.read_bytes()
+
+                # Simulate the crash: the asset row and its references vanish,
+                # the published file remains.
+                conn = sqlite3.connect(env["db"])
+                try:
+                    conn.execute("DELETE FROM representations WHERE asset_id = ?", (str(pcm.id),))
+                    conn.execute("DELETE FROM assets WHERE id = ?", (str(pcm.id),))
+                    conn.commit()
+                finally:
+                    conn.close()
+                assert env["projects"].get_asset_by_hash(content_hash) is None
+                assert on_disk.is_file()  # the complete asset survives
+
+                # Re-decode: identical content, and the on-disk asset is
+                # reused rather than re-written.
+                second = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                second_final = await _wait_terminal(mgr, second.id)
+                assert second_final.state is JobState.COMPLETED
+                assert second_final.result is not None
+                assert second_final.result["content_hash"] == content_hash
+
+                pcm2 = env["projects"].get_asset_by_hash(content_hash)
+                assert pcm2 is not None
+                assert pcm2.id != pcm.id  # a fresh asset row
+                assert on_disk.read_bytes() == bytes_before  # file untouched
+                assert hashlib.sha256(on_disk.read_bytes()).hexdigest() == content_hash
+
+                project = env["projects"].get_project(env["project"].id)
+                assert project.status.value == "ready"
+                assert project.canonical_asset_id == pcm2.id
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
     def test_decode_without_stream_selection_fails(self, env: dict) -> None:
         async def scenario() -> None:
             mgr = _make_manager(

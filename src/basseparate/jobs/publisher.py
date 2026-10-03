@@ -78,6 +78,11 @@ def _ensure_pcm_asset(
 
     ``asset_dir`` is the content-addressed asset directory
     (``<storage_root>/data/assets``).
+
+    Dedup policy (milestone1.md §8.4): reuse is by content hash only —
+    never by filename or size. Content-hash equality is the stronger form
+    of the transformation-key rule: for a deterministic pipeline, identical
+    bytes imply an identical transformation key.
     """
     existing = projects.get_asset_by_hash(decode.content_hash)
     staged = Path(decode.staging_pcm_path)

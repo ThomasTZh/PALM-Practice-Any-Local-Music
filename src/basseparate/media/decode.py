@@ -58,6 +58,8 @@ DEFAULT_DECODE_TIMEOUT_SECONDS = 1800.0
 MAX_DECODE_STDERR_BYTES = 10 * 1024 * 1024  # 10 MiB
 DISK_HEADROOM_FACTOR = 1.25
 MINIMUM_FREE_DISK_BYTES = 64 * 1024 * 1024  # 64 MiB floor
+#: Free-space reserve kept clear before processing (milestone1.md §8.5).
+PUBLISH_RESERVE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
 VALIDATION_CHUNK_BYTES = 8 * 1024 * 1024  # 8 MiB (multiple of 4)
 MAX_DECODER_WARNINGS = 20
 TIMING_REPAIR_TOLERANCE_SECONDS = 0.5
@@ -154,11 +156,22 @@ def _required_free_bytes(
     estimated_duration_seconds: float | None,
     sample_rate: int,
     channel_count: int,
+    retained_original_bytes: int,
 ) -> int:
+    """Pre-flight disk budget (milestone1.md §8.5).
+
+    Retained original + canonical PCM (with temporary-publication
+    overhead) + the free-space reserve. Milestone 1 has no monitoring /
+    playback representations or waveform caches yet, so their budget is
+    zero; the estimate is the probe duration (conservative when absent).
+    """
     expected = 0
     if estimated_duration_seconds is not None:
         expected = int(estimated_duration_seconds * sample_rate * channel_count * 4)
-    return max(int(expected * DISK_HEADROOM_FACTOR), MINIMUM_FREE_DISK_BYTES)
+    return max(
+        int(expected * DISK_HEADROOM_FACTOR) + retained_original_bytes + PUBLISH_RESERVE_BYTES,
+        MINIMUM_FREE_DISK_BYTES,
+    )
 
 
 def _check_disk_space(output_path: Path, required_bytes: int) -> None:
@@ -317,7 +330,12 @@ async def decode_canonical(
     if not source_path.is_file():
         raise DecodeFailedError(f"media file not found: {source_path.name}")
 
-    required_bytes = _required_free_bytes(estimated_duration_seconds, sample_rate, channel_count)
+    required_bytes = _required_free_bytes(
+        estimated_duration_seconds,
+        sample_rate,
+        channel_count,
+        source_path.stat().st_size,
+    )
     _check_disk_space(output_path, required_bytes)
 
     args: Sequence[str] = (

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import shutil
 import struct
+from collections import namedtuple
 from pathlib import Path
 
 import numpy as np
@@ -11,10 +14,16 @@ import pytest
 
 from basseparate.domain.representation import CanonicalDecodeResult, compute_transform_key
 from basseparate.media.decode import (
+    DISK_HEADROOM_FACTOR,
+    MINIMUM_FREE_DISK_BYTES,
+    PUBLISH_RESERVE_BYTES,
     TIMING_REPAIR_TOLERANCE_SECONDS,
     DecodeFailedError,
+    InsufficientDiskSpaceError,
     NonFiniteSamplesError,
+    _required_free_bytes,
     check_frame_alignment,
+    decode_canonical,
     duration_discrepancy_warnings,
     mime_type_for_format,
     parse_progress_line,
@@ -223,3 +232,59 @@ class TestMimeType:
     )
     def test_known_formats(self, format_name: str, expected: str) -> None:
         assert mime_type_for_format(format_name) == expected
+
+
+class TestDiskBudget:
+    """M1.6: pre-flight disk budgeting (milestone1.md §8.5)."""
+
+    Usage = namedtuple("Usage", "total used free")
+
+    def _tiny_wav(self, tmp_path: Path) -> Path:
+        pcm = b"\x00\x00" * 441
+        source = tmp_path / "tone.wav"
+        source.write_bytes(
+            b"RIFF"
+            + struct.pack("<I", 36 + len(pcm))
+            + b"WAVE"
+            + b"fmt "
+            + struct.pack("<IHHIIHH", 16, 1, 1, 44100, 88200, 2, 16)
+            + b"data"
+            + struct.pack("<I", len(pcm))
+            + pcm
+        )
+        return source
+
+    def test_budget_includes_original_pcm_and_reserve(self) -> None:
+        required = _required_free_bytes(1.0, 44100, 2, 1_000_000)
+        expected_pcm = int(1.0 * 44100 * 2 * 4)
+        assert required == (
+            int(expected_pcm * DISK_HEADROOM_FACTOR) + 1_000_000 + PUBLISH_RESERVE_BYTES
+        )
+
+    def test_budget_floor_without_estimate(self) -> None:
+        # No duration estimate: retained original + reserve, above the floor.
+        required = _required_free_bytes(None, 44100, 1, 10_000)
+        assert required == 10_000 + PUBLISH_RESERVE_BYTES
+        assert required > MINIMUM_FREE_DISK_BYTES
+
+    def test_insufficient_space_fails_before_writing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        source = self._tiny_wav(tmp_path)
+        out = tmp_path / "out.pcm"
+        monkeypatch.setattr(
+            shutil, "disk_usage", lambda path: self.Usage(10**10, 10**10 - 10**7, 10**7)
+        )
+
+        with pytest.raises(InsufficientDiskSpaceError):
+            asyncio.run(
+                decode_canonical(
+                    source_path=source,
+                    output_path=out,
+                    stream_index=0,
+                    sample_rate=44100,
+                    channel_count=1,
+                )
+            )
+        # The budget is checked before ffmpeg starts: nothing is written.
+        assert not out.exists()
