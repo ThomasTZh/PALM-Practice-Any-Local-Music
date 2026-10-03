@@ -21,6 +21,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets/{asset_id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Asset Metadata */
+        get: operations["get_asset_metadata_api_v1_assets__asset_id__metadata_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/pcm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Asset Pcm
+         * @description Bounded raw PCM window (spec §11.4).
+         *
+         *     The asset is resolved once; the body, the content hash, and every
+         *     metadata header derive from that single resolution.
+         */
+        get: operations["get_asset_pcm_api_v1_assets__asset_id__pcm_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/peaks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Peak Tile
+         * @description One binary peak tile (f32le per-channel min/max buckets).
+         */
+        get: operations["get_peak_tile_api_v1_assets__asset_id__peaks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/peaks/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Peaks Manifest
+         * @description Waveform levels and progressive tile availability (M1.8 manifest).
+         */
+        get: operations["get_peaks_manifest_api_v1_assets__asset_id__peaks_manifest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -312,6 +392,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/playback-preparations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Playback Preparation
+         * @description Resolve an existing playback representation or queue its creation.
+         *
+         *     ``ready`` answers with the asset to play; ``preparing`` answers with
+         *     the (shared) job that will create the representation. A live job for
+         *     the same target rate is reused, never duplicated (spec §6.5.6).
+         */
+        post: operations["create_playback_preparation_api_v1_projects__project_id__playback_preparations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/source-info": {
         parameters: {
             query?: never;
@@ -350,6 +454,27 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AssetMetadataResponse */
+        AssetMetadataResponse: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Byte Count */
+            byte_count: number;
+            /** Channel Count */
+            channel_count: number | null;
+            /** Content Hash */
+            content_hash: string;
+            /** Frame Count */
+            frame_count: number | null;
+            /** Role */
+            role: string;
+            /** Sample Rate */
+            sample_rate: number | null;
+            waveform: components["schemas"]["WaveformCacheInfo"] | null;
+        };
         /**
          * AudioStreamInfo
          * @description One audio stream reported by ffprobe (global stream index).
@@ -641,6 +766,28 @@ export interface components {
             /** Right Channel */
             right_channel: number;
         };
+        /** PlaybackPreparationRequest */
+        PlaybackPreparationRequest: {
+            /** Target Sample Rate */
+            target_sample_rate: number;
+        };
+        /** PlaybackPreparationResponse */
+        PlaybackPreparationResponse: {
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Channel Count */
+            channel_count?: number | null;
+            /** Frame Count */
+            frame_count?: number | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Sample Rate */
+            sample_rate?: number | null;
+            /** Status */
+            status: string;
+            /** Target Sample Rate */
+            target_sample_rate: number;
+        };
         /** PlaybackResponse */
         PlaybackResponse: {
             /**
@@ -825,6 +972,103 @@ export interface components {
             type: string;
         };
         /**
+         * WaveformCacheInfo
+         * @description Waveform cache metadata for an asset (null when no cache exists).
+         */
+        WaveformCacheInfo: {
+            /** Available Tiles */
+            available_tiles: {
+                [key: string]: number[][];
+            };
+            /** Cache Version */
+            cache_version: number;
+            /** Channel Count */
+            channel_count: number;
+            /** Final */
+            final: boolean;
+            /** Frame Count */
+            frame_count: number;
+            /** Levels */
+            levels: components["schemas"]["WaveformLevelSummary"][];
+            /** Sample Rate */
+            sample_rate: number;
+            /** Source Hash */
+            source_hash: string;
+        };
+        /**
+         * WaveformLevelSummary
+         * @description Bucket/tile geometry of one pyramid level.
+         */
+        WaveformLevelSummary: {
+            /**
+             * Bucket Count
+             * @description Buckets at this level (last may be partial)
+             */
+            bucket_count: number;
+            /**
+             * Bucket Frame Count
+             * @description Sample frames covered by one bucket
+             */
+            bucket_frame_count: number;
+            /**
+             * Final Tile Buckets
+             * @description Buckets in the level's last (possibly partial) tile
+             */
+            final_tile_buckets: number;
+            /** Tile Count */
+            tile_count: number;
+        };
+        /**
+         * WaveformManifest
+         * @description On-disk cache manifest (atomic rewrites; progressive availability).
+         *
+         *     ``available_tiles`` maps level index (string) to a sorted list of
+         *     inclusive ``[first, last]`` completed-tile ranges. ``final`` is true
+         *     only once every level's last tile is published.
+         */
+        WaveformManifest: {
+            /**
+             * Aggregation
+             * @default 4
+             */
+            aggregation: number;
+            /** Available Tiles */
+            available_tiles?: {
+                [key: string]: number[][];
+            };
+            /**
+             * Base Bucket Frames
+             * @default 64
+             */
+            base_bucket_frames: number;
+            /** Cache Version */
+            cache_version: number;
+            /** Channel Count */
+            channel_count: number;
+            /**
+             * Final
+             * @default false
+             */
+            final: boolean;
+            /**
+             * Frame Count
+             * @description Integer source sample position (never milliseconds)
+             */
+            frame_count: number;
+            /** Levels */
+            levels: components["schemas"]["WaveformLevelSummary"][];
+            /**
+             * Sample Rate
+             * @description Sample rate in Hz
+             */
+            sample_rate: number;
+            /**
+             * Source Hash
+             * @description SHA-256 hash, lowercase hexadecimal
+             */
+            source_hash: string;
+        };
+        /**
          * WaveformStatus
          * @enum {string}
          */
@@ -856,6 +1100,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_asset_metadata_api_v1_assets__asset_id__metadata_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetMetadataResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_asset_pcm_api_v1_assets__asset_id__pcm_get: {
+        parameters: {
+            query: {
+                start_frame: number;
+                frame_count: number;
+            };
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_peak_tile_api_v1_assets__asset_id__peaks_get: {
+        parameters: {
+            query: {
+                level: number;
+                tile: number;
+            };
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_peaks_manifest_api_v1_assets__asset_id__peaks_manifest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaveformManifest"];
                 };
             };
             /** @description Validation Error */
@@ -1421,6 +1795,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaybackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_playback_preparation_api_v1_projects__project_id__playback_preparations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaybackPreparationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybackPreparationResponse"];
                 };
             };
             /** @description Validation Error */

@@ -1,4 +1,4 @@
-"""Monitoring and playback routes (M1.7, milestone1.md §9).
+"""Monitoring and playback routes (M1.7 §9, M1.9 §11.3).
 
 Routes (all authenticated, loopback-only):
 - PUT  /api/v1/projects/{project_id}/monitoring-channels — store the user's
@@ -7,6 +7,8 @@ Routes (all authenticated, loopback-only):
   channel labels, monitoring state, and the playback rates on hand
 - GET  /api/v1/projects/{project_id}/playback?rate=N — resolve the asset to
   play at a rate (404 ``NO_PLAYBACK_REPRESENTATION`` when none exists)
+- POST /api/v1/projects/{project_id}/playback-preparations — resolve an
+  existing representation or queue the job that creates one (M1.9)
 - GET  /api/v1/assets/{asset_id}/bytes — raw asset bytes with HTTP Range
   support (200 full, 206 partial, 416 unsatisfiable)
 
@@ -14,6 +16,11 @@ Playback resolution (spec §9.5): the source is the monitoring asset when
 present, else the canonical asset. A request at the source's own rate
 resolves to that asset; other rates resolve to a published playback-rate
 representation.
+
+Preparations (spec §11.3, §6.5.5-6): the same resolution as
+``GET /playback``, but when no representation exists the route queues a
+``playback_rate`` job (shared: a live job for the same target rate is
+reused, never duplicated).
 """
 
 from __future__ import annotations
@@ -35,10 +42,19 @@ from basseparate.api.errors import (
     ProjectNotReadyError,
     RangeNotSatisfiable,
 )
+from basseparate.domain.import_record import TransferState
+from basseparate.domain.media_job import JobState, JobType
 from basseparate.domain.project import ProjectRecord, ProjectStatus
 from basseparate.domain.representation import RepresentationRole
+from basseparate.jobs import JobManager
 from basseparate.media.downmix import STANDARD_51_LAYOUTS, channel_labels
-from basseparate.storage import ProjectRepository, RepresentationRepository, StoragePaths
+from basseparate.storage import (
+    ImportRepository,
+    JobRepository,
+    ProjectRepository,
+    RepresentationRepository,
+    StoragePaths,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -85,6 +101,22 @@ class PlaybackResponse(BaseModel):
     duration_seconds: float
 
 
+class PlaybackPreparationRequest(BaseModel):
+    target_sample_rate: int = Field(ge=8000, le=192000)
+
+
+class PlaybackPreparationResponse(BaseModel):
+    #: ``ready`` — an asset exists now; ``preparing`` — a job is running
+    #: (or queued) that will create the representation.
+    status: str
+    target_sample_rate: int
+    asset_id: uuid.UUID | None = None
+    sample_rate: int | None = None
+    frame_count: int | None = None
+    channel_count: int | None = None
+    job_id: uuid.UUID | None = None
+
+
 def _projects(request: Request) -> ProjectRepository:
     return cast(ProjectRepository, request.app.state.repository)
 
@@ -95,6 +127,14 @@ def _representations(request: Request) -> RepresentationRepository:
 
 def _paths(request: Request) -> StoragePaths:
     return cast(StoragePaths, request.app.state.storage_paths)
+
+
+def _jobs(request: Request) -> JobRepository:
+    return cast(JobRepository, request.app.state.job_repository)
+
+
+def _manager(request: Request) -> JobManager:
+    return cast(JobManager, request.app.state.job_manager)
 
 
 def _require_ready_project(request: Request, project_id: uuid.UUID) -> ProjectRecord:
@@ -204,6 +244,91 @@ async def resolve_playback(
         frame_count=rep.frame_count,
         byte_count=rep_asset.byte_count,
         duration_seconds=rep.frame_count / rate,
+    )
+
+
+def _decode_import_id(request: Request, project_id: uuid.UUID) -> uuid.UUID | None:
+    """The project's most recent completed import (jobs read their source
+    file from it); ``None`` only for the defensive not-ready path."""
+    imports = cast(ImportRepository, request.app.state.import_repository)
+    completed = [
+        record
+        for record in imports.list_imports_for_project(project_id)
+        if record.transfer_state is TransferState.COMPLETE
+    ]
+    if not completed:
+        return None
+    return max(completed, key=lambda record: record.created_at).id
+
+
+@router.post(
+    "/projects/{project_id}/playback-preparations",
+    response_model=PlaybackPreparationResponse,
+)
+async def create_playback_preparation(
+    project_id: uuid.UUID, body: PlaybackPreparationRequest, request: Request
+) -> PlaybackPreparationResponse:
+    """Resolve an existing playback representation or queue its creation.
+
+    ``ready`` answers with the asset to play; ``preparing`` answers with
+    the (shared) job that will create the representation. A live job for
+    the same target rate is reused, never duplicated (spec §6.5.6).
+    """
+    projects = _projects(request)
+    project = _require_ready_project(request, project_id)
+    target = body.target_sample_rate
+    source_id = project.monitoring_asset_id or project.canonical_asset_id
+    asset = projects.get_asset(source_id) if source_id is not None else None
+    if asset is None or asset.audio is None:
+        raise ProjectNotReadyError()
+    audio = asset.audio
+
+    if audio.sample_rate == target:
+        return PlaybackPreparationResponse(
+            status="ready",
+            target_sample_rate=target,
+            asset_id=asset.id,
+            sample_rate=audio.sample_rate,
+            frame_count=audio.frame_count,
+            channel_count=audio.channel_count,
+        )
+
+    rep = _representations(request).find_playback(asset.id, target)
+    if rep is not None:
+        rep_asset = projects.get_asset(rep.asset_id)
+        if rep_asset is not None and rep_asset.audio is not None:
+            return PlaybackPreparationResponse(
+                status="ready",
+                target_sample_rate=target,
+                asset_id=rep.asset_id,
+                sample_rate=rep_asset.audio.sample_rate,
+                frame_count=rep_asset.audio.frame_count,
+                channel_count=rep_asset.audio.channel_count,
+            )
+
+    live_states = frozenset({JobState.QUEUED, JobState.RUNNING, JobState.CANCELLING})
+    for job in _jobs(request).list_jobs_for_project(project_id):
+        if (
+            job.job_type is JobType.PLAYBACK_RATE
+            and job.state in live_states
+            and job.parameters.get("target_sample_rate") == target
+        ):
+            return PlaybackPreparationResponse(
+                status="preparing",
+                target_sample_rate=target,
+                job_id=job.id,
+            )
+
+    job = await _manager(request).create_job(
+        project_id=project_id,
+        job_type=JobType.PLAYBACK_RATE,
+        import_id=_decode_import_id(request, project_id),
+        parameters={"target_sample_rate": target},
+    )
+    return PlaybackPreparationResponse(
+        status="preparing",
+        target_sample_rate=target,
+        job_id=job.id,
     )
 
 

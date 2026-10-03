@@ -7,17 +7,18 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.8 (waveform pyramid) — complete; plan in
-  `projectPlans/m1.8-plan.md`
-- **Last commit:** `4a6004a` — M1.8 (waveform pyramid);
+- **Work package:** M1.9 (media HTTP interfaces) — complete; plan in
+  `projectPlans/m1.9-plan.md`
+- **Last commit:** `<M1.9_COMMIT>` — M1.9 (media HTTP interfaces);
+  `fe2b815` — M1.8 ledger hash;
+  `4a6004a` — M1.8 (waveform pyramid);
   `825e884` — M1.7 ledger hash;
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.9 — define the media HTTP interfaces
-  (`projectPlans/milestone1.md` §11): routes over the M1.8 waveform
-  caches (progressive tile streaming), bounded media APIs. Rendering is
-  M1.10.
+- **Next action:** M1.10 — render the waveform editor
+  (`projectPlans/milestone1.md` §12): frontend waveform view over the M1.9
+  peaks routes, binary parsing in a browser worker, 500 ms/2 s job polling.
 
 ## Completed requirements (with evidence)
 
@@ -122,6 +123,59 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.9 — Media HTTP interfaces (complete)
+
+Spec: `projectPlans/milestone1.md` §11. Plan:
+`projectPlans/m1.9-plan.md`. Backend-only: five media routes + PCM
+response contract + OpenAPI contract regen. Import (§11.1) and job
+(§11.2) routes already exist. Frontend binary parsing + job polling
+cadence are M1.10.
+
+Routes: `GET /assets/{id}/metadata`, `GET /assets/{id}/pcm`
+(frame-based, 8 MiB cap, EOF contract §11.4), `GET
+/assets/{id}/peaks/manifest`, `GET /assets/{id}/peaks` (progressive
+tiles from the M1.8 on-disk manifest), `POST
+/projects/{id}/playback-preparations` (resolve/create; shared live job,
+spec §6.5.6). The M1.7 `/assets/{id}/bytes` route stays (acceptance
+evidence references it).
+
+Key design points:
+- `api/asset_routes.py` (new router): metadata, pcm, peaks/manifest,
+  peaks. Asset resolved once per request; bytes + all metadata headers
+  come from that single resolution (§11.4 rule 7).
+- PCM contract: `start_frame ≥ 0` / `frame_count ≥ 1` query validation;
+  `start > frame_count` → 422 `PCM_RANGE_OUT_OF_BOUNDS`; `start ==
+  frame_count` → 200 zero frames + EOF; frame cap `min(requested,
+  8 MiB // (4·channels), remaining)`; 1 MiB streamed chunks; headers
+  `X-Asset-Id`, `X-Content-Hash`, `X-Sample-Rate`, `X-Channel-Count`,
+  `X-Start-Frame`, `X-Frame-Count`, `X-EOF`. Roles: `source_pcm` /
+  `derived_pcm` only (else 422 `NOT_PCM_ASSET`).
+- Peaks: the on-disk manifest (M1.8) answers progressive availability;
+  missing/invalid manifest → 404 `NO_WAVEFORM_CACHE` (never 500);
+  geometry out of range → 422 `PEAK_RANGE_OUT_OF_BOUNDS`; tile not yet
+  written → 404 `TILE_NOT_READY` (client retries). Metadata endpoint
+  falls back to the DB row when no on-disk manifest.
+- `playback-preparations` (in `api/playback_routes.py`): ready → source
+  asset (same rate) or existing playback representation; else reuses a
+  live (queued/running/cancelling) `playback_rate` job with the same
+  `target_sample_rate` (shared, spec §6.5.6), else creates one through
+  `JobManager.create_job` with the project's most recent completed
+  import. Response: `status` ready/preparing + asset/job ids.
+- 5 new errors in `api/errors.py`: `NOT_PCM_ASSET`,
+  `PCM_RANGE_OUT_OF_BOUNDS`, `PEAK_RANGE_OUT_OF_BOUNDS`,
+  `NO_WAVEFORM_CACHE`, `TILE_NOT_READY`.
+
+Phases (all complete): 1 plan + kickoff → 2 errors + metadata/pcm
+routes + tests → 3 peaks routes + tests → 4 playback-preparations +
+tests → 5 contract regen (`contracts/openapi.json` +
+`frontend/src/api/schema.ts`, `check_contract.py` OK) + full suite +
+commit. 28 route tests in `tests/unit/test_asset_routes.py` (seeded via
+repositories + real waveform engine, no ffmpeg).
+
+Verification: 628 backend tests pass (600 at M1.8); 47 frontend tests
+pass; `ruff check src/ tests/` clean; mypy strict clean (46 files);
+contract artifacts in sync.
 
 ### M1.8 — Waveform pyramid (complete)
 

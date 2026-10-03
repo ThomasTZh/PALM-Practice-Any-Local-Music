@@ -1,6 +1,82 @@
 {
   "components": {
     "schemas": {
+      "AssetMetadataResponse": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "channel_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Count"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "waveform": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaveformCacheInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asset_id",
+          "role",
+          "content_hash",
+          "byte_count",
+          "sample_rate",
+          "frame_count",
+          "channel_count",
+          "waveform"
+        ],
+        "title": "AssetMetadataResponse",
+        "type": "object"
+      },
       "AudioStreamInfo": {
         "description": "One audio stream reported by ffprobe (global stream index).",
         "properties": {
@@ -726,6 +802,96 @@
         "title": "MonitoringInfo",
         "type": "object"
       },
+      "PlaybackPreparationRequest": {
+        "properties": {
+          "target_sample_rate": {
+            "maximum": 192000.0,
+            "minimum": 8000.0,
+            "title": "Target Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_sample_rate"
+        ],
+        "title": "PlaybackPreparationRequest",
+        "type": "object"
+      },
+      "PlaybackPreparationResponse": {
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "channel_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Count"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_sample_rate": {
+            "title": "Target Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "target_sample_rate"
+        ],
+        "title": "PlaybackPreparationResponse",
+        "type": "object"
+      },
       "PlaybackResponse": {
         "properties": {
           "asset_id": {
@@ -1235,6 +1401,187 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WaveformCacheInfo": {
+        "description": "Waveform cache metadata for an asset (null when no cache exists).",
+        "properties": {
+          "available_tiles": {
+            "additionalProperties": {
+              "items": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Available Tiles",
+            "type": "object"
+          },
+          "cache_version": {
+            "title": "Cache Version",
+            "type": "integer"
+          },
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "final": {
+            "title": "Final",
+            "type": "boolean"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/WaveformLevelSummary"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "source_hash": {
+            "title": "Source Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cache_version",
+          "source_hash",
+          "sample_rate",
+          "frame_count",
+          "channel_count",
+          "levels",
+          "available_tiles",
+          "final"
+        ],
+        "title": "WaveformCacheInfo",
+        "type": "object"
+      },
+      "WaveformLevelSummary": {
+        "description": "Bucket/tile geometry of one pyramid level.",
+        "properties": {
+          "bucket_count": {
+            "description": "Buckets at this level (last may be partial)",
+            "minimum": 1.0,
+            "title": "Bucket Count",
+            "type": "integer"
+          },
+          "bucket_frame_count": {
+            "description": "Sample frames covered by one bucket",
+            "minimum": 1.0,
+            "title": "Bucket Frame Count",
+            "type": "integer"
+          },
+          "final_tile_buckets": {
+            "description": "Buckets in the level's last (possibly partial) tile",
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Final Tile Buckets",
+            "type": "integer"
+          },
+          "tile_count": {
+            "minimum": 1.0,
+            "title": "Tile Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket_frame_count",
+          "bucket_count",
+          "tile_count",
+          "final_tile_buckets"
+        ],
+        "title": "WaveformLevelSummary",
+        "type": "object"
+      },
+      "WaveformManifest": {
+        "description": "On-disk cache manifest (atomic rewrites; progressive availability).\n\n``available_tiles`` maps level index (string) to a sorted list of\ninclusive ``[first, last]`` completed-tile ranges. ``final`` is true\nonly once every level's last tile is published.",
+        "properties": {
+          "aggregation": {
+            "default": 4,
+            "minimum": 2.0,
+            "title": "Aggregation",
+            "type": "integer"
+          },
+          "available_tiles": {
+            "additionalProperties": {
+              "items": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Available Tiles",
+            "type": "object"
+          },
+          "base_bucket_frames": {
+            "default": 64,
+            "minimum": 1.0,
+            "title": "Base Bucket Frames",
+            "type": "integer"
+          },
+          "cache_version": {
+            "minimum": 1.0,
+            "title": "Cache Version",
+            "type": "integer"
+          },
+          "channel_count": {
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "final": {
+            "default": false,
+            "title": "Final",
+            "type": "boolean"
+          },
+          "frame_count": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/WaveformLevelSummary"
+            },
+            "minItems": 1,
+            "title": "Levels",
+            "type": "array"
+          },
+          "sample_rate": {
+            "description": "Sample rate in Hz",
+            "minimum": 1.0,
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "source_hash": {
+            "description": "SHA-256 hash, lowercase hexadecimal",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cache_version",
+          "source_hash",
+          "sample_rate",
+          "frame_count",
+          "channel_count",
+          "levels"
+        ],
+        "title": "WaveformManifest",
+        "type": "object"
+      },
       "WaveformStatus": {
         "enum": [
           "none",
@@ -1288,6 +1635,205 @@
           }
         },
         "summary": "Get Asset Bytes"
+      }
+    },
+    "/api/v1/assets/{asset_id}/metadata": {
+      "get": {
+        "operationId": "get_asset_metadata_api_v1_assets__asset_id__metadata_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetMetadataResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Asset Metadata"
+      }
+    },
+    "/api/v1/assets/{asset_id}/pcm": {
+      "get": {
+        "description": "Bounded raw PCM window (spec \u00a711.4).\n\nThe asset is resolved once; the body, the content hash, and every\nmetadata header derive from that single resolution.",
+        "operationId": "get_asset_pcm_api_v1_assets__asset_id__pcm_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_frame",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Start Frame",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frame_count",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Frame Count",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Asset Pcm"
+      }
+    },
+    "/api/v1/assets/{asset_id}/peaks": {
+      "get": {
+        "description": "One binary peak tile (f32le per-channel min/max buckets).",
+        "operationId": "get_peak_tile_api_v1_assets__asset_id__peaks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Level",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tile",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Tile",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Peak Tile"
+      }
+    },
+    "/api/v1/assets/{asset_id}/peaks/manifest": {
+      "get": {
+        "description": "Waveform levels and progressive tile availability (M1.8 manifest).",
+        "operationId": "get_peaks_manifest_api_v1_assets__asset_id__peaks_manifest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaveformManifest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Peaks Manifest"
       }
     },
     "/api/v1/health": {
@@ -2002,6 +2548,57 @@
           }
         },
         "summary": "Resolve Playback"
+      }
+    },
+    "/api/v1/projects/{project_id}/playback-preparations": {
+      "post": {
+        "description": "Resolve an existing playback representation or queue its creation.\n\n``ready`` answers with the asset to play; ``preparing`` answers with\nthe (shared) job that will create the representation. A live job for\nthe same target rate is reused, never duplicated (spec \u00a76.5.6).",
+        "operationId": "create_playback_preparation_api_v1_projects__project_id__playback_preparations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackPreparationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackPreparationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Playback Preparation"
       }
     },
     "/api/v1/projects/{project_id}/source-info": {

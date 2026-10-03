@@ -285,6 +285,62 @@ class RangeNotSatisfiable(ApiError):
         )
 
 
+class NonPcmAssetError(ApiError):
+    def __init__(self, asset_id: str) -> None:
+        super().__init__(
+            code="NOT_PCM_ASSET",
+            message=f"The asset is not raw PCM audio: {asset_id}",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"asset_id": asset_id},
+        )
+
+
+class PcmRangeError(ApiError):
+    def __init__(self, start_frame: int, frame_count: int) -> None:
+        super().__init__(
+            code="PCM_RANGE_OUT_OF_BOUNDS",
+            message=f"start_frame {start_frame} is beyond the asset's {frame_count} frames",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"start_frame": start_frame, "frame_count": frame_count},
+        )
+
+
+class PeakRangeError(ApiError):
+    def __init__(self, level: int, tile: int, level_count: int, tile_count: int) -> None:
+        super().__init__(
+            code="PEAK_RANGE_OUT_OF_BOUNDS",
+            message=f"level {level} tile {tile} is outside the pyramid "
+            f"({level_count} levels; {tile_count} tiles at this level)",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={
+                "level": level,
+                "tile": tile,
+                "level_count": level_count,
+                "tile_count": tile_count,
+            },
+        )
+
+
+class NoWaveformCacheError(ApiError):
+    def __init__(self, asset_id: str) -> None:
+        super().__init__(
+            code="NO_WAVEFORM_CACHE",
+            message=f"No waveform cache exists for this asset: {asset_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"asset_id": asset_id},
+        )
+
+
+class TileNotReadyError(ApiError):
+    def __init__(self, level: int, tile: int) -> None:
+        super().__init__(
+            code="TILE_NOT_READY",
+            message=f"Peak tile {tile} at level {level} is not available yet",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"level": level, "tile": tile},
+        )
+
+
 @dataclass(frozen=True)
 class ErrorEnvelope:
     code: str
