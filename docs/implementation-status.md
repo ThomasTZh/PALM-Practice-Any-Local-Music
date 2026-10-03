@@ -9,7 +9,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
 - **Work package:** M1.6 (asset publication, hashing, disk budgeting) —
   complete; next: M1.7
-- **Last commit:** `<M1.6_COMMIT>` — M1.6 (disk budget + acceptance tests);
+- **Last commit:** `4098c58` — M1.6 (disk budget + acceptance tests);
   `b1d92d1` — M1.5 (decode canonical audio); `71a18e7` — M1.4 ledger hash;
   `d5be576` — M1.4 (durable media jobs).
 - **Next action:** M1.7 per `projectPlans/milestone1.md` §9 (monitoring
@@ -277,7 +277,7 @@ recovery). M1.6 closed the remaining gaps:
 - `ruff check src/ tests/`: clean
 - `mypy`: clean (40 files)
 
-**Commit:** `<M1.6_COMMIT>` (implementation); ledger hash in the following
+**Commit:** `4098c58` (implementation); ledger hash in the following
 commit.
 
 ### M1.5 — Decode canonical audio (complete)
