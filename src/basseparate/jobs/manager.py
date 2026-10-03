@@ -6,11 +6,12 @@ Scheduling rules (milestone1.md §6.5):
   in threads; the scheduler is a single asyncio task.
 - Numerical/FFmpeg thread use is bounded per job via ``max_threads``.
 
-Ownership (milestone1.md §6.4): the backend owns every SQLite write. The
-worker reports progress and result metadata; the backend verifies the
-result and publishes it (via an injected publisher) only after the job
-state is durably ``completed``. A failed or cancelled job never publishes
-and never touches previously completed assets.
+Ownership (milestone1.md §6.4, §8.3.8): the backend owns every SQLite
+write. The worker reports progress and result metadata; the backend
+verifies the result and publishes it (via an injected publisher) while the
+job is still ``running``, and only then marks it ``completed``. A failed or
+cancelled job never publishes and never touches previously completed
+assets.
 """
 
 from __future__ import annotations
@@ -27,7 +28,8 @@ from typing import Any, Literal
 
 from basseparate.domain.import_record import ProbeResult
 from basseparate.domain.media_job import JobState, JobType, MediaJob
-from basseparate.storage import ImportRepository, JobRepository
+from basseparate.domain.representation import CanonicalDecodeResult
+from basseparate.storage import JobRepository
 from basseparate.worker import (
     CancelledMessage,
     CompletedMessage,
@@ -66,7 +68,8 @@ class JobManager:
         staging_root: Path,
         worker_command: Sequence[str] | None = None,
         source_path_for: Callable[[uuid.UUID], Path] | None = None,
-        publisher: Callable[[MediaJob], None] | None = None,
+        publisher: Callable[[MediaJob, dict[str, Any]], None] | None = None,
+        parameters_for: Callable[[MediaJob], dict[str, Any]] | None = None,
     ) -> None:
         self._repo = repository
         self._staging_root = Path(staging_root)
@@ -75,6 +78,7 @@ class JobManager:
         )
         self._source_path_for = source_path_for
         self._publisher = publisher
+        self._parameters_for = parameters_for
         self._supervisor: WorkerSupervisor | None = None
         self._queue: asyncio.Queue[uuid.UUID] = asyncio.Queue()
         self._scheduler_task: asyncio.Task[None] | None = None
@@ -222,6 +226,20 @@ class JobManager:
                     "the job has no import to read a source file from",
                 )
                 return
+            parameters: dict[str, Any] = {}
+            if job.job_type is JobType.CANONICAL_DECODE:
+                if self._parameters_for is not None:
+                    parameters = self._parameters_for(job)
+                if not parameters:
+                    await asyncio.to_thread(
+                        self._repo.fail_job,
+                        job_id,
+                        "NO_STREAM_SELECTION",
+                        "no audio stream is selected for this import; "
+                        "select a stream before decoding",
+                    )
+                    return
+
             try:
                 staging_dir.mkdir(parents=True)
             except OSError as exc:
@@ -237,6 +255,7 @@ class JobManager:
                     str(source_path),
                     str(staging_dir),
                     job.max_threads,
+                    parameters,
                 ),
             )
             self._active_job_id = job_id
@@ -313,13 +332,21 @@ class JobManager:
             # Other messages (pong, capabilities, ...) are ignored.
 
     async def _publish(self, job_id: uuid.UUID, result: dict[str, Any]) -> MediaJob | None:
-        """Verify the result, persist completion, then run the publisher."""
+        """Verify the result, publish it, then persist completion.
+
+        Ordering (milestone1.md §8.3.8): the publisher runs while the job is
+        still ``running`` so a publisher failure can fail the job. A job only
+        becomes ``completed`` after its references are committed, so a
+        completed job always has its assets published.
+        """
         job = await asyncio.to_thread(self._repo.get_job, job_id)
         if job is None:
             return None
         try:
             if job.job_type is JobType.PROBE:
                 ProbeResult(**result)  # verify before publishing
+            elif job.job_type is JobType.CANONICAL_DECODE:
+                CanonicalDecodeResult(**result)
         except (ValueError, TypeError) as exc:
             log.warning("job %s result failed verification: %s", job_id, exc)
             with contextlib.suppress(Exception):
@@ -327,13 +354,17 @@ class JobManager:
                     self._repo.fail_job, job_id, "RESULT_VERIFICATION", str(exc)[:2000]
                 )
             return None
-        completed = await asyncio.to_thread(self._repo.complete_job, job_id, result)
         if self._publisher is not None:
             try:
-                self._publisher(completed)
-            except Exception:  # noqa: BLE001 - a publisher bug must not wedge jobs
+                await asyncio.to_thread(self._publisher, job, result)
+            except Exception as exc:  # noqa: BLE001 - a publisher bug must not wedge jobs
                 log.exception("publisher failed for job %s", job_id)
-        return completed
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(
+                        self._repo.fail_job, job_id, "PUBLISH_FAILED", str(exc)[:2000]
+                    )
+                return None
+        return await asyncio.to_thread(self._repo.complete_job, job_id, result)
 
     # ------------------------------------------------------------------
     # Staging cleanup
@@ -358,23 +389,3 @@ class JobManager:
         for entry in self._staging_root.iterdir():
             if entry.is_dir():
                 shutil.rmtree(entry, ignore_errors=True)
-
-
-def build_import_publisher(import_repository: ImportRepository) -> Callable[[MediaJob], None]:
-    """Backend publisher for probe jobs (milestone1.md §6.4.5).
-
-    Persists the verified probe result on the import and auto-selects the
-    single audio stream, mirroring the M1.3 inline-probe behavior.
-    """
-
-    def publish(job: MediaJob) -> None:
-        if job.job_type is not JobType.PROBE:
-            return
-        if job.import_id is None or job.result is None:
-            return
-        probe = ProbeResult(**job.result)
-        import_repository.set_probe_result(job.import_id, probe)
-        if len(probe.audio_streams) == 1:
-            import_repository.set_selected_stream(job.import_id, probe.audio_streams[0].index)
-
-    return publish

@@ -1,8 +1,9 @@
-"""Media worker subprocess tests (M1.4).
+"""Media worker subprocess tests (M1.4, extended M1.5).
 
 Runs the real ``basseparate.worker.media_worker`` as a child process and
-drives it through the v2 protocol: probe to completion, unimplemented job
-types, and cancellation of a running probe.
+drives it through the v2 protocol: probe to completion, canonical decode
+to completion (real ffmpeg), decode parameter validation, unimplemented
+job types, and cancellation of running jobs.
 """
 
 from __future__ import annotations
@@ -63,6 +64,27 @@ def _install_fake_slow_ffprobe(tmp_path: Path) -> Path:
         "#!/bin/sh\n"
         'if [ "$1" = "-version" ]; then\n'
         '  echo "ffprobe version 6.0-fake"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exec sleep 30\n"
+    )
+    script.chmod(0o755)
+    return bin_dir
+
+
+def _install_fake_slow_ffmpeg(tmp_path: Path) -> Path:
+    """Install a fake ``ffmpeg`` on PATH that sleeps for 30 s on any decode.
+
+    ``-version`` answers immediately so ``tool_versions()`` works. ``exec``
+    replaces the shell with sleep so SIGTERM reaches the sleeper directly.
+    """
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "ffmpeg"
+    script.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "-version" ]; then\n'
+        '  echo "ffmpeg version 6.0-fake"\n'
         "  exit 0\n"
         "fi\n"
         "exec sleep 30\n"
@@ -132,7 +154,7 @@ class TestProbeJob:
         job_id = uuid.uuid4()
         supervisor.send(
             make_run(
-                job_id, JobType.CANONICAL_DECODE, str(tmp_path / "x.part"), str(tmp_path / "s")
+                job_id, JobType.MONITORING_DOWNMIX, str(tmp_path / "x.part"), str(tmp_path / "s")
             )
         )
         msg = supervisor.receive(15.0)
@@ -160,6 +182,188 @@ class TestProbeJob:
                 break
         assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
         assert final.payload.code == "PROBE_FAILED"
+
+
+class TestDecodeJob:
+    """M1.5: canonical decode jobs through the worker protocol."""
+
+    DECODE_PARAMS = {
+        "stream_index": 0,
+        "sample_rate": 44100,
+        "channel_count": 1,
+        "channel_layout": "mono",
+    }
+
+    def test_decode_completes_with_result(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        wav = tmp_path / "tone.wav"
+        wav.write_bytes(_make_wav())
+        job_id = uuid.uuid4()
+        staging = tmp_path / "staging"
+
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.CANONICAL_DECODE,
+                str(wav),
+                str(staging),
+                parameters=self.DECODE_PARAMS,
+            )
+        )
+
+        messages: list[object] = []
+        for _ in range(10):
+            msg = supervisor.receive(15.0)
+            messages.append(msg)
+            if isinstance(msg, (CompletedMessage, FailedMessage, CancelledMessage)):
+                break
+
+        assert any(isinstance(m, ProgressMessage) for m in messages)
+        final = messages[-1]
+        assert isinstance(final, CompletedMessage), f"expected completed, got {type(final)}"
+        assert final.payload.job_id == job_id
+        result = final.payload.result
+        assert result["frame_count"] == 4410
+        assert result["sample_rate"] == 44100
+        assert result["channel_count"] == 1
+        assert result["channel_layout"] == "mono"
+        assert result["profile_version"] == 1
+        assert len(result["content_hash"]) == 64
+        # The staged PCM is left for the backend publisher to move.
+        staged = staging / "canonical.pcm"
+        assert staged.is_file()
+        assert staged.stat().st_size == 4410 * 4
+
+    def test_decode_missing_parameters_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        wav = tmp_path / "tone.wav"
+        wav.write_bytes(_make_wav())
+        job_id = uuid.uuid4()
+
+        supervisor.send(make_run(job_id, JobType.CANONICAL_DECODE, str(wav), str(tmp_path / "s")))
+
+        final = None
+        for _ in range(10):
+            msg = supervisor.receive(15.0)
+            if isinstance(msg, (CompletedMessage, FailedMessage, CancelledMessage)):
+                final = msg
+                break
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "DECODE_PARAMETERS"
+
+    def test_decode_invalid_parameters_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        wav = tmp_path / "tone.wav"
+        wav.write_bytes(_make_wav())
+        job_id = uuid.uuid4()
+        bad_params = dict(self.DECODE_PARAMS, sample_rate=1)  # below the 8 kHz floor
+
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.CANONICAL_DECODE,
+                str(wav),
+                str(tmp_path / "s"),
+                parameters=bad_params,
+            )
+        )
+
+        final = None
+        for _ in range(10):
+            msg = supervisor.receive(15.0)
+            if isinstance(msg, (CompletedMessage, FailedMessage, CancelledMessage)):
+                final = msg
+                break
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "DECODE_PARAMETERS"
+
+    def test_decode_missing_source_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        job_id = uuid.uuid4()
+
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.CANONICAL_DECODE,
+                str(tmp_path / "does-not-exist.part"),
+                str(tmp_path / "s"),
+                parameters=self.DECODE_PARAMS,
+            )
+        )
+
+        final = None
+        for _ in range(10):
+            msg = supervisor.receive(15.0)
+            if isinstance(msg, (CompletedMessage, FailedMessage, CancelledMessage)):
+                final = msg
+                break
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "DECODE_FAILED"
+
+    def test_decode_cancel_running_cleans_staging(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Deterministic in-flight cancel: a fake ffmpeg that hangs for 30 s."""
+        import os
+
+        bin_dir = _install_fake_slow_ffmpeg(tmp_path)
+        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+        sup = WorkerSupervisor(command=media_worker_command(), cwd=tmp_path)
+        sup.start()
+        try:
+            sup.wait_for_handshake()
+            wav = tmp_path / "tone.wav"
+            wav.write_bytes(_make_wav())
+            job_id = uuid.uuid4()
+            staging = tmp_path / "staging"
+            staging.mkdir()
+            (staging / "canonical.pcm").write_bytes(b"partial work")
+
+            sup.send(
+                make_run(
+                    job_id,
+                    JobType.CANONICAL_DECODE,
+                    str(wav),
+                    str(staging),
+                    parameters=self.DECODE_PARAMS,
+                )
+            )
+
+            # Wait for the worker to confirm the decode started (job thread live).
+            saw_progress = False
+            for _ in range(20):
+                msg = sup.receive(15.0)
+                if isinstance(msg, ProgressMessage) and msg.payload.stage is JobStage.DECODING:
+                    saw_progress = True
+                    break
+            assert saw_progress
+
+            from basseparate.worker import make_cancel
+
+            sup.send(make_cancel(job_id))
+
+            final = None
+            for _ in range(20):
+                msg = sup.receive(15.0)
+                if isinstance(msg, (CancelledMessage, CompletedMessage, FailedMessage)):
+                    final = msg
+                    break
+            assert isinstance(final, CancelledMessage), f"expected cancelled, got {type(final)}"
+            assert final.payload.job_id == job_id
+            assert final.payload.staging_removed is True
+            assert not staging.exists()
+        finally:
+            sup.stop()
+        assert_no_leftover(sup.pid)
 
 
 class TestCancelRunningProbe:

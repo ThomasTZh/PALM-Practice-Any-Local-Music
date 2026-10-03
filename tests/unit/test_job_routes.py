@@ -1,4 +1,4 @@
-"""API route tests for durable media jobs (M1.4)."""
+"""API route tests for durable media jobs (M1.4, extended M1.5)."""
 
 from __future__ import annotations
 
@@ -29,6 +29,41 @@ def _make_wav() -> bytes:
         + struct.pack("<I", len(pcm))
     )
     return header + pcm
+
+
+def _make_two_stream_mkv(tmp_path: Path) -> bytes:
+    """An MKV with two audio streams (no auto-selection at complete)."""
+    import subprocess
+
+    def _wav(path: Path, sample_rate: int) -> None:
+        pcm = b"\x00\x00" * (sample_rate // 10)
+        path.write_bytes(
+            b"RIFF"
+            + struct.pack("<I", 36 + len(pcm))
+            + b"WAVE"
+            + b"fmt "
+            + struct.pack("<IHHIIHH", 16, 1, 1, sample_rate, sample_rate * 2, 2, 16)
+            + b"data"
+            + struct.pack("<I", len(pcm))
+            + pcm
+        )
+
+    wav_a = tmp_path / "a.wav"
+    wav_b = tmp_path / "b.wav"
+    _wav(wav_a, 44100)
+    _wav(wav_b, 48000)
+    mkv = tmp_path / "two.mkv"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-nostdin", "-v", "error",
+            "-i", str(wav_a), "-i", str(wav_b),
+            "-map", "0:a", "-map", "1:a", "-c:a", "pcm_s16le",
+            "-y", str(mkv),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return mkv.read_bytes()
 
 
 @pytest.fixture()
@@ -191,6 +226,69 @@ class TestCreateJob:
         )
         assert resp.status_code == 422
 
+    def test_create_decode_without_stream_selection_rejected(
+        self, client: TestClient, auth_headers: dict, tmp_path: Path
+    ) -> None:
+        # A multi-stream import completes without an auto-selected stream:
+        # a decode job is rejected before it is queued.
+        project_id = _make_project(client, auth_headers)
+        mkv_bytes = _make_two_stream_mkv(tmp_path)
+        import_id = _complete_import(client, auth_headers, project_id, mkv_bytes)
+
+        resp = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["selected_stream_index"] is None
+
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/jobs",
+            json={"job_type": "canonical_decode", "import_id": import_id},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "NO_STREAM_SELECTION"
+
+    def test_decode_job_end_to_end(self, client: TestClient, auth_headers: dict) -> None:
+        project_id = _make_project(client, auth_headers)
+        import_id = _complete_import(client, auth_headers, project_id, _make_wav())
+
+        # Probe first: it selects the single audio stream.
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/jobs",
+            json={"job_type": "probe", "import_id": import_id},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        probe = _wait_for_job(client, auth_headers, resp.json()["id"])
+        assert probe["state"] == "completed"
+
+        # Now the canonical decode is allowed.
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/jobs",
+            json={"job_type": "canonical_decode", "import_id": import_id},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        final = _wait_for_job(client, auth_headers, resp.json()["id"])
+        assert final["state"] == "completed"
+        result = final["result"]
+        assert result["frame_count"] == 4410
+        assert result["sample_rate"] == 44100
+        assert result["channel_count"] == 1
+
+        # The project is ready with its source fields attached.
+        resp = client.get(f"/api/v1/projects/{project_id}", headers=auth_headers)
+        assert resp.status_code == 200
+        project = resp.json()
+        assert project["status"] == "ready"
+        assert project["source_asset_id"] is not None
+        assert project["canonical_asset_id"] is not None
+        assert project["source_stream_index"] == 0
+        assert project["sample_rate"] == 44100
+        assert project["duration_frames"] == 4410
+        assert project["source_channel_count"] == 1
+        assert project["source_channel_layout"] == "mono"
+        assert project["decode_profile_version"] == 1
+
 
 class TestGetJob:
     def test_get_job(self, client: TestClient, auth_headers: dict) -> None:
@@ -268,7 +366,7 @@ class TestCancelJob:
         import_id = _complete_import(client, auth_headers, project_id, _make_wav())
         resp = client.post(
             f"/api/v1/projects/{project_id}/jobs",
-            json={"job_type": "canonical_decode", "import_id": import_id},
+            json={"job_type": "monitoring_downmix", "import_id": import_id},
             headers=auth_headers,
         )
         job_id = resp.json()["id"]

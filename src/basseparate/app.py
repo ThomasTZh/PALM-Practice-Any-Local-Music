@@ -19,7 +19,7 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from starlette.staticfiles import StaticFiles
@@ -33,11 +33,14 @@ from basseparate.api.middleware import RequestTracingMiddleware
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
-from basseparate.jobs import JobManager, build_import_publisher
+from basseparate.domain.import_record import TransferState
+from basseparate.domain.media_job import JobType, MediaJob
+from basseparate.jobs import JobManager, build_publishers
 from basseparate.storage import (
     ImportRepository,
     JobRepository,
     ProjectRepository,
+    RepresentationRepository,
     initialize_database,
     initialize_storage_paths,
     resolve_storage_paths,
@@ -45,6 +48,43 @@ from basseparate.storage import (
 from basseparate.uploads import UploadManager
 
 log = logging.getLogger(__name__)
+
+
+def _decode_parameters_for(job: MediaJob, imports: ImportRepository) -> dict[str, Any]:
+    """Worker parameters for a canonical decode, from the import's probe.
+
+    Returns an empty dict when no valid stream selection exists; the
+    JobManager turns that into a ``NO_STREAM_SELECTION`` failure before the
+    worker is involved.
+    """
+    if job.job_type is not JobType.CANONICAL_DECODE or job.import_id is None:
+        return {}
+    import_record = imports.get_import(job.import_id)
+    if import_record is None:
+        return {}
+    if import_record.transfer_state is not TransferState.COMPLETE:
+        return {}
+    probe = import_record.probe_result
+    if probe is None or import_record.selected_stream_index is None:
+        return {}
+    stream = next(
+        (s for s in probe.audio_streams if s.index == import_record.selected_stream_index),
+        None,
+    )
+    if stream is None:
+        return {}
+    parameters: dict[str, Any] = {
+        "stream_index": stream.index,
+        "sample_rate": stream.sample_rate,
+        "channel_count": stream.channel_count,
+    }
+    if stream.channel_layout is not None:
+        parameters["channel_layout"] = stream.channel_layout
+    if probe.estimated_duration_seconds is not None:
+        parameters["estimated_duration_seconds"] = probe.estimated_duration_seconds
+    if stream.start_timestamp_seconds is not None:
+        parameters["start_timestamp_seconds"] = stream.start_timestamp_seconds
+    return parameters
 
 
 def _static_dir() -> Path | None:
@@ -90,11 +130,18 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.idempotency_store = IdempotencyStore()
         app.state.session_token = session_token
         app.state.job_repository = JobRepository(paths.database_path)
+        import_repository = cast(ImportRepository, app.state.import_repository)
         app.state.job_manager = JobManager(
             repository=cast(JobRepository, app.state.job_repository),
             staging_root=paths.runtime / "jobs",
             source_path_for=app.state.upload_manager.part_path_for,
-            publisher=build_import_publisher(cast(ImportRepository, app.state.import_repository)),
+            publisher=build_publishers(
+                import_repository,
+                cast(ProjectRepository, app.state.repository),
+                RepresentationRepository(paths.database_path),
+                paths,
+            ),
+            parameters_for=lambda job: _decode_parameters_for(job, import_repository),
         )
         app.state.ready = True
         log.info("basseparate service ready (api v%d)", API_VERSION)

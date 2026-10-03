@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from basseparate import PROJECT_SCHEMA_VERSION
-from basseparate.domain.asset import AssetRecord, AssetRole
+from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
 from basseparate.domain.import_record import (
     AudioStreamInfo,
     ImportRecord,
@@ -75,6 +75,28 @@ def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
         decode_profile_version=row["decode_profile_version"],
         waveform_status=WaveformStatus(row["waveform_status"]),
         source_metadata=json.loads(row["source_metadata"]),
+    )
+
+
+def _row_to_asset(row: sqlite3.Row) -> AssetRecord:
+    audio = None
+    if row["audio_sample_rate"] is not None:
+        audio = AudioMetadata(
+            sample_rate=row["audio_sample_rate"],
+            channel_count=row["audio_channel_count"],
+            frame_count=row["audio_frame_count"],
+            sample_format=row["audio_sample_format"],
+        )
+    return AssetRecord(
+        id=uuid.UUID(row["id"]),
+        content_hash=row["content_hash"],
+        role=AssetRole(row["role"]),
+        relative_path=row["relative_path"],
+        media_type=row["media_type"],
+        byte_count=row["byte_count"],
+        created_at=row["created_at"],
+        audio=audio,
+        revision=row["revision"],
     )
 
 
@@ -248,6 +270,157 @@ class ProjectRepository:
             raise DatabaseError(f"cannot attach asset: {exc}") from exc
         finally:
             conn.close()
+
+    def get_asset_by_hash(self, content_hash: str) -> AssetRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT * FROM assets WHERE content_hash = ?", (content_hash,)
+            ).fetchone()
+            return _row_to_asset(row) if row else None
+        finally:
+            conn.close()
+
+    def publish_source(
+        self,
+        project_id: uuid.UUID,
+        original_asset: AssetRecord,
+        pcm_asset: AssetRecord,
+        representation: AudioRepresentation,
+        source_stream_index: int,
+        sample_rate: int,
+        duration_frames: int,
+        channel_count: int,
+        channel_layout: str,
+        decode_profile_version: int,
+        source_metadata: dict[str, str],
+    ) -> ProjectRecord:
+        """Atomically publish a decoded source to a project (M1.5).
+
+        One transaction: register both assets (idempotent), attach them,
+        register the canonical representation (idempotent), and set all eight
+        source-readiness fields together with ``status='ready'``. The
+        co-presence invariant of ``ProjectRecord`` holds by construction.
+        """
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for asset in (original_asset, pcm_asset):
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO assets (id, content_hash, role, relative_path,
+                                                  media_type, byte_count, created_at,
+                                                  audio_sample_rate, audio_channel_count,
+                                                  audio_frame_count, audio_sample_format,
+                                                  revision)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(asset.id),
+                        asset.content_hash,
+                        asset.role.value,
+                        asset.relative_path,
+                        asset.media_type,
+                        asset.byte_count,
+                        asset.created_at.isoformat().replace("+00:00", "Z"),
+                        asset.audio.sample_rate if asset.audio else None,
+                        asset.audio.channel_count if asset.audio else None,
+                        asset.audio.frame_count if asset.audio else None,
+                        asset.audio.sample_format if asset.audio else None,
+                        asset.revision,
+                    ),
+                )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO project_assets (project_id, asset_id, role)
+                VALUES (?, ?, ?)
+                """,
+                (str(project_id), str(original_asset.id), AssetRole.SOURCE_ORIGINAL.value),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO project_assets (project_id, asset_id, role)
+                VALUES (?, ?, ?)
+                """,
+                (str(project_id), str(pcm_asset.id), AssetRole.SOURCE_PCM.value),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO representations (asset_id, parent_asset_id, role,
+                                                       sample_rate, channel_count,
+                                                       channel_layout, frame_count,
+                                                       encoding, interleaving,
+                                                       transform_key, project_rate,
+                                                       representation_rate, tool,
+                                                       tool_version, profile_version,
+                                                       created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(representation.asset_id),
+                    str(representation.parent_asset_id)
+                    if representation.parent_asset_id
+                    else None,
+                    representation.role.value,
+                    representation.sample_rate,
+                    representation.channel_count,
+                    representation.channel_layout,
+                    representation.frame_count,
+                    representation.encoding,
+                    representation.interleaving,
+                    representation.transform_key,
+                    representation.time_mapping.project_rate,
+                    representation.time_mapping.representation_rate,
+                    representation.provenance.tool,
+                    representation.provenance.tool_version,
+                    representation.provenance.profile_version,
+                    representation.provenance.created_at.isoformat().replace("+00:00", "Z"),
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE projects SET
+                    source_asset_id = ?,
+                    canonical_asset_id = ?,
+                    source_stream_index = ?,
+                    sample_rate = ?,
+                    duration_frames = ?,
+                    source_channel_count = ?,
+                    source_channel_layout = ?,
+                    decode_profile_version = ?,
+                    source_metadata = ?,
+                    status = 'ready',
+                    updated_at = ?,
+                    revision = revision + 1
+                WHERE id = ?
+                """,
+                (
+                    str(original_asset.id),
+                    str(pcm_asset.id),
+                    source_stream_index,
+                    sample_rate,
+                    duration_frames,
+                    channel_count,
+                    channel_layout,
+                    decode_profile_version,
+                    json.dumps(source_metadata, sort_keys=True),
+                    _now(),
+                    str(project_id),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            conn.execute("ROLLBACK")
+            raise DatabaseError(f"cannot publish source: {exc}") from exc
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+        updated = self.get_project(project_id)
+        assert updated is not None
+        return updated
 
 
 class ImportRepository:

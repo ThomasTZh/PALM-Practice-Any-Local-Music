@@ -23,12 +23,23 @@ from pathlib import Path
 from typing import Any
 
 from basseparate.domain.import_record import AudioStreamInfo, ProbeResult
+from basseparate.media._process import (
+    SubprocessOutputError,
+    read_stream_bounded,
+)
+from basseparate.media._process import (
+    kill as _kill,
+)
+from basseparate.media._process import (
+    terminate_gracefully as _terminate_gracefully,
+)
+from basseparate.media._process import (
+    wait_for_cancel as _wait_for_cancel,
+)
 
 DEFAULT_PROBE_TIMEOUT_SECONDS = 30.0
 MAX_PROBE_OUTPUT_BYTES = 10 * 1024 * 1024  # 10 MiB per stream
 _VERSION_TIMEOUT_SECONDS = 10.0
-TERMINATE_GRACE_SECONDS = 5.0
-_CANCEL_POLL_SECONDS = 0.1
 
 # Application limits (not claims about FFmpeg's capabilities).
 MIN_SAMPLE_RATE = 8_000
@@ -69,42 +80,10 @@ class ProbeCancelledError(ProbeError):
 
 async def _read_bounded(stream: asyncio.StreamReader, limit: int) -> bytes:
     """Read a subprocess stream, refusing output beyond ``limit`` bytes."""
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = await stream.read(65_536)
-        if not chunk:
-            return b"".join(chunks)
-        total += len(chunk)
-        if total > limit:
-            raise ProbeFailedError(f"ffprobe output exceeds {limit} bytes")
-        chunks.append(chunk)
-
-
-def _kill(proc: asyncio.subprocess.Process) -> None:
-    if proc.returncode is None:
-        proc.kill()
-
-
-async def _wait_for_cancel(cancel_event: threading.Event) -> None:
-    """Poll a threading.Event until cancellation is requested."""
-    while not cancel_event.is_set():
-        await asyncio.sleep(_CANCEL_POLL_SECONDS)
-
-
-async def _terminate_gracefully(
-    proc: asyncio.subprocess.Process,
-    timeout: float = TERMINATE_GRACE_SECONDS,
-) -> None:
-    """Terminate gracefully, escalating to kill. Always reaps (milestone1.md §6.7)."""
-    if proc.returncode is None:
-        proc.terminate()
-        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-    if proc.returncode is None:
-        proc.kill()
-        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
+    try:
+        return await read_stream_bounded(stream, limit, "ffprobe output")
+    except SubprocessOutputError as exc:
+        raise ProbeFailedError(str(exc)) from exc
 
 
 async def _tool_version(name: str) -> str:

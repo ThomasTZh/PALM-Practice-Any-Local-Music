@@ -11,6 +11,8 @@ Milestone 1 encodings are fixed: interleaved little-endian float32.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import StrEnum
 from typing import Literal
 
@@ -88,3 +90,64 @@ class AudioRepresentation(BaseModel):
     @property
     def is_identity(self) -> bool:
         return self.time_mapping.project_rate == self.time_mapping.representation_rate
+
+
+class CanonicalDecodeResult(BaseModel):
+    """Validated outcome of decoding the selected stream to canonical PCM (M1.5).
+
+    The staged PCM file at ``staging_pcm_path`` holds ``pcm_byte_count`` bytes
+    of interleaved little-endian float32. The publisher moves it into the
+    content-addressed asset store.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    frame_count: int = Field(ge=1, description="Decoded sample frames (all channels)")
+    sample_rate: SampleRate
+    channel_count: int = Field(ge=1, le=8)
+    channel_layout: str | None = Field(default=None, min_length=1, max_length=64)
+    content_hash: Sha256Hash
+    max_amplitude: float = Field(ge=0.0, description="Max absolute sample value (may exceed 1.0)")
+    pcm_byte_count: int = Field(ge=4)
+    decoded_duration_seconds: float = Field(ge=0.0)
+    estimated_duration_seconds: float | None = Field(default=None, ge=0.0)
+    duration_discrepancy_seconds: float | None = Field(
+        default=None, description="decoded minus estimated; None when unknown"
+    )
+    source_start_timestamp_seconds: float | None = Field(default=None, ge=0.0)
+    decoder_warnings: tuple[str, ...] = Field(
+        default=(), description="Decoder warning lines (truncated media is never silent)"
+    )
+    timing_repair_warnings: tuple[str, ...] = Field(
+        default=(), description="Gap-padding/overlap-trim repair notices"
+    )
+    ffmpeg_version: str = Field(min_length=1, max_length=128)
+    profile_version: int = Field(default=1, ge=1, description="Decode profile version")
+    staging_pcm_path: str = Field(min_length=1, description="Absolute path of the staged PCM")
+
+
+def compute_transform_key(
+    source_sha256: Sha256Hash,
+    stream_index: int,
+    profile_version: int,
+    ffmpeg_version: str,
+) -> Sha256Hash:
+    """v1 canonical-decode transform key (M1.5).
+
+    SHA-256 over a canonical JSON document identifying the transformation.
+    M1.6 formalizes the full key content and the dedup policy; the layout is
+    chosen now so M1.5 assets are already content-addressed.
+    """
+    document = {
+        "v": 1,
+        "source_sha256": source_sha256,
+        "stream_index": stream_index,
+        "profile_version": profile_version,
+        "ffmpeg_version": ffmpeg_version,
+        "sample_format": "f32le",
+        "channel_policy": "preserve",
+        "timestamp_policy": "decoder-default",
+        "resample_policy": "async-fill-trim",
+    }
+    payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()

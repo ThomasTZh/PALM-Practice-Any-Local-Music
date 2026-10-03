@@ -18,6 +18,7 @@ from basseparate.storage.repository import (
     ImportRepository,
     JobRepository,
     ProjectRepository,
+    RepresentationRepository,
 )
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "ImportRepository",
     "JobRepository",
     "ProjectRepository",
+    "RepresentationRepository",
     "StorageError",
     "StoragePaths",
     "UnsupportedSchemaVersion",

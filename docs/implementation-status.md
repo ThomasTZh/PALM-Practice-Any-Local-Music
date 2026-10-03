@@ -7,11 +7,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
-- **Work package:** M1.4 (durable media jobs) — complete
-- **Last commit:** `d5be576` — M1.4 (durable media jobs); `5880133` — M1.4
-  research notes; `17d68f5` — M1.3 (ffprobe, stream selection).
-- **Next action:** M1.5 (decode canonical audio) per `projectPlans/milestone1.md` §7.
-  Working tree clean.
+- **Work package:** M1.5 (decode canonical audio) — complete; next: M1.6
+- **Last commit:** `<M1.5_COMMIT>` — M1.5 (decode canonical audio);
+  `71a18e7` — M1.4 ledger hash; `d5be576` — M1.4 (durable media jobs).
+- **Next action:** M1.6 per `projectPlans/milestone1.md` §8 (lines 557–646):
+  content-addressed refinement, transformation-key spec, dedup policy, disk
+  budgeting. Working tree clean.
 
 ## Completed requirements (with evidence)
 
@@ -229,6 +230,140 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - `pnpm run lint`: clean
 - `pnpm run test`: 19 passed
 - `pnpm run build`: clean
+
+### M1.5 — Decode canonical audio (complete)
+
+Spec: `projectPlans/milestone1.md` §7 (lines 476–553). Gate B covers M1.4–M1.6.
+Plan: `projectPlans/m1.5-plan.md` (9 phases, written 2026-10-03).
+
+**Media engine:**
+- `media/_process.py` (new): shared subprocess helpers — graceful termination
+  with kill escalation (`TERMINATE_GRACE_SECONDS = 5.0`), cancel polling
+  (`CANCEL_POLL_SECONDS = 0.1`), bounded stream reads. `probe.py` refactored
+  onto it (behavior unchanged).
+- `media/decode.py` (new): `decode_canonical()` runs the verified production
+  command (`-map 0:<global_index>`, `-af aresample=async=1`,
+  `-c:a pcm_f32le -f f32le -progress pipe:2`; no resample/reslice/seek —
+  rate and channels are preserved). Disk headroom check before start (1.25×
+  estimated PCM + 64 MiB floor). Progress parsing (0.25 s throttle, final
+  block always emitted); cancel + timeout; the partial output file is removed
+  on every failure path (cancel, timeout, non-zero exit, misalignment,
+  non-finite, empty). Validation: frame alignment (size % 4), single-pass
+  8 MiB-chunked SHA-256 + numpy `isfinite` + max amplitude; 0 frames →
+  `EmptyAudioError`. Timing repair is detected arithmetically
+  (`|decoded − probe duration| > 0.5 s` → warning, inclusive boundary).
+  `mime_type_for_format` table for asset records.
+- `domain/representation.py`: frozen `CanonicalDecodeResult` (frame count,
+  rate, channels, layout, content hash, max amplitude, byte count, decoded/
+  estimated duration, discrepancy, decoder + timing-repair warnings, tool
+  versions, profile version, staging path) and `compute_transform_key` v1 —
+  canonical JSON over (source_sha256, stream_index, profile_version,
+  ffmpeg_version, "f32le", "preserve", "decoder-default",
+  "async-fill-trim"). Content-addressed storage + this key satisfy the M1.5
+  acceptance: reproducible sample count, preserved channel structure,
+  defined time origin.
+
+**Worker:**
+- `worker/media_worker.py`: `_run_canonical_decode` — parameter validation
+  (stream_index ≥ 0; sample_rate 8 000–192 000; channel_count 1–16; layout
+  string) → `DECODE_PARAMETERS`; staged `canonical.pcm`; progress
+  `decoded X.Ys of ~Z.Zs`; error mapping (`EmptyAudioError` → `EMPTY_AUDIO`,
+  cancel → cancelled, timeout → `DECODE_TIMEOUT`, else `DECODE_FAILED`);
+  staging removed on every non-completion path. Completion sends result
+  metadata only — the worker never touches the database.
+
+**Manager:**
+- `jobs/manager.py`: injectable `parameters_for` closure; a decode job with
+  no parameters fails `NO_STREAM_SELECTION` before staging/RUNNING;
+  `_publish` runs the publisher while the job is still RUNNING (verify
+  result vs probe → publish → `complete_job`); a publisher exception fails
+  the job `PUBLISH_FAILED` (a completed job always has its references
+  committed); staged dir cleaned after publish.
+
+**Publisher + storage:**
+- `jobs/publisher.py` (new): `build_publishers(imports, projects,
+  representations, paths: StoragePaths)`. `_publish_decode` re-verifies the
+  result against the probe (stream rate/channels), dedups the PCM asset by
+  content hash (`get_asset_by_hash`), registers the original asset from the
+  uploaded `.part` (`runtime/uploads/<import_id>.part`), and inserts the
+  representation + asset rows + project source fields + ready state inside
+  `ProjectRepository.publish_source`'s single `BEGIN IMMEDIATE` transaction.
+  Idempotent: hash dedup + `INSERT OR IGNORE` + re-set source fields.
+  PCM lands at `data/assets/<hash>.pcm`.
+- `storage/repository.py`: `get_asset_by_hash`, `publish_source`
+  (transactional attach), `_row_to_asset`.
+
+**API:**
+- `api/errors.py`: `MissingStreamSelection` (422, code
+  `NO_STREAM_SELECTION`); `api/job_routes.py` rejects `canonical_decode`
+  when the import has no selected stream (multi-stream files complete
+  without auto-selection). Probe + canonical_decode are the two executable
+  job types.
+- `app.py`: `_decode_parameters_for(job, imports)` builds decode parameters
+  from the import's probe + selected stream ({} when none →
+  NO_STREAM_SELECTION); lifespan wires `build_publishers(...)` and the
+  `parameters_for` closure.
+
+**Tests (420 total):**
+- `tests/unit/test_decode.py` (35): result invariants, transform key,
+  progress parsing, alignment, discrepancy (inclusive boundary),
+  `validate_pcm` (hash, amplitude, NaN/Inf, odd size, 16 MiB chunking),
+  MIME table.
+- `tests/integration/test_decode.py` (16, real ffmpeg): exact frame counts,
+  deterministic byte-identical re-decodes, stereo preserved, progress
+  ordering; MP3/M4A/Opus re-decodes byte-identical with codec-delay
+  tolerance; empty WAV → `EMPTY_AUDIO`; truncated MP3 → non-empty
+  `decoder_warnings`; cancel + timeout remove the partial output;
+  resampler policy at the filter level (gap +48 000, overlap −24 000,
+  clean no-op @48 kHz).
+- `tests/integration/test_media_worker.py` (14): decode completion with
+  staged `canonical.pcm` + result metadata; `DECODE_PARAMETERS`
+  (missing/invalid); `DECODE_FAILED` (missing source); in-flight cancel via
+  fake slow ffmpeg → staging removed; unimplemented type is now
+  `monitoring_downmix`.
+- `tests/integration/test_job_manager.py` (14): e2e probe → decode (assets,
+  representation, project ready), re-decode dedup, `NO_STREAM_SELECTION`,
+  `PUBLISH_FAILED` leaves no partial state and staging is cleaned.
+- `tests/unit/test_job_routes.py` (15): 422 `NO_STREAM_SELECTION` (two-
+  stream MKV fixture); e2e decode → project ready with source fields.
+- `tests/unit/__init__.py` + `tests/integration/__init__.py`: fix the pytest
+  basename collision between the two `test_decode.py` files.
+
+**Verification:**
+- `pytest tests/unit tests/integration -q`: 420 passed
+- `ruff check src/ tests/`: clean
+- `mypy`: clean (40 files)
+
+**Commit:** `<M1.5_COMMIT>` (implementation); ledger hash in the following
+commit.
+
+### M1.4 — Durable media jobs (complete)
+
+**Research notes (FFmpeg 8.1.2 experiments, /tmp/opencode/gaptest):**
+- Production decode command verified: `ffmpeg -hide_banner -nostdin
+  -v warning -threads N -i src -map 0:<global_index> -af aresample=async=1
+  -c:a pcm_f32le -f f32le -progress pipe:2 out.pcm`. Explicit global-index
+  map selects the probe-verified stream; video/subs/data excluded.
+- `aresample=async=1` (default `min_hard_comp=0.1` s) = filling+trimming:
+  `asetpts +1 s` gap → exactly +48000 padded samples @48 kHz; `asetpts
+  −0.5 s` overlap → exactly −24000 trimmed; clean stream → no-op. No speed
+  correction. (Modern option names: `min_comp`/`min_hard_comp`/
+  `comp_duration`/`max_soft_comp`/`async` — the old `min_comp`/`max_comp`
+  pair no longer exists.)
+- Resampler gap/trim log lines are `AV_LOG_VERBOSE`
+  ("adding N audio samples of silence" / "discarding N audio samples") —
+  not visible at `-v warning`; timing repair is therefore detected
+  arithmetically: `|decoded_duration − probe_duration| > 0.5 s` → warning.
+- Codec delay/priming (1 s @44100 mono, deterministic across runs): mp3 →
+  44100 frames, aac/m4a → 45056, opus/ogg → 48000.
+- Zero-sample input → exit 0 + 0-byte output (→ `EMPTY_AUDIO`).
+- Truncated media can exit 0 with decoder warnings on stderr (mp3:
+  "invalid new backstep -1") → recorded, never a silent clean import.
+- File-level gap/overlap fixtures not constructible here: MP3/M4A/MKV/TS
+  muxers normalize audio timestamps; concat demuxer ignores
+  `#outputts_offset` (this build); HLS demuxer hangs. Policy tested at the
+  resampler level with `asetpts` (the component the production filter
+  configures).
 
 ### M1.4 — Durable media jobs (complete)
 

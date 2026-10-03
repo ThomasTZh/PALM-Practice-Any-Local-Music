@@ -222,6 +222,16 @@ class StreamSelectionError(ApiError):
         )
 
 
+class MissingStreamSelection(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="NO_STREAM_SELECTION",
+            message="No audio stream is selected for this import; "
+            "select a stream before decoding",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
 @dataclass(frozen=True)
 class ErrorEnvelope:
     code: str

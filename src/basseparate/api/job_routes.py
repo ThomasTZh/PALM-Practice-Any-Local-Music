@@ -6,9 +6,11 @@ Routes (all authenticated, loopback-only):
 - POST /api/v1/projects/{project_id}/jobs — create a job (201)
 - POST /api/v1/jobs/{job_id}/cancel — request cancellation
 
-In M1.4 every job derives from a completed import; the ``probe`` job type
-is fully executable, the other four types are durably tracked and fail
-with ``JOB_TYPE_NOT_IMPLEMENTED`` until their milestones land.
+Every job derives from a completed import. The ``probe`` and
+``canonical_decode`` job types are fully executable; the remaining types
+are durably tracked and fail with ``JOB_TYPE_NOT_IMPLEMENTED`` until their
+milestones land. Creating a ``canonical_decode`` job requires the import to
+have a selected audio stream (422 ``NO_STREAM_SELECTION`` otherwise).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from basseparate.api.errors import (
     ImportNotFoundError,
     ImportStateError,
     JobNotFoundError,
+    MissingStreamSelection,
     ProjectNotFoundError,
 )
 from basseparate.domain.import_record import TransferState
@@ -94,6 +97,11 @@ async def create_job(project_id: uuid.UUID, body: CreateJobRequest, request: Req
         raise ImportStateError(
             f"import is {import_record.transfer_state.value}; jobs require a completed import"
         )
+    if (
+        body.job_type is JobType.CANONICAL_DECODE
+        and import_record.selected_stream_index is None
+    ):
+        raise MissingStreamSelection()
 
     job = await _manager(request).create_job(
         project_id=project_id,

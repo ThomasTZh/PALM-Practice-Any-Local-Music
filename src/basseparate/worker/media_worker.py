@@ -26,6 +26,16 @@ from pathlib import Path
 from typing import Any
 
 from basseparate.domain.media_job import JobStage, JobType
+from basseparate.media.decode import (
+    DecodeCancelledError,
+    DecodeError,
+    DecodeProgress,
+    DecodeTimeoutError,
+    EmptyAudioError,
+    InsufficientDiskSpaceError,
+    NonFiniteSamplesError,
+    decode_canonical,
+)
 from basseparate.media.probe import (
     NoAudioStreamError,
     ProbeCancelledError,
@@ -103,6 +113,34 @@ def _probe_error_code(exc: ProbeError) -> str:
     return "PROBE_FAILED"
 
 
+def _decode_error_code(exc: DecodeError) -> str:
+    if isinstance(exc, DecodeTimeoutError):
+        return "DECODE_TIMEOUT"
+    if isinstance(exc, EmptyAudioError):
+        return "EMPTY_AUDIO"
+    if isinstance(exc, NonFiniteSamplesError):
+        return "NONFINITE_SAMPLES"
+    if isinstance(exc, InsufficientDiskSpaceError):
+        return "INSUFFICIENT_DISK_SPACE"
+    return "DECODE_FAILED"
+
+
+def _as_int_param(parameters: dict[str, Any], name: str, minimum: int, maximum: int) -> int:
+    value = parameters.get(name)
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be an integer in [{minimum}, {maximum}]")
+    return value
+
+
+def _as_optional_float_param(parameters: dict[str, Any], name: str) -> float | None:
+    value = parameters.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ValueError(f"{name} must be a nonnegative number")
+    return float(value)
+
+
 def _run_probe(payload: RunPayload, cancel_event: threading.Event) -> None:
     """Execute a probe job: inspect the source, report the result metadata."""
     _send(make_progress(payload.job_id, JobStage.INSPECTING, None, "running ffprobe"))
@@ -111,12 +149,70 @@ def _run_probe(payload: RunPayload, cancel_event: threading.Event) -> None:
     _send(make_completed(payload.job_id, result.model_dump(mode="json")))
 
 
+def _run_canonical_decode(payload: RunPayload, cancel_event: threading.Event) -> None:
+    """Execute a decode job: canonical PCM in staging, result metadata only.
+
+    The backend re-verifies the result against the probe and publishes the
+    asset; the worker never touches the database.
+    """
+    job_id = payload.job_id
+    _send(make_progress(job_id, JobStage.DECODING, None, "starting ffmpeg"))
+    parameters = payload.parameters
+    try:
+        stream_index = _as_int_param(parameters, "stream_index", 0, 1024)
+        sample_rate = _as_int_param(parameters, "sample_rate", 8_000, 192_000)
+        channel_count = _as_int_param(parameters, "channel_count", 1, 8)
+        channel_layout = parameters.get("channel_layout")
+        if channel_layout is not None and (
+            not isinstance(channel_layout, str) or not 1 <= len(channel_layout) <= 64
+        ):
+            raise ValueError("channel_layout must be a short string")
+        estimated = _as_optional_float_param(parameters, "estimated_duration_seconds")
+        start_timestamp = _as_optional_float_param(parameters, "start_timestamp_seconds")
+    except ValueError as exc:
+        _send(
+            make_failed(
+                job_id,
+                "DECODE_PARAMETERS",
+                f"invalid decode parameters: {exc}",
+            )
+        )
+        return
+
+    def on_progress(progress: DecodeProgress) -> None:
+        detail = f"decoded {progress.out_time_seconds:.1f}s"
+        if estimated is not None:
+            detail += f" of ~{estimated:.1f}s"
+        _send(make_progress(job_id, JobStage.DECODING, progress.fraction, detail))
+
+    output_path = Path(payload.staging_dir) / "canonical.pcm"
+    result = asyncio.run(
+        decode_canonical(
+            source_path=Path(payload.source_path),
+            output_path=output_path,
+            stream_index=stream_index,
+            sample_rate=sample_rate,
+            channel_count=channel_count,
+            max_threads=payload.max_threads,
+            channel_layout=channel_layout,
+            estimated_duration_seconds=estimated,
+            start_timestamp_seconds=start_timestamp,
+            cancel_event=cancel_event,
+            on_progress=on_progress,
+        )
+    )
+    # The backend verifies this payload before publishing it.
+    _send(make_completed(job_id, result.model_dump(mode="json")))
+
+
 def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
     """Run one job to a terminal report. Never raises out of the thread."""
     job_id = payload.job_id
     try:
         if payload.job_type is JobType.PROBE:
             _run_probe(payload, cancel_event)
+        elif payload.job_type is JobType.CANONICAL_DECODE:
+            _run_canonical_decode(payload, cancel_event)
         else:
             _send(
                 make_failed(
@@ -125,7 +221,7 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
                     f"job type {payload.job_type.value!r} is implemented in a later milestone",
                 )
             )
-    except ProbeCancelledError:
+    except (ProbeCancelledError, DecodeCancelledError):
         removed = _remove_staging(payload.staging_dir)
         _log(f"job {job_id} cancelled; staging removed={removed}")
         _send(make_cancelled(job_id, staging_removed=removed))
@@ -133,6 +229,10 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} failed: {_probe_error_code(exc)}: {exc}")
         _send(make_failed(job_id, _probe_error_code(exc), str(exc)))
+    except DecodeError as exc:
+        _remove_staging(payload.staging_dir)
+        _log(f"job {job_id} failed: {_decode_error_code(exc)}: {exc}")
+        _send(make_failed(job_id, _decode_error_code(exc), str(exc)))
     except Exception as exc:  # noqa: BLE001 - last-resort guard inside the job thread
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} crashed: {exc!r}")

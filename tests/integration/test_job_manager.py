@@ -17,10 +17,17 @@ from pathlib import Path
 
 import pytest
 
+from basseparate.app import _decode_parameters_for
 from basseparate.domain.import_record import TransferState
 from basseparate.domain.media_job import JobState, JobType, MediaJob
-from basseparate.jobs import JobManager, build_import_publisher
-from basseparate.storage import ImportRepository, JobRepository, ProjectRepository
+from basseparate.jobs import JobManager, build_import_publisher, build_publishers
+from basseparate.storage import (
+    ImportRepository,
+    JobRepository,
+    ProjectRepository,
+    RepresentationRepository,
+    StoragePaths,
+)
 from basseparate.storage.db import initialize_database
 
 SLEEP_WORKER = """
@@ -140,9 +147,18 @@ def env(tmp_path: Path):
         received_byte_count=len(wav_bytes),
         source_sha256=hashlib.sha256(wav_bytes).hexdigest(),
     )
+    import_record = imports.get_import(import_record.id)  # refresh (frozen model)
 
     def source_path_for(import_id: uuid.UUID) -> Path:
         return tmp_path / "uploads" / f"{import_id}.part"
+
+    paths = StoragePaths(
+        config=tmp_path / "config",
+        data=tmp_path / "data",
+        cache=tmp_path / "cache",
+        state=tmp_path / "state",
+        runtime=tmp_path / "runtime",
+    )
 
     return {
         "root": tmp_path,
@@ -150,6 +166,8 @@ def env(tmp_path: Path):
         "projects": projects,
         "imports": imports,
         "jobs": jobs,
+        "representations": RepresentationRepository(db),
+        "paths": paths,
         "project": project,
         "import": import_record,
         "source": source,
@@ -157,13 +175,21 @@ def env(tmp_path: Path):
     }
 
 
-def _make_manager(env: dict, worker_command: list[str] | None = None) -> JobManager:
+def _make_manager(
+    env: dict,
+    worker_command: list[str] | None = None,
+    publisher: object = None,
+    parameters_for: object = None,
+) -> JobManager:
     return JobManager(
         repository=env["jobs"],
         staging_root=env["root"] / "jobs",
         worker_command=worker_command,
         source_path_for=env["source_path_for"],
-        publisher=build_import_publisher(env["imports"]),
+        publisher=publisher
+        if publisher is not None
+        else build_import_publisher(env["imports"]),
+        parameters_for=parameters_for,
     )
 
 
@@ -217,7 +243,7 @@ class TestProbeCompletion:
             await mgr.start()
             try:
                 job = await mgr.create_job(
-                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                    env["project"].id, JobType.MONITORING_DOWNMIX, import_id=env["import"].id
                 )
                 final = await _wait_terminal(mgr, job.id)
                 assert final.state is JobState.FAILED
@@ -426,6 +452,207 @@ class TestSafety:
                 # The import was never touched by a cancelled job.
                 import_record = env["imports"].get_import(env["import"].id)
                 assert import_record.probe_result is None
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+
+class TestDecodeCompletion:
+    """M1.5: canonical decode end to end with the real worker + ffmpeg."""
+
+    def _decode_manager(self, env: dict) -> JobManager:
+        return _make_manager(
+            env,
+            publisher=build_publishers(
+                env["imports"],
+                env["projects"],
+                env["representations"],
+                env["paths"],
+            ),
+            parameters_for=lambda job: _decode_parameters_for(job, env["imports"]),
+        )
+
+    async def _probe_first(self, env: dict, mgr: JobManager) -> None:
+        probe = await mgr.create_job(
+            env["project"].id, JobType.PROBE, import_id=env["import"].id
+        )
+        final = await _wait_terminal(mgr, probe.id)
+        assert final.state is JobState.COMPLETED
+        import_record = env["imports"].get_import(env["import"].id)
+        assert import_record.probe_result is not None
+        assert import_record.selected_stream_index == 0
+
+    def test_decode_completes_and_publishes(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = self._decode_manager(env)
+            await mgr.start()
+            try:
+                await self._probe_first(env, mgr)
+                job = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.COMPLETED
+                result = final.result
+                assert result is not None
+                assert result["frame_count"] == 4410
+                assert result["sample_rate"] == 44100
+                assert result["channel_count"] == 1
+                assert result["channel_layout"] == "mono"
+                content_hash = result["content_hash"]
+
+                # The PCM asset is content-addressed on disk.
+                pcm_asset = env["projects"].get_asset_by_hash(content_hash)
+                assert pcm_asset is not None
+                assert pcm_asset.role.value == "source_pcm"
+                assert pcm_asset.relative_path == f"data/assets/{content_hash}.pcm"
+                assert pcm_asset.audio is not None
+                assert pcm_asset.audio.frame_count == 4410
+                on_disk = env["paths"].data / "assets" / f"{content_hash}.pcm"
+                assert on_disk.is_file()
+                assert on_disk.stat().st_size == 4410 * 4
+
+                # The original upload is registered as an asset.
+                original = env["projects"].get_asset_by_hash(env["import"].source_sha256)
+                assert original is not None
+                assert original.role.value == "source_original"
+                assert original.relative_path == f"runtime/uploads/{env['import'].id}.part"
+
+                # The project is ready with all eight source fields.
+                project = env["projects"].get_project(env["project"].id)
+                assert project.status.value == "ready"
+                assert project.source_asset_id == original.id
+                assert project.canonical_asset_id == pcm_asset.id
+                assert project.source_stream_index == 0
+                assert project.sample_rate == 44100
+                assert project.duration_frames == 4410
+                assert project.source_channel_count == 1
+                assert project.source_channel_layout == "mono"
+                assert project.decode_profile_version == 1
+
+                # The canonical representation is registered (identity mapping).
+                rep = env["representations"].get_representation(pcm_asset.id)
+                assert rep is not None
+                assert rep.role.value == "canonical"
+                assert rep.is_identity
+
+                # Staging was cleaned up.
+                staging = env["root"] / "jobs" / job.id.hex / "staging"
+                assert not staging.exists()
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_redecode_reuses_assets(self, env: dict) -> None:
+        async def scenario() -> None:
+            import sqlite3
+
+            mgr = self._decode_manager(env)
+            await mgr.start()
+            try:
+                await self._probe_first(env, mgr)
+                first = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                first_final = await _wait_terminal(mgr, first.id)
+                assert first_final.state is JobState.COMPLETED
+                assert first_final.result is not None
+                content_hash = first_final.result["content_hash"]
+
+                second = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                second_final = await _wait_terminal(mgr, second.id)
+                assert second_final.state is JobState.COMPLETED
+                assert second_final.result is not None
+                assert second_final.result["content_hash"] == content_hash
+
+                pcm = env["projects"].get_asset_by_hash(content_hash)
+                assert pcm is not None
+                conn = sqlite3.connect(env["db"])
+                try:
+                    attach_count = conn.execute(
+                        "SELECT COUNT(*) FROM project_assets WHERE project_id = ?",
+                        (str(env["project"].id),),
+                    ).fetchone()[0]
+                    rep_count = conn.execute(
+                        "SELECT COUNT(*) FROM representations WHERE asset_id = ?",
+                        (str(pcm.id),),
+                    ).fetchone()[0]
+                finally:
+                    conn.close()
+                assert attach_count == 2  # original + PCM, no duplicates
+                assert rep_count == 1
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_decode_without_stream_selection_fails(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = _make_manager(
+                env,
+                publisher=build_publishers(
+                    env["imports"],
+                    env["projects"],
+                    env["representations"],
+                    env["paths"],
+                ),
+                parameters_for=lambda job: {},
+            )
+            await mgr.start()
+            try:
+                job = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_STREAM_SELECTION"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_publisher_failure_fails_job(self, env: dict) -> None:
+        probe_publisher = build_import_publisher(env["imports"])
+
+        def broken_publisher(job: MediaJob, result: dict) -> None:
+            if job.job_type is JobType.CANONICAL_DECODE:
+                raise RuntimeError("publisher exploded")
+            probe_publisher(job, result)
+
+        async def scenario() -> None:
+            import sqlite3
+
+            mgr = _make_manager(
+                env,
+                publisher=broken_publisher,
+                parameters_for=lambda job: _decode_parameters_for(job, env["imports"]),
+            )
+            await mgr.start()
+            try:
+                await self._probe_first(env, mgr)
+                job = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "PUBLISH_FAILED"
+
+                # No partial state: project untouched, no assets, staging gone.
+                project = env["projects"].get_project(env["project"].id)
+                assert project.status.value == "empty"
+                assert project.source_asset_id is None
+                conn = sqlite3.connect(env["db"])
+                try:
+                    asset_count = conn.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+                finally:
+                    conn.close()
+                assert asset_count == 0
+                staging = env["root"] / "jobs" / job.id.hex / "staging"
+                assert not staging.exists()
             finally:
                 await mgr.stop()
 
