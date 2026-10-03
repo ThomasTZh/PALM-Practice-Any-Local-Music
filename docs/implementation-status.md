@@ -9,7 +9,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.7 (monitoring channels + playback-rate
   representations) — complete (Phases 1–7); next: M1.8
-- **Last commit:** `<M1.7_COMMIT>` — M1.7 (monitoring + playback rate);
+- **Last commit:** `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `b1d92d1` — M1.5 (decode canonical audio); `ae11417` — M1.6 ledger hash;
   `d5be576` — M1.4 (durable media jobs).
@@ -246,7 +246,7 @@ with correct pitch and duration at either browser output rate.
   M0.10/M0.11 (RET504 in `dev.py`, F541 in `generate_licenses.py`);
   unchanged by M1.7, left for a later cleanup.
 
-**Commit:** `<M1.7_COMMIT>` (implementation); ledger hash in the following
+**Commit:** `af6ad7f` (implementation); ledger hash in the following
 commit.
 
 ### M1.2 — Bounded local file transfer (complete)
