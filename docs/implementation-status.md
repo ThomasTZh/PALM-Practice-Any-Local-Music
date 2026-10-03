@@ -9,7 +9,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.8 (waveform pyramid) — complete; plan in
   `projectPlans/m1.8-plan.md`
-- **Last commit:** `<M1.8_COMMIT>` — M1.8 (waveform pyramid);
+- **Last commit:** `4a6004a` — M1.8 (waveform pyramid);
   `825e884` — M1.7 ledger hash;
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
