@@ -9,7 +9,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.9 (media HTTP interfaces) — complete; plan in
   `projectPlans/m1.9-plan.md`
-- **Last commit:** `<M1.9_COMMIT>` — M1.9 (media HTTP interfaces);
+- **Last commit:** `06c2cb3` — M1.9 (media HTTP interfaces);
   `fe2b815` — M1.8 ledger hash;
   `4a6004a` — M1.8 (waveform pyramid);
   `825e884` — M1.7 ledger hash;
