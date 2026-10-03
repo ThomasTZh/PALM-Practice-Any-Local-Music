@@ -8,7 +8,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
 - **Work package:** M1.5 (decode canonical audio) — complete; next: M1.6
-- **Last commit:** `<M1.5_COMMIT>` — M1.5 (decode canonical audio);
+- **Last commit:** `b1d92d1` — M1.5 (decode canonical audio);
   `71a18e7` — M1.4 ledger hash; `d5be576` — M1.4 (durable media jobs).
 - **Next action:** M1.6 per `projectPlans/milestone1.md` §8 (lines 557–646):
   content-addressed refinement, transformation-key spec, dedup policy, disk
@@ -334,7 +334,7 @@ Plan: `projectPlans/m1.5-plan.md` (9 phases, written 2026-10-03).
 - `ruff check src/ tests/`: clean
 - `mypy`: clean (40 files)
 
-**Commit:** `<M1.5_COMMIT>` (implementation); ledger hash in the following
+**Commit:** `b1d92d1` (implementation); ledger hash in the following
 commit.
 
 ### M1.4 — Durable media jobs (complete)
