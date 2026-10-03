@@ -232,6 +232,59 @@ class MissingStreamSelection(ApiError):
         )
 
 
+class AssetNotFoundError(ApiError):
+    def __init__(self, asset_id: str, missing_file: bool = False) -> None:
+        if missing_file:
+            message = f"The asset's file is missing from storage: {asset_id}"
+        else:
+            message = f"The requested asset does not exist: {asset_id}"
+        super().__init__(
+            code="ASSET_NOT_FOUND",
+            message=message,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class ProjectNotReadyError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="PROJECT_NOT_READY",
+            message="The project has no source audio yet; import and decode a file first",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class InvalidMonitoringSelection(ApiError):
+    def __init__(self, left: int, right: int, channel_count: int) -> None:
+        super().__init__(
+            code="INVALID_MONITORING_SELECTION",
+            message=f"Monitoring channels {left}/{right} are outside the source's "
+            f"{channel_count} channels",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"left": left, "right": right, "channel_count": channel_count},
+        )
+
+
+class NoPlaybackRepresentation(ApiError):
+    def __init__(self, project_id: str, rate: int) -> None:
+        super().__init__(
+            code="NO_PLAYBACK_REPRESENTATION",
+            message=f"No playback representation at {rate} Hz exists for this project",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"project_id": project_id, "rate": rate},
+        )
+
+
+class RangeNotSatisfiable(ApiError):
+    def __init__(self, total: int) -> None:
+        super().__init__(
+            code="RANGE_NOT_SATISFIABLE",
+            message="The requested byte range is not satisfiable",
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+            details={"total_bytes": total},
+        )
+
+
 @dataclass(frozen=True)
 class ErrorEnvelope:
     code: str

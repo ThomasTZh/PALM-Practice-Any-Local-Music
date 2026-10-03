@@ -28,7 +28,11 @@ from typing import Any, Literal
 
 from basseparate.domain.import_record import ProbeResult
 from basseparate.domain.media_job import JobState, JobType, MediaJob
-from basseparate.domain.representation import CanonicalDecodeResult
+from basseparate.domain.representation import (
+    CanonicalDecodeResult,
+    MonitoringDownmixResult,
+    PlaybackRateResult,
+)
 from basseparate.storage import JobRepository
 from basseparate.worker import (
     CancelledMessage,
@@ -57,6 +61,38 @@ class _JobOutcome:
     result: dict[str, Any] | None = None
     code: str | None = None
     message: str | None = None
+
+
+class ParameterResolutionError(Exception):
+    """The parameter builder cannot construct worker parameters for a job.
+
+    The manager fails the job with the given code and message before the
+    worker is involved (M1.7: monitoring downmix and playback rate).
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+#: Job types whose worker parameters are built from project/import state.
+_PARAMETERIZED_JOB_TYPES = frozenset(
+    {JobType.CANONICAL_DECODE, JobType.MONITORING_DOWNMIX, JobType.PLAYBACK_RATE}
+)
+
+
+def _default_parameter_failure(job_type: JobType) -> tuple[str, str]:
+    """Failure used when a parameter builder returns no parameters at all."""
+    if job_type is JobType.CANONICAL_DECODE:
+        return (
+            "NO_STREAM_SELECTION",
+            "no audio stream is selected for this import; select a stream before decoding",
+        )
+    return (
+        "NO_CANONICAL",
+        "the project has no canonical audio to derive this job from",
+    )
 
 
 class JobManager:
@@ -146,11 +182,17 @@ class JobManager:
         job_type: JobType,
         import_id: uuid.UUID | None = None,
         max_threads: int = 4,
+        parameters: dict[str, Any] | None = None,
     ) -> MediaJob:
         if self._supervisor is None:
             raise RuntimeError("job manager is not started")
         job = await asyncio.to_thread(
-            self._repo.create_job, project_id, job_type, import_id, max_threads
+            self._repo.create_job,
+            project_id,
+            job_type,
+            import_id,
+            max_threads,
+            parameters,
         )
         await self._queue.put(job.id)
         return job
@@ -227,17 +269,18 @@ class JobManager:
                 )
                 return
             parameters: dict[str, Any] = {}
-            if job.job_type is JobType.CANONICAL_DECODE:
+            if job.job_type in _PARAMETERIZED_JOB_TYPES:
                 if self._parameters_for is not None:
-                    parameters = self._parameters_for(job)
+                    try:
+                        parameters = self._parameters_for(job)
+                    except ParameterResolutionError as exc:
+                        await asyncio.to_thread(
+                            self._repo.fail_job, job_id, exc.code, exc.message
+                        )
+                        return
                 if not parameters:
-                    await asyncio.to_thread(
-                        self._repo.fail_job,
-                        job_id,
-                        "NO_STREAM_SELECTION",
-                        "no audio stream is selected for this import; "
-                        "select a stream before decoding",
-                    )
+                    code, message = _default_parameter_failure(job.job_type)
+                    await asyncio.to_thread(self._repo.fail_job, job_id, code, message)
                     return
 
             try:
@@ -347,6 +390,10 @@ class JobManager:
                 ProbeResult(**result)  # verify before publishing
             elif job.job_type is JobType.CANONICAL_DECODE:
                 CanonicalDecodeResult(**result)
+            elif job.job_type is JobType.MONITORING_DOWNMIX:
+                MonitoringDownmixResult(**result)
+            elif job.job_type is JobType.PLAYBACK_RATE:
+                PlaybackRateResult(**result)
         except (ValueError, TypeError) as exc:
             log.warning("job %s result failed verification: %s", job_id, exc)
             with contextlib.suppress(Exception):

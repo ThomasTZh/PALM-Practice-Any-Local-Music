@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createApiClient, errorMessage } from './api/client'
 import {
+  createJob,
+  ensurePlaybackTarget,
+  fetchAssetBytes,
+  getSourceInfo,
+  latestCompletedImportId,
+  setMonitoringChannels,
+  waitForJob,
+  type SourceInfo,
+} from './api/playback'
+import {
   listProjectImports,
   selectStream,
   uploadFile,
@@ -9,6 +19,8 @@ import {
   type UploadState,
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
+import { PlaybackEngine, type AudioContextLike, type EngineState } from './playback/engine'
+import { formatTime } from './playback/pcm'
 import type { ConnectionState, ProjectSummary } from './types'
 
 const client = createApiClient()
@@ -373,6 +385,267 @@ function ImportPanel({
   )
 }
 
+function defaultCreateAudioContext(): AudioContextLike {
+  return new AudioContext() as unknown as AudioContextLike
+}
+
+function PlaybackPanel({
+  projectId,
+  createAudioContext,
+}: {
+  projectId: string
+  createAudioContext?: () => AudioContextLike
+}) {
+  const [info, setInfo] = useState<SourceInfo | null>(null)
+  const [infoError, setInfoError] = useState<string | null>(null)
+  const [importId, setImportId] = useState<string | null>(null)
+
+  const [leftCh, setLeftCh] = useState(0)
+  const [rightCh, setRightCh] = useState(1)
+  const [mixState, setMixState] = useState<'idle' | 'working' | 'error'>('idle')
+  const [mixError, setMixError] = useState<string | null>(null)
+
+  const [engineState, setEngineState] = useState<EngineState>('idle')
+  const [position, setPosition] = useState(0)
+  const [preparing, setPreparing] = useState(false)
+  const [playError, setPlayError] = useState<string | null>(null)
+  const engineRef = useRef<PlaybackEngine | null>(null)
+
+  const loadInfo = useCallback(async () => {
+    try {
+      const source = await getSourceInfo(projectId)
+      setInfo(source)
+      setInfoError(null)
+      setImportId(await latestCompletedImportId(projectId))
+      if (source.monitoring) {
+        setLeftCh(source.monitoring.leftChannel)
+        setRightCh(source.monitoring.rightChannel)
+      }
+    } catch (err) {
+      setInfoError(err instanceof Error ? err.message : String(err))
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    loadInfo()
+  }, [loadInfo])
+
+  useEffect(() => {
+    return () => {
+      void engineRef.current?.dispose()
+      engineRef.current = null
+    }
+  }, [])
+
+  const isStandard51 = info !== null && info.channelCount === 6 && info.channelLayout === '5.1'
+
+  const handleCreateMix = useCallback(async () => {
+    if (!info) return
+    setMixState('working')
+    setMixError(null)
+    try {
+      if (!isStandard51) {
+        await setMonitoringChannels(projectId, leftCh, rightCh)
+      }
+      if (!importId) throw new Error('No completed import found for this project')
+      const job = await createJob(projectId, importId, 'monitoring_downmix')
+      await waitForJob(job.id)
+      await loadInfo()
+      setMixState('idle')
+    } catch (err) {
+      setMixState('error')
+      setMixError(err instanceof Error ? err.message : String(err))
+    }
+  }, [importId, info, isStandard51, leftCh, loadInfo, projectId, rightCh])
+
+  const handlePlayPause = useCallback(async () => {
+    const existing = engineRef.current
+    if (existing && existing.currentState === 'playing') {
+      await existing.pause()
+      return
+    }
+    if (existing && existing.currentState === 'paused') {
+      await existing.resume()
+      return
+    }
+    if (!info) return
+    setPlayError(null)
+    setPreparing(true)
+    try {
+      const context = (createAudioContext ?? defaultCreateAudioContext)()
+      await context.resume()
+      const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
+      const engine = new PlaybackEngine({
+        target: {
+          assetId: target.assetId,
+          sampleRate: target.sampleRate,
+          channelCount: target.channelCount,
+          frameCount: target.frameCount,
+          byteCount: target.byteCount,
+          durationSeconds: target.durationSeconds,
+        },
+        projectRate: info.sampleRate,
+        projectDurationFrames: info.durationFrames,
+        fetchChunk: (start, end) =>
+          fetchAssetBytes(target.assetId, start, end).then((r) => r.bytes),
+        context,
+        onState: (s) => {
+          setEngineState(s)
+          if (s === 'playing' || s === 'stopped') setPreparing(false)
+          if (s === 'error') {
+            setPreparing(false)
+            setPlayError(engine.currentError ?? 'Playback failed')
+          }
+        },
+        onPosition: setPosition,
+      })
+      engineRef.current = engine
+      await engine.start()
+    } catch (err) {
+      setPreparing(false)
+      setPlayError(err instanceof Error ? err.message : String(err))
+    }
+  }, [createAudioContext, importId, info, projectId])
+
+  const handleStop = useCallback(() => {
+    engineRef.current?.stop()
+    setPosition(0)
+  }, [])
+
+  if (infoError) {
+    return (
+      <div className="playback-error" role="alert">
+        <p>Could not load source information: {infoError}</p>
+        <button type="button" onClick={loadInfo}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+  if (!info) {
+    return <p className="muted" role="status">Loading source…</p>
+  }
+
+  return (
+    <div className="playback-panel">
+      <section className="source-info" aria-label="Source information">
+        <h3>Source</h3>
+        <dl>
+          <dt>Sample rate</dt>
+          <dd>{info.sampleRate} Hz</dd>
+          <dt>Duration</dt>
+          <dd>{formatTime(info.durationFrames, info.sampleRate)}</dd>
+          <dt>Channels</dt>
+          <dd>
+            {info.channelCount}
+            {info.channelLayout ? ` (${info.channelLayout})` : ''}
+          </dd>
+        </dl>
+        <ul className="channel-labels" aria-label="Channel labels">
+          {info.channelLabels.map((label, i) => (
+            <li key={i}>{label}</li>
+          ))}
+        </ul>
+      </section>
+
+      {info.channelCount > 2 && (
+        <section className="monitoring" aria-label="Monitoring mix">
+          <h3>Monitoring</h3>
+          {info.monitoring ? (
+            <p>
+              {info.monitoring.mode === 'standard_5_1'
+                ? 'Standard 5.1 → stereo downmix'
+                : `Manual: L = ${info.channelLabels[info.monitoring.leftChannel] ?? info.monitoring.leftChannel}, R = ${info.channelLabels[info.monitoring.rightChannel] ?? info.monitoring.rightChannel}`}
+            </p>
+          ) : (
+            <>
+              {isStandard51 ? (
+                <p className="muted">A standard 5.1 → stereo downmix will be created.</p>
+              ) : (
+                <div className="monitoring-select">
+                  <label>
+                    Left
+                    <select
+                      value={leftCh}
+                      onChange={(e) => setLeftCh(Number(e.target.value))}
+                      disabled={mixState === 'working'}
+                    >
+                      {info.channelLabels.map((label, i) => (
+                        <option key={i} value={i}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Right
+                    <select
+                      value={rightCh}
+                      onChange={(e) => setRightCh(Number(e.target.value))}
+                      disabled={mixState === 'working'}
+                    >
+                      {info.channelLabels.map((label, i) => (
+                        <option key={i} value={i}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleCreateMix}
+                disabled={mixState === 'working'}
+              >
+                {mixState === 'working' ? 'Creating monitoring mix…' : 'Create monitoring mix'}
+              </button>
+            </>
+          )}
+          {mixState === 'error' && mixError && (
+            <p className="field-error" role="alert">
+              {mixError}
+            </p>
+          )}
+        </section>
+      )}
+
+      <section className="transport" aria-label="Playback transport">
+        <div className="transport-buttons">
+          <button
+            type="button"
+            onClick={handlePlayPause}
+            disabled={preparing}
+            aria-label={engineState === 'playing' ? 'Pause' : 'Play'}
+          >
+            {engineState === 'playing' ? 'Pause' : 'Play'}
+          </button>
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={engineState === 'idle' || engineState === 'stopped'}
+          >
+            Stop
+          </button>
+        </div>
+        <span className="time-readout">
+          {formatTime(position, info.sampleRate)} / {formatTime(info.durationFrames, info.sampleRate)}
+        </span>
+        {preparing && (
+          <p className="muted" role="status">
+            Preparing playback…
+          </p>
+        )}
+        {playError && (
+          <p className="field-error" role="alert">
+            {playError}
+          </p>
+        )}
+      </section>
+    </div>
+  )
+}
+
 export default function App() {
   const [view, setView] = useState<View>({ kind: 'connecting' })
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -573,7 +846,7 @@ export default function App() {
                 />
               ) : (
                 <>
-                  <p className="empty-state">No audio imported yet.</p>
+                  <PlaybackPanel projectId={view.project.id} />
                   <dl className="project-meta">
                     <dt>Status</dt>
                     <dd>Ready</dd>

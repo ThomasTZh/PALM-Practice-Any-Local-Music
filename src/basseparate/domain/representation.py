@@ -126,6 +126,63 @@ class CanonicalDecodeResult(BaseModel):
     staging_pcm_path: str = Field(min_length=1, description="Absolute path of the staged PCM")
 
 
+class MonitoringDownmixResult(BaseModel):
+    """Validated outcome of a monitoring downmix to stereo (M1.7).
+
+    The staged PCM file at ``staging_pcm_path`` holds ``pcm_byte_count``
+    bytes of interleaved little-endian float32 stereo. The publisher moves
+    it into the content-addressed asset store.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    frame_count: int = Field(ge=1, description="Output sample frames (stereo)")
+    sample_rate: SampleRate
+    channel_count: int = Field(default=2, ge=2, le=2)
+    content_hash: Sha256Hash
+    max_amplitude: float = Field(ge=0.0, description="Max absolute sample value (may exceed 1.0)")
+    pcm_byte_count: int = Field(ge=4)
+    source_frame_count: int = Field(ge=1)
+    downmix_mode: Literal["standard_5_1", "manual"]
+    #: The effective left/right source channels (0/1 FL/FR for standard 5.1,
+    #: the user selection for manual mode).
+    left_channel: int = Field(ge=0, le=7)
+    right_channel: int = Field(ge=0, le=7)
+    ffmpeg_version: str = Field(min_length=1, max_length=128)
+    profile_version: int = Field(default=1, ge=1, description="Downmix profile version")
+    staging_pcm_path: str = Field(min_length=1, description="Absolute path of the staged PCM")
+
+
+class PlaybackRateResult(BaseModel):
+    """Validated outcome of a playback-rate conversion (M1.7).
+
+    The staged PCM file at ``staging_pcm_path`` holds ``pcm_byte_count``
+    bytes of interleaved little-endian float32 at ``sample_rate``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    frame_count: int = Field(ge=1, description="Output sample frames")
+    sample_rate: SampleRate = Field(description="Target (playback) sample rate in Hz")
+    channel_count: int = Field(ge=1, le=8)
+    content_hash: Sha256Hash
+    max_amplitude: float = Field(ge=0.0, description="Max absolute sample value (may exceed 1.0)")
+    pcm_byte_count: int = Field(ge=4)
+    source_frame_count: int = Field(ge=1)
+    source_sample_rate: SampleRate
+    target_sample_rate: SampleRate
+    expected_frame_count: int = Field(
+        ge=1,
+        description="round(source_frame_count × target / source)",
+    )
+    endpoint_difference_frames: int = Field(
+        description="actual minus expected; rational-rounding residue (spec §9.6.5)"
+    )
+    ffmpeg_version: str = Field(min_length=1, max_length=128)
+    profile_version: int = Field(default=1, ge=1, description="Resampler profile version")
+    staging_pcm_path: str = Field(min_length=1, description="Absolute path of the staged PCM")
+
+
 def compute_transform_key(
     source_sha256: Sha256Hash,
     stream_index: int,
@@ -148,6 +205,73 @@ def compute_transform_key(
         "channel_policy": "preserve",
         "timestamp_policy": "decoder-default",
         "resample_policy": "async-fill-trim",
+    }
+    payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def compute_downmix_key(
+    source_sha256: Sha256Hash,
+    mode: str,
+    left_channel: int,
+    right_channel: int,
+    left_matrix: list[tuple[int, float]],
+    right_matrix: list[tuple[int, float]],
+    matrix_version: int,
+    profile_version: int,
+    ffmpeg_version: str,
+) -> Sha256Hash:
+    """v2 monitoring-downmix transform key (M1.7).
+
+    Identifies the transformation: input hash + downmix matrix (channel
+    indices and coefficients) + implementation versions (spec §8.2, §9.3).
+    """
+    document = {
+        "v": 2,
+        "kind": "monitoring_downmix",
+        "source_sha256": source_sha256,
+        "mode": mode,
+        "left_channel": left_channel,
+        "right_channel": right_channel,
+        "matrix": {
+            "L": [[ch, coef] for ch, coef in left_matrix],
+            "R": [[ch, coef] for ch, coef in right_matrix],
+        },
+        "matrix_version": matrix_version,
+        "profile_version": profile_version,
+        "ffmpeg_version": ffmpeg_version,
+        "sample_format": "f32le",
+    }
+    payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def compute_playback_key(
+    source_sha256: Sha256Hash,
+    source_sample_rate: int,
+    target_sample_rate: int,
+    profile_version: int,
+    ffmpeg_version: str,
+) -> Sha256Hash:
+    """v2 playback-rate transform key (M1.7).
+
+    Identifies the transformation: input hash + rate pair + the versioned
+    SWR resampler profile (spec §8.2, §9.5).
+    """
+    document = {
+        "v": 2,
+        "kind": "playback_rate",
+        "source_sha256": source_sha256,
+        "source_sample_rate": source_sample_rate,
+        "target_sample_rate": target_sample_rate,
+        "resampler": "swr",
+        "filter_size": 64,
+        "exact_rational": True,
+        "dither": "none",
+        "async": "none",
+        "profile_version": profile_version,
+        "ffmpeg_version": ffmpeg_version,
+        "sample_format": "f32le",
     }
     payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()

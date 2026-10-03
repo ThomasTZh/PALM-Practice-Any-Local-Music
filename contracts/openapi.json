@@ -261,6 +261,19 @@
           },
           "job_type": {
             "$ref": "#/components/schemas/JobType"
+          },
+          "target_sample_rate": {
+            "anyOf": [
+              {
+                "maximum": 192000.0,
+                "minimum": 8000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Sample Rate"
           }
         },
         "required": [
@@ -557,6 +570,11 @@
             "title": "Max Threads",
             "type": "integer"
           },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
           "progress_detail": {
             "anyOf": [
               {
@@ -655,6 +673,101 @@
           }
         },
         "title": "ModuleListResponse",
+        "type": "object"
+      },
+      "MonitoringChannelsRequest": {
+        "properties": {
+          "left": {
+            "maximum": 7.0,
+            "minimum": 0.0,
+            "title": "Left",
+            "type": "integer"
+          },
+          "right": {
+            "maximum": 7.0,
+            "minimum": 0.0,
+            "title": "Right",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "title": "MonitoringChannelsRequest",
+        "type": "object"
+      },
+      "MonitoringInfo": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "left_channel": {
+            "title": "Left Channel",
+            "type": "integer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "right_channel": {
+            "title": "Right Channel",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "asset_id",
+          "left_channel",
+          "right_channel"
+        ],
+        "title": "MonitoringInfo",
+        "type": "object"
+      },
+      "PlaybackResponse": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_id",
+          "role",
+          "sample_rate",
+          "channel_count",
+          "frame_count",
+          "byte_count",
+          "duration_seconds"
+        ],
+        "title": "PlaybackResponse",
         "type": "object"
       },
       "ProbeResult": {
@@ -818,6 +931,32 @@
             ],
             "title": "Monitoring Asset Id"
           },
+          "monitoring_left_channel": {
+            "anyOf": [
+              {
+                "maximum": 7.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Left Channel"
+          },
+          "monitoring_right_channel": {
+            "anyOf": [
+              {
+                "maximum": 7.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Right Channel"
+          },
           "name": {
             "maxLength": 200,
             "minLength": 1,
@@ -955,6 +1094,73 @@
         "title": "SelectStreamRequest",
         "type": "object"
       },
+      "SourceInfoResponse": {
+        "properties": {
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "channel_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Channel Labels",
+            "type": "array"
+          },
+          "channel_layout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Layout"
+          },
+          "duration_frames": {
+            "title": "Duration Frames",
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "monitoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "playback_rates": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Playback Rates",
+            "type": "array"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sample_rate",
+          "duration_frames",
+          "duration_seconds",
+          "channel_count",
+          "channel_layout",
+          "channel_labels",
+          "monitoring",
+          "playback_rates"
+        ],
+        "title": "SourceInfoResponse",
+        "type": "object"
+      },
       "SystemResponse": {
         "properties": {
           "api_version": {
@@ -1046,6 +1252,44 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/assets/{asset_id}/bytes": {
+      "get": {
+        "operationId": "get_asset_bytes_api_v1_assets__asset_id__bytes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Asset Bytes"
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -1657,6 +1901,147 @@
           }
         },
         "summary": "Create Job"
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring-channels": {
+      "put": {
+        "operationId": "set_monitoring_channels_api_v1_projects__project_id__monitoring_channels_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitoringChannelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Monitoring Channels"
+      }
+    },
+    "/api/v1/projects/{project_id}/playback": {
+      "get": {
+        "operationId": "resolve_playback_api_v1_projects__project_id__playback_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rate",
+            "required": true,
+            "schema": {
+              "maximum": 192000,
+              "minimum": 8000,
+              "title": "Rate",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Playback"
+      }
+    },
+    "/api/v1/projects/{project_id}/source-info": {
+      "get": {
+        "operationId": "get_source_info_api_v1_projects__project_id__source_info_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceInfoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Source Info"
       }
     },
     "/api/v1/system": {

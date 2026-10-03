@@ -30,17 +30,26 @@ from basseparate.api.idempotency import IdempotencyStore
 from basseparate.api.import_routes import router as import_router
 from basseparate.api.job_routes import router as job_router
 from basseparate.api.middleware import RequestTracingMiddleware
+from basseparate.api.playback_routes import router as playback_router
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
+from basseparate.domain.asset import AssetRecord
 from basseparate.domain.import_record import TransferState
 from basseparate.domain.media_job import JobType, MediaJob
-from basseparate.jobs import JobManager, build_publishers
+from basseparate.domain.project import (
+    MAX_SAMPLE_RATE,
+    MIN_SAMPLE_RATE,
+    ProjectRecord,
+)
+from basseparate.jobs import JobManager, ParameterResolutionError, build_publishers
+from basseparate.media.downmix import MonitorSelectionError, pan_expression, resolve_downmix
 from basseparate.storage import (
     ImportRepository,
     JobRepository,
     ProjectRepository,
     RepresentationRepository,
+    StoragePaths,
     initialize_database,
     initialize_storage_paths,
     resolve_storage_paths,
@@ -87,6 +96,131 @@ def _decode_parameters_for(job: MediaJob, imports: ImportRepository) -> dict[str
     return parameters
 
 
+def _canonical_pcm_asset(
+    job: MediaJob, projects: ProjectRepository
+) -> tuple[ProjectRecord, AssetRecord]:
+    """The project and its canonical PCM asset (or raise NO_CANONICAL)."""
+    project = projects.get_project(job.project_id)
+    if project is None:
+        raise ParameterResolutionError(
+            "NO_CANONICAL", f"project {job.project_id} no longer exists"
+        )
+    if project.canonical_asset_id is None:
+        raise ParameterResolutionError(
+            "NO_CANONICAL", "the project has no canonical audio"
+        )
+    asset = projects.get_asset(project.canonical_asset_id)
+    if asset is None or asset.audio is None:
+        raise ParameterResolutionError(
+            "NO_CANONICAL", "the project's canonical audio asset is unavailable"
+        )
+    return project, asset
+
+
+def _downmix_parameters_for(
+    job: MediaJob, projects: ProjectRepository, paths: StoragePaths
+) -> dict[str, Any]:
+    """Worker parameters for a monitoring downmix, from the project (M1.7).
+
+    The matrix is resolved per spec §9.3: the standard 5.1 rows for a
+    6-channel "5.1" source, the user's stored L/R selection for any other
+    multichannel layout. Mono/stereo sources need no downmix at all.
+    """
+    if job.job_type is not JobType.MONITORING_DOWNMIX:
+        return {}
+    project, asset = _canonical_pcm_asset(job, projects)
+    audio = asset.audio
+    assert audio is not None
+    try:
+        resolved = resolve_downmix(
+            audio.channel_count,
+            project.source_channel_layout,
+            project.monitoring_left_channel,
+            project.monitoring_right_channel,
+        )
+    except MonitorSelectionError as exc:
+        raise ParameterResolutionError("MISSING_MONITORING_SELECTION", str(exc)) from exc
+    if resolved is None:
+        raise ParameterResolutionError(
+            "NO_DOWNMIX_NEEDED",
+            "the source is mono or stereo; the canonical audio is already the "
+            "monitoring representation",
+        )
+    mode, left_row, right_row = resolved
+    if mode == "manual":
+        # resolve_downmix raised when either selection is missing.
+        left_channel = cast(int, project.monitoring_left_channel)
+        right_channel = cast(int, project.monitoring_right_channel)
+    else:  # standard_5_1: the effective sources are FL/FR
+        left_channel, right_channel = 0, 1
+    return {
+        "source_pcm_path": str(paths.resolve_asset_path(asset.relative_path)),
+        "sample_rate": audio.sample_rate,
+        "channel_count": audio.channel_count,
+        "pan_spec": pan_expression(left_row, right_row),
+        "downmix_mode": mode,
+        "left_channel": left_channel,
+        "right_channel": right_channel,
+        "estimated_duration_seconds": audio.frame_count / audio.sample_rate,
+    }
+
+
+def _playback_parameters_for(
+    job: MediaJob, projects: ProjectRepository, paths: StoragePaths
+) -> dict[str, Any]:
+    """Worker parameters for a playback-rate conversion (M1.7).
+
+    The source is the monitoring asset when present (playback listens to
+    what the user monitors), else the canonical asset.
+    """
+    if job.job_type is not JobType.PLAYBACK_RATE:
+        return {}
+    target = job.parameters.get("target_sample_rate")
+    if isinstance(target, bool) or not isinstance(target, int):
+        raise ParameterResolutionError(
+            "INVALID_TARGET_RATE",
+            "playback_rate jobs require an integer target_sample_rate "
+            "(8000-192000 Hz)",
+        )
+    if not MIN_SAMPLE_RATE <= target <= MAX_SAMPLE_RATE:
+        raise ParameterResolutionError(
+            "INVALID_TARGET_RATE",
+            f"target_sample_rate {target} Hz is outside the supported range "
+            f"{MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz",
+        )
+    project, _canonical = _canonical_pcm_asset(job, projects)
+    source_id = project.monitoring_asset_id or project.canonical_asset_id
+    asset = projects.get_asset(source_id) if source_id is not None else None
+    if asset is None or asset.audio is None:
+        raise ParameterResolutionError(
+            "NO_CANONICAL", "the project's source audio asset is unavailable"
+        )
+    audio = asset.audio
+    return {
+        "source_pcm_path": str(paths.resolve_asset_path(asset.relative_path)),
+        "sample_rate": audio.sample_rate,
+        "channel_count": audio.channel_count,
+        "target_sample_rate": target,
+        "estimated_duration_seconds": audio.frame_count / audio.sample_rate,
+    }
+
+
+def _job_parameters_for(
+    job: MediaJob,
+    imports: ImportRepository,
+    projects: ProjectRepository,
+    paths: StoragePaths,
+) -> dict[str, Any]:
+    """Worker parameters for any job type (M1.4 decode, M1.7 derived)."""
+    if job.job_type is JobType.CANONICAL_DECODE:
+        return _decode_parameters_for(job, imports)
+    if job.job_type is JobType.MONITORING_DOWNMIX:
+        return _downmix_parameters_for(job, projects, paths)
+    if job.job_type is JobType.PLAYBACK_RATE:
+        return _playback_parameters_for(job, projects, paths)
+    return {}
+
+
 def _static_dir() -> Path | None:
     """Locate the built frontend assets.
 
@@ -130,6 +264,8 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.idempotency_store = IdempotencyStore()
         app.state.session_token = session_token
         app.state.job_repository = JobRepository(paths.database_path)
+        representation_repository = RepresentationRepository(paths.database_path)
+        app.state.representation_repository = representation_repository
         import_repository = cast(ImportRepository, app.state.import_repository)
         app.state.job_manager = JobManager(
             repository=cast(JobRepository, app.state.job_repository),
@@ -138,10 +274,15 @@ def create_app(config: AppConfig) -> FastAPI:
             publisher=build_publishers(
                 import_repository,
                 cast(ProjectRepository, app.state.repository),
-                RepresentationRepository(paths.database_path),
+                representation_repository,
                 paths,
             ),
-            parameters_for=lambda job: _decode_parameters_for(job, import_repository),
+            parameters_for=lambda job: _job_parameters_for(
+                job,
+                import_repository,
+                cast(ProjectRepository, app.state.repository),
+                paths,
+            ),
         )
         app.state.ready = True
         log.info("basseparate service ready (api v%d)", API_VERSION)
@@ -179,6 +320,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(router)
     app.include_router(import_router)
     app.include_router(job_router)
+    app.include_router(playback_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

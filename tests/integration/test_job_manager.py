@@ -9,15 +9,17 @@ result survives a later failed job.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import struct
 import sys
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from basseparate.app import _decode_parameters_for
+from basseparate.app import _decode_parameters_for, _job_parameters_for
 from basseparate.domain.import_record import TransferState
 from basseparate.domain.media_job import JobState, JobType, MediaJob
 from basseparate.jobs import JobManager, build_import_publisher, build_publishers
@@ -243,7 +245,7 @@ class TestProbeCompletion:
             await mgr.start()
             try:
                 job = await mgr.create_job(
-                    env["project"].id, JobType.MONITORING_DOWNMIX, import_id=env["import"].id
+                    env["project"].id, JobType.WAVEFORM, import_id=env["import"].id
                 )
                 final = await _wait_terminal(mgr, job.id)
                 assert final.state is JobState.FAILED
@@ -456,6 +458,303 @@ class TestSafety:
                 await mgr.stop()
 
         asyncio.run(scenario())
+
+
+class TestParameterResolution:
+    """M1.7: parameter-builder failures become job failures with codes."""
+
+    def test_parameter_error_code_propagates(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        def failing(job: MediaJob) -> dict:
+            raise ParameterResolutionError("NO_CANONICAL", "the project has no canonical audio")
+
+        async def scenario() -> None:
+            mgr = _make_manager(env, parameters_for=failing)
+            await mgr.start()
+            try:
+                job = await mgr.create_job(
+                    env["project"].id,
+                    JobType.MONITORING_DOWNMIX,
+                    import_id=env["import"].id,
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_CANONICAL"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_empty_parameters_downmix_defaults_to_no_canonical(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = _make_manager(env, parameters_for=lambda job: {})
+            await mgr.start()
+            try:
+                job = await mgr.create_job(
+                    env["project"].id,
+                    JobType.MONITORING_DOWNMIX,
+                    import_id=env["import"].id,
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_CANONICAL"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_empty_parameters_playback_defaults_to_no_canonical(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = _make_manager(env, parameters_for=lambda job: {})
+            await mgr.start()
+            try:
+                job = await mgr.create_job(
+                    env["project"].id,
+                    JobType.PLAYBACK_RATE,
+                    import_id=env["import"].id,
+                    parameters={"target_sample_rate": 48000},
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_CANONICAL"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_empty_parameters_decode_still_no_stream_selection(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = _make_manager(env, parameters_for=lambda job: {})
+            await mgr.start()
+            try:
+                job = await mgr.create_job(
+                    env["project"].id, JobType.CANONICAL_DECODE, import_id=env["import"].id
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_STREAM_SELECTION"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+
+class TestParameterResolvers:
+    """M1.7: the app's parameter builders for derived jobs (no worker)."""
+
+    def _seed_ready(
+        self, env: dict, *, channels: int, layout: str
+    ) -> tuple[uuid.UUID, Path]:
+        from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
+        from basseparate.domain.representation import (
+            AudioRepresentation,
+            RepresentationProvenance,
+            RepresentationRole,
+            TimeMapping,
+            compute_transform_key,
+        )
+
+        frames = 4410
+        projects = env["projects"]
+        project = projects.create_project("resolver")
+        pcm_bytes = b"\x00\x00\x00\x00" * (frames * channels)
+        pcm_hash = hashlib.sha256(pcm_bytes).hexdigest()
+        original = AssetRecord(
+            id=uuid.uuid4(),
+            content_hash="ab" * 32,
+            role=AssetRole.SOURCE_ORIGINAL,
+            relative_path="runtime/uploads/seed.part",
+            media_type="audio/wav",
+            byte_count=100,
+            created_at=datetime.now(UTC),
+        )
+        pcm = AssetRecord(
+            id=uuid.uuid4(),
+            content_hash=pcm_hash,
+            role=AssetRole.SOURCE_PCM,
+            relative_path=f"data/assets/{pcm_hash}.pcm",
+            media_type="application/octet-stream",
+            byte_count=len(pcm_bytes),
+            created_at=datetime.now(UTC),
+            audio=AudioMetadata(
+                sample_rate=44100,
+                channel_count=channels,
+                frame_count=frames,
+                sample_format="f32le",
+            ),
+        )
+        rep = AudioRepresentation(
+            asset_id=pcm.id,
+            parent_asset_id=original.id,
+            role=RepresentationRole.CANONICAL,
+            sample_rate=44100,
+            channel_count=channels,
+            channel_layout=layout,
+            frame_count=frames,
+            content_hash=pcm_hash,
+            transform_key=compute_transform_key("ab" * 32, 0, 1, "ffmpeg 8.1.2"),
+            time_mapping=TimeMapping(project_rate=44100, representation_rate=44100),
+            provenance=RepresentationProvenance(
+                tool="ffmpeg",
+                tool_version="ffmpeg 8.1.2",
+                profile_version=1,
+                created_at=datetime.now(UTC),
+            ),
+        )
+        projects.publish_source(
+            project_id=project.id,
+            original_asset=original,
+            pcm_asset=pcm,
+            representation=rep,
+            source_stream_index=0,
+            sample_rate=44100,
+            duration_frames=frames,
+            channel_count=channels,
+            channel_layout=layout,
+            decode_profile_version=1,
+            source_metadata={},
+        )
+        asset_dir = env["paths"].data / "assets"
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        on_disk = asset_dir / f"{pcm_hash}.pcm"
+        on_disk.write_bytes(pcm_bytes)
+        return project.id, on_disk
+
+    def _job(
+        self,
+        env: dict,
+        project_id: uuid.UUID,
+        job_type: JobType,
+        parameters: dict | None = None,
+    ) -> MediaJob:
+        return env["jobs"].create_job(
+            project_id, job_type, import_id=env["import"].id, parameters=parameters
+        )
+
+    def _resolvers(self, env: dict):
+        return lambda job: _job_parameters_for(
+            job, env["imports"], env["projects"], env["paths"]
+        )
+
+    def test_downmix_standard_51(self, env: dict) -> None:
+        project_id, pcm_path = self._seed_ready(env, channels=6, layout="5.1")
+        job = self._job(env, project_id, JobType.MONITORING_DOWNMIX)
+        params = self._resolvers(env)(job)
+        assert params["source_pcm_path"] == str(pcm_path)
+        assert params["sample_rate"] == 44100
+        assert params["channel_count"] == 6
+        assert params["downmix_mode"] == "standard_5_1"
+        assert params["left_channel"] == 0
+        assert params["right_channel"] == 1
+        assert params["pan_spec"].startswith("pan=stereo|c0=")
+        assert params["estimated_duration_seconds"] == pytest.approx(0.1)
+
+    def test_downmix_unknown_layout_requires_selection(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        project_id, _ = self._seed_ready(env, channels=4, layout="quad")
+        job = self._job(env, project_id, JobType.MONITORING_DOWNMIX)
+        with pytest.raises(ParameterResolutionError) as excinfo:
+            self._resolvers(env)(job)
+        assert excinfo.value.code == "MISSING_MONITORING_SELECTION"
+
+    def test_downmix_manual_with_selection(self, env: dict) -> None:
+        project_id, _ = self._seed_ready(env, channels=4, layout="quad")
+        env["projects"].set_monitoring_channels(project_id, 1, 3)
+        job = self._job(env, project_id, JobType.MONITORING_DOWNMIX)
+        params = self._resolvers(env)(job)
+        assert params["downmix_mode"] == "manual"
+        assert params["left_channel"] == 1
+        assert params["right_channel"] == 3
+        assert params["pan_spec"] == "pan=stereo|c0=1*c1|c1=1*c3"
+
+    def test_downmix_stereo_needs_nothing(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        project_id, _ = self._seed_ready(env, channels=2, layout="stereo")
+        job = self._job(env, project_id, JobType.MONITORING_DOWNMIX)
+        with pytest.raises(ParameterResolutionError) as excinfo:
+            self._resolvers(env)(job)
+        assert excinfo.value.code == "NO_DOWNMIX_NEEDED"
+
+    def test_downmix_empty_project_no_canonical(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        project = env["projects"].create_project("empty")
+        job = self._job(env, project.id, JobType.MONITORING_DOWNMIX)
+        with pytest.raises(ParameterResolutionError) as excinfo:
+            self._resolvers(env)(job)
+        assert excinfo.value.code == "NO_CANONICAL"
+
+    def test_playback_from_canonical(self, env: dict) -> None:
+        project_id, pcm_path = self._seed_ready(env, channels=2, layout="stereo")
+        job = self._job(env, project_id, JobType.PLAYBACK_RATE, {"target_sample_rate": 48000})
+        params = self._resolvers(env)(job)
+        assert params["source_pcm_path"] == str(pcm_path)
+        assert params["sample_rate"] == 44100
+        assert params["channel_count"] == 2
+        assert params["target_sample_rate"] == 48000
+
+    def test_playback_missing_target_rate(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        project_id, _ = self._seed_ready(env, channels=2, layout="stereo")
+        job = self._job(env, project_id, JobType.PLAYBACK_RATE)
+        with pytest.raises(ParameterResolutionError) as excinfo:
+            self._resolvers(env)(job)
+        assert excinfo.value.code == "INVALID_TARGET_RATE"
+
+    def test_playback_out_of_range_target(self, env: dict) -> None:
+        from basseparate.jobs import ParameterResolutionError
+
+        project_id, _ = self._seed_ready(env, channels=2, layout="stereo")
+        job = self._job(env, project_id, JobType.PLAYBACK_RATE, {"target_sample_rate": 7999})
+        with pytest.raises(ParameterResolutionError) as excinfo:
+            self._resolvers(env)(job)
+        assert excinfo.value.code == "INVALID_TARGET_RATE"
+
+    def test_playback_prefers_monitoring_source(self, env: dict, tmp_path: Path) -> None:
+        import hashlib as _hashlib
+
+        from basseparate.jobs import build_publishers
+
+        project_id, _canonical = self._seed_ready(env, channels=6, layout="5.1")
+        # Publish a monitoring downmix through the real publisher.
+        stereo = b"\x08\x00\x00\x00" * (4410 * 2)
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        staged = staging / "monitoring.pcm"
+        staged.write_bytes(stereo)
+        downmix_job = self._job(env, project_id, JobType.MONITORING_DOWNMIX)
+        build_publishers(env["imports"], env["projects"], env["representations"], env["paths"])(
+            downmix_job,
+            {
+                "frame_count": 4410,
+                "sample_rate": 44100,
+                "channel_count": 2,
+                "content_hash": _hashlib.sha256(stereo).hexdigest(),
+                "max_amplitude": 0.0,
+                "pcm_byte_count": len(stereo),
+                "source_frame_count": 4410,
+                "downmix_mode": "standard_5_1",
+                "left_channel": 0,
+                "right_channel": 1,
+                "ffmpeg_version": "ffmpeg 8.1.2",
+                "profile_version": 1,
+                "staging_pcm_path": str(staged),
+            },
+        )
+        monitoring = env["projects"].get_project(project_id).monitoring_asset_id
+        assert monitoring is not None
+        monitoring_path = env["paths"].resolve_asset_path(
+            env["projects"].get_asset(monitoring).relative_path  # type: ignore[union-attr]
+        )
+
+        job = self._job(env, project_id, JobType.PLAYBACK_RATE, {"target_sample_rate": 48000})
+        params = self._resolvers(env)(job)
+        assert params["source_pcm_path"] == str(monitoring_path)
+        assert params["channel_count"] == 2
 
 
 class TestDecodeCompletion:

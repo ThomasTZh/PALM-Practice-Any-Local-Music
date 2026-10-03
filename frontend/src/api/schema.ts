@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/assets/{asset_id}/bytes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Asset Bytes */
+        get: operations["get_asset_bytes_api_v1_assets__asset_id__bytes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -261,6 +278,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/monitoring-channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Monitoring Channels */
+        put: operations["set_monitoring_channels_api_v1_projects__project_id__monitoring_channels_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/playback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve Playback */
+        get: operations["resolve_playback_api_v1_projects__project_id__playback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/source-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Source Info */
+        get: operations["get_source_info_api_v1_projects__project_id__source_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system": {
         parameters: {
             query?: never;
@@ -390,6 +458,8 @@ export interface components {
              */
             import_id: string;
             job_type: components["schemas"]["JobType"];
+            /** Target Sample Rate */
+            target_sample_rate?: number | null;
         };
         /** CreateProjectRequest */
         CreateProjectRequest: {
@@ -510,6 +580,10 @@ export interface components {
              * @default 4
              */
             max_threads: number;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
             /** Progress Detail */
             progress_detail?: string | null;
             /** Progress Fraction */
@@ -545,6 +619,47 @@ export interface components {
             modules?: {
                 [key: string]: unknown;
             }[];
+        };
+        /** MonitoringChannelsRequest */
+        MonitoringChannelsRequest: {
+            /** Left */
+            left: number;
+            /** Right */
+            right: number;
+        };
+        /** MonitoringInfo */
+        MonitoringInfo: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Left Channel */
+            left_channel: number;
+            /** Mode */
+            mode: string;
+            /** Right Channel */
+            right_channel: number;
+        };
+        /** PlaybackResponse */
+        PlaybackResponse: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Byte Count */
+            byte_count: number;
+            /** Channel Count */
+            channel_count: number;
+            /** Duration Seconds */
+            duration_seconds: number;
+            /** Frame Count */
+            frame_count: number;
+            /** Role */
+            role: string;
+            /** Sample Rate */
+            sample_rate: number;
         };
         /**
          * ProbeResult
@@ -606,6 +721,10 @@ export interface components {
             id: string;
             /** Monitoring Asset Id */
             monitoring_asset_id?: string | null;
+            /** Monitoring Left Channel */
+            monitoring_left_channel?: number | null;
+            /** Monitoring Right Channel */
+            monitoring_right_channel?: number | null;
             /** Name */
             name: string;
             /**
@@ -660,6 +779,24 @@ export interface components {
             /** Stream Index */
             stream_index: number;
         };
+        /** SourceInfoResponse */
+        SourceInfoResponse: {
+            /** Channel Count */
+            channel_count: number;
+            /** Channel Labels */
+            channel_labels: string[];
+            /** Channel Layout */
+            channel_layout: string | null;
+            /** Duration Frames */
+            duration_frames: number;
+            /** Duration Seconds */
+            duration_seconds: number;
+            monitoring: components["schemas"]["MonitoringInfo"] | null;
+            /** Playback Rates */
+            playback_rates: number[];
+            /** Sample Rate */
+            sample_rate: number;
+        };
         /** SystemResponse */
         SystemResponse: {
             /** Api Version */
@@ -701,6 +838,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_asset_bytes_api_v1_assets__asset_id__bytes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -1185,6 +1353,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_monitoring_channels_api_v1_projects__project_id__monitoring_channels_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitoringChannelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_playback_api_v1_projects__project_id__playback_get: {
+        parameters: {
+            query: {
+                rate: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_info_api_v1_projects__project_id__source_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceInfoResponse"];
                 };
             };
             /** @description Validation Error */

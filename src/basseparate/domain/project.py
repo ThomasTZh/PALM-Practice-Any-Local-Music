@@ -76,6 +76,12 @@ class ProjectRecord(BaseModel):
     source_asset_id: Uuid | None = None
     canonical_asset_id: Uuid | None = None
     monitoring_asset_id: Uuid | None = None
+    #: User-selected left/right source channels for monitoring when the
+    #: source layout is unknown (M1.7, milestone1.md §9.3). Present
+    #: together; null when the layout uses the standard matrix or no
+    #: selection has been made.
+    monitoring_left_channel: int | None = Field(default=None, ge=0, le=MAX_CHANNEL_COUNT - 1)
+    monitoring_right_channel: int | None = Field(default=None, ge=0, le=MAX_CHANNEL_COUNT - 1)
     source_stream_index: int | None = Field(default=None, ge=0)
     sample_rate: SampleRate | None = Field(
         default=None,
@@ -141,6 +147,30 @@ class ProjectRecord(BaseModel):
             )
         if self.monitoring_asset_id is not None and self.canonical_asset_id is None:
             raise ValueError("monitoring_asset_id requires canonical_asset_id")
+        monitoring_channels = (self.monitoring_left_channel, self.monitoring_right_channel)
+        if any(c is not None for c in monitoring_channels) and not all(
+            c is not None for c in monitoring_channels
+        ):
+            raise ValueError(
+                "monitoring_left_channel and monitoring_right_channel must be "
+                "present together or both null"
+            )
+        if any(c is not None for c in monitoring_channels) and self.source_channel_count is None:
+            raise ValueError("monitoring channel selection requires a source channel count")
+        for column, channel in zip(
+            ("monitoring_left_channel", "monitoring_right_channel"),
+            monitoring_channels,
+            strict=True,
+        ):
+            if (
+                channel is not None
+                and self.source_channel_count is not None
+                and channel >= self.source_channel_count
+            ):
+                raise ValueError(
+                    f"{column} {channel} is outside the source's "
+                    f"{self.source_channel_count} channels"
+                )
         if self.waveform_status != WaveformStatus.NONE and self.canonical_asset_id is None:
             raise ValueError("waveform_status requires canonical_asset_id")
 

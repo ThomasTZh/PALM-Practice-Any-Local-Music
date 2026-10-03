@@ -22,10 +22,13 @@ import contextlib
 import shutil
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from basseparate.domain.common import Uuid
 from basseparate.domain.media_job import JobStage, JobType
+from basseparate.domain.representation import MonitoringDownmixResult, PlaybackRateResult
 from basseparate.media.decode import (
     DecodeCancelledError,
     DecodeError,
@@ -35,6 +38,23 @@ from basseparate.media.decode import (
     InsufficientDiskSpaceError,
     NonFiniteSamplesError,
     decode_canonical,
+)
+from basseparate.media.derived import (
+    DerivedCancelledError,
+    DerivedError,
+    DerivedProgress,
+    DerivedTimeoutError,
+    downmix_monitoring,
+    resample_playback,
+)
+from basseparate.media.derived import (
+    EmptyAudioError as _DerivedEmptyAudioError,
+)
+from basseparate.media.derived import (
+    InsufficientDiskSpaceError as _DerivedInsufficientDiskSpaceError,
+)
+from basseparate.media.derived import (
+    NonFiniteSamplesError as _DerivedNonFiniteSamplesError,
 )
 from basseparate.media.probe import (
     NoAudioStreamError,
@@ -125,10 +145,29 @@ def _decode_error_code(exc: DecodeError) -> str:
     return "DECODE_FAILED"
 
 
+def _derived_error_code(exc: DerivedError) -> str:
+    if isinstance(exc, DerivedTimeoutError):
+        return "DERIVED_TIMEOUT"
+    if isinstance(exc, _DerivedEmptyAudioError):
+        return "EMPTY_AUDIO"
+    if isinstance(exc, _DerivedNonFiniteSamplesError):
+        return "NONFINITE_SAMPLES"
+    if isinstance(exc, _DerivedInsufficientDiskSpaceError):
+        return "INSUFFICIENT_DISK_SPACE"
+    return "DERIVED_FAILED"
+
+
 def _as_int_param(parameters: dict[str, Any], name: str, minimum: int, maximum: int) -> int:
     value = parameters.get(name)
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise ValueError(f"{name} must be an integer in [{minimum}, {maximum}]")
+    return value
+
+
+def _as_str_param(parameters: dict[str, Any], name: str, maximum: int) -> str:
+    value = parameters.get(name)
+    if not isinstance(value, str) or not 1 <= len(value) <= maximum:
+        raise ValueError(f"{name} must be a string of 1-{maximum} characters")
     return value
 
 
@@ -205,6 +244,126 @@ def _run_canonical_decode(payload: RunPayload, cancel_event: threading.Event) ->
     _send(make_completed(job_id, result.model_dump(mode="json")))
 
 
+def _derived_parameters(payload: RunPayload) -> dict[str, Any]:
+    """Validate the parameters shared by both derived transforms."""
+    parameters = payload.parameters
+    try:
+        source_pcm_path = _as_str_param(parameters, "source_pcm_path", 4096)
+        sample_rate = _as_int_param(parameters, "sample_rate", 8_000, 192_000)
+        channel_count = _as_int_param(parameters, "channel_count", 1, 8)
+        estimated = _as_optional_float_param(parameters, "estimated_duration_seconds")
+    except ValueError as exc:
+        raise ValueError(f"invalid derived parameters: {exc}") from exc
+    return {
+        "source_pcm_path": source_pcm_path,
+        "sample_rate": sample_rate,
+        "channel_count": channel_count,
+        "estimated": estimated,
+    }
+
+
+def _derived_progress_sender(
+    job_id: Uuid, estimated: float | None
+) -> Callable[[DerivedProgress], None]:
+    def on_progress(progress: DerivedProgress) -> None:
+        detail = f"processed {progress.out_time_seconds:.1f}s"
+        if estimated is not None:
+            detail += f" of ~{estimated:.1f}s"
+        _send(make_progress(job_id, JobStage.PREPARING_PLAYBACK, progress.fraction, detail))
+
+    return on_progress
+
+
+def _run_monitoring_downmix(payload: RunPayload, cancel_event: threading.Event) -> None:
+    """Execute a monitoring downmix: stereo PCM in staging, metadata only."""
+    job_id = payload.job_id
+    _send(make_progress(job_id, JobStage.PREPARING_PLAYBACK, None, "starting ffmpeg"))
+    try:
+        common = _derived_parameters(payload)
+        pan_spec = _as_str_param(payload.parameters, "pan_spec", 1024)
+        downmix_mode = _as_str_param(payload.parameters, "downmix_mode", 32)
+        left_channel = _as_int_param(payload.parameters, "left_channel", 0, 7)
+        right_channel = _as_int_param(payload.parameters, "right_channel", 0, 7)
+    except ValueError as exc:
+        _send(make_failed(job_id, "DOWNMIX_PARAMETERS", str(exc)))
+        return
+
+    output_path = Path(payload.staging_dir) / "monitoring.pcm"
+    outcome = asyncio.run(
+        downmix_monitoring(
+            source_path=Path(common["source_pcm_path"]),
+            output_path=output_path,
+            sample_rate=common["sample_rate"],
+            channel_count=common["channel_count"],
+            pan_spec=pan_spec,
+            max_threads=payload.max_threads,
+            estimated_duration_seconds=common["estimated"],
+            cancel_event=cancel_event,
+            on_progress=_derived_progress_sender(job_id, common["estimated"]),
+        )
+    )
+    result = MonitoringDownmixResult(
+        frame_count=outcome.frame_count,
+        sample_rate=common["sample_rate"],
+        channel_count=2,
+        content_hash=outcome.content_hash,
+        max_amplitude=outcome.max_amplitude,
+        pcm_byte_count=outcome.pcm_byte_count,
+        source_frame_count=outcome.frame_count,
+        downmix_mode=downmix_mode,
+        left_channel=left_channel,
+        right_channel=right_channel,
+        ffmpeg_version=outcome.ffmpeg_version,
+        profile_version=1,
+        staging_pcm_path=str(output_path.resolve()),
+    )
+    _send(make_completed(job_id, result.model_dump(mode="json")))
+
+
+def _run_playback_rate(payload: RunPayload, cancel_event: threading.Event) -> None:
+    """Execute a playback-rate conversion: PCM in staging, metadata only."""
+    job_id = payload.job_id
+    _send(make_progress(job_id, JobStage.PREPARING_PLAYBACK, None, "starting ffmpeg"))
+    try:
+        common = _derived_parameters(payload)
+        target_rate = _as_int_param(payload.parameters, "target_sample_rate", 8_000, 192_000)
+    except ValueError as exc:
+        _send(make_failed(job_id, "PLAYBACK_PARAMETERS", str(exc)))
+        return
+
+    output_path = Path(payload.staging_dir) / "playback.pcm"
+    outcome = asyncio.run(
+        resample_playback(
+            source_path=Path(common["source_pcm_path"]),
+            output_path=output_path,
+            source_rate=common["sample_rate"],
+            target_rate=target_rate,
+            channel_count=common["channel_count"],
+            max_threads=payload.max_threads,
+            estimated_duration_seconds=common["estimated"],
+            cancel_event=cancel_event,
+            on_progress=_derived_progress_sender(job_id, common["estimated"]),
+        )
+    )
+    result = PlaybackRateResult(
+        frame_count=outcome.frame_count,
+        sample_rate=target_rate,
+        channel_count=common["channel_count"],
+        content_hash=outcome.content_hash,
+        max_amplitude=outcome.max_amplitude,
+        pcm_byte_count=outcome.pcm_byte_count,
+        source_frame_count=outcome.source_frame_count,
+        source_sample_rate=common["sample_rate"],
+        target_sample_rate=target_rate,
+        expected_frame_count=outcome.expected_frame_count,
+        endpoint_difference_frames=outcome.endpoint_difference_frames,
+        ffmpeg_version=outcome.ffmpeg_version,
+        profile_version=1,
+        staging_pcm_path=str(output_path.resolve()),
+    )
+    _send(make_completed(job_id, result.model_dump(mode="json")))
+
+
 def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
     """Run one job to a terminal report. Never raises out of the thread."""
     job_id = payload.job_id
@@ -213,6 +372,10 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
             _run_probe(payload, cancel_event)
         elif payload.job_type is JobType.CANONICAL_DECODE:
             _run_canonical_decode(payload, cancel_event)
+        elif payload.job_type is JobType.MONITORING_DOWNMIX:
+            _run_monitoring_downmix(payload, cancel_event)
+        elif payload.job_type is JobType.PLAYBACK_RATE:
+            _run_playback_rate(payload, cancel_event)
         else:
             _send(
                 make_failed(
@@ -221,7 +384,7 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
                     f"job type {payload.job_type.value!r} is implemented in a later milestone",
                 )
             )
-    except (ProbeCancelledError, DecodeCancelledError):
+    except (ProbeCancelledError, DecodeCancelledError, DerivedCancelledError):
         removed = _remove_staging(payload.staging_dir)
         _log(f"job {job_id} cancelled; staging removed={removed}")
         _send(make_cancelled(job_id, staging_removed=removed))
@@ -233,6 +396,10 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} failed: {_decode_error_code(exc)}: {exc}")
         _send(make_failed(job_id, _decode_error_code(exc), str(exc)))
+    except DerivedError as exc:
+        _remove_staging(payload.staging_dir)
+        _log(f"job {job_id} failed: {_derived_error_code(exc)}: {exc}")
+        _send(make_failed(job_id, _derived_error_code(exc), str(exc)))
     except Exception as exc:  # noqa: BLE001 - last-resort guard inside the job thread
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} crashed: {exc!r}")
@@ -324,15 +491,15 @@ def _handle(message: WorkerMessage) -> int | None:
                     ),
                     Capability(
                         id="media.monitoring_downmix",
-                        description="Build a monitoring downmix (M1.6).",
+                        description="Build a stereo monitoring downmix (M1.7).",
                     ),
                     Capability(
                         id="media.playback_rate",
-                        description="Convert to a playback sample rate (M1.6).",
+                        description="Convert to a playback sample rate (M1.7).",
                     ),
                     Capability(
                         id="media.waveform",
-                        description="Generate waveform peaks (M1.7).",
+                        description="Generate waveform peaks (M1.8).",
                     ),
                 ],
                 models=[],

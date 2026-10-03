@@ -120,6 +120,9 @@ class MediaJob(BaseModel):
     error_code: str | None = Field(default=None, max_length=64)
     error: str | None = Field(default=None, max_length=MAX_JOB_ERROR_LENGTH)
     max_threads: int = Field(default=4, ge=1, le=32)
+    #: Creation-time parameters persisted with the job (M1.7), e.g.
+    #: ``{"target_sample_rate": 48000}`` for ``playback_rate`` jobs.
+    parameters: dict[str, Any] = Field(default_factory=dict)
     created_at: UtcTimestamp
     updated_at: UtcTimestamp
 

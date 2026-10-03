@@ -23,6 +23,8 @@ from basseparate.domain.common import (
 class AssetRole(StrEnum):
     SOURCE_ORIGINAL = "source_original"
     SOURCE_PCM = "source_pcm"
+    #: PCM derived from the canonical audio (monitoring downmix, playback rate).
+    DERIVED_PCM = "derived_pcm"
     STEM = "stem"
     ANALYSIS_ARTIFACT = "analysis_artifact"
     WAVEFORM_CACHE = "waveform_cache"

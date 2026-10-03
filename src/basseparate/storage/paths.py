@@ -33,6 +33,20 @@ class StoragePaths:
     def database_path(self) -> Path:
         return self.data / f"{APP_NAME}.db"
 
+    def resolve_asset_path(self, relative_path: str) -> Path:
+        """Resolve an asset's ``relative_path`` to an absolute path.
+
+        Relative paths are anchored per category (``data/...`` →
+        ``self.data``, ``runtime/...`` → ``self.runtime``), which works for
+        both the explicit-storage-root layout and the default XDG layout.
+        """
+        parts = Path(relative_path).parts
+        if parts and parts[0] == "data":
+            return self.data.joinpath(*parts[1:])
+        if parts and parts[0] == "runtime":
+            return self.runtime.joinpath(*parts[1:])
+        return self.state / relative_path
+
 
 def default_storage_paths() -> StoragePaths:
     state = Path(user_state_dir(APP_NAME))

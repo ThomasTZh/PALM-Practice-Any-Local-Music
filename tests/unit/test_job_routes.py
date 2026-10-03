@@ -247,6 +247,71 @@ class TestCreateJob:
         assert resp.status_code == 422
         assert resp.json()["error"]["code"] == "NO_STREAM_SELECTION"
 
+    def test_playback_job_requires_target_rate(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        import_id = _complete_import(client, auth_headers, project_id, _make_wav())
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/jobs",
+            json={"job_type": "playback_rate", "import_id": import_id},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "JOB_REQUEST"
+
+    def test_target_rate_rejected_for_other_job_types(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        import_id = _complete_import(client, auth_headers, project_id, _make_wav())
+        for job_type in ("probe", "canonical_decode"):
+            resp = client.post(
+                f"/api/v1/projects/{project_id}/jobs",
+                json={"job_type": job_type, "import_id": import_id, "target_sample_rate": 48000},
+                headers=auth_headers,
+            )
+            assert resp.status_code == 422
+            assert resp.json()["error"]["code"] == "JOB_REQUEST"
+
+    def test_playback_job_target_rate_out_of_bounds(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        import_id = _complete_import(client, auth_headers, project_id, _make_wav())
+        for rate in (7999, 192001):
+            resp = client.post(
+                f"/api/v1/projects/{project_id}/jobs",
+                json={
+                    "job_type": "playback_rate",
+                    "import_id": import_id,
+                    "target_sample_rate": rate,
+                },
+                headers=auth_headers,
+            )
+            assert resp.status_code == 422
+
+    def test_playback_job_without_canonical_fails_no_canonical(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        # A valid playback job on a project without decoded audio fails with
+        # NO_CANONICAL once the scheduler resolves its parameters.
+        project_id = _make_project(client, auth_headers)
+        import_id = _complete_import(client, auth_headers, project_id, _make_wav())
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/jobs",
+            json={
+                "job_type": "playback_rate",
+                "import_id": import_id,
+                "target_sample_rate": 48000,
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        final = _wait_for_job(client, auth_headers, resp.json()["id"])
+        assert final["state"] == "failed"
+        assert final["error_code"] == "NO_CANONICAL"
+
     def test_decode_job_end_to_end(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
         import_id = _complete_import(client, auth_headers, project_id, _make_wav())
@@ -366,7 +431,7 @@ class TestCancelJob:
         import_id = _complete_import(client, auth_headers, project_id, _make_wav())
         resp = client.post(
             f"/api/v1/projects/{project_id}/jobs",
-            json={"job_type": "monitoring_downmix", "import_id": import_id},
+            json={"job_type": "waveform", "import_id": import_id},
             headers=auth_headers,
         )
         job_id = resp.json()["id"]

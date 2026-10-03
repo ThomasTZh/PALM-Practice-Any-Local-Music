@@ -6,14 +6,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestone:** 1 (Import, waveform, and original playback)
-- **Gate:** F passed (Milestone 0 exit gate); B in progress (covers M1.4–M1.6)
-- **Work package:** M1.6 (asset publication, hashing, disk budgeting) —
-  complete; next: M1.7
-- **Last commit:** `4098c58` — M1.6 (disk budget + acceptance tests);
-  `b1d92d1` — M1.5 (decode canonical audio); `71a18e7` — M1.4 ledger hash;
+- **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
+- **Work package:** M1.7 (monitoring channels + playback-rate
+  representations) — complete (Phases 1–7); next: M1.8
+- **Last commit:** `<M1.7_COMMIT>` — M1.7 (monitoring + playback rate);
+  `4098c58` — M1.6 (disk budget + acceptance tests);
+  `b1d92d1` — M1.5 (decode canonical audio); `ae11417` — M1.6 ledger hash;
   `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.7 per `projectPlans/milestone1.md` §9 (monitoring
-  channels and playback-rate representations). Working tree clean.
+- **Next action:** M1.8 per `projectPlans/milestone1.md` §10 — build the
+  waveform pyramid (the last unimplemented job type, `WAVEFORM`).
 
 ## Completed requirements (with evidence)
 
@@ -118,6 +119,135 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.7 — Monitoring channels + playback-rate representations (complete)
+
+Spec: `projectPlans/milestone1.md` §9 (line 643+). Plan:
+`projectPlans/m1.7-plan.md`. Acceptance: 44.1 kHz and 48 kHz sources play
+with correct pitch and duration at either browser output rate.
+
+**Phases 1–4 (complete, tested):**
+- `domain/representation.py`: `MonitoringDownmixResult` +
+  `PlaybackRateResult` models; v2 transform keys
+  (`compute_downmix_key` / `compute_playback_key`).
+- `storage/db.py`: schema v4 (`monitoring_asset_id`,
+  `monitoring_left/right_channel` on projects; derived-asset role
+  `derived_pcm`); `DATABASE_SCHEMA_VERSION=4`.
+- `media/downmix.py` (new): spec §9.3 matrices — `standard_51_matrix()`
+  (row-normalized Σ|coef|), `manual_matrix(l, r)`, `pan_expression()`
+  (FFmpeg `pan=stereo|c0=...|c1=...`, no shell escaping),
+  `resolve_downmix()`, `channel_labels()`, `MonitorSelectionError`.
+- `media/derived.py` (new): `downmix_monitoring()` + `resample_playback()`
+  via pinned `aresample=<rate>:filter_size=64:exact_rational=1:
+  dither_method=0` profile v1; 19 engine tests.
+- `worker/media_worker.py`: derived runs + dispatch; `TestDerivedJobs`.
+
+**Phase 5 (complete this session, uncommitted):**
+- `storage/paths.py`: `resolve_asset_path()` (data/ runtime/ state/
+  prefixes for both XDG and `--storage-root` layouts).
+- `storage/repository.py`: `ProjectRepository.get_asset()`;
+  `set_monitoring()` (single transaction: register asset, attach, set
+  monitoring fields).
+- `jobs/manager.py`: `ParameterResolutionError(code, message)` (exported
+  from `basseparate.jobs`); `_PARAMETERIZED_JOB_TYPES`; `_run_job`
+  resolves parameters before the worker runs — a resolution failure
+  fails the job with that code; empty dict → type-specific default
+  (`NO_STREAM_SELECTION` decode / `NO_CANONICAL` derived).
+- `app.py`: `_canonical_pcm_asset`, `_downmix_parameters_for`,
+  `_playback_parameters_for`, `_job_parameters_for` dispatch;
+  `RepresentationRepository` now on `app.state`.
+- `jobs/publisher.py`: `_ensure_derived_asset` (hash dedup, moves staging
+  → `data/assets/<hash>.pcm`, registers the row before any FK reference),
+  `_publish_downmix` (parent = canonical, layout "stereo", identity
+  mapping, matrix transform key, then `set_monitoring`),
+  `_publish_playback` (parent = monitoring-or-canonical, TimeMapping
+  project_rate→representation_rate, standalone — never attached to the
+  project); both check `get_representation` before registering
+  (idempotent re-publish).
+- `api/errors.py`: 5 new errors — `AssetNotFoundError` (404),
+  `ProjectNotReadyError` (409), `InvalidMonitoringSelection` (422),
+  `NoPlaybackRepresentation` (404), `RangeNotSatisfiable` (416).
+- `api/playback_routes.py` (new): `PUT
+  /projects/{id}/monitoring-channels` (range-validated, 409 if not
+  ready), `GET /projects/{id}/source-info` (rate, duration, labels,
+  monitoring state, available playback rates), `GET
+  /projects/{id}/playback?rate=N` (Query 8000–192000; source asset at
+  its own rate, else the published representation, else 404),
+  `GET /assets/{asset_id}/bytes` (HTTP Range: 200 full / 206 partial /
+  416 unsatisfiable, 1 MiB `StreamingResponse` chunks,
+  `Accept-Ranges`/`Content-Range`).
+- `api/job_routes.py`: `CreateJobRequest.target_sample_rate`
+  (int, 8000–192000) — required for `playback_rate` (422
+  `JOB_REQUEST` if missing), rejected for other types; passed as
+  `parameters={"target_sample_rate": ...}`.
+
+**Phase 5 tests (all green):**
+- `tests/unit/test_playback_routes.py` (new, 22 tests): full-pipeline
+  ready projects (1/2/4-ch WAV) — monitoring-channels validation,
+  source-info shape, playback resolution (incl. 404
+  `NO_PLAYBACK_REPRESENTATION`), asset bytes 200/206/416.
+- `tests/integration/test_publisher.py` (new, 9 tests): seeded ready
+  projects via `publish_source` (no ffmpeg) — downmix standard 5.1 +
+  manual, playback (incl. parent-is-monitoring chain), failure paths,
+  idempotency (single asset + representation row).
+- `tests/integration/test_job_manager.py`: +13 tests —
+  `TestParameterResolution` (ParameterResolutionError → job fails with
+  code; empty params → default codes) and `TestParameterResolvers`
+  (real `_job_parameters_for`: 5.1 pan spec, manual selection,
+  MISSING_MONITORING_SELECTION, NO_DOWNMIX_NEEDED, NO_CANONICAL,
+  playback canonical/monitoring source, INVALID_TARGET_RATE).
+- `tests/unit/test_job_routes.py`: +4 tests — `target_sample_rate`
+  required/rejected/out-of-bounds, NO_CANONICAL end-to-end.
+- Totals: 524 py tests pass (unit + integration); ruff + mypy clean.
+
+**Phase 6 (complete this session):**
+- `contracts/openapi.json` + `frontend/src/api/schema.ts` regenerated.
+- `frontend/src/playback/pcm.ts` (new): `deinterleaveF32le`,
+  `projectPosition`, `clampToDuration`, `formatTime` (m:ss.mmm),
+  `framesFromBytes`.
+- `frontend/src/api/playback.ts` (new): `getSourceInfo`, `resolvePlayback`
+  (404 `NO_PLAYBACK_REPRESENTATION` → typed error), `createJob`
+  (`JobType` from generated schema), `getJob`, `waitForJob` (500 ms poll,
+  120 s timeout, abortable), `ensurePlaybackTarget` (resolve → 404 →
+  create `playback_rate` job → poll → re-resolve), `setMonitoringChannels`,
+  `fetchAssetBytes` (plain fetch + Bearer + `Range`; 416 → `RangeError`;
+  total from `content-range`/`content-length`), `latestCompletedImportId`.
+- `frontend/src/playback/engine.ts` (new): `PlaybackEngine` with injected
+  `AudioContextLike`; 1.5 s lookahead, 150 ms scheduler tick, 50 ms start
+  delay, 4 MiB default chunk; `idle|loading|playing|paused|stopped|error`
+  state machine; `endReached` so natural end reports the end position
+  (user stop → 0); position reported every tick; injectable delay for
+  tests; `dispose()` closes only owned contexts.
+- `frontend/src/App.tsx`: `PlaybackPanel` — source info, monitoring
+  channel selection (L/R `<select>`s for >2-ch sources; standard 5.1
+  skips the PUT), transport (play/pause toggle, stop, time readout,
+  "Preparing playback…", errors); wired into the ready project view.
+- `frontend/src/styles.css`: playback panel styles (dark theme).
+- 28 new js tests: `tests/pcm.test.ts` (15), `tests/engine.test.ts` (6)
+  + `tests/helpers/pcm-fixture.ts` (fake `AudioContext` harness),
+  `tests/playback-panel.test.tsx` (7; mock handler factory — jsdom has no
+  `AudioContext`). 47 js tests total; `pnpm run lint|typecheck|test|build`
+  all clean.
+
+**Phase 7 (complete this session):**
+- `tests/integration/test_m17_acceptance.py` (new, 14 tests) — the
+  acceptance matrix: 44.1 kHz / 48 kHz source × 44.1 kHz / 48 kHz
+  playback, real ffmpeg `resample_playback` on a 1 s 440 Hz stereo sine:
+  duration (output frame count within ±2 of the exact rational
+  conversion), pitch (upward zero-crossing frequency ≈ 440 Hz ±2 %,
+  analyzed on one de-interleaved channel), determinism (byte-identical
+  runs). Plus the full pipeline: seeded ready 44.1 kHz project → resample
+  → real publisher → `find_playback` resolves with resampled bytes on
+  disk and staging moved; same-rate playback needs no representation.
+- Full verification: 538 py tests pass (524 + 14); `ruff check
+  src/ tests/` clean; `mypy` clean (43 files); 47 js tests, lint /
+  typecheck / build clean.
+- Note: `ruff check scripts/` has 2 pre-existing findings from
+  M0.10/M0.11 (RET504 in `dev.py`, F541 in `generate_licenses.py`);
+  unchanged by M1.7, left for a later cleanup.
+
+**Commit:** `<M1.7_COMMIT>` (implementation); ledger hash in the following
+commit.
 
 ### M1.2 — Bounded local file transfer (complete)
 

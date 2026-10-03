@@ -73,11 +73,11 @@ class TestInitialization:
             "media_jobs",
         } <= tables
 
-    def test_schema_version_is_3(self, db_path: Path) -> None:
+    def test_schema_version_is_4(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 3
+        assert version == 4
 
     def test_media_jobs_table_shape(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
@@ -96,6 +96,7 @@ class TestInitialization:
             "error_code",
             "error",
             "max_threads",
+            "parameters",
             "created_at",
             "updated_at",
         } <= columns
@@ -113,6 +114,8 @@ class TestInitialization:
             "decode_profile_version",
             "waveform_status",
             "monitoring_asset_id",
+            "monitoring_left_channel",
+            "monitoring_right_channel",
             "source_metadata",
         } <= columns
         assert "duration_samples" not in columns

@@ -154,7 +154,7 @@ class TestProbeJob:
         job_id = uuid.uuid4()
         supervisor.send(
             make_run(
-                job_id, JobType.MONITORING_DOWNMIX, str(tmp_path / "x.part"), str(tmp_path / "s")
+                job_id, JobType.WAVEFORM, str(tmp_path / "x.part"), str(tmp_path / "s")
             )
         )
         msg = supervisor.receive(15.0)
@@ -507,3 +507,186 @@ class TestProbeCancelledBeforeStart:
         with pytest.raises(ProbeCancelledError):
             asyncio.run(probe_media(wav, cancel_event=event))
         t.join(timeout=5)
+
+
+def _make_f32le_pcm(path: Path, frames: int, channels: int, sample_rate: int) -> Path:
+    """Write a raw interleaved f32le PCM file with per-channel sine tones."""
+    import numpy as np
+
+    t = np.arange(frames) / sample_rate
+    chans = [0.5 * np.sin(2 * np.pi * (100.0 * (i + 1)) * t) for i in range(channels)]
+    data = np.stack(chans, axis=1).astype("<f4")
+    path.write_bytes(data.tobytes())
+    return path
+
+
+def _wait_for_terminal(supervisor: WorkerSupervisor, max_messages: int = 10) -> object:
+    final = None
+    for _ in range(max_messages):
+        msg = supervisor.receive(30.0)
+        if isinstance(msg, (CompletedMessage, FailedMessage, CancelledMessage)):
+            final = msg
+            break
+    return final
+
+
+class TestDerivedJobs:
+    """M1.7: monitoring downmix and playback-rate jobs through the worker."""
+
+    DOWNMIX_PARAMS = {
+        "source_pcm_path": "source.pcm",
+        "sample_rate": 44100,
+        "channel_count": 4,
+        "pan_spec": "pan=stereo|c0=1*c1|c1=1*c3",
+        "downmix_mode": "manual",
+        "left_channel": 1,
+        "right_channel": 3,
+    }
+
+    PLAYBACK_PARAMS = {
+        "source_pcm_path": "source.pcm",
+        "sample_rate": 44100,
+        "channel_count": 2,
+        "target_sample_rate": 48000,
+    }
+
+    def test_downmix_completes_with_result(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        src = _make_f32le_pcm(tmp_path / "source.pcm", 44100, 4, 44100)
+        job_id = uuid.uuid4()
+        staging = tmp_path / "staging"
+
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.MONITORING_DOWNMIX,
+                str(src),
+                str(staging),
+                parameters=dict(self.DOWNMIX_PARAMS, source_pcm_path=str(src)),
+            )
+        )
+
+        final = _wait_for_terminal(supervisor)
+        assert isinstance(final, CompletedMessage), f"expected completed, got {type(final)}"
+        result = final.payload.result
+        assert result["frame_count"] == 44100
+        assert result["sample_rate"] == 44100
+        assert result["channel_count"] == 2
+        assert result["downmix_mode"] == "manual"
+        assert result["left_channel"] == 1
+        assert result["right_channel"] == 3
+        assert result["source_frame_count"] == 44100
+        assert result["profile_version"] == 1
+        assert len(result["content_hash"]) == 64
+        staged = staging / "monitoring.pcm"
+        assert staged.is_file()
+        assert staged.stat().st_size == 44100 * 2 * 4
+
+    def test_playback_completes_with_result(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        src = _make_f32le_pcm(tmp_path / "source.pcm", 44100, 2, 44100)
+        job_id = uuid.uuid4()
+        staging = tmp_path / "staging"
+
+        supervisor.send(
+            make_run(
+                job_id,
+                JobType.PLAYBACK_RATE,
+                str(src),
+                str(staging),
+                parameters=dict(self.PLAYBACK_PARAMS, source_pcm_path=str(src)),
+            )
+        )
+
+        final = _wait_for_terminal(supervisor)
+        assert isinstance(final, CompletedMessage), f"expected completed, got {type(final)}"
+        result = final.payload.result
+        assert result["source_frame_count"] == 44100
+        assert result["frame_count"] == 48000
+        assert result["expected_frame_count"] == 48000
+        assert result["endpoint_difference_frames"] == 0
+        assert result["sample_rate"] == 48000
+        assert result["source_sample_rate"] == 44100
+        assert result["target_sample_rate"] == 48000
+        assert len(result["content_hash"]) == 64
+        staged = staging / "playback.pcm"
+        assert staged.is_file()
+        assert staged.stat().st_size == 48000 * 2 * 4
+
+    def test_downmix_missing_parameters_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        src = _make_f32le_pcm(tmp_path / "source.pcm", 4410, 4, 44100)
+        supervisor.send(
+            make_run(
+                uuid.uuid4(),
+                JobType.MONITORING_DOWNMIX,
+                str(src),
+                str(tmp_path / "s"),
+            )
+        )
+        final = _wait_for_terminal(supervisor)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "DOWNMIX_PARAMETERS"
+
+    def test_downmix_invalid_pan_spec_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        src = _make_f32le_pcm(tmp_path / "source.pcm", 4410, 4, 44100)
+        supervisor.send(
+            make_run(
+                uuid.uuid4(),
+                JobType.MONITORING_DOWNMIX,
+                str(src),
+                str(tmp_path / "s"),
+                parameters=dict(self.DOWNMIX_PARAMS, source_pcm_path=str(src), pan_spec=""),
+            )
+        )
+        final = _wait_for_terminal(supervisor)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "DOWNMIX_PARAMETERS"
+
+    def test_playback_invalid_target_rate_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        src = _make_f32le_pcm(tmp_path / "source.pcm", 4410, 2, 44100)
+        supervisor.send(
+            make_run(
+                uuid.uuid4(),
+                JobType.PLAYBACK_RATE,
+                str(src),
+                str(tmp_path / "s"),
+                parameters=dict(
+                    self.PLAYBACK_PARAMS,
+                    source_pcm_path=str(src),
+                    target_sample_rate=1,
+                ),
+            )
+        )
+        final = _wait_for_terminal(supervisor)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "PLAYBACK_PARAMETERS"
+
+    def test_playback_missing_source_fails(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        supervisor.wait_for_handshake()
+        supervisor.send(
+            make_run(
+                uuid.uuid4(),
+                JobType.PLAYBACK_RATE,
+                str(tmp_path / "absent.pcm"),
+                str(tmp_path / "s"),
+                parameters=dict(self.PLAYBACK_PARAMS, source_pcm_path=str(tmp_path / "absent.pcm")),
+            )
+        )
+        final = _wait_for_terminal(supervisor)
+        assert isinstance(final, FailedMessage), f"expected failed, got {type(final)}"
+        assert final.payload.code == "DERIVED_FAILED"

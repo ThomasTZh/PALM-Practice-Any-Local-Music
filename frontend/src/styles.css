@@ -428,3 +428,105 @@ button:hover:not(:disabled) {
   padding: 0.5rem 0;
   font-size: 0.9rem;
 }
+
+/* Playback panel (M1.7) */
+.playback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 1rem 0;
+}
+
+.playback-panel section {
+  background: var(--panel);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.playback-panel h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.source-info dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.source-info dt {
+  color: var(--muted);
+}
+
+.source-info dd {
+  margin: 0;
+}
+
+.channel-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.channel-labels li {
+  background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.monitoring-select {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.monitoring-select label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.monitoring-select select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--panel);
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.transport-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.time-readout {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.playback-error {
+  background: color-mix(in srgb, var(--error) 10%, var(--panel));
+  border: 1px solid var(--error);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  font-size: 0.9rem;
+}

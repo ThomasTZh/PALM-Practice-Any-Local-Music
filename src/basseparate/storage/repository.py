@@ -67,6 +67,8 @@ def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
         monitoring_asset_id=(
             uuid.UUID(row["monitoring_asset_id"]) if row["monitoring_asset_id"] else None
         ),
+        monitoring_left_channel=row["monitoring_left_channel"],
+        monitoring_right_channel=row["monitoring_right_channel"],
         source_stream_index=row["source_stream_index"],
         sample_rate=row["sample_rate"],
         duration_frames=row["duration_frames"],
@@ -166,6 +168,7 @@ def _row_to_job(row: sqlite3.Row) -> MediaJob:
         error_code=row["error_code"],
         error=row["error"],
         max_threads=row["max_threads"],
+        parameters=json.loads(row["parameters"]) if row["parameters"] else {},
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -281,6 +284,16 @@ class ProjectRepository:
         finally:
             conn.close()
 
+    def get_asset(self, asset_id: uuid.UUID) -> AssetRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT * FROM assets WHERE id = ?", (str(asset_id),)
+            ).fetchone()
+            return _row_to_asset(row) if row else None
+        finally:
+            conn.close()
+
     def publish_source(
         self,
         project_id: uuid.UUID,
@@ -382,6 +395,9 @@ class ProjectRepository:
                 UPDATE projects SET
                     source_asset_id = ?,
                     canonical_asset_id = ?,
+                    monitoring_asset_id = NULL,
+                    monitoring_left_channel = NULL,
+                    monitoring_right_channel = NULL,
                     source_stream_index = ?,
                     sample_rate = ?,
                     duration_frames = ?,
@@ -415,6 +431,119 @@ class ProjectRepository:
         except Exception:
             conn.execute("ROLLBACK")
             raise
+        finally:
+            conn.close()
+
+        updated = self.get_project(project_id)
+        assert updated is not None
+        return updated
+
+    def set_monitoring(
+        self,
+        project_id: uuid.UUID,
+        asset: AssetRecord,
+        left_channel: int,
+        right_channel: int,
+    ) -> ProjectRecord:
+        """Attach a monitoring representation to a project (M1.7).
+
+        One transaction: register the asset (idempotent), attach it as
+        ``derived_pcm``, and set ``monitoring_asset_id`` with the effective
+        left/right source channels. A project without a canonical asset
+        cannot gain a monitoring representation.
+        """
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT canonical_asset_id FROM projects WHERE id = ?", (str(project_id),)
+            ).fetchone()
+            if row is None:
+                raise DatabaseError(f"project {project_id} not found")
+            if row["canonical_asset_id"] is None:
+                raise DatabaseError(f"project {project_id} has no canonical asset")
+            audio = asset.audio
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO assets (id, content_hash, role, relative_path,
+                                              media_type, byte_count, created_at,
+                                              audio_sample_rate, audio_channel_count,
+                                              audio_frame_count, audio_sample_format,
+                                              revision)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(asset.id),
+                    asset.content_hash,
+                    asset.role.value,
+                    asset.relative_path,
+                    asset.media_type,
+                    asset.byte_count,
+                    asset.created_at.isoformat().replace("+00:00", "Z"),
+                    audio.sample_rate if audio else None,
+                    audio.channel_count if audio else None,
+                    audio.frame_count if audio else None,
+                    audio.sample_format if audio else None,
+                    asset.revision,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO project_assets (project_id, asset_id, role)
+                VALUES (?, ?, ?)
+                """,
+                (str(project_id), str(asset.id), AssetRole.DERIVED_PCM.value),
+            )
+            conn.execute(
+                """
+                UPDATE projects SET
+                    monitoring_asset_id = ?,
+                    monitoring_left_channel = ?,
+                    monitoring_right_channel = ?,
+                    updated_at = ?,
+                    revision = revision + 1
+                WHERE id = ?
+                """,
+                (str(asset.id), left_channel, right_channel, _now(), str(project_id)),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            conn.execute("ROLLBACK")
+            raise DatabaseError(f"cannot set monitoring representation: {exc}") from exc
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+        updated = self.get_project(project_id)
+        assert updated is not None
+        return updated
+
+    def set_monitoring_channels(
+        self, project_id: uuid.UUID, left_channel: int, right_channel: int
+    ) -> ProjectRecord:
+        """Store the user's L/R monitoring selection for an unknown layout.
+
+        The project must be ready; the channels are validated against the
+        source channel count by the caller (and by the domain model).
+        """
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                """
+                UPDATE projects SET
+                    monitoring_left_channel = ?,
+                    monitoring_right_channel = ?,
+                    updated_at = ?,
+                    revision = revision + 1
+                WHERE id = ?
+                """,
+                (left_channel, right_channel, _now(), str(project_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"project {project_id} not found")
+            conn.execute("COMMIT")
         finally:
             conn.close()
 
@@ -590,6 +719,7 @@ class JobRepository:
         job_type: JobType,
         import_id: uuid.UUID | None = None,
         max_threads: int = 4,
+        parameters: dict[str, Any] | None = None,
     ) -> MediaJob:
         now = _now()
         job_id = str(uuid.uuid4())
@@ -598,8 +728,8 @@ class JobRepository:
             conn.execute(
                 """
                 INSERT INTO media_jobs (id, project_id, import_id, job_type, state,
-                                        max_threads, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
+                                        max_threads, parameters, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -607,6 +737,7 @@ class JobRepository:
                     str(import_id) if import_id else None,
                     job_type.value,
                     max_threads,
+                    json.dumps(parameters or {}, sort_keys=True),
                     now,
                     now,
                 ),
@@ -822,6 +953,28 @@ class RepresentationRepository:
                 WHERE r.asset_id = ?
                 """,
                 (str(asset_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            return _row_to_representation(row)
+        finally:
+            conn.close()
+
+    def find_playback(
+        self, parent_asset_id: uuid.UUID, representation_rate: int
+    ) -> AudioRepresentation | None:
+        """The playback-rate representation of a parent asset at a rate (M1.7)."""
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT r.*, a.content_hash FROM representations r
+                JOIN assets a ON a.id = r.asset_id
+                WHERE r.parent_asset_id = ?
+                  AND r.role = 'playback_rate'
+                  AND r.representation_rate = ?
+                """,
+                (str(parent_asset_id), representation_rate),
             ).fetchone()
             if row is None:
                 return None

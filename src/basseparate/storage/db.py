@@ -226,6 +226,22 @@ def _migration_2_to_3(conn: sqlite3.Connection) -> None:
 
 register_migration(3, _migration_2_to_3)
 
+_MIGRATION_4_STATEMENTS: tuple[str, ...] = (
+    """
+    ALTER TABLE media_jobs ADD COLUMN parameters TEXT NOT NULL DEFAULT '{}'
+    """,
+    "ALTER TABLE projects ADD COLUMN monitoring_left_channel INTEGER",
+    "ALTER TABLE projects ADD COLUMN monitoring_right_channel INTEGER",
+)
+
+
+def _migration_3_to_4(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_4_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(4, _migration_3_to_4)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
