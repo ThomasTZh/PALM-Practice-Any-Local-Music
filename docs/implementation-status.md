@@ -7,10 +7,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.11 (navigation, zoom, selection) — implementation
-  complete, gate green; commit pending. Plan in
-  `projectPlans/m1.11-plan.md`.
-- **Last commit:** `62513ce` — M1.10 (waveform editor);
+- **Work package:** M1.11 (navigation, zoom, selection) — complete.
+  Plan in `projectPlans/m1.11-plan.md`.
+- **Last commit:** `fd3468f` — M1.11 (navigation, zoom, selection);
+  `62513ce` — M1.10 (waveform editor);
   `ffa0142` — chore: prettier normalization of pre-existing sources
   (baseline was not prettier-clean);
   `72cd2e5` — M1.9 ledger hash;
@@ -21,9 +21,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** commit M1.11 (single `M1.11: …` commit + ledger-hash
-  follow-up), then start M1.12 — AudioWorklet transport
-  (`projectPlans/milestone1.md` §14).
+- **Next action:** M1.12 — AudioWorklet transport
+  (`projectPlans/milestone1.md` §14): write the M1.12 plan
+  (`projectPlans/m1.12-plan.md`), then implement.
 
 ## Completed requirements (with evidence)
 
@@ -129,7 +129,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Milestone 1 progress
 
-### M1.11 — Navigation, zoom, and selection (complete, uncommitted)
+### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 
 Spec: `projectPlans/milestone1.md` §13. Plan:
 `projectPlans/m1.11-plan.md`. Frontend-only:
