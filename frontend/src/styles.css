@@ -529,6 +529,35 @@ button:hover:not(:disabled) {
   color: var(--muted);
 }
 
+.playback-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.playback-volume label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.playback-volume input[type='range'] {
+  width: 8rem;
+}
+
+.playback-volume .volume-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
+.playback-volume .volume-clipping {
+  font-size: 0.8rem;
+  color: var(--warning, #b8860b);
+}
+
 .playback-error {
   background: color-mix(in srgb, var(--error) 10%, var(--panel));
   border: 1px solid var(--error);

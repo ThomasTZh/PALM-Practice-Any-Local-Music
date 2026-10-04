@@ -47,6 +47,20 @@ export function projectPosition(
   return Math.floor((playbackFrame * projectRate) / playbackRate)
 }
 
+/**
+ * Inverse of `projectPosition`: map a project (canonical) frame position to
+ * the playback representation at `playbackRate`.
+ */
+export function playbackPosition(
+  projectFrame: number,
+  projectRate: number,
+  playbackRate: number,
+): number {
+  if (projectRate <= 0) throw new RangeError('projectRate must be > 0')
+  if (playbackRate <= 0) throw new RangeError('playbackRate must be > 0')
+  return Math.floor((projectFrame * playbackRate) / projectRate)
+}
+
 /** Clamp a frame position into `[0, durationFrames]`. */
 export function clampToDuration(frame: number, durationFrames: number): number {
   return Math.max(0, Math.min(Math.floor(frame), durationFrames))

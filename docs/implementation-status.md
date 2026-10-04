@@ -7,8 +7,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.11 (navigation, zoom, selection) — complete.
-  Plan in `projectPlans/m1.11-plan.md`.
+- **Work package:** M1.12 (AudioWorklet transport) — complete.
+  Plan in `projectPlans/m1.12-plan.md`.
 - **Last commit:** `fd3468f` — M1.11 (navigation, zoom, selection);
   `62513ce` — M1.10 (waveform editor);
   `ffa0142` — chore: prettier normalization of pre-existing sources
@@ -21,9 +21,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.12 — AudioWorklet transport
-  (`projectPlans/milestone1.md` §14): write the M1.12 plan
-  (`projectPlans/m1.12-plan.md`), then implement.
+- **Next action:** M1.13 — Buffering and browser compatibility
+  (spec §15): shared-memory path, transferable-buffer fallback,
+  buffer defaults, underrun behavior, browser suspension,
+  audio-device changes. Write `projectPlans/m1.13-plan.md` first.
 
 ## Completed requirements (with evidence)
 
@@ -128,6 +129,69 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.12 — AudioWorklet transport (complete)
+
+Spec: `projectPlans/milestone1.md` §14. Plan:
+`projectPlans/m1.12-plan.md`. Frontend-only:
+replaces the `AudioBufferSourceNode` engine (`engine.ts`) with an
+AudioWorklet transport. Shared-memory path, refined buffer defaults,
+suspension/device recovery (M1.13) and synchronized-readout refinements
+(M1.14) are out of scope.
+
+Key design points (see plan):
+- `worklet-processor.js` — self-contained plain-JS ES module: pure
+  `ConsumptionState` (per-channel fixed 8 s ring, consumption, ~5 ms
+  pause ramp, seek-as-stale-audio-barrier, 480-frame anchors, actual
+  block length in `process`) + thin `AudioWorkletProcessor` adapter
+  (whole class + `registerProcessor` inside a
+  `typeof AudioWorkletProcessor !== 'undefined'` guard, so main-thread
+  test imports skip it). Browser: `?raw` + Blob URL + `addModule`.
+- `transport.ts` — `PcmTransport`: 8 spec states + `desiredPlaying`,
+  ~1 s chunk prefetch (2 s prebuffer target, generation-scoped
+  AbortController), anchor-based position extrapolation (playback →
+  project frames at the boundary), `setOutputGain` on a GainNode after
+  the worklet (canonical samples untouched).
+- `pcm.ts` gains `playbackPosition` (inverse of `projectPosition`).
+- `App.tsx` — `PlaybackPanel` swaps to the transport; new state labels;
+  monitoring-volume range 0–200 % with a "may clip" hint above 100 %.
+- `engine.ts` + `engine.test.ts` deleted; their coverage migrates to
+  `transport.test.ts`.
+
+Phases: 1 plan + kickoff → 2 worklet core → 3 transport → 4 app
+integration + engine removal → 5 frontend gate + commit.
+
+**Phase status:** all phases complete.
+- Phase 2: `worklet-processor.js` (ConsumptionState + adapter guard) +
+  hand-written `worklet-processor.d.ts` (tsc surface for the `.js`
+  import) + `src/vite-env.d.ts` (`?raw` import types);
+  `tests/worklet-core.test.ts` 12/12 green.
+- Phase 3: `transport.ts` — `PcmTransport` with the 8 spec states +
+  `desiredPlaying`; single long-lived fill loop that survives
+  generation bumps (abort-aware parking delay, 50 ms cadence, ~1 s
+  chunks to a 2 s prebuffer target); generation-guarded port
+  messages; the worklet acks enqueued samples with `data` (so
+  preparing/seeking can reach playing); `setOutputGain` clamped to
+  [0, 4] with a 10 ms ramp; injectable context factory, byte fetcher,
+  delay, and module-URL factory (jsdom has no `AudioContext` and no
+  `URL.createObjectURL`). `tests/transport.test.ts` 10/10 green
+  (fake context + scriptable worklet port).
+- Phase 4: `App.tsx` `PlaybackPanel` — transport created eagerly once
+  source info loads (the playback representation is resolved on first
+  play via `ensurePlaybackTarget` at the context rate; the pending
+  context is consumed once by the factory); project-switch reset
+  effect; seek parks the playhead locally before the transport exists
+  (M1.11 click-to-seek preserved); Play/Pause label derived from
+  state (Pause while playing/buffering; disabled while
+  preparing/seeking/buffering); Stop disabled while unloaded; volume
+  range 0–200 % (5 % steps, `aria-label="Monitoring volume"`, "may
+  clip" hint above 100 %, drives `setOutputGain(v/100)`);
+  `.playback-volume` styles in `styles.css`.
+  `playback-panel.test.tsx` fakes made worklet-capable (data-ack
+  port, `URL.createObjectURL`/`revokeObjectURL` spies).
+  `engine.ts` + `engine.test.ts` deleted.
+- Phase 5: full gate green — `pnpm test` 224/224 (14 files),
+  `pnpm typecheck`, `pnpm lint`, `pnpm format:check` all clean.
 
 ### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 

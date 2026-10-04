@@ -122,33 +122,51 @@ const COMPLETED_JOB = {
   error: null,
 }
 
-class TestAudioBuffer {
-  duration: number
-  numberOfChannels: number
-  sampleRate: number
-  private readonly data: Float32Array[]
-
-  constructor(numberOfChannels: number, length: number, sampleRate: number) {
-    this.numberOfChannels = numberOfChannels
-    this.sampleRate = sampleRate
-    this.duration = length / sampleRate
-    this.data = Array.from({ length: numberOfChannels }, () => new Float32Array(length))
+/**
+ * Minimal worklet node mimicking the real adapter: it acknowledges
+ * enqueued samples with a `data` message, the same way
+ * `worklet-processor.js` does after a successful enqueue.
+ */
+class TestWorkletNode {
+  port: {
+    postMessage: (message: { type: string; [key: string]: unknown }) => void
+    onmessage: ((event: { data: unknown }) => void) | null
   }
-
-  getChannelData(channel: number): Float32Array {
-    return this.data[channel]
+  connectedTo: unknown[] = []
+  disconnected = false
+  constructor() {
+    this.port = {
+      postMessage: (message) => {
+        if (message.type === 'samples') {
+          queueMicrotask(() => {
+            this.port.onmessage?.({
+              data: {
+                type: 'data',
+                frames: 1,
+                generation: (message.generation as number | undefined) ?? 0,
+              },
+            })
+          })
+        }
+      },
+      onmessage: null,
+    }
+  }
+  connect(destination: unknown): void {
+    this.connectedTo.push(destination)
+  }
+  disconnect(): void {
+    this.disconnected = true
   }
 }
 
-class TestSource {
-  buffer: TestAudioBuffer | null = null
-  onended: (() => void) | null = null
-  started = false
-  connect(): void {}
-  start(): void {
-    this.started = true
+class TestGainNode {
+  gain = { value: 1, setTargetAtTime: () => {} }
+  connectedTo: unknown[] = []
+  connect(destination: unknown): void {
+    this.connectedTo.push(destination)
   }
-  stop(): void {}
+  disconnect(): void {}
 }
 
 class TestAudioContext {
@@ -156,18 +174,20 @@ class TestAudioContext {
   sampleRate = 48000
   state: 'suspended' | 'running' | 'closed' = 'running'
   readonly destination = {}
+  readonly audioWorklet = { addModule: async () => {} }
   resume(): Promise<void> {
     this.state = 'running'
     return Promise.resolve()
   }
   close(): Promise<void> {
+    this.state = 'closed'
     return Promise.resolve()
   }
-  createBuffer(channels: number, length: number, sampleRate: number): TestAudioBuffer {
-    return new TestAudioBuffer(channels, length, sampleRate)
+  createWorkletNode(): TestWorkletNode {
+    return new TestWorkletNode()
   }
-  createBufferSource(): TestSource {
-    return new TestSource()
+  createGain(): TestGainNode {
+    return new TestGainNode()
   }
 }
 
@@ -247,6 +267,10 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/')
   vi.stubGlobal('AudioContext', TestAudioContext)
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(pcmResponse(480)))
+  // jsdom has no Blob URL support; the transport creates one for the
+  // worklet module and the fake addModule ignores it.
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:test-worklet')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   mockClient.POST.mockImplementation((path: string) => {
     if (path === '/api/v1/projects/{project_id}/jobs') {
       return Promise.resolve({ response: { ok: true, status: 201 }, data: COMPLETED_JOB })

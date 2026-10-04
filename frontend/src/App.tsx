@@ -19,7 +19,7 @@ import {
   type UploadState,
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
-import { PlaybackEngine, type AudioContextLike, type EngineState } from './playback/engine'
+import { PcmTransport, type TransportContextLike, type TransportState } from './playback/transport'
 import { formatTime } from './playback/pcm'
 import { WaveformEditor } from './waveform/WaveformEditor'
 import type { ConnectionState, ProjectSummary } from './types'
@@ -419,8 +419,8 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
   )
 }
 
-function defaultCreateAudioContext(): AudioContextLike {
-  return new AudioContext() as unknown as AudioContextLike
+function defaultCreateAudioContext(): TransportContextLike {
+  return new AudioContext() as unknown as TransportContextLike
 }
 
 const PlaybackPanel = memo(function PlaybackPanel({
@@ -430,7 +430,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
   registerSeek,
 }: {
   projectId: string
-  createAudioContext?: () => AudioContextLike
+  createAudioContext?: () => TransportContextLike
   /** Reports the playhead position (project frames) so sibling views, such
    * as the waveform editor, can draw a playhead (M1.10). */
   onPositionChange?: (frame: number) => void
@@ -447,11 +447,15 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const [mixState, setMixState] = useState<'idle' | 'working' | 'error'>('idle')
   const [mixError, setMixError] = useState<string | null>(null)
 
-  const [engineState, setEngineState] = useState<EngineState>('idle')
+  const [transportState, setTransportState] = useState<TransportState>('unloaded')
   const [position, setPosition] = useState(0)
-  const [preparing, setPreparing] = useState(false)
   const [playError, setPlayError] = useState<string | null>(null)
-  const engineRef = useRef<PlaybackEngine | null>(null)
+  const [volume, setVolume] = useState(100)
+  const transportRef = useRef<PcmTransport | null>(null)
+  const assetIdRef = useRef<string | null>(null)
+  const pendingContextRef = useRef<TransportContextLike | null>(null)
+  const volumeRef = useRef(100)
+  const sourceLoadedRef = useRef(false)
 
   const loadInfo = useCallback(async () => {
     try {
@@ -472,23 +476,76 @@ const PlaybackPanel = memo(function PlaybackPanel({
     loadInfo()
   }, [loadInfo])
 
+  const reportPosition = useCallback(
+    (frame: number) => {
+      setPosition(frame)
+      onPositionChange?.(frame)
+    },
+    [onPositionChange],
+  )
+
+  // New project: drop any previous transport and source binding.
+  useEffect(() => {
+    transportRef.current?.dispose()
+    transportRef.current = null
+    sourceLoadedRef.current = false
+    assetIdRef.current = null
+    pendingContextRef.current = null
+    setTransportState('unloaded')
+    setPosition(0)
+    setPlayError(null)
+  }, [projectId])
+
   useEffect(() => {
     return () => {
-      void engineRef.current?.dispose()
-      engineRef.current = null
+      transportRef.current?.dispose()
+      transportRef.current = null
     }
   }, [])
 
-  // Expose the engine seek to the waveform editor (M1.11). The callback is
-  // stable; the engine may be null until playback is first started.
-  const seekFn = useCallback((frame: number) => {
-    void engineRef.current?.seek(frame)
-  }, [])
+  // Expose the transport seek to the waveform editor (M1.11). Before the
+  // transport exists (source still loading) the playhead parks locally.
+  const seekFn = useCallback(
+    (frame: number) => {
+      const transport = transportRef.current
+      if (transport) {
+        transport.seek(frame)
+        return
+      }
+      const duration = info?.durationFrames ?? 0
+      reportPosition(Math.max(0, Math.min(Math.floor(frame), duration)))
+    },
+    [info, reportPosition],
+  )
 
   useEffect(() => {
     registerSeek?.(seekFn)
     return () => registerSeek?.(null)
   }, [registerSeek, seekFn])
+
+  // Create the transport once the source info is known (M1.12). The
+  // playback representation is resolved on first play, when the
+  // AudioContext sample rate is known.
+  useEffect(() => {
+    if (!info || transportRef.current) return
+    const transport = new PcmTransport({
+      contextFactory: () => {
+        const pending = pendingContextRef.current
+        pendingContextRef.current = null
+        if (pending && pending.state !== 'closed') return pending
+        return (createAudioContext ?? defaultCreateAudioContext)()
+      },
+      fetchChunk: (start, end, signal) =>
+        fetchAssetBytes(assetIdRef.current ?? '', start, end, signal).then((r) => r.bytes),
+      onState: (s) => {
+        setTransportState(s)
+        if (s === 'error') setPlayError(transport.currentError ?? 'Playback failed')
+      },
+      onPosition: reportPosition,
+    })
+    transport.setOutputGain(volumeRef.current / 100)
+    transportRef.current = transport
+  }, [createAudioContext, info, reportPosition])
 
   const isStandard51 = info !== null && info.channelCount === 6 && info.channelLayout === '5.1'
 
@@ -511,67 +568,48 @@ const PlaybackPanel = memo(function PlaybackPanel({
     }
   }, [importId, info, isStandard51, leftCh, loadInfo, projectId, rightCh])
 
-  const reportPosition = useCallback(
-    (frame: number) => {
-      setPosition(frame)
-      onPositionChange?.(frame)
-    },
-    [onPositionChange],
-  )
-
   const handlePlayPause = useCallback(async () => {
-    const existing = engineRef.current
-    if (existing && existing.currentState === 'playing') {
-      await existing.pause()
+    const transport = transportRef.current
+    if (!transport || !info) return
+    if (transport.currentState === 'playing' || transport.currentState === 'buffering') {
+      transport.pause()
       return
     }
-    if (existing && existing.currentState === 'paused') {
-      await existing.resume()
-      return
-    }
-    if (!info) return
     setPlayError(null)
-    setPreparing(true)
+    if (!sourceLoadedRef.current) {
+      try {
+        const context = (createAudioContext ?? defaultCreateAudioContext)()
+        await context.resume()
+        const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
+        assetIdRef.current = target.assetId
+        pendingContextRef.current = context
+        await transport.loadSource({
+          target,
+          projectRate: info.sampleRate,
+          projectDurationFrames: info.durationFrames,
+        })
+        sourceLoadedRef.current = true
+      } catch (err) {
+        setPlayError(err instanceof Error ? err.message : String(err))
+        return
+      }
+    }
     try {
-      const context = (createAudioContext ?? defaultCreateAudioContext)()
-      await context.resume()
-      const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
-      const engine = new PlaybackEngine({
-        target: {
-          assetId: target.assetId,
-          sampleRate: target.sampleRate,
-          channelCount: target.channelCount,
-          frameCount: target.frameCount,
-          byteCount: target.byteCount,
-          durationSeconds: target.durationSeconds,
-        },
-        projectRate: info.sampleRate,
-        projectDurationFrames: info.durationFrames,
-        fetchChunk: (start, end) =>
-          fetchAssetBytes(target.assetId, start, end).then((r) => r.bytes),
-        context,
-        onState: (s) => {
-          setEngineState(s)
-          if (s === 'playing' || s === 'stopped') setPreparing(false)
-          if (s === 'error') {
-            setPreparing(false)
-            setPlayError(engine.currentError ?? 'Playback failed')
-          }
-        },
-        onPosition: reportPosition,
-      })
-      engineRef.current = engine
-      await engine.start()
+      await transport.play()
     } catch (err) {
-      setPreparing(false)
       setPlayError(err instanceof Error ? err.message : String(err))
     }
-  }, [createAudioContext, importId, info, projectId, reportPosition])
+  }, [createAudioContext, importId, info, projectId])
 
   const handleStop = useCallback(() => {
-    engineRef.current?.stop()
-    reportPosition(0)
-  }, [reportPosition])
+    transportRef.current?.stop()
+  }, [])
+
+  const handleVolumeChange = useCallback((value: number) => {
+    volumeRef.current = value
+    setVolume(value)
+    transportRef.current?.setOutputGain(value / 100)
+  }, [])
 
   if (infoError) {
     return (
@@ -590,6 +628,10 @@ const PlaybackPanel = memo(function PlaybackPanel({
       </p>
     )
   }
+
+  const busy =
+    transportState === 'preparing' || transportState === 'seeking' || transportState === 'buffering'
+  const showPause = transportState === 'playing' || transportState === 'buffering'
 
   return (
     <div className="playback-panel">
@@ -676,16 +718,12 @@ const PlaybackPanel = memo(function PlaybackPanel({
           <button
             type="button"
             onClick={handlePlayPause}
-            disabled={preparing}
-            aria-label={engineState === 'playing' ? 'Pause' : 'Play'}
+            disabled={busy}
+            aria-label={showPause ? 'Pause' : 'Play'}
           >
-            {engineState === 'playing' ? 'Pause' : 'Play'}
+            {showPause ? 'Pause' : 'Play'}
           </button>
-          <button
-            type="button"
-            onClick={handleStop}
-            disabled={engineState === 'idle' || engineState === 'stopped'}
-          >
+          <button type="button" onClick={handleStop} disabled={transportState === 'unloaded'}>
             Stop
           </button>
         </div>
@@ -693,7 +731,27 @@ const PlaybackPanel = memo(function PlaybackPanel({
           {formatTime(position, info.sampleRate)} /{' '}
           {formatTime(info.durationFrames, info.sampleRate)}
         </span>
-        {preparing && (
+        <div className="playback-volume">
+          <label>
+            <span>Volume</span>
+            <input
+              type="range"
+              min={0}
+              max={200}
+              step={5}
+              value={volume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              aria-label="Monitoring volume"
+            />
+            <span className="volume-value">{volume}%</span>
+          </label>
+          {volume > 100 && (
+            <span className="volume-clipping" role="status">
+              May clip
+            </span>
+          )}
+        </div>
+        {busy && (
           <p className="muted" role="status">
             Preparing playback…
           </p>
