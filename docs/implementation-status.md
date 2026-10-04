@@ -7,18 +7,26 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.9 (media HTTP interfaces) — complete; plan in
-  `projectPlans/m1.9-plan.md`
-- **Last commit:** `06c2cb3` — M1.9 (media HTTP interfaces);
+- **Work package:** M1.10 (waveform editor) — Phases 1–6 complete and
+  green; plan in `projectPlans/m1.10-plan.md` (uncommitted, ships with
+  the M1.10 commit)
+- **Last commit:** `<M1.10_COMMIT>` — M1.10 (waveform editor);
+  `ffa0142` — chore: prettier normalization of pre-existing sources
+  (baseline was not prettier-clean);
+  `72cd2e5` — M1.9 ledger hash;
+  `06c2cb3` — M1.9 (media HTTP interfaces);
   `fe2b815` — M1.8 ledger hash;
   `4a6004a` — M1.8 (waveform pyramid);
   `825e884` — M1.7 ledger hash;
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.10 — render the waveform editor
-  (`projectPlans/milestone1.md` §12): frontend waveform view over the M1.9
-  peaks routes, binary parsing in a browser worker, 500 ms/2 s job polling.
+- **Next action:** M1.10 Phase 7 — full frontend gate re-run +
+  `git add` + single M1.10 commit (plan file, ledger, all new
+  `src/waveform/*`, `src/api/waveform.ts`, tests, App/styles/types
+  changes) with the `<M1.10_COMMIT>` placeholder, then the
+  ledger-hash follow-up commit (M1.4–M1.9 pattern). Interactive
+  zoom/pan/selection is M1.11; AudioWorklet transport is M1.12.
 
 ## Completed requirements (with evidence)
 
@@ -123,6 +131,86 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.10 — Waveform editor (in progress)
+
+Spec: `projectPlans/milestone1.md` §12. Plan:
+`projectPlans/m1.10-plan.md` (written, uncommitted with the plan
+document itself). Frontend-only: editor layout, canvas layers,
+resolution selection, channel/amplitude display, empty/pending
+states. Interactive zoom/pan/selection is M1.11; AudioWorklet
+transport is M1.12.
+
+Key design points (see plan):
+- New files: `src/api/waveform.ts`, `src/waveform/{viewport,levels,
+  decode,worker,worker-script,tileCache,render,useWaveform,
+  WaveformEditor}.ts(x)`.
+- Pure core (no DOM): viewport transform (§12.2, fractional coords),
+  level/tile/PCM range selection (§12.5), binary parsing with explicit
+  LE reads + truncation rejection (§11.5), byte-bounded LRU tile
+  cache.
+- `useWaveform` hook drives the §12.8 state machine
+  (empty/decoding/pending/missing/ready); polls the M1.9 peaks
+  manifest every 500 ms visible / 2 s hidden while a WAVEFORM job
+  runs; generation counter aborts obsolete tile/PCM fetches.
+- Five stacked canvas layers per lane; playhead updates redraw only
+  the playhead layer; DPR-aware backing stores via ResizeObserver.
+- Playhead source: existing `PlaybackEngine.onPosition` (project
+  frames) lifted from `PlaybackPanel` to the project view.
+
+Phases: 1 plan + kickoff → 2 pure core + tests → 3 `api/waveform.ts`
+→ 4 `useWaveform` → 5 `render.ts` → 6 `WaveformEditor.tsx` + App
+wiring + styles → 7 frontend gate + commit.
+
+**Phase status (all 1–6 complete, uncommitted; frontend gate green:
+160 tests / 13 files, tsc + eslint + prettier clean; backend
+untouched, 628 tests):**
+- Phase 2: `viewport.ts` (fit/x↔frame transforms), `levels.ts`
+  (level/PCM choice, tile ranges), `decode.ts` (f32le tile parse, PCM
+  aggregation), `tileCache.ts` (32 MiB byte-bounded LRU) + 4 test
+  files.
+- Phase 3: `src/api/waveform.ts` (JSON via openapi-fetch; binary
+  tile/PCM via plain fetch + Bearer; `getPeaksManifest` null on 404;
+  `NoWaveformCacheError`/`TileNotReadyError`/`RangeOutOfBoundsError`)
+  + 12 API tests.
+- Phase 4: `useWaveform` hook (state machine, 500 ms/2 s manifest
+  polling, tile/PCM fetch with cancellation, 8 MiB PCM chunking, LRU
+  + `parsePeakTile`) + `worker.ts`/`worker-script.ts` (main-thread
+  fallback where `Worker` is absent) + 8 hook tests.
+- Phase 5: `render.ts` pure painters (lane/PCM/sample waveforms,
+  ruler with nice 1/2/5 steps, overview, playhead, lane grid) + 17
+  recording-context tests.
+- Phase 6: `WaveformEditor.tsx` (full §12.1 layout; five stacked
+  canvas layers per lane; DPR-sized backing stores via
+  ResizeObserver; vertical lane virtualization; channel collapse +
+  checkboxes; amplitude scale 0.25×–16×; static scrollbar; empty
+  marker/selection lanes; §12.8 state overlays with rebuild button)
+  + 11 component tests (canvas 2D stub + ResizeObserver stub +
+  mocked `api/waveform` with direct tile-byte injection).
+
+**Phase 6 decisions:**
+- Canonical asset id: no backend change needed — the project GET
+  response (`ProjectRecord`) already exposes `canonical_asset_id`;
+  it is threaded through `ProjectSummary` (`types.ts`) and
+  `toSummary` (`App.tsx`) into `WaveformEditor.sourceAssetId`.
+  (An interim `SourceInfoResponse.source_asset_id` backend edit was
+  made and reverted after this was found.)
+- Playhead lifting: `PlaybackPanel` gained an optional
+  `onPositionChange` prop (called from `onPosition` and stop); it is
+  wrapped in `memo` so 60 Hz position updates only re-render the new
+  `ProjectView` component (which owns `playheadFrame` state and
+  renders `PlaybackPanel` + `WaveformEditor` + meta), not the whole
+  app.
+- `tests/playback-panel.test.tsx`: fixture now carries
+  `canonical_asset_id`; a `vi.mock('../src/api/waveform')` factory
+  (exporting the three error classes) keeps the editor in a stable
+  `missing` state without a network. `app.test.tsx` renders only
+  empty projects — no change needed.
+- Lane labels are derived from channel count (Mono/L/R/Ch N);
+  layout-aware labels (5.1 FL/FR/…) from source info are an M1.11
+  polish. The overview draws from the selected level's data — in
+  fit-to-song that level guarantees ≤2 buckets/overview pixel
+  (dedicated coarsest-level fetch is an M1.11 refinement).
 
 ### M1.9 — Media HTTP interfaces (complete)
 

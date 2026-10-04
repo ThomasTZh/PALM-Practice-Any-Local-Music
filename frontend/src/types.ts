@@ -10,6 +10,8 @@ export interface ProjectSummary {
   status: 'empty' | 'ready'
   created_at: string
   updated_at: string
+  /** Canonical PCM asset id; waveform caches are keyed to it (M1.10). */
+  canonical_asset_id?: string | null
 }
 
 export type AppView =

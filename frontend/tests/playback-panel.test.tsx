@@ -3,11 +3,24 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App'
 
-const { mockClient } = vi.hoisted(() => ({
+const { mockClient, wf } = vi.hoisted(() => ({
   mockClient: {
     GET: vi.fn(),
     POST: vi.fn(),
     PUT: vi.fn(),
+  },
+  // Waveform API (M1.10): the editor renders its stable `missing` state in
+  // these tests — no waveform cache, no live waveform job.
+  wf: {
+    getAssetMetadata: vi.fn(async () => ({ waveform: null })),
+    getPeaksManifest: vi.fn(async () => null),
+    getPeakTile: vi.fn(),
+    getAssetPcm: vi.fn(),
+    listProjectJobs: vi.fn(async () => []),
+    createWaveformJob: vi.fn(),
+    TileNotReadyError: class TileNotReadyError extends Error {},
+    NoWaveformCacheError: class NoWaveformCacheError extends Error {},
+    RangeOutOfBoundsError: class RangeOutOfBoundsError extends Error {},
   },
 }))
 
@@ -21,6 +34,8 @@ vi.mock('../src/api/client', () => ({
     return fallback
   },
 }))
+
+vi.mock('../src/api/waveform', () => wf)
 
 function ok<T>(data: T) {
   return { response: { ok: true, status: 200 }, data }
@@ -39,6 +54,7 @@ const READY_PROJECT = {
   updated_at: '2026-01-01T00:00:00Z',
   revision: 1,
   source_asset_id: ASSET_ID,
+  canonical_asset_id: ASSET_ID,
   sample_rate: 48000,
   duration_samples: 48000,
   status: 'ready',

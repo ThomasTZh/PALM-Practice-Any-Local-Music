@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createApiClient, errorMessage } from './api/client'
 import {
   createJob,
@@ -21,6 +21,7 @@ import {
 import { bootstrapToken, getSessionToken } from './auth'
 import { PlaybackEngine, type AudioContextLike, type EngineState } from './playback/engine'
 import { formatTime } from './playback/pcm'
+import { WaveformEditor } from './waveform/WaveformEditor'
 import type { ConnectionState, ProjectSummary } from './types'
 
 const client = createApiClient()
@@ -39,6 +40,7 @@ function toSummary(p: {
   status: string
   created_at: string
   updated_at: string
+  canonical_asset_id?: string | null
 }): ProjectSummary {
   return {
     id: p.id,
@@ -46,6 +48,7 @@ function toSummary(p: {
     status: p.status === 'ready' ? 'ready' : 'empty',
     created_at: p.created_at,
     updated_at: p.updated_at,
+    canonical_asset_id: p.canonical_asset_id ?? null,
   }
 }
 
@@ -420,12 +423,16 @@ function defaultCreateAudioContext(): AudioContextLike {
   return new AudioContext() as unknown as AudioContextLike
 }
 
-function PlaybackPanel({
+const PlaybackPanel = memo(function PlaybackPanel({
   projectId,
   createAudioContext,
+  onPositionChange,
 }: {
   projectId: string
   createAudioContext?: () => AudioContextLike
+  /** Reports the playhead position (project frames) so sibling views, such
+   * as the waveform editor, can draw a playhead (M1.10). */
+  onPositionChange?: (frame: number) => void
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -489,6 +496,14 @@ function PlaybackPanel({
     }
   }, [importId, info, isStandard51, leftCh, loadInfo, projectId, rightCh])
 
+  const reportPosition = useCallback(
+    (frame: number) => {
+      setPosition(frame)
+      onPositionChange?.(frame)
+    },
+    [onPositionChange],
+  )
+
   const handlePlayPause = useCallback(async () => {
     const existing = engineRef.current
     if (existing && existing.currentState === 'playing') {
@@ -528,7 +543,7 @@ function PlaybackPanel({
             setPlayError(engine.currentError ?? 'Playback failed')
           }
         },
-        onPosition: setPosition,
+        onPosition: reportPosition,
       })
       engineRef.current = engine
       await engine.start()
@@ -536,12 +551,12 @@ function PlaybackPanel({
       setPreparing(false)
       setPlayError(err instanceof Error ? err.message : String(err))
     }
-  }, [createAudioContext, importId, info, projectId])
+  }, [createAudioContext, importId, info, projectId, reportPosition])
 
   const handleStop = useCallback(() => {
     engineRef.current?.stop()
-    setPosition(0)
-  }, [])
+    reportPosition(0)
+  }, [reportPosition])
 
   if (infoError) {
     return (
@@ -675,6 +690,33 @@ function PlaybackPanel({
         )}
       </section>
     </div>
+  )
+})
+
+/**
+ * Ready-project view (M1.10): transport panel + waveform editor + meta.
+ * Owns the playhead frame so position updates re-render only this subtree
+ * (and the editor's playhead layer), not the whole app.
+ */
+function ProjectView({ project }: { project: ProjectSummary }) {
+  const [playheadFrame, setPlayheadFrame] = useState(0)
+  return (
+    <>
+      <PlaybackPanel projectId={project.id} onPositionChange={setPlayheadFrame} />
+      <WaveformEditor
+        projectId={project.id}
+        sourceAssetId={project.canonical_asset_id ?? null}
+        playheadFrame={playheadFrame}
+      />
+      <dl className="project-meta">
+        <dt>Status</dt>
+        <dd>Ready</dd>
+        <dt>Created</dt>
+        <dd>{new Date(project.created_at).toLocaleString()}</dd>
+        <dt>Updated</dt>
+        <dd>{new Date(project.updated_at).toLocaleString()}</dd>
+      </dl>
+    </>
   )
 }
 
@@ -868,17 +910,7 @@ export default function App() {
               {view.project.status === 'empty' ? (
                 <ImportPanel projectId={view.project.id} onImported={loadProjects} />
               ) : (
-                <>
-                  <PlaybackPanel projectId={view.project.id} />
-                  <dl className="project-meta">
-                    <dt>Status</dt>
-                    <dd>Ready</dd>
-                    <dt>Created</dt>
-                    <dd>{new Date(view.project.created_at).toLocaleString()}</dd>
-                    <dt>Updated</dt>
-                    <dd>{new Date(view.project.updated_at).toLocaleString()}</dd>
-                  </dl>
-                </>
+                <ProjectView project={view.project} />
               )}
             </section>
           )}
