@@ -47,7 +47,7 @@ export type UploadState =
   | { kind: 'cancelled' }
 
 export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
-  const buffer: ArrayBuffer = data instanceof Uint8Array ? data.buffer as ArrayBuffer : data
+  const buffer: ArrayBuffer = data instanceof Uint8Array ? (data.buffer as ArrayBuffer) : data
   const digest = await crypto.subtle.digest('SHA-256', buffer)
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))

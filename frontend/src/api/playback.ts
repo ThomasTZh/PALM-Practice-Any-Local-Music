@@ -46,14 +46,7 @@ export interface PlaybackTarget {
 
 export interface JobState {
   id: string
-  state:
-    | 'queued'
-    | 'running'
-    | 'completed'
-    | 'failed'
-    | 'cancelling'
-    | 'cancelled'
-    | 'interrupted'
+  state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelling' | 'cancelled' | 'interrupted'
   stage: string | null
   progressFraction: number | null
   errorCode: string | null
@@ -80,10 +73,7 @@ function errorCodeOf(error: unknown): string | null {
   return null
 }
 
-export async function getSourceInfo(
-  projectId: string,
-  signal?: AbortSignal,
-): Promise<SourceInfo> {
+export async function getSourceInfo(projectId: string, signal?: AbortSignal): Promise<SourceInfo> {
   const res = await client.GET('/api/v1/projects/{project_id}/source-info', {
     params: { path: { project_id: projectId } },
     signal,
@@ -313,6 +303,8 @@ export async function fetchAssetBytes(
     throw new Error(`Asset bytes failed (${res.status})`)
   }
   const contentRange = res.headers.get('content-range')
-  const total = contentRange ? Number(contentRange.split('/')[1]) : Number(res.headers.get('content-length') ?? 0)
+  const total = contentRange
+    ? Number(contentRange.split('/')[1])
+    : Number(res.headers.get('content-length') ?? 0)
   return { bytes: await res.arrayBuffer(), total }
 }

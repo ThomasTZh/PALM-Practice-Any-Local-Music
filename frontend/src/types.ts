@@ -2,11 +2,7 @@
  * Application state types (M0.8).
  */
 
-export type ConnectionState =
-  | 'connecting'
-  | 'connected'
-  | 'unavailable'
-  | 'session-expired'
+export type ConnectionState = 'connecting' | 'connected' | 'unavailable' | 'session-expired'
 
 export interface ProjectSummary {
   id: string

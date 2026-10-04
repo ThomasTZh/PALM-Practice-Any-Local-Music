@@ -212,8 +212,7 @@ export class PlaybackEngine {
       this.ownsContext = false
     } else {
       const create =
-        this.opts.createContext ??
-        (() => new AudioContext() as unknown as AudioContextLike)
+        this.opts.createContext ?? (() => new AudioContext() as unknown as AudioContextLike)
       this.context = create()
       this.ownsContext = true
     }

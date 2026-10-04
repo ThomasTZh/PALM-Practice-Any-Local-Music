@@ -119,13 +119,15 @@ interface EngineHarness {
   positions: number[]
 }
 
-function makeEngine(opts: {
-  target?: Partial<EngineTarget>
-  fetched?: (start: number, end: number) => Promise<ArrayBuffer>
-  projectRate?: number
-  projectDurationFrames?: number
-  chunkBytes?: number
-} = {}): EngineHarness {
+function makeEngine(
+  opts: {
+    target?: Partial<EngineTarget>
+    fetched?: (start: number, end: number) => Promise<ArrayBuffer>
+    projectRate?: number
+    projectDurationFrames?: number
+    chunkBytes?: number
+  } = {},
+): EngineHarness {
   const ctx = new FakeContext()
   const delayControl = controlledDelay()
   const target = makeTarget(opts.target)

@@ -33,7 +33,13 @@ type View =
   | { kind: 'project-open'; project: ProjectSummary }
   | { kind: 'api-error'; message: string }
 
-function toSummary(p: { id: string; name: string; status: string; created_at: string; updated_at: string }): ProjectSummary {
+function toSummary(p: {
+  id: string
+  name: string
+  status: string
+  created_at: string
+  updated_at: string
+}): ProjectSummary {
   return {
     id: p.id,
     name: p.name,
@@ -157,13 +163,7 @@ function ProjectListItem({
   )
 }
 
-function ImportPanel({
-  projectId,
-  onImported,
-}: {
-  projectId: string
-  onImported: () => void
-}) {
+function ImportPanel({ projectId, onImported }: { projectId: string; onImported: () => void }) {
   const [uploadState, setUploadState] = useState<UploadState>({ kind: 'idle' })
   const [incomplete, setIncomplete] = useState<IncompleteImport[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -193,7 +193,10 @@ function ImportPanel({
     async (file: File) => {
       const controller = new AbortController()
       abortRef.current = controller
-      setUploadState({ kind: 'uploading', progress: { bytesUploaded: 0, totalBytes: file.size, chunkIndex: 0, totalChunks: 1 } })
+      setUploadState({
+        kind: 'uploading',
+        progress: { bytesUploaded: 0, totalBytes: file.size, chunkIndex: 0, totalChunks: 1 },
+      })
       try {
         const result = await uploadFile({
           projectId,
@@ -210,7 +213,10 @@ function ImportPanel({
         if (err instanceof DOMException && err.name === 'AbortError') {
           setUploadState({ kind: 'cancelled' })
         } else {
-          setUploadState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+          setUploadState({
+            kind: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          })
         }
       }
     },
@@ -276,7 +282,10 @@ function ImportPanel({
     <div className="import-panel" aria-label="Import audio">
       {incomplete.length > 0 && uploadState.kind === 'idle' && (
         <div className="import-recovery" role="alert">
-          <p>Transfer interrupted. {incomplete.length} incomplete import{incomplete.length > 1 ? 's' : ''} found.</p>
+          <p>
+            Transfer interrupted. {incomplete.length} incomplete import
+            {incomplete.length > 1 ? 's' : ''} found.
+          </p>
           <ul>
             {incomplete.map((i) => (
               <li key={i.id}>
@@ -294,21 +303,29 @@ function ImportPanel({
           <ul>
             {multiFilePrompt.map((f, i) => (
               <li key={i}>
-                <button type="button" onClick={() => { setMultiFilePrompt(null); startUpload(f) }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMultiFilePrompt(null)
+                    startUpload(f)
+                  }}
+                >
                   {f.name} ({(f.size / 1024 / 1024).toFixed(1)} MiB)
                 </button>
               </li>
             ))}
           </ul>
-          <button type="button" onClick={() => setMultiFilePrompt(null)}>Cancel</button>
+          <button type="button" onClick={() => setMultiFilePrompt(null)}>
+            Cancel
+          </button>
         </div>
       )}
 
       {streamChoice && (
         <div className="import-stream-dialog" role="dialog" aria-label="Choose audio stream">
           <p>
-            This file contains {streamChoice.streams.length} audio streams.
-            Choose the one to import:
+            This file contains {streamChoice.streams.length} audio streams. Choose the one to
+            import:
           </p>
           <ul>
             {streamChoice.streams.map((s) => (
@@ -333,12 +350,17 @@ function ImportPanel({
       {uploadState.kind === 'idle' && !multiFilePrompt && !streamChoice && (
         <div
           className={`import-dropzone ${dragOver ? 'drag-over' : ''}`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragOver(true)
+          }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+          }}
           onClick={() => fileInputRef.current?.click()}
           aria-label="Drop an audio file here or click to browse"
         >
@@ -349,7 +371,10 @@ function ImportPanel({
             type="file"
             accept="audio/*,video/*"
             style={{ display: 'none' }}
-            onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }}
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files)
+              e.target.value = ''
+            }}
           />
         </div>
       )}
@@ -364,21 +389,27 @@ function ImportPanel({
               ? 'Finalizing…'
               : `${progress}% (${(uploadState.progress.bytesUploaded / 1024 / 1024).toFixed(1)} / ${(uploadState.progress.totalBytes / 1024 / 1024).toFixed(1)} MiB)`}
           </p>
-          <button type="button" onClick={handleCancel}>Cancel</button>
+          <button type="button" onClick={handleCancel}>
+            Cancel
+          </button>
         </div>
       )}
 
       {uploadState.kind === 'error' && (
         <div className="import-error" role="alert">
           <p>Import failed: {uploadState.message}</p>
-          <button type="button" onClick={() => setUploadState({ kind: 'idle' })}>Try again</button>
+          <button type="button" onClick={() => setUploadState({ kind: 'idle' })}>
+            Try again
+          </button>
         </div>
       )}
 
       {uploadState.kind === 'cancelled' && (
         <div className="import-cancelled">
           <p>Import cancelled.</p>
-          <button type="button" onClick={() => setUploadState({ kind: 'idle' })}>Dismiss</button>
+          <button type="button" onClick={() => setUploadState({ kind: 'idle' })}>
+            Dismiss
+          </button>
         </div>
       )}
     </div>
@@ -523,7 +554,11 @@ function PlaybackPanel({
     )
   }
   if (!info) {
-    return <p className="muted" role="status">Loading source…</p>
+    return (
+      <p className="muted" role="status">
+        Loading source…
+      </p>
+    )
   }
 
   return (
@@ -593,11 +628,7 @@ function PlaybackPanel({
                   </label>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={handleCreateMix}
-                disabled={mixState === 'working'}
-              >
+              <button type="button" onClick={handleCreateMix} disabled={mixState === 'working'}>
                 {mixState === 'working' ? 'Creating monitoring mix…' : 'Create monitoring mix'}
               </button>
             </>
@@ -629,7 +660,8 @@ function PlaybackPanel({
           </button>
         </div>
         <span className="time-readout">
-          {formatTime(position, info.sampleRate)} / {formatTime(info.durationFrames, info.sampleRate)}
+          {formatTime(position, info.sampleRate)} /{' '}
+          {formatTime(info.durationFrames, info.sampleRate)}
         </span>
         {preparing && (
           <p className="muted" role="status">
@@ -702,59 +734,53 @@ export default function App() {
     loadProjects()
   }, [loadProjects])
 
-  const openProject = useCallback(
-    async (id: string) => {
-      try {
-        const res = await client.GET('/api/v1/projects/{project_id}', {
-          params: { path: { project_id: id } },
-        })
-        if (res.response.status === 401) {
-          setView({ kind: 'session-expired' })
-          return
-        }
-        if (!res.response.ok || !res.data) {
-          setView({ kind: 'api-error', message: `Could not open project (${res.response.status})` })
-          return
-        }
-        setView({ kind: 'project-open', project: toSummary(res.data) })
-      } catch {
-        setView({ kind: 'unavailable' })
+  const openProject = useCallback(async (id: string) => {
+    try {
+      const res = await client.GET('/api/v1/projects/{project_id}', {
+        params: { path: { project_id: id } },
+      })
+      if (res.response.status === 401) {
+        setView({ kind: 'session-expired' })
+        return
       }
-    },
-    [],
-  )
+      if (!res.response.ok || !res.data) {
+        setView({ kind: 'api-error', message: `Could not open project (${res.response.status})` })
+        return
+      }
+      setView({ kind: 'project-open', project: toSummary(res.data) })
+    } catch {
+      setView({ kind: 'unavailable' })
+    }
+  }, [])
 
-  const createProject = useCallback(
-    async (name: string) => {
-      setCreating(true)
-      setCreateError(null)
-      try {
-        const res = await client.POST('/api/v1/projects', { body: { name } })
-        if (res.response.status === 401) {
-          setView({ kind: 'session-expired' })
-          setShowCreateForm(false)
-          setCreating(false)
-          return
-        }
-        if (!res.response.ok || !res.data) {
-          setCreateError(errorMessage(res.error, `Creation failed (${res.response.status})`))
-          setRetainedName(name)
-          setCreating(false)
-          return
-        }
-        const project = toSummary(res.data)
-        setCreating(false)
-        setRetainedName('')
+  const createProject = useCallback(async (name: string) => {
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const res = await client.POST('/api/v1/projects', { body: { name } })
+      if (res.response.status === 401) {
+        setView({ kind: 'session-expired' })
         setShowCreateForm(false)
-        setView({ kind: 'project-open', project })
-      } catch {
         setCreating(false)
-        setCreateError('Network error. Is the backend running?')
-        setRetainedName(name)
+        return
       }
-    },
-    [],
-  )
+      if (!res.response.ok || !res.data) {
+        setCreateError(errorMessage(res.error, `Creation failed (${res.response.status})`))
+        setRetainedName(name)
+        setCreating(false)
+        return
+      }
+      const project = toSummary(res.data)
+      setCreating(false)
+      setRetainedName('')
+      setShowCreateForm(false)
+      setView({ kind: 'project-open', project })
+    } catch {
+      setCreating(false)
+      setCreateError('Network error. Is the backend running?')
+      setRetainedName(name)
+    }
+  }, [])
 
   return (
     <div className="shell">
@@ -840,10 +866,7 @@ export default function App() {
               </button>
               <h2>{view.project.name}</h2>
               {view.project.status === 'empty' ? (
-                <ImportPanel
-                  projectId={view.project.id}
-                  onImported={loadProjects}
-                />
+                <ImportPanel projectId={view.project.id} onImported={loadProjects} />
               ) : (
                 <>
                   <PlaybackPanel projectId={view.project.id} />

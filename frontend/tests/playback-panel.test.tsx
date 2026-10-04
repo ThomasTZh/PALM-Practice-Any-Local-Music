@@ -281,9 +281,7 @@ describe('playback panel: monitoring mix', () => {
       },
     })
     await openReadyProject()
-    expect(
-      screen.getByText('A standard 5.1 → stereo downmix will be created.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('A standard 5.1 → stereo downmix will be created.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Create monitoring mix' }))
 
     expect(await screen.findByText('Standard 5.1 → stereo downmix')).toBeInTheDocument()

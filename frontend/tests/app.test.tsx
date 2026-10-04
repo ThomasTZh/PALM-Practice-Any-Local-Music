@@ -55,12 +55,11 @@ beforeEach(() => {
     }
     return Promise.resolve(ok(PROJECT))
   })
-  mockClient.POST.mockImplementation(
-    (_path: string, opts: { body: { name: string } }) =>
-      Promise.resolve({
-        response: { ok: true, status: 201 },
-        data: { ...PROJECT, name: opts.body.name },
-      }),
+  mockClient.POST.mockImplementation((_path: string, opts: { body: { name: string } }) =>
+    Promise.resolve({
+      response: { ok: true, status: 201 },
+      data: { ...PROJECT, name: opts.body.name },
+    }),
   )
 })
 
@@ -76,7 +75,9 @@ describe('App states', () => {
 
   it('shows empty project list when connected with no projects', async () => {
     render(<App />)
-    expect(await screen.findByText('No projects yet. Create one to get started.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('No projects yet. Create one to get started.'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Connected')
   })
 
