@@ -1,16 +1,20 @@
 /**
- * Component tests for the waveform editor (M1.10, plan §9).
+ * Component tests for the waveform editor (M1.10 §12, M1.11 §13).
  *
- * jsdom has no 2D canvas context and no ResizeObserver, so both are
- * stubbed: the context stub records calls per canvas (that is how the
- * layer-isolation and amplitude assertions are made) and the observer
- * stub lets a test fire a single resize with a known content width.
- * The waveform API is mocked end to end — the mocks return already
- * encoded tile bytes, which the real decode path parses (direct decode
- * injection).
+ * jsdom has no 2D canvas context, no ResizeObserver, and no PointerEvent
+ * constructor, so: the context stub records calls per canvas (that is how
+ * the layer-isolation, selection, and amplitude assertions are made); the
+ * observer stub lets a test fire a single resize with a known content
+ * width; pointer interactions are dispatched as `MouseEvent`s with pointer
+ * types. The waveform API is mocked end to end — the mocks return already
+ * encoded tile and PCM bytes, which the real decode path parses.
+ *
+ * All geometry tests use the fit view: 48 000 frames at 750 CSS px is
+ * exactly 64 frames/px. The scrollbar thumb is the navigation oracle —
+ * `width` shows the visible fraction, `left` the clamped start position.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -43,7 +47,7 @@ const IMPORT_ID = '22222222-2222-2222-2222-222222222222'
 /** 1 s of 48 kHz stereo: 750 buckets at level 0 (64 frames/bucket), 1 tile. */
 const FRAMES = 48_000
 const BUCKETS = 750
-/** 750 CSS px means exactly 64 frames/px -> peak path, level 0. */
+/** 750 CSS px means exactly 64 frames/px -> peak path at the fit view. */
 const CONTENT_WIDTH = 750
 const LANE_HEIGHT = 48
 
@@ -70,6 +74,9 @@ class Stub2DContext {
   lineTo(): void {}
   stroke(): void {
     this.strokes += 1
+  }
+  strokeRect(x: number, y: number, w: number, h: number): void {
+    this.rects.push([x, y, w, h])
   }
   fill(): void {}
   save(): void {}
@@ -173,6 +180,28 @@ function mockReady(): void {
       tileBuckets: BUCKETS,
     }),
   )
+  // Zooms below 64 fpp fetch raw PCM; constant extrema keep the painted
+  // columns identical to the peak path.
+  wf.getAssetPcm.mockImplementation((_asset: string, startFrame: number, count: number) => {
+    const frames = Math.min(count, Math.max(0, FRAMES - startFrame))
+    const bytes = new ArrayBuffer(frames * 2 * 4)
+    const view = new DataView(bytes)
+    for (let f = 0; f < frames; f++) {
+      for (let c = 0; c < 2; c++) {
+        view.setFloat32((f * 2 + c) * 4, -0.25, true)
+        view.setFloat32((f * 2 + c) * 4 + 4, 0.75, true)
+      }
+    }
+    return Promise.resolve({
+      bytes,
+      startFrame,
+      frameCount: frames,
+      eof: startFrame + frames >= FRAMES,
+      sampleRate: 48_000,
+      channelCount: 2,
+      contentHash: '',
+    })
+  })
 }
 
 type EditorProps = Parameters<typeof WaveformEditor>[0]
@@ -187,7 +216,8 @@ function renderEditor(props: Partial<EditorProps> = {}) {
 async function renderReadyEditor(props: Partial<EditorProps> = {}) {
   const utils = renderEditor(props)
   // The control row only mounts once the hook is ready.
-  await screen.findByRole('button', { name: 'Zoom in' })
+  const group = await screen.findByRole('group', { name: 'Display amplitude' })
+  await within(group).findByRole('button', { name: 'Zoom in' })
   act(() => {
     for (const ro of MockResizeObserver.instances) ro.fire(CONTENT_WIDTH)
   })
@@ -198,8 +228,62 @@ async function renderReadyEditor(props: Partial<EditorProps> = {}) {
   return utils
 }
 
+// --- M1.11 interaction helpers (jsdom has no PointerEvent) ------------------
+
+function section(): HTMLElement {
+  return document.querySelector('.waveform-editor') as HTMLElement
+}
+
+function hitbox(): HTMLElement {
+  return document.querySelector('.wave-lane-hitarea') as HTMLElement
+}
+
+function pointer(type: string, el: Element, clientX: number): void {
+  act(() => {
+    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX }))
+  })
+}
+
+function wheel(
+  el: Element,
+  init: {
+    ctrlKey?: boolean
+    shiftKey?: boolean
+    deltaY?: number
+    deltaX?: number
+    clientX?: number
+  },
+): void {
+  act(() => {
+    el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init }))
+  })
+}
+
+function key(el: Element, k: string): void {
+  act(() => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+  })
+}
+
+/** The scrollbar thumb geometry: the navigation oracle of these tests. */
+function thumb(): { width: number; left: number } {
+  const el = document.querySelector('.wave-scrollbar-thumb')
+  expect(el).not.toBeNull()
+  const t = el as HTMLElement
+  return { width: parseFloat(t.style.width), left: parseFloat(t.style.left) }
+}
+
+function ampControls() {
+  return within(screen.getByRole('group', { name: 'Display amplitude' }))
+}
+
+function zoomInH(): HTMLElement {
+  return screen.getByRole('button', { name: 'Zoom in (horizontal)' })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
   wf.listProjectJobs.mockResolvedValue([])
   mockLatestCompletedImportId.mockResolvedValue(IMPORT_ID)
   wf.createWaveformJob.mockResolvedValue({ id: 'job-1' })
@@ -216,13 +300,13 @@ Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true
 describe('WaveformEditor states (spec §12.8)', () => {
   it('shows the empty state without a source asset', async () => {
     renderEditor({ sourceAssetId: null })
-    expect(await screen.findByText('No source imported.')).toBeInTheDocument()
+    expect(await screen.findByText('No source imported yet.', { exact: false })).toBeInTheDocument()
   })
 
   it('shows the decoding state while metadata is in flight', async () => {
     wf.getAssetMetadata.mockImplementation(() => new Promise(() => {}))
     renderEditor()
-    expect(await screen.findByText('Decoding audio…')).toBeInTheDocument()
+    expect(await screen.findByText('Building the waveform…')).toBeInTheDocument()
   })
 
   it('shows the pending state while a waveform job is running', async () => {
@@ -231,17 +315,19 @@ describe('WaveformEditor states (spec §12.8)', () => {
       { id: 'job-1', jobType: 'waveform', state: 'running', progressFraction: 0.4 },
     ])
     renderEditor()
-    expect(await screen.findByText('Building waveform…')).toBeInTheDocument()
+    expect(await screen.findByText('Waveform build queued.', { exact: false })).toBeInTheDocument()
   })
 
   it('offers a rebuild when the waveform cache is missing', async () => {
     wf.getAssetMetadata.mockResolvedValue({ waveform: null })
     renderEditor()
-    expect(await screen.findByText('Waveform unavailable.')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Build waveform' }))
+    expect(
+      await screen.findByText('The waveform data is missing.', { exact: false }),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Rebuild waveform' }))
     expect(mockLatestCompletedImportId).toHaveBeenCalledWith(PROJECT_ID)
     expect(wf.createWaveformJob).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID)
-    expect(await screen.findByText('Building waveform…')).toBeInTheDocument()
+    expect(await screen.findByText('Waveform build queued.', { exact: false })).toBeInTheDocument()
   })
 })
 
@@ -263,15 +349,21 @@ describe('WaveformEditor layout (plan §8)', () => {
     expect(screen.getByRole('checkbox', { name: 'Show L' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Show R' })).toBeChecked()
 
-    // Marker lane, selection readout, static scrollbar.
+    // Marker lane, selection readout, scrollbar.
     expect(screen.getByLabelText('Markers')).toBeInTheDocument()
     expect(screen.getByLabelText('Selection')).toHaveTextContent('—')
     expect(document.querySelector('.wave-scrollbar-thumb')).not.toBeNull()
 
-    // Amplitude controls.
-    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
-    expect(screen.getByText('1×')).toBeInTheDocument()
+    // Horizontal navigation controls; Fit selection needs a selection.
+    expect(screen.getByRole('button', { name: 'Zoom out (horizontal)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fit song' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fit selection' })).toBeDisabled()
+
+    // Amplitude controls, scoped to their fieldset.
+    expect(ampControls().getByRole('button', { name: 'Zoom out' })).toBeInTheDocument()
+    expect(ampControls().getByRole('button', { name: 'Reset' })).toBeDisabled()
+    expect(ampControls().getByText('1×')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Link channels' })).toBeChecked()
   })
 
   it('allocates canvases in device pixels (css × dpr)', async () => {
@@ -328,21 +420,21 @@ describe('WaveformEditor drawing', () => {
     const wave = ctxOf(canvasById('lane:0:waveform'))
     expect(wave.rects[0]).toEqual([0, 6, 1, 24])
 
-    await userEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
+    await userEvent.click(ampControls().getByRole('button', { name: 'Zoom in' }))
     // Scale 2: 0.75×2 > 1 clips at the lane top; column 0..36 plus a 2 px tick.
-    expect(screen.getByText('2×')).toBeInTheDocument()
+    expect(ampControls().getByText('2×')).toBeInTheDocument()
     expect(wave.rects[0]).toEqual([0, 0, 1, 36])
     expect(wave.rects[1]).toEqual([0, 0, 1, 2])
 
-    await userEvent.click(screen.getByRole('button', { name: 'Reset' }))
-    expect(screen.getByText('1×')).toBeInTheDocument()
+    await userEvent.click(ampControls().getByRole('button', { name: 'Reset' }))
+    expect(ampControls().getByText('1×')).toBeInTheDocument()
     expect(wave.rects[0]).toEqual([0, 6, 1, 24])
 
     // Zoom out clamps at 0.25×.
-    await userEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
-    expect(screen.getByText('0.25×')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeDisabled()
+    await userEvent.click(ampControls().getByRole('button', { name: 'Zoom out' }))
+    await userEvent.click(ampControls().getByRole('button', { name: 'Zoom out' }))
+    expect(ampControls().getByText('0.25×')).toBeInTheDocument()
+    expect(ampControls().getByRole('button', { name: 'Zoom out' })).toBeDisabled()
   })
 
   it('unmounts a lane canvas stack when the lane is hidden', async () => {
@@ -360,5 +452,292 @@ describe('WaveformEditor drawing', () => {
     await renderReadyEditor()
     await userEvent.click(screen.getByRole('button', { name: 'Hide R' }))
     expect(document.querySelectorAll('canvas[data-id^="lane:1:"]')).toHaveLength(0)
+  })
+})
+
+describe('WaveformEditor horizontal zoom (M1.11 §13.1)', () => {
+  it('the Zoom in button doubles magnification, center-anchored', async () => {
+    mockReady()
+    await renderReadyEditor()
+    expect(thumb()).toEqual({ width: 750, left: 0 })
+    await userEvent.click(zoomInH())
+    expect(thumb()).toEqual({ width: 375, left: 187.5 })
+  })
+
+  it('Ctrl-wheel zooms anchored at the pointer', async () => {
+    mockReady()
+    await renderReadyEditor()
+    wheel(hitbox(), { ctrlKey: true, deltaY: -100, clientX: 375 })
+    expect(thumb()).toEqual({ width: 600, left: 75 })
+  })
+
+  it('a plain wheel leaves the view unchanged', async () => {
+    mockReady()
+    await renderReadyEditor()
+    wheel(hitbox(), { deltaY: -100, clientX: 375 })
+    expect(thumb()).toEqual({ width: 750, left: 0 })
+  })
+
+  it('Shift-wheel pans horizontally', async () => {
+    mockReady()
+    await renderReadyEditor()
+    await userEvent.click(zoomInH())
+    wheel(hitbox(), { shiftKey: true, deltaX: 100, clientX: 375 })
+    expect(thumb()).toEqual({ width: 375, left: 237.5 })
+  })
+
+  it('+/- keys zoom anchored at the playhead', async () => {
+    mockReady()
+    await renderReadyEditor()
+    key(section(), '+')
+    expect(thumb()).toEqual({ width: 375, left: 0 })
+    key(section(), '-')
+    expect(thumb()).toEqual({ width: 750, left: 0 })
+  })
+
+  it('Fit song restores the fit view', async () => {
+    mockReady()
+    await renderReadyEditor()
+    await userEvent.click(zoomInH())
+    await userEvent.click(screen.getByRole('button', { name: 'Fit song' }))
+    expect(thumb()).toEqual({ width: 750, left: 0 })
+  })
+
+  it('the thumb clamps to the source bounds', async () => {
+    mockReady()
+    await renderReadyEditor()
+    // Zoomed out beyond the source: the thumb covers the whole track.
+    await userEvent.click(screen.getByRole('button', { name: 'Zoom out (horizontal)' }))
+    expect(thumb()).toEqual({ width: 750, left: 0 })
+    // Back in: the anchor sits at the clamped right edge, so the view
+    // lands on the fit; one more step in, then pan hard right.
+    await userEvent.click(zoomInH())
+    expect(thumb()).toEqual({ width: 750, left: 0 })
+    await userEvent.click(zoomInH())
+    wheel(hitbox(), { shiftKey: true, deltaX: 10_000, clientX: 0 })
+    expect(thumb()).toEqual({ width: 375, left: 375 })
+  })
+})
+
+describe('WaveformEditor panning (M1.11 §13.2)', () => {
+  it('dragging the overview strip pans the view', async () => {
+    mockReady()
+    await renderReadyEditor()
+    // At the fit view the visible range spans the whole source, so pan is
+    // clamped; zoom in first. 50 px on the overview = 50 × 64 = 3200 frames.
+    await userEvent.click(zoomInH())
+    const ov = document.querySelector('.wave-overview-row .wave-content') as HTMLElement
+    pointer('pointerdown', ov, 100)
+    pointer('pointermove', ov, 150)
+    expect(thumb()).toEqual({ width: 375, left: 237.5 })
+    pointer('pointerup', ov, 150)
+  })
+
+  it('a track click jumps the view center under the pointer', async () => {
+    mockReady()
+    await renderReadyEditor()
+    await userEvent.click(zoomInH())
+    const bar = document.querySelector('.wave-scrollbar') as HTMLElement
+    pointer('pointerdown', bar, 700)
+    expect(thumb()).toEqual({ width: 375, left: 375 }) // jump clamps right
+    pointer('pointerup', bar, 700)
+  })
+
+  it('dragging the thumb pans the view', async () => {
+    mockReady()
+    await renderReadyEditor()
+    await userEvent.click(zoomInH())
+    const bar = document.querySelector('.wave-scrollbar') as HTMLElement
+    pointer('pointerdown', bar, 300)
+    pointer('pointermove', bar, 400)
+    expect(thumb()).toEqual({ width: 375, left: 287.5 })
+    pointer('pointerup', bar, 400)
+  })
+
+  it('offers return-to-playhead when the playhead leaves the view', async () => {
+    mockReady()
+    await renderReadyEditor({ playheadFrame: 37_000 })
+    expect(screen.queryByRole('button', { name: 'Return to playhead' })).toBeNull()
+    await userEvent.click(zoomInH())
+    const btn = await screen.findByRole('button', { name: 'Return to playhead' })
+    await userEvent.click(btn)
+    expect(thumb()).toEqual({ width: 375, left: 375 })
+  })
+
+  it('auto-follows the playhead once follow is re-enabled', async () => {
+    mockReady()
+    const { rerender } = await renderReadyEditor() // playhead 0, fit, following
+    await userEvent.click(zoomInH()) // {12000, 32}; manual zoom suspends follow
+    await userEvent.click(screen.getByRole('button', { name: 'Return to playhead' }))
+    // Centered on frame 0: {0, 32}, follow re-enabled.
+    expect(thumb()).toEqual({ width: 375, left: 0 })
+
+    // Playback reaches frame 37 000: outside [0, 24000] -> follow pans.
+    rerender(
+      <WaveformEditor projectId={PROJECT_ID} sourceAssetId={ASSET_ID} playheadFrame={37_000} />,
+    )
+    await waitFor(() => expect(thumb()).toEqual({ width: 375, left: 375 }))
+  })
+})
+
+describe('WaveformEditor selection (M1.11 §13.4)', () => {
+  it('a click seeks to the clicked frame', async () => {
+    const onSeek = vi.fn()
+    mockReady()
+    await renderReadyEditor({ onSeek })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 375)
+    pointer('pointerup', hit, 375)
+    expect(onSeek).toHaveBeenCalledWith(24_000)
+  })
+
+  it('a drag creates a selection with readout and painted range', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 150)
+    pointer('pointermove', hit, 200)
+    pointer('pointerup', hit, 200)
+
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.133 – 0:00.267 · 0:00.133')
+    expect(ctxOf(canvasById('lane:0:selection')).rects[0]).toEqual([100, 0, 100, 48])
+    expect(screen.getByRole('button', { name: 'Fit selection' })).toBeEnabled()
+  })
+
+  it('a right-to-left drag selects the same range', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+    pointer('pointerdown', hit, 200)
+    pointer('pointermove', hit, 100)
+    pointer('pointerup', hit, 100)
+
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.133 – 0:00.267 · 0:00.133')
+  })
+
+  it('clamps the selection to the source bounds', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+    pointer('pointerdown', hit, 700)
+    pointer('pointermove', hit, 800)
+    pointer('pointerup', hit, 800)
+
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.933 – 0:01.000 · 0:00.067')
+  })
+
+  it('resizes from the boundary handles without crossing', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+    // Seed a [6400, 12800] selection (x 100..200 at the fit view).
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 200)
+    pointer('pointerup', hit, 200)
+
+    // Drag the start handle (x 100) right to x 125 -> frame 8000.
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 125)
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.167 – 0:00.267 · 0:00.100')
+    pointer('pointerup', hit, 125)
+
+    // The start handle now sits at x 125. Drag it past the end: it stops
+    // one frame short of the end boundary.
+    pointer('pointerdown', hit, 125)
+    pointer('pointermove', hit, 300)
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.267 – 0:00.267 · 0:00.000')
+    pointer('pointerup', hit, 300)
+  })
+
+  it('Escape clears the selection', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 200)
+    pointer('pointerup', hit, 200)
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.133')
+
+    key(section(), 'Escape')
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('—')
+  })
+
+  it('Seek to selection start seeks to the start frame', async () => {
+    const onSeek = vi.fn()
+    mockReady()
+    await renderReadyEditor({ onSeek })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 200)
+    pointer('pointerup', hit, 200)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Seek to selection start' }))
+    expect(onSeek).toHaveBeenCalledWith(6_400)
+  })
+
+  it('Fit selection fits exactly the selected range', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 200)
+    pointer('pointerup', hit, 200)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fit selection' }))
+    expect(thumb()).toEqual({ width: 100, left: 100 })
+  })
+})
+
+describe('WaveformEditor vertical amplitude (M1.11 §13.3)', () => {
+  it('unlinking exposes per-lane amplitude controls and disables the global ones', async () => {
+    mockReady()
+    await renderReadyEditor()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Link channels' }))
+    expect(ampControls().getByText('unlinked')).toBeInTheDocument()
+    expect(ampControls().getByRole('button', { name: 'Zoom in' })).toBeDisabled()
+    expect(ampControls().getByRole('button', { name: 'Zoom out' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Decrease L amplitude' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Increase R amplitude' })).toBeInTheDocument()
+  })
+
+  it('per-lane scaling affects only that lane', async () => {
+    mockReady()
+    await renderReadyEditor()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Link channels' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Decrease L amplitude' }))
+
+    // Lane 0 at 0.5×: top 24 - 0.75×12 = 15, height 12. Lane 1 stays at 1×.
+    expect(ctxOf(canvasById('lane:0:waveform')).rects[0]).toEqual([0, 15, 1, 12])
+    expect(ctxOf(canvasById('lane:1:waveform')).rects[0]).toEqual([0, 6, 1, 24])
+  })
+
+  it('persists the amplitude state across remounts', async () => {
+    mockReady()
+    const { unmount } = await renderReadyEditor()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Link channels' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Decrease L amplitude' }))
+    unmount()
+
+    await renderReadyEditor()
+    expect(ampControls().getByText('unlinked')).toBeInTheDocument()
+    expect(ctxOf(canvasById('lane:0:waveform')).rects[0]).toEqual([0, 15, 1, 12])
+  })
+})
+
+describe('WaveformEditor position readout (M1.11 §13.5.5)', () => {
+  it('shows the frame under the pointer and clears on leave', async () => {
+    mockReady()
+    await renderReadyEditor()
+    const hit = hitbox()
+
+    pointer('pointermove', hit, 375)
+    expect(document.querySelector('.wave-frame-readout')).toHaveTextContent(
+      'frame 24000 · 0:00.500',
+    )
+
+    // React derives onPointerLeave from the bubbling `pointerout` event.
+    pointer('pointerout', hit, 375)
+    expect(document.querySelector('.wave-frame-readout')).toBeNull()
   })
 })

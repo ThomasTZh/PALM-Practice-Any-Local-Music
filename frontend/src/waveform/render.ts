@@ -24,6 +24,7 @@ export interface WaveformContext {
   moveTo(x: number, y: number): void
   lineTo(x: number, y: number): void
   stroke(): void
+  strokeRect(x: number, y: number, w: number, h: number): void
   fill(): void
   save(): void
   restore(): void
@@ -317,4 +318,65 @@ export function drawOverview(
     drawLaneWaveform(ctx, src, viewport, 0, width, { height: laneH, color: OVERVIEW_COLOR })
     ctx.restore()
   }
+}
+
+/** Selection palette (M1.11, spec §13.4). */
+export const SELECTION_COLOR = 'rgba(77, 163, 255, 0.18)'
+export const SELECTION_HANDLE_COLOR = '#4da3ff'
+export const OVERVIEW_WINDOW_COLOR = 'rgba(230, 235, 240, 0.25)'
+export const OVERVIEW_WINDOW_BORDER = 'rgba(230, 235, 240, 0.9)'
+
+export interface SelectionDrawOptions {
+  /** Translucent fill of the range (default `SELECTION_COLOR`). */
+  color?: string
+  /** Handle fill (default `SELECTION_HANDLE_COLOR`). */
+  handleColor?: string
+  /** Handle width in CSS px, the boundary hit target (default 3). */
+  handleWidth?: number
+}
+
+/**
+ * Selection range on one lane (M1.11, spec §13.4.7–8): a translucent
+ * fill of `[x0, x1]` plus a handle at each boundary.
+ */
+export function drawSelection(
+  ctx: WaveformContext,
+  x0: number,
+  x1: number,
+  height: number,
+  opts: SelectionDrawOptions = {},
+): void {
+  if (!(x1 > x0)) return
+  const handle = opts.handleWidth ?? 3
+  ctx.fillStyle = opts.color ?? SELECTION_COLOR
+  ctx.fillRect(x0, 0, x1 - x0, height)
+  ctx.fillStyle = opts.handleColor ?? SELECTION_HANDLE_COLOR
+  ctx.fillRect(x0 - handle / 2, 0, handle, height)
+  ctx.fillRect(x1 - handle / 2, 0, handle, height)
+}
+
+export interface OverviewWindowOptions {
+  /** Window fill (default `OVERVIEW_WINDOW_COLOR`). */
+  color?: string
+  /** Window border (default `OVERVIEW_WINDOW_BORDER`). */
+  borderColor?: string
+}
+
+/**
+ * Viewport window indicator on the overview strip (M1.11, spec
+ * §13.2.3): a translucent fill of the visible range plus a 1 px border.
+ */
+export function drawOverviewWindow(
+  ctx: WaveformContext,
+  x0: number,
+  x1: number,
+  height: number,
+  opts: OverviewWindowOptions = {},
+): void {
+  if (!(x1 > x0)) return
+  ctx.fillStyle = opts.color ?? OVERVIEW_WINDOW_COLOR
+  ctx.fillRect(x0, 0, x1 - x0, height)
+  ctx.strokeStyle = opts.borderColor ?? OVERVIEW_WINDOW_BORDER
+  ctx.lineWidth = 1
+  ctx.strokeRect(x0 + 0.5, 0.5, Math.max(1, x1 - x0 - 1), height - 1)
 }

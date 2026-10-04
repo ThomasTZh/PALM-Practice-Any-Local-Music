@@ -1,16 +1,19 @@
 /**
- * Waveform data hook (M1.10, spec §12.5, §12.8).
+ * Waveform data hook (M1.10 §12.5, §12.8; M1.11 §13).
  *
  * Drives the editor's state machine — `empty` / `decoding` / `pending` /
  * `missing` / `ready` — and, once ready, fetches and decodes the data for
- * the current (fit-to-song) viewport: peak tiles for the chosen pyramid
+ * the viewport the component passes in: peak tiles for the chosen pyramid
  * level, or a bounded PCM window when the zoom is finer than the coarsest
- * bucket. The manifest is polled every 500 ms (visible) / 2 s (hidden)
- * while a waveform build is in flight. Each effect owns an AbortController
- * whose cleanup cancels in-flight fetches when inputs change (§12.5.3).
+ * bucket. It also fetches the coarsest level's full tile set once per
+ * manifest for the overview strip, which always shows the whole source.
+ * The manifest is polled every 500 ms (visible) / 2 s (hidden) while a
+ * waveform build is in flight. Each effect owns an AbortController whose
+ * cleanup cancels in-flight fetches when inputs change (§12.5.3).
  *
- * M1.10 decodes synchronously via the pure `decode.ts` functions; the
- * `worker.ts` wrapper is the M1.11 optimization for continuous zooming.
+ * Decode runs through the `worker.ts` wrappers (decode worker with a
+ * main-thread fallback, so jsdom tests are unaffected); results are
+ * dropped when the owning effect is stale.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -33,14 +36,9 @@ import {
   usePcm,
   useSampleLevel,
 } from './levels'
-import {
-  aggregatePcmToPixels,
-  parsePeakTile,
-  pcmSamples,
-  type PcmPixels,
-  type PeakTile,
-} from './decode'
-import { fitViewport, type Viewport } from './viewport'
+import { type PcmPixels, type PeakTile } from './decode'
+import { decodePcmPixels, decodePcmSamples, decodeTile } from './worker'
+import type { Viewport } from './viewport'
 import { TileLru, tileKey } from './tileCache'
 
 export type WaveformState = 'empty' | 'decoding' | 'pending' | 'missing' | 'ready'
@@ -60,8 +58,8 @@ export interface WaveformData {
   manifest: WaveformManifest | null
   levels: WaveformLevelData[]
   pcm: PcmData | null
-  /** The fit-to-song viewport, once the duration is known. */
-  viewport: Viewport | null
+  /** Coarsest-level data covering the whole source (overview strip). */
+  overview: WaveformLevelData | null
   error: string | null
   /** Post a `waveform` build job (the `missing`-state rebuild button). */
   rebuild: () => void
@@ -105,25 +103,23 @@ async function fetchPcmWindow(
     offset += c.byteLength
   }
   if (useSampleLevel(framesPerCssPixel)) {
-    return { kind: 'samples', startFrame: first, channels: pcmSamples(merged, channelCount) }
+    const channels = await decodePcmSamples(merged, channelCount)
+    return { kind: 'samples', startFrame: first, channels }
   }
-  return {
-    kind: 'pixels',
-    startFrame: first,
-    data: aggregatePcmToPixels(merged, channelCount, first, framesPerCssPixel),
-  }
+  const data = await decodePcmPixels(merged, channelCount, first, framesPerCssPixel)
+  return { kind: 'pixels', startFrame: first, data }
 }
 
 export function useWaveform(
   projectId: string | null,
   assetId: string | null,
-  widthCssPx: number,
+  viewport: Viewport | null,
 ): WaveformData {
   const [state, setState] = useState<WaveformState>('empty')
   const [manifest, setManifest] = useState<WaveformManifest | null>(null)
   const [levels, setLevels] = useState<WaveformLevelData[]>([])
-  const [pcm, setPcm] = useState<PcmData | null>(null)
-  const [viewport, setViewport] = useState<Viewport | null>(null)
+  const [pcmState, setPcmState] = useState<PcmData | null>(null)
+  const [overview, setOverview] = useState<WaveformLevelData | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const lruRef = useRef<TileLru>(new TileLru())
@@ -133,8 +129,8 @@ export function useWaveform(
     lruRef.current.clear()
     setManifest(null)
     setLevels([])
-    setPcm(null)
-    setViewport(null)
+    setPcmState(null)
+    setOverview(null)
     setError(null)
     if (!assetId) {
       setState('empty')
@@ -219,26 +215,27 @@ export function useWaveform(
     }
   }, [state, assetId])
 
-  // Data fetch: tiles or PCM for the ready, measured viewport (§12.5).
+  // Data fetch: tiles or PCM for the ready, passed-in viewport (§12.5,
+  // M1.11 §13.1). Re-runs on every zoom/pan because the viewport identity
+  // changes; the AbortController cancels the superseded request.
   useEffect(() => {
     if (state !== 'ready' || !manifest || !assetId) {
       if (state !== 'ready') {
         setLevels([])
-        setPcm(null)
+        setPcmState(null)
       }
       return
     }
-    if (!(widthCssPx > 0)) return
+    if (!viewport) return
     const man = manifest
     const aid = assetId
+    const vp = viewport
     const controller = new AbortController()
     let cancelled = false
     const stale = () => cancelled || controller.signal.aborted
     async function run() {
       try {
         const frameCount = man.frame_count
-        const vp = fitViewport(frameCount, widthCssPx)
-        setViewport(vp)
         const fpp = vp.framesPerCssPixel
         if (usePcm(fpp)) {
           const [first, last] = pcmFrameRange(vp, frameCount)
@@ -251,7 +248,7 @@ export function useWaveform(
             controller.signal,
           )
           if (stale()) return
-          setPcm(data)
+          setPcmState(data)
           setLevels([])
         } else {
           const level = chooseLevel(man, fpp)
@@ -269,10 +266,11 @@ export function useWaveform(
             }
             const bucketCount =
               t === summary.tile_count - 1 ? summary.final_tile_buckets : TILE_BUCKETS
-            tiles.set(t, parsePeakTile(bytes, man.channel_count, bucketCount))
+            tiles.set(t, await decodeTile(bytes, man.channel_count, bucketCount))
+            if (stale()) return
           }
           if (stale()) return
-          setPcm(null)
+          setPcmState(null)
           setLevels([{ level, bucketFrameCount: summary.bucket_frame_count, tiles }])
         }
       } catch (e) {
@@ -286,7 +284,53 @@ export function useWaveform(
       cancelled = true
       controller.abort()
     }
-  }, [state, manifest, assetId, widthCssPx])
+  }, [state, manifest, assetId, viewport])
+
+  // Overview: the coarsest level's full tile set, once per manifest
+  // (M1.11 §13.2.3). Small (a few tiles) and LRU-cached.
+  useEffect(() => {
+    if (state !== 'ready' || !manifest || !assetId) {
+      if (state !== 'ready') setOverview(null)
+      return
+    }
+    const man = manifest
+    const aid = assetId
+    const controller = new AbortController()
+    let cancelled = false
+    const stale = () => cancelled || controller.signal.aborted
+    async function run() {
+      try {
+        const level = man.levels.length - 1
+        const summary = man.levels[level]
+        const tiles = new Map<number, PeakTile>()
+        for (let t = 0; t < summary.tile_count; t++) {
+          const key = tileKey(man.source_hash, level, t)
+          let bytes = lruRef.current.get(key)
+          if (!bytes) {
+            const tile = await getPeakTile(aid, level, t, controller.signal)
+            if (stale()) return
+            bytes = tile.bytes
+            lruRef.current.set(key, bytes)
+          }
+          const bucketCount =
+            t === summary.tile_count - 1 ? summary.final_tile_buckets : TILE_BUCKETS
+          tiles.set(t, await decodeTile(bytes, man.channel_count, bucketCount))
+          if (stale()) return
+        }
+        if (stale()) return
+        setOverview({ level, bucketFrameCount: summary.bucket_frame_count, tiles })
+      } catch (e) {
+        if (stale() || isAbort(e)) return
+        if (e instanceof TileNotReadyError) return
+        // A failed overview is not fatal for the main view.
+      }
+    }
+    run()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [state, manifest, assetId])
 
   const rebuild = useCallback(() => {
     if (!projectId) return
@@ -307,5 +351,5 @@ export function useWaveform(
     })()
   }, [projectId])
 
-  return { state, manifest, levels, pcm, viewport, error, rebuild }
+  return { state, manifest, levels, pcm: pcmState, overview, error, rebuild }
 }

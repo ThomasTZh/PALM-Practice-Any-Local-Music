@@ -7,8 +7,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.10 (waveform editor) — complete; plan in
-  `projectPlans/m1.10-plan.md`
+- **Work package:** M1.11 (navigation, zoom, selection) — implementation
+  complete, gate green; commit pending. Plan in
+  `projectPlans/m1.11-plan.md`.
 - **Last commit:** `62513ce` — M1.10 (waveform editor);
   `ffa0142` — chore: prettier normalization of pre-existing sources
   (baseline was not prettier-clean);
@@ -20,9 +21,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.11 — interactive zoom/pan/selection on the
-  waveform editor (viewport interaction, selection readout, marker
-  lane population). AudioWorklet transport is M1.12.
+- **Next action:** commit M1.11 (single `M1.11: …` commit + ledger-hash
+  follow-up), then start M1.12 — AudioWorklet transport
+  (`projectPlans/milestone1.md` §14).
 
 ## Completed requirements (with evidence)
 
@@ -127,6 +128,80 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - None. Milestone 0 complete.
 
 ## Milestone 1 progress
+
+### M1.11 — Navigation, zoom, and selection (complete, uncommitted)
+
+Spec: `projectPlans/milestone1.md` §13. Plan:
+`projectPlans/m1.11-plan.md`. Frontend-only:
+interactive horizontal zoom (§13.1), panning (§13.2), vertical zoom
+refinements (§13.3), selection semantics (§13.4), ruler position
+readout (§13.5). Looping, marker editing, and the AudioWorklet
+transport (M1.12) are out of scope.
+
+Key design points (see plan):
+- The editor owns a width-free `View` (`{ startFrame, fpp }`,
+  fractional); the `Viewport` is derived with the measured width.
+  Pure math (clamp/zoom/pan/fit-range, 8 px/frame max) lands in
+  `viewport.ts`.
+- `useWaveform` takes the viewport as input (instead of deriving
+  fit-to-song), gains an `overview` output (coarsest level, full tile
+  set, fetched once per manifest), and decodes via the `worker.ts`
+  wrappers (main-thread fallback in jsdom).
+- `PlaybackEngine` gains a minimal `seek(offset)` (stop/reschedule
+  while playing; position-only otherwise). Full seek-generation
+  handling is M1.12.
+- Component: zoom buttons / `+`-`-` keys / Ctrl-wheel (pointer anchor,
+  non-passive native listener) / Shift-wheel / scrollbar drag /
+  overview-window drag; playhead-follow with manual-pan suspension +
+  return-to-playhead button; pointer click-vs-drag selection (3 px)
+  with boundary handles, Escape, readout, seek-to-selection-start;
+  per-lane amplitude with linked mode + localStorage persistence;
+  pointer frame readout chip.
+- `PlaybackPanel` gains `registerSeek`; `ProjectView` wires the seek
+  function into the editor's new `onSeek` prop.
+
+Phases: 1 plan + kickoff → 2 pure viewport math → 3 engine seek +
+hook rework → 4 component navigation → 5 selection → 6 vertical zoom
++ readout → 7 frontend gate + commit.
+
+**Phase status:** all phases complete.
+- Phase 2: `viewport.ts` — `View`/`clampFpp`/`visibleFrames`/`clampView`/
+  `zoomView`/`panView`/`fitRangeView` + `visibleFrameRange`;
+  `tests/viewport.test.ts` 29 green.
+- Phase 3: `engine.ts` `seek(offset)` (clamped; playing → stop +
+  reschedule; else position-only, idle → `stopped`; `seekGeneration`
+  bumped, stale fetches dropped); dead `endReached` field removed.
+  `useWaveform` reworked: viewport input, `overview` output (coarsest
+  level, full tile set, once per manifest, LRU-cached, failures
+  non-fatal), decode via `worker.ts` wrappers. `render.ts` gained
+  `drawSelection` (fill + 3 px handles) and `drawOverviewWindow`
+  (fill + 1 px border). Tests: engine 10/10, useWaveform 10/10,
+  render 22/22.
+- Phases 4–6: `WaveformEditor.tsx` rewritten — `view` state +
+  `useMemo` viewport (stable identity, no duration clamp in the memo),
+  init/reset/width-reclamp/follow effects (follow re-pans only when
+  the playhead leaves the visible range — 60 Hz safe); horizontal
+  fieldset (Zoom in/out ×0.5/×2 center-anchored, `+`/`-` keys
+  playhead-anchored, Ctrl-wheel pointer-anchored via a native
+  non-passive listener, Fit song, Fit selection); hitbox pointer
+  interaction (3 px click/drag threshold, click → `onSeek`, drag →
+  selection, ±4 px boundary handles, no-crossing resize); scrollbar
+  (track click jumps center-under-pointer, thumb drag pans; geometry
+  from `contentWidth`, `left = min(start/duration × trackW,
+  trackW − w)`); overview drag pan + window indicator; selection
+  readout row (start – end · duration, seek-to-start, Clear);
+  per-lane amplitude with linked mode, `basseparate:wave-amplitude:
+  <projectId>` persistence (validated on read); pointer frame chip.
+  `App.tsx`: `PlaybackPanel.registerSeek` (stable callback, `null` on
+  unmount) → `ProjectView` `seekFn` state → editor `onSeek`.
+  `styles.css`: hitarea, frame chip, scrollbar thumb, per-lane amp
+  buttons, overview cursor, return-to-playhead, disabled states.
+- Phase 7: `tests/WaveformEditor.test.tsx` rewritten (35 tests:
+  states, layout, drawing, horizontal zoom, panning, selection,
+  vertical amplitude, readout; jsdom pointer/wheel/key dispatch
+  helpers, `getAssetPcm` mock for the PCM path). Full gate green:
+  `pnpm test` 212/212, `pnpm typecheck`, `pnpm lint`,
+  `pnpm format:check`.
 
 ### M1.10 — Waveform editor (complete)
 

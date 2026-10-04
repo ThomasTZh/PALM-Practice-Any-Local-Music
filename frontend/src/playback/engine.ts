@@ -100,7 +100,8 @@ export class PlaybackEngine {
   private scheduledUntil = 0
   private sources = new Set<AudioBufferSourceLike>()
   private schedulerRunning = false
-  private endReached = false
+  /** Bumped on every seek so in-flight chunk fetches can be dropped. */
+  private seekGeneration = 0
 
   constructor(opts: EngineOptions) {
     this.opts = opts
@@ -131,7 +132,10 @@ export class PlaybackEngine {
       return clampToDuration(offset, this.frameCount)
     }
     if (this.state === 'paused') return this.playStartOffset
-    if (this.state === 'stopped') return this.endReached ? this.frameCount : 0
+    // `stop()` sets the offset to 0 and a natural end sets it to
+    // `frameCount`, so this matches the previous endReached check and
+    // also reflects a seek made while stopped (M1.11).
+    if (this.state === 'stopped') return this.playStartOffset
     return 0
   }
 
@@ -145,11 +149,14 @@ export class PlaybackEngine {
     if (this.state === 'playing' || this.state === 'loading') return
     this.setState('loading')
     this.lastError = null
-    this.endReached = false
     try {
       await this.ensureContext()
-      this.playStartOffset = 0
-      this.scheduledUntil = 0
+      // A seek made while stopped parks the playhead mid-media; start
+      // from there. From idle, or from the natural end, start over.
+      if (this.state === 'idle' || this.playStartOffset >= this.frameCount) {
+        this.playStartOffset = 0
+        this.scheduledUntil = 0
+      }
       this.playStartTime = this.context!.currentTime + START_DELAY_SECONDS
       this.setState('playing')
       void this.schedulerLoop()
@@ -180,11 +187,38 @@ export class PlaybackEngine {
     this.stopAllSources()
     this.playStartOffset = 0
     this.scheduledUntil = 0
-    this.endReached = false
     if (this.state !== 'idle') {
       this.setState('stopped')
       this.reportPosition()
     }
+  }
+
+  /**
+   * Move the playhead to `offset` asset frames (clamped to
+   * `[0, frameCount]`). While playing, the running sources are stopped
+   * and the scheduler resumes from the new offset on its next tick. In
+   * any other state this is a position-only seek (from `idle` the
+   * engine becomes `stopped` so the parked position is observable).
+   *
+   * This is the minimal seek the M1.11 editor needs for click-to-seek
+   * and "Seek to selection start"; full seek-generation handling
+   * (flush acknowledgments, generation IDs) is M1.12.
+   */
+  async seek(offset: number): Promise<void> {
+    if (this.state === 'loading' || this.state === 'error') return
+    const target = clampToDuration(Math.max(0, Math.floor(offset)), this.frameCount)
+    this.seekGeneration += 1
+    if (this.state === 'playing') {
+      this.stopAllSources()
+      this.playStartOffset = target
+      this.scheduledUntil = target
+      this.playStartTime = this.context!.currentTime + START_DELAY_SECONDS
+    } else {
+      this.playStartOffset = target
+      this.scheduledUntil = target
+      if (this.state === 'idle') this.setState('stopped')
+    }
+    this.reportPosition()
   }
 
   /** Stop playback and release the AudioContext we created. */
@@ -249,7 +283,9 @@ export class PlaybackEngine {
       const frames = Math.min(this.chunkFrames, this.frameCount - this.scheduledUntil)
       const start = this.scheduledUntil * this.bytesPerFrame
       const end = start + frames * this.bytesPerFrame - 1
+      const generation = this.seekGeneration
       const bytes = await this.opts.fetchChunk(start, end)
+      if (generation !== this.seekGeneration) return // a seek invalidated the fetch
       this.scheduleChunk(bytes, frames, this.scheduledUntil)
       this.scheduledUntil += frames
     }
@@ -279,7 +315,6 @@ export class PlaybackEngine {
     this.sources.delete(source)
     if (this.state === 'playing' && this.scheduledUntil >= this.frameCount) {
       // Media finished naturally: the playhead sits at the end.
-      this.endReached = true
       this.playStartOffset = this.frameCount
       this.stopAllSources()
       this.setState('stopped')

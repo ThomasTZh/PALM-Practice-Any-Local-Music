@@ -260,6 +260,90 @@ describe('PlaybackEngine', () => {
     expect(positions.at(-1)).toBe(55)
   })
 
+  it('seeks while paused and resumes from the new offset', async () => {
+    const { engine, ctx } = makeEngine({
+      target: { frameCount: 96000 },
+      projectDurationFrames: 44100,
+    })
+    await engine.start()
+    await flush()
+    ctx.currentTime = 0.55
+    await engine.pause()
+
+    await engine.seek(48000)
+    expect(engine.currentState).toBe('paused')
+    expect(engine.currentOffset).toBe(48000)
+    expect(engine.currentProjectFrame).toBe(44100)
+
+    await engine.resume()
+    // The position catches up once the 0.05 s start delay elapses.
+    ctx.currentTime += 0.05
+    expect(engine.currentOffset).toBe(48000)
+  })
+
+  it('seeks while stopped and starts from the parked position', async () => {
+    const { engine, ctx, delay, positions } = makeEngine({
+      target: { frameCount: 96000 },
+      projectDurationFrames: 44100,
+      chunkBytes: 576000, // 72000 frames = 1.5 s per chunk
+    })
+    await engine.start()
+    await flush()
+    engine.stop()
+    expect(engine.currentOffset).toBe(0)
+
+    await engine.seek(48000)
+    expect(engine.currentState).toBe('stopped')
+    expect(engine.currentOffset).toBe(48000)
+    expect(positions.at(-1)).toBe(44100)
+
+    // start() plays from the seeked position, not from zero. The
+    // scheduler parked in the first pass resumes and reschedules.
+    const t = ctx.currentTime
+    await engine.start()
+    delay.release()
+    await flush()
+    const last = ctx.sources.at(-1)
+    expect(last?.startedAt).toBeCloseTo(t + 0.05)
+    expect(last?.buffer?.duration).toBeCloseTo((96000 - 48000) / 48000)
+    ctx.currentTime = t + 0.05 // start delay elapsed
+    expect(engine.currentOffset).toBe(48000)
+  })
+
+  it('seeks while playing: stops sources and reschedules from the offset', async () => {
+    const { engine, ctx, delay, fetchCalls } = makeEngine({
+      target: { frameCount: 96000 },
+      chunkBytes: 576000, // 72000 frames = 1.5 s per chunk
+    })
+    await engine.start()
+    await flush()
+    expect(ctx.sources).toHaveLength(1)
+
+    ctx.currentTime = 0.3
+    await engine.seek(24000)
+    expect(ctx.sources[0].stoppedAt).not.toBeNull()
+
+    // The rescheduled audio begins at ctx.currentTime + the start delay.
+    ctx.currentTime = 0.35
+    delay.release()
+    await flush()
+    const last = ctx.sources.at(-1)
+    expect(ctx.sources).toHaveLength(2)
+    expect(last?.startedAt).toBeCloseTo(0.35)
+    expect(last?.buffer?.duration).toBeCloseTo(1.5)
+    expect(fetchCalls.at(-1)?.[0]).toBe(24000 * 8)
+    expect(engine.currentOffset).toBe(24000)
+  })
+
+  it('clamps seeks to the media bounds', async () => {
+    const { engine } = makeEngine({ target: { frameCount: 96000 } })
+    await engine.seek(-500)
+    expect(engine.currentState).toBe('stopped') // idle -> stopped, position observable
+    expect(engine.currentOffset).toBe(0)
+    await engine.seek(10_000_000)
+    expect(engine.currentOffset).toBe(96000)
+  })
+
   it('enters the error state when a chunk fetch fails', async () => {
     const { engine } = makeEngine({
       fetched: () => Promise.reject(new Error('network down')),

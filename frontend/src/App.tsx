@@ -427,12 +427,16 @@ const PlaybackPanel = memo(function PlaybackPanel({
   projectId,
   createAudioContext,
   onPositionChange,
+  registerSeek,
 }: {
   projectId: string
   createAudioContext?: () => AudioContextLike
   /** Reports the playhead position (project frames) so sibling views, such
    * as the waveform editor, can draw a playhead (M1.10). */
   onPositionChange?: (frame: number) => void
+  /** Registers a seek function the waveform editor can use for click-to-seek
+   * and "Seek to selection start" (M1.11 §13.4); null on unmount. */
+  registerSeek?: (seek: ((frame: number) => void) | null) => void
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -474,6 +478,17 @@ const PlaybackPanel = memo(function PlaybackPanel({
       engineRef.current = null
     }
   }, [])
+
+  // Expose the engine seek to the waveform editor (M1.11). The callback is
+  // stable; the engine may be null until playback is first started.
+  const seekFn = useCallback((frame: number) => {
+    void engineRef.current?.seek(frame)
+  }, [])
+
+  useEffect(() => {
+    registerSeek?.(seekFn)
+    return () => registerSeek?.(null)
+  }, [registerSeek, seekFn])
 
   const isStandard51 = info !== null && info.channelCount === 6 && info.channelLayout === '5.1'
 
@@ -696,17 +711,28 @@ const PlaybackPanel = memo(function PlaybackPanel({
 /**
  * Ready-project view (M1.10): transport panel + waveform editor + meta.
  * Owns the playhead frame so position updates re-render only this subtree
- * (and the editor's playhead layer), not the whole app.
+ * (and the editor's playhead layer), not the whole app. Also holds the
+ * seek function the transport panel registers (M1.11) for the editor.
  */
 function ProjectView({ project }: { project: ProjectSummary }) {
   const [playheadFrame, setPlayheadFrame] = useState(0)
+  const [seekFn, setSeekFn] = useState<((frame: number) => void) | null>(null)
+  const handleRegisterSeek = useCallback(
+    (fn: ((frame: number) => void) | null) => setSeekFn(fn),
+    [],
+  )
   return (
     <>
-      <PlaybackPanel projectId={project.id} onPositionChange={setPlayheadFrame} />
+      <PlaybackPanel
+        projectId={project.id}
+        onPositionChange={setPlayheadFrame}
+        registerSeek={handleRegisterSeek}
+      />
       <WaveformEditor
         projectId={project.id}
         sourceAssetId={project.canonical_asset_id ?? null}
         playheadFrame={playheadFrame}
+        onSeek={seekFn ?? undefined}
       />
       <dl className="project-meta">
         <dt>Status</dt>

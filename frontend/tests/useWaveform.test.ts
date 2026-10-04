@@ -36,6 +36,7 @@ vi.mock('../src/api/playback', () => ({
 }))
 
 import { useWaveform } from '../src/waveform/useWaveform'
+import { fitViewport, makeViewport, type Viewport } from '../src/waveform/viewport'
 
 const PROJECT_ID = '11111111-1111-1111-1111-111111111111'
 const ASSET_ID = '44444444-4444-4444-4444-444444444444'
@@ -99,6 +100,15 @@ function tileResponse(level: number, tile: number, bucketCount: number) {
   }
 }
 
+/** Mock `getPeakTile` with correctly sized tiles for `manifest`. */
+function mockTiles(manifest: ReturnType<typeof makeManifest>) {
+  mockGetPeakTile.mockImplementation((_a, level, tile) => {
+    const summary = manifest.levels[level]
+    const bucketCount = tile === summary.tile_count - 1 ? summary.final_tile_buckets : 4096
+    return Promise.resolve(tileResponse(level, tile, bucketCount))
+  })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockListProjectJobs.mockResolvedValue([])
@@ -106,7 +116,7 @@ beforeEach(() => {
 
 describe('useWaveform', () => {
   it('is empty with no asset', () => {
-    const { result } = renderHook(() => useWaveform(PROJECT_ID, null, 800))
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, null, null))
     expect(result.current.state).toBe('empty')
     expect(result.current.manifest).toBeNull()
   })
@@ -116,12 +126,11 @@ describe('useWaveform', () => {
     mockGetAssetMetadata.mockResolvedValue(metadata(480_000, true))
     mockGetPeaksManifest.mockResolvedValue(manifest)
     // fpp = 480000/800 = 600 -> level 2 (bfc 1024), single tile of 469 buckets.
-    mockGetPeakTile.mockImplementation((_a, level, tile) =>
-      Promise.resolve(tileResponse(level, tile, manifest.levels[level].final_tile_buckets)),
-    )
-    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, 800))
+    mockTiles(manifest)
+    // Stable identity: the hook re-fetches when the viewport changes.
+    const viewport = fitViewport(480_000, 800)
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, viewport))
     await waitFor(() => expect(result.current.state).toBe('ready'))
-    expect(result.current.viewport).not.toBeNull()
     expect(result.current.levels).toHaveLength(1)
     expect(result.current.levels[0].level).toBe(2)
     expect(result.current.levels[0].tiles.get(0)).toBeDefined()
@@ -141,7 +150,8 @@ describe('useWaveform', () => {
       channelCount: 2,
       contentHash: 'abc',
     })
-    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, 800))
+    const viewport = fitViewport(48_000, 800)
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, viewport))
     await waitFor(() => expect(result.current.state).toBe('ready'))
     expect(result.current.pcm).not.toBeNull()
     expect(result.current.pcm?.kind).toBe('pixels')
@@ -151,7 +161,7 @@ describe('useWaveform', () => {
   it('is missing when there is no waveform and no live job', async () => {
     mockGetAssetMetadata.mockResolvedValue(metadata(48_000, false))
     mockListProjectJobs.mockResolvedValue([])
-    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, 800))
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, null))
     await waitFor(() => expect(result.current.state).toBe('missing'))
   })
 
@@ -160,7 +170,7 @@ describe('useWaveform', () => {
     mockListProjectJobs.mockResolvedValue([
       { id: 'job1', jobType: 'waveform', state: 'running', progressFraction: 0.5 },
     ])
-    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, 800))
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, null))
     await waitFor(() => expect(result.current.state).toBe('pending'))
   })
 
@@ -172,10 +182,9 @@ describe('useWaveform', () => {
       mockGetPeaksManifest
         .mockResolvedValueOnce(makeManifest(480_000, false))
         .mockResolvedValue(manifest)
-      mockGetPeakTile.mockImplementation((_a, level, tile) =>
-        Promise.resolve(tileResponse(level, tile, manifest.levels[level].final_tile_buckets)),
-      )
-      const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, 800))
+      mockTiles(manifest)
+      const viewport = fitViewport(480_000, 800)
+      const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, viewport))
       await act(async () => {})
       expect(result.current.state).toBe('pending')
       await act(async () => {
@@ -200,11 +209,17 @@ describe('useWaveform', () => {
       channelCount: 2,
       contentHash: 'abc',
     })
-    mockGetPeakTile.mockImplementation((_a, level, tile) =>
-      Promise.resolve(tileResponse(level, tile, manifest.levels[level].final_tile_buckets)),
-    )
+    mockTiles(manifest)
+    // Cache the viewport per width so its identity is stable across the
+    // hook's own re-renders (a fresh object would loop the data effect).
+    let cached: { width: number; vp: Viewport } | null = null
     const { result, rerender } = renderHook(
-      ({ width }: { width: number }) => useWaveform(PROJECT_ID, ASSET_ID, width),
+      ({ width }: { width: number }) => {
+        if (!cached || cached.width !== width) {
+          cached = { width, vp: fitViewport(48_000, width) }
+        }
+        return useWaveform(PROJECT_ID, ASSET_ID, cached.vp)
+      },
       { initialProps: { width: 800 } },
     )
     await waitFor(() => expect(result.current.state).toBe('ready'))
@@ -225,12 +240,48 @@ describe('useWaveform', () => {
       state: 'queued',
       progressFraction: null,
     })
-    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, 800))
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, null))
     await waitFor(() => expect(result.current.state).toBe('missing'))
     act(() => {
       result.current.rebuild()
     })
     await waitFor(() => expect(mockCreateWaveformJob).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID))
     expect(result.current.state).toBe('pending')
+  })
+
+  it('fetches the coarsest level in full for the overview, independent of the viewport', async () => {
+    const manifest = makeManifest(480_000)
+    mockGetAssetMetadata.mockResolvedValue(metadata(480_000, true))
+    mockGetPeaksManifest.mockResolvedValue(manifest)
+    mockTiles(manifest)
+    const coarse = manifest.levels.length - 1
+    // A zoomed viewport: fpp 128 -> level 0, so the main view is not the coarsest.
+    const viewport = makeViewport(0, 128, 800)
+    const { result } = renderHook(() => useWaveform(PROJECT_ID, ASSET_ID, viewport))
+    await waitFor(() => expect(result.current.overview).not.toBeNull())
+    expect(result.current.overview?.level).toBe(coarse)
+    expect(result.current.overview?.tiles.size).toBe(manifest.levels[coarse].tile_count)
+    expect(mockGetPeakTile).toHaveBeenCalledWith(ASSET_ID, coarse, 0, expect.any(AbortSignal))
+    await waitFor(() => expect(result.current.levels).toHaveLength(1))
+    expect(result.current.levels[0].level).toBe(0)
+  })
+
+  it('re-fetches data when the viewport zooms', async () => {
+    const manifest = makeManifest(480_000)
+    mockGetAssetMetadata.mockResolvedValue(metadata(480_000, true))
+    mockGetPeaksManifest.mockResolvedValue(manifest)
+    mockTiles(manifest)
+    const { result, rerender } = renderHook(
+      (vp: Viewport) => useWaveform(PROJECT_ID, ASSET_ID, vp),
+      { initialProps: fitViewport(480_000, 800) },
+    )
+    await waitFor(() => expect(result.current.levels).toHaveLength(1))
+    expect(result.current.levels[0].level).toBe(2)
+    mockGetPeakTile.mockClear()
+    // Zoom in: fpp 128 -> level 0, tiles 0..1 (with the adjacent tile).
+    rerender(makeViewport(0, 128, 800))
+    await waitFor(() => expect(result.current.levels[0].level).toBe(0))
+    expect(mockGetPeakTile).toHaveBeenCalledWith(ASSET_ID, 0, 0, expect.any(AbortSignal))
+    expect(mockGetPeakTile).toHaveBeenCalledWith(ASSET_ID, 0, 1, expect.any(AbortSignal))
   })
 })

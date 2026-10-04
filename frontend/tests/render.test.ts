@@ -10,13 +10,19 @@ import {
   drawLaneGrid,
   drawLaneWaveform,
   drawOverview,
+  drawOverviewWindow,
   drawPlayhead,
   drawPcmWaveform,
   drawRuler,
   drawSamplePoints,
+  drawSelection,
   GRID_COLOR,
+  OVERVIEW_WINDOW_BORDER,
+  OVERVIEW_WINDOW_COLOR,
   PLAYHEAD_COLOR,
   RULER_COLOR,
+  SELECTION_COLOR,
+  SELECTION_HANDLE_COLOR,
   WAVEFORM_COLOR,
   type BucketSource,
   type WaveformContext,
@@ -57,6 +63,9 @@ class RecordingContext implements WaveformContext {
   }
   stroke(): void {
     this.record('stroke', [])
+  }
+  strokeRect(x: number, y: number, w: number, h: number): void {
+    this.record('strokeRect', [x, y, w, h])
   }
   fill(): void {
     this.record('fill', [])
@@ -355,5 +364,54 @@ describe('drawOverview', () => {
     drawLaneWaveform(ctx, bucketSource(1, 8), vp, 0, 8, { height: 32 })
     expect(ctx.fillStyle).toBe(WAVEFORM_COLOR)
     expect(RULER_COLOR).toBe('#9aa7b4')
+  })
+})
+
+describe('drawSelection', () => {
+  it('fills the range and draws a handle at each boundary', () => {
+    const ctx = new RecordingContext()
+    drawSelection(ctx, 10, 110, 64)
+    const rects = ctx.fillRects()
+    // Range fill, then the two 3px handles centered on the boundaries.
+    expect(rects).toContainEqual([10, 0, 100, 64])
+    expect(rects).toContainEqual([8.5, 0, 3, 64])
+    expect(rects).toContainEqual([108.5, 0, 3, 64])
+    expect(SELECTION_COLOR).toBe('rgba(77, 163, 255, 0.18)')
+    expect(SELECTION_HANDLE_COLOR).toBe('#4da3ff')
+  })
+
+  it('honors custom colors and handle width', () => {
+    const ctx = new RecordingContext()
+    drawSelection(ctx, 5, 55, 32, { color: '#f00', handleColor: '#0f0', handleWidth: 5 })
+    const rects = ctx.fillRects()
+    expect(rects).toContainEqual([5, 0, 50, 32])
+    expect(rects).toContainEqual([2.5, 0, 5, 32])
+    expect(rects).toContainEqual([52.5, 0, 5, 32])
+  })
+
+  it('draws nothing for a degenerate range', () => {
+    const ctx = new RecordingContext()
+    drawSelection(ctx, 10, 10, 64)
+    drawSelection(ctx, 10, 5, 64)
+    expect(ctx.calls).toHaveLength(0)
+  })
+})
+
+describe('drawOverviewWindow', () => {
+  it('fills the visible window and strokes a 1px border', () => {
+    const ctx = new RecordingContext()
+    drawOverviewWindow(ctx, 100, 300, 40)
+    expect(ctx.fillRects()).toContainEqual([100, 0, 200, 40])
+    const border = ctx.calls.find((c) => c.fn === 'strokeRect')
+    expect(border?.args).toEqual([100.5, 0.5, 199, 39])
+    expect(ctx.strokeStyle).toBe(OVERVIEW_WINDOW_BORDER)
+    expect(ctx.lineWidth).toBe(1)
+    expect(OVERVIEW_WINDOW_COLOR).toBe('rgba(230, 235, 240, 0.25)')
+  })
+
+  it('draws nothing for a degenerate window', () => {
+    const ctx = new RecordingContext()
+    drawOverviewWindow(ctx, 100, 100, 40)
+    expect(ctx.calls).toHaveLength(0)
   })
 })
