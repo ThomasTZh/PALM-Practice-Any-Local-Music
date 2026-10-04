@@ -9,7 +9,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.12 (AudioWorklet transport) — complete.
   Plan in `projectPlans/m1.12-plan.md`.
-- **Last commit:** `fd3468f` — M1.11 (navigation, zoom, selection);
+- **Last commit:** `bccd7b5` — M1.12 (AudioWorklet transport);
+  `fd3468f` — M1.11 (navigation, zoom, selection);
   `62513ce` — M1.10 (waveform editor);
   `ffa0142` — chore: prettier normalization of pre-existing sources
   (baseline was not prettier-clean);
@@ -130,7 +131,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Milestone 1 progress
 
-### M1.12 — AudioWorklet transport (complete)
+### M1.12 — AudioWorklet transport (complete — `bccd7b5`)
 
 Spec: `projectPlans/milestone1.md` §14. Plan:
 `projectPlans/m1.12-plan.md`. Frontend-only:
