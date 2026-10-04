@@ -7,10 +7,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.10 (waveform editor) — Phases 1–6 complete and
-  green; plan in `projectPlans/m1.10-plan.md` (uncommitted, ships with
-  the M1.10 commit)
-- **Last commit:** `<M1.10_COMMIT>` — M1.10 (waveform editor);
+- **Work package:** M1.10 (waveform editor) — complete; plan in
+  `projectPlans/m1.10-plan.md`
+- **Last commit:** `62513ce` — M1.10 (waveform editor);
   `ffa0142` — chore: prettier normalization of pre-existing sources
   (baseline was not prettier-clean);
   `72cd2e5` — M1.9 ledger hash;
@@ -21,12 +20,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.10 Phase 7 — full frontend gate re-run +
-  `git add` + single M1.10 commit (plan file, ledger, all new
-  `src/waveform/*`, `src/api/waveform.ts`, tests, App/styles/types
-  changes) with the `<M1.10_COMMIT>` placeholder, then the
-  ledger-hash follow-up commit (M1.4–M1.9 pattern). Interactive
-  zoom/pan/selection is M1.11; AudioWorklet transport is M1.12.
+- **Next action:** M1.11 — interactive zoom/pan/selection on the
+  waveform editor (viewport interaction, selection readout, marker
+  lane population). AudioWorklet transport is M1.12.
 
 ## Completed requirements (with evidence)
 
@@ -132,7 +128,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Milestone 1 progress
 
-### M1.10 — Waveform editor (in progress)
+### M1.10 — Waveform editor (complete)
 
 Spec: `projectPlans/milestone1.md` §12. Plan:
 `projectPlans/m1.10-plan.md` (written, uncommitted with the plan
@@ -162,7 +158,7 @@ Phases: 1 plan + kickoff → 2 pure core + tests → 3 `api/waveform.ts`
 → 4 `useWaveform` → 5 `render.ts` → 6 `WaveformEditor.tsx` + App
 wiring + styles → 7 frontend gate + commit.
 
-**Phase status (all 1–6 complete, uncommitted; frontend gate green:
+**Phase status (all 1–7 complete; frontend gate green:
 160 tests / 13 files, tsc + eslint + prettier clean; backend
 untouched, 628 tests):**
 - Phase 2: `viewport.ts` (fit/x↔frame transforms), `levels.ts`
