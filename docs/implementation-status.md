@@ -9,7 +9,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.13 (buffering and browser compatibility) —
   complete. Plan in `projectPlans/m1.13-plan.md`.
-- **Last commit:** `bccd7b5` — M1.12 (AudioWorklet transport);
+- **Last commit:** `c7d78ef` — M1.13 (buffering and browser
+  compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
   `fd3468f` — M1.11 (navigation, zoom, selection);
   `62513ce` — M1.10 (waveform editor);
   `ffa0142` — chore: prettier normalization of pre-existing sources
@@ -192,7 +193,7 @@ integration + engine removal → 5 frontend gate + commit.
 - Phase 5: full gate green — `pnpm test` 224/224 (14 files),
   `pnpm typecheck`, `pnpm lint`, `pnpm format:check` all clean.
 
-### M1.13 — Buffering and browser compatibility (complete)
+### M1.13 — Buffering and browser compatibility (complete — `c7d78ef`)
 
 Spec: `projectPlans/milestone1.md` §15. Plan:
 `projectPlans/m1.13-plan.md`. Frontend-only: extends the M1.12
