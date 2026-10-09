@@ -8,8 +8,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.14 (synchronized readout and follow-playhead) —
-  in progress. Plan in `projectPlans/m1.14-plan.md`.
-- **Last commit:** `c7d78ef` — M1.13 (buffering and browser
+  complete. Plan in `projectPlans/m1.14-plan.md`.
+- **Last commit:** `934d6c1` — M1.14 (synchronized readout and
+  follow-playhead); `c7d78ef` — M1.13 (buffering and browser
   compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
   `fd3468f` — M1.11 (navigation, zoom, selection);
   `62513ce` — M1.10 (waveform editor);
@@ -23,10 +24,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.14 Phase 5 — single `M1.14: …` commit (plan +
-  code + tests + ledger), then `Ledger: record M1.14 commit hash
-  (<hash>)`. Full frontend gate is green (267/267 tests, typecheck,
-  lint, format).
+- **Next action:** M1.15 (markers, persistence, and undo/redo, spec
+  §17) — read the spec section, write `projectPlans/m1.15-plan.md`,
+  update this ledger, start phase 1.
 
 ## Completed requirements (with evidence)
 
@@ -349,7 +349,7 @@ Phases: 1 plan + ledger → 2 `pcm-fetch.ts` → 3 worker + worklet v2 →
     per call (`mockResolvedValue` reused one consumed body — the
     longer fill loop hit "Body is unusable" on the second chunk).
 
-### M1.14 — Synchronized readout and follow-playhead (in progress)
+### M1.14 — Synchronized readout and follow-playhead (complete — `934d6c1`)
 
 Spec: `projectPlans/milestone1.md` §16. Plan:
 `projectPlans/m1.14-plan.md`. Frontend-only: worklet anchors at
