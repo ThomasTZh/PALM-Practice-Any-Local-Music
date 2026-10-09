@@ -9,7 +9,7 @@ export interface ConsumptionOptions {
   sampleRate: number
   channelCount: number
   frameCount: number
-  /** Anchor cadence in frames; defaults to 480 (10 ms at 48 kHz). */
+  /** Anchor cadence in frames; defaults to ~20 Hz (spec §16.1). */
   anchorEveryFrames?: number
 }
 
@@ -23,8 +23,10 @@ export interface ProcessResult {
   /**
    * Position anchor: at context time `time` the position was `frame`, so
    * main-thread extrapolation is `frame + (now - time) * sampleRate`.
+   * `paused` is true only for the final anchor emitted when the pause
+   * ramp completes (the exact paused position).
    */
-  anchor: { frame: number; time: number } | null
+  anchor: { frame: number; time: number; paused: boolean } | null
   /** Total frames buffered on the active path after this block. */
   buffered: number
 }

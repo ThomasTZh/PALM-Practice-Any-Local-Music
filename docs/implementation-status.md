@@ -7,8 +7,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.13 (buffering and browser compatibility) —
-  complete. Plan in `projectPlans/m1.13-plan.md`.
+- **Work package:** M1.14 (synchronized readout and follow-playhead) —
+  in progress. Plan in `projectPlans/m1.14-plan.md`.
 - **Last commit:** `c7d78ef` — M1.13 (buffering and browser
   compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
   `fd3468f` — M1.11 (navigation, zoom, selection);
@@ -23,8 +23,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.14 (synchronized readouts and follow-playhead,
-  spec §16) — plan first in `projectPlans/`, then implement.
+- **Next action:** M1.14 Phase 5 — single `M1.14: …` commit (plan +
+  code + tests + ledger), then `Ledger: record M1.14 commit hash
+  (<hash>)`. Full frontend gate is green (267/267 tests, typecheck,
+  lint, format).
 
 ## Completed requirements (with evidence)
 
@@ -346,6 +348,71 @@ Phases: 1 plan + ledger → 2 `pcm-fetch.ts` → 3 worker + worklet v2 →
   - Test-side fix: the fetch mock now returns a **fresh** `Response`
     per call (`mockResolvedValue` reused one consumed body — the
     longer fill loop hit "Body is unusable" on the second chunk).
+
+### M1.14 — Synchronized readout and follow-playhead (in progress)
+
+Spec: `projectPlans/milestone1.md` §16. Plan:
+`projectPlans/m1.14-plan.md`. Frontend-only: worklet anchors at
+~20 Hz (§16.1), audible-position estimate via
+`getOutputTimestamp()` with retained transport segments and frozen
+extrapolation (§16.2), exact-frame inspector line (§16.3), rAF
+playhead drawing without per-update React state (§16.5), and
+page-follow with 80 % trigger / 20 % landing, manual-navigation
+suspension, a visible + persisted follow control (§16.4). No
+backend changes.
+
+Phases: 1 plan + ledger → 2 worklet cadence + transport audible
+position → 3 editor playhead rewrite (rAF, 80/20 follow,
+persistence) → 4 panel wiring (`registerPlayhead`, inspector frame
+line) → 5 frontend gate + commit.
+
+**Phase status:**
+- Phase 1: plan written, ledger updated.
+- Phase 2: verified (266/266 tests, typecheck, lint, format green).
+  Worklet: anchor cadence `max(1, round(sampleRate / 20))` (≈20 Hz,
+  §16.1) replacing the 480-frame default; `anchorEveryFrames` override
+  kept; anchor payload gains `paused`; one final anchor
+  (`paused: true`) is emitted when the pause ramp completes (exact
+  paused position). Transport: `getOutputTimestamp?()` on
+  `TransportContextLike`; retained segment list (pushed in
+  `flushBookkeeping` + the play-align seek, capped at 16, cleared on
+  graph teardown); `getAudiblePosition()` maps the output time through
+  the newest segment started at or before it (older segments stay
+  reachable for device-lag times after a seek), extrapolates from the
+  last acknowledged anchor when it sits in that segment, clamps to
+  `[segment start, frameCount]`; frozen states (paused/buffering/
+  preparing/suspended/ended) report the last anchor with no
+  extrapolation; documented zero-latency fallback
+  (`FALLBACK_OUTPUT_LATENCY_SECONDS = 0`) keeps M1.13 expectations.
+  `position` getter delegates. New tests: default 20 Hz cadence,
+  final pause anchor, output-timestamp lag, segment mapping across a
+  seek, buffering freeze.
+- Phase 3: verified. Editor `playheadFrame` prop replaced by optional
+  `playheadSource: { getPosition, isPlaying }` (display-only, never
+  controls playback). One always-on rAF loop (runs while ready) reads
+  the audible position each frame, redraws the per-lane playhead
+  canvases only on ≥ 0.5 px movement, and drives the 80 %-trigger /
+  20 %-landing page follow (`startFrame = frame − 0.2·visible`,
+  clamped; one `setView` per page advance, suppressed when the view is
+  already clamped). Follow is suspended by manual navigation
+  (`commitView`, in memory only) and re-enabled by the visible
+  "Follow playhead" checkbox and "Return to playhead" (which centers +
+  re-enables); the preference persists in
+  `localStorage['basseparate.playheadFollow']` (default true, explicit
+  user actions persist, passive suspension does not).
+  `playheadOutside` is now state written by the loop only on change.
+  Tests: manual rAF scheduler stub (`tickRaf`) replaces jsdom's
+  real-time rAF; `makePlayhead` factory; playhead-layer-isolation,
+  80/20 follow (two zoom-ins so the landing is unclamped),
+  return-to-playhead, and persistence tests.
+- Phase 4: verified. `PlaybackPanel` gains `registerPlayhead`
+  (mirrors `registerSeek`): registers a stable `PlayheadSource` that
+  reads `transport.getAudiblePosition()` / `currentState` on demand;
+  the M1.10 `onPositionChange` bridge is removed (the panel's own
+  `position` state still drives the 20 Hz text readout). `ProjectView`
+  holds the source in state and forwards it to the editor; the
+  `playheadFrame` app state is gone. Source inspector `<dl>` gains the
+  exact-frame `Frame` line (§16.3) with a panel test.
 
 ### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 

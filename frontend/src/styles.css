@@ -855,6 +855,14 @@ button:hover:not(:disabled) {
   font-size: 0.85rem;
 }
 
+/* Follow-playhead checkbox (M1.14 §16.4), inline with the controls. */
+.wave-follow-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
 /* Horizontal zoom controls share the amplitude button sizing. */
 .wave-horizontal-controls button {
   padding: 0.3rem 0.6rem;

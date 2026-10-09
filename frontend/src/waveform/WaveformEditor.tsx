@@ -11,7 +11,12 @@
  *   (pointer-anchored), Fit song, Fit selection. 8 px/frame max, fractional
  *   coordinates, boundary clamping.
  * - Panning (§13.2): scrollbar track/thumb drag, Shift-wheel,
- *   overview-window drag, playhead follow with a Return-to-playhead button.
+ *   overview-window drag, page-follow (M1.14 §16.4: 80 % trigger /
+ *   20 % landing, manual navigation suspends, persisted visible
+ *   control) with a Return-to-playhead button.
+ * - Playhead (M1.14 §16.5): one rAF loop reads the audible
+ *   `playheadSource` and redraws the per-lane playhead canvases only
+ *   on ≥ 0.5 px movement — no per-update React state.
  * - Selection (§13.4): click seeks (3 px click/drag threshold), drag
  *   selects, boundary handles, Escape clears, start/end/duration readout.
  * - Vertical zoom (§13.3): per-lane amplitude, linked scaling, reset,
@@ -21,9 +26,9 @@
  * The component stores a width-free `View` (start frame + fpp); the full
  * `Viewport` is derived with `useMemo` (stable identity) and passed to
  * `useWaveform`, which fetches and decodes exactly that window. Manual
- * zoom/pan suspends playhead follow; the follow effect re-pans only when a
- * position update lands outside the visible range (state changes only when
- * needed, so 60 Hz playhead updates do not cause render loops).
+ * zoom/pan suspends playhead follow (the rAF loop re-pans at the 80 %
+ * trigger while following; state changes only when needed, so 60 Hz
+ * playhead updates do not cause render loops).
  *
  * Canvas layers (§12.3): waveform / grid / selection / markers / playhead.
  * Only the playhead canvases are redrawn on position updates. Each canvas
@@ -68,12 +73,23 @@ import {
 import { TILE_BUCKETS } from './levels'
 import { useWaveform, type PcmData, type WaveformLevelData } from './useWaveform'
 
+/**
+ * Audible playhead source (M1.14 §16.5): display-only reads. The loop
+ * never calls into the transport for control.
+ */
+export interface PlayheadSource {
+  /** Current playhead position in project frames (interpolated). */
+  getPosition: () => number
+  /** True while playback is active (playing / seeking). */
+  isPlaying: () => boolean
+}
+
 export interface WaveformEditorProps {
   projectId: string
   /** Canonical source asset; null when no source has been imported. */
   sourceAssetId: string | null
-  /** Playhead position in project frames (canonical rate). */
-  playheadFrame: number
+  /** Audible playhead (M1.14); absent → no playhead, no follow. */
+  playheadSource?: PlayheadSource
   /** Seek the transport to a project frame (M1.11 click / selection). */
   onSeek?: (projectFrame: number) => void
 }
@@ -114,6 +130,19 @@ function readAmp(projectId: string): AmpState | null {
     return { linked: parsed.linked, scales: parsed.scales as number[] }
   } catch {
     return null
+  }
+}
+
+/** Follow-playhead preference key (global, M1.14 §16.4). */
+const FOLLOW_KEY = 'basseparate.playheadFollow'
+
+/** Read the persisted follow preference; on (default) when absent. */
+function readFollowPref(): boolean {
+  try {
+    const raw = window.localStorage.getItem(FOLLOW_KEY)
+    return raw === null ? true : raw === 'true'
+  } catch {
+    return true
   }
 }
 
@@ -230,7 +259,7 @@ type DragMode = 'maybe' | 'drag' | 'resize-start' | 'resize-end'
 export function WaveformEditor({
   projectId,
   sourceAssetId,
-  playheadFrame,
+  playheadSource,
   onSeek,
 }: WaveformEditorProps) {
   const [contentWidth, setContentWidth] = useState(0)
@@ -239,7 +268,10 @@ export function WaveformEditor({
   const [view, setView] = useState<View | null>(null)
   /** Selection in source frames, `end` exclusive, start < end. */
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null)
-  const [followPlayhead, setFollowPlayhead] = useState(true)
+  /** Page-follow (M1.14 §16.4); the persisted preference wins on mount. */
+  const [followPlayhead, setFollowPlayhead] = useState(readFollowPref)
+  /** Playhead outside the viewport (drives Return-to-playhead). */
+  const [playheadOutside, setPlayheadOutside] = useState(false)
   const [amp, setAmp] = useState<AmpState>(() => readAmp(projectId) ?? { linked: true, scales: [] })
   const [pointerFrame, setPointerFrame] = useState<number | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -272,6 +304,16 @@ export function WaveformEditor({
     else ctxRef.current.delete(id)
   }, [])
 
+  /** Follow from an explicit user action: apply and persist (§16.4). */
+  const setFollow = useCallback((on: boolean) => {
+    setFollowPlayhead(on)
+    try {
+      window.localStorage.setItem(FOLLOW_KEY, on ? 'true' : 'false')
+    } catch {
+      // Storage unavailable: non-fatal.
+    }
+  }, [])
+
   const duration = manifest?.frame_count ?? 0
   const sampleRate = manifest?.sample_rate ?? 0
 
@@ -295,7 +337,8 @@ export function WaveformEditor({
   useEffect(() => {
     setView(null)
     setSelection(null)
-    setFollowPlayhead(true)
+    setFollowPlayhead(readFollowPref())
+    setPlayheadOutside(false)
     setPointerFrame(null)
   }, [projectId, sourceAssetId])
 
@@ -313,21 +356,6 @@ export function WaveformEditor({
     const clamped = clampView(view, manifest.frame_count, contentWidth)
     if (clamped.startFrame !== view.startFrame) setView(clamped)
   }, [view, manifest, contentWidth])
-
-  // Follow the playhead (§13.2.6): pan only when a position update lands
-  // outside the visible range, so 60 Hz updates do not loop.
-  useEffect(() => {
-    if (!followPlayhead || !view || !manifest || contentWidth <= 0) return
-    const visible = visibleFrames(view, contentWidth)
-    if (playheadFrame >= view.startFrame && playheadFrame <= view.startFrame + visible) return
-    setView(
-      clampView(
-        { startFrame: playheadFrame - visible / 2, fpp: view.fpp },
-        manifest.frame_count,
-        contentWidth,
-      ),
-    )
-  }, [playheadFrame, followPlayhead, view, manifest, contentWidth])
 
   // Persist the amplitude state once the channel count is known.
   useEffect(() => {
@@ -398,7 +426,10 @@ export function WaveformEditor({
 
   // --- navigation actions (§13.1–13.2) -------------------------------------
 
-  /** Apply a manual view change: suspends playhead follow (§13.2.6). */
+  /**
+   * Apply a manual view change: suspends follow in memory only (§16.4) —
+   * the persisted preference (the checkbox) is untouched.
+   */
   const commitView = useCallback((next: View) => {
     setView(next)
     setFollowPlayhead(false)
@@ -453,16 +484,12 @@ export function WaveformEditor({
     )
   }, [manifest, selection, contentWidth, commitView])
 
+  /** Center on the playhead and re-enable (persist) follow (§16.4). */
   const returnToPlayhead = useCallback(() => {
-    centerOn(playheadFrame)
-    setFollowPlayhead(true)
-  }, [centerOn, playheadFrame])
-
-  const playheadOutside = useMemo(() => {
-    if (!view || !manifest || contentWidth <= 0) return false
-    const end = view.startFrame + visibleFrames(view, contentWidth)
-    return playheadFrame < view.startFrame || playheadFrame > end
-  }, [view, manifest, contentWidth, playheadFrame])
+    if (!playheadSource) return
+    centerOn(playheadSource.getPosition())
+    setFollow(true)
+  }, [centerOn, setFollow, playheadSource])
 
   // --- lane pointer interaction: click / drag / resize (§13.4) --------------
 
@@ -589,13 +616,15 @@ export function WaveformEditor({
       if (!viewport || !manifest) return
       if (e.key === '+' || e.key === '=') {
         e.preventDefault()
-        zoomAt(0.5, Math.max(0, Math.min(manifest.frame_count, playheadFrame)))
+        const anchor = playheadSource ? playheadSource.getPosition() : 0
+        zoomAt(0.5, Math.max(0, Math.min(manifest.frame_count, anchor)))
       } else if (e.key === '-' || e.key === '_') {
         e.preventDefault()
-        zoomAt(2, Math.max(0, Math.min(manifest.frame_count, playheadFrame)))
+        const anchor = playheadSource ? playheadSource.getPosition() : 0
+        zoomAt(2, Math.max(0, Math.min(manifest.frame_count, anchor)))
       }
     },
-    [selection, viewport, manifest, playheadFrame, zoomAt],
+    [selection, viewport, manifest, playheadSource, zoomAt],
   )
 
   // --- scrollbar (§13.2.4) ---------------------------------------------------
@@ -809,18 +838,53 @@ export function WaveformEditor({
     })
   }, [state, viewport, manifest, contentWidth])
 
-  // Playhead: redraw only the per-lane playhead layers on position changes.
+  // Playhead rAF loop (M1.14 §16.5): while ready, every frame reads the
+  // audible position, redraws the per-lane playhead layers only on a
+  // ≥ 0.5 px movement, and runs the 80 % / 20 % page follow. No
+  // per-update React state (`playheadOutside` writes only on change).
   useEffect(() => {
     if (state !== 'ready' || !viewport || !manifest || contentWidth <= 0) return
-    const x = frameToX(viewport, Math.min(playheadFrame, manifest.frame_count))
-    if (x < 0 || x > contentWidth) return
-    for (const ch of shownLanes) {
-      const pctx = ctxRef.current.get(`lane:${ch}:playhead`)
-      if (!pctx) continue
-      pctx.clearRect(0, 0, contentWidth, LANE_HEIGHT)
-      drawPlayhead(pctx, x, LANE_HEIGHT)
+    if (!playheadSource) return
+    let raf = 0
+    let lastX = -1
+    const tick = () => {
+      const frame = Math.max(0, Math.min(manifest.frame_count, playheadSource.getPosition()))
+      const x = frameToX(viewport, frame)
+      if (x >= 0 && x <= contentWidth && (lastX < 0 || Math.abs(x - lastX) >= 0.5)) {
+        lastX = x
+        for (const ch of shownLanes) {
+          const pctx = ctxRef.current.get(`lane:${ch}:playhead`)
+          if (!pctx) continue
+          pctx.clearRect(0, 0, contentWidth, LANE_HEIGHT)
+          drawPlayhead(pctx, x, LANE_HEIGHT)
+        }
+      }
+      setPlayheadOutside(x < 0 || x > contentWidth)
+      // Page follow (§16.4): 80 % trigger, 20 % landing. Programmatic —
+      // it must not suspend follow (only manual navigation does).
+      if (followPlayhead && playheadSource.isPlaying() && x >= contentWidth * 0.8) {
+        const visible = contentWidth * viewport.framesPerCssPixel
+        const next = clampView(
+          { startFrame: frame - 0.2 * visible, fpp: viewport.framesPerCssPixel },
+          manifest.frame_count,
+          contentWidth,
+        )
+        if (next.startFrame !== viewport.startFrame) setView(next)
+      }
+      raf = requestAnimationFrame(tick)
     }
-  }, [state, viewport, manifest, playheadFrame, contentWidth, shownLanes, drawnKey])
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [
+    state,
+    viewport,
+    manifest,
+    contentWidth,
+    shownLanes,
+    drawnKey,
+    playheadSource,
+    followPlayhead,
+  ])
 
   // Non-ready states: a single overlay with the state-specific action.
   if (state !== 'ready') {
@@ -1024,6 +1088,17 @@ export function WaveformEditor({
       </div>
 
       <div className="wave-controls">
+        {playheadSource && (
+          <label className="wave-follow-toggle">
+            <input
+              type="checkbox"
+              checked={followPlayhead}
+              onChange={(e) => setFollow(e.target.checked)}
+              aria-label="Follow playhead"
+            />
+            Follow playhead
+          </label>
+        )}
         {playheadOutside && (
           <button type="button" className="wave-return-playhead" onClick={returnToPlayhead}>
             Return to playhead

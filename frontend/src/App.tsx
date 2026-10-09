@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createApiClient, errorMessage } from './api/client'
 import {
   createJob,
@@ -26,7 +26,7 @@ import {
   type TransportState,
 } from './playback/transport'
 import { formatTime } from './playback/pcm'
-import { WaveformEditor } from './waveform/WaveformEditor'
+import { WaveformEditor, type PlayheadSource } from './waveform/WaveformEditor'
 import type { ConnectionState, ProjectSummary } from './types'
 
 const client = createApiClient()
@@ -431,17 +431,17 @@ function defaultCreateAudioContext(): TransportContextLike {
 const PlaybackPanel = memo(function PlaybackPanel({
   projectId,
   createAudioContext,
-  onPositionChange,
   registerSeek,
+  registerPlayhead,
 }: {
   projectId: string
   createAudioContext?: () => TransportContextLike
-  /** Reports the playhead position (project frames) so sibling views, such
-   * as the waveform editor, can draw a playhead (M1.10). */
-  onPositionChange?: (frame: number) => void
   /** Registers a seek function the waveform editor can use for click-to-seek
    * and "Seek to selection start" (M1.11 §13.4); null on unmount. */
   registerSeek?: (seek: ((frame: number) => void) | null) => void
+  /** Registers the audible playhead source the waveform editor reads at
+   * display rate (M1.14 §16.5); null on unmount. */
+  registerPlayhead?: (source: PlayheadSource | null) => void
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -489,13 +489,9 @@ const PlaybackPanel = memo(function PlaybackPanel({
     loadInfo()
   }, [loadInfo])
 
-  const reportPosition = useCallback(
-    (frame: number) => {
-      setPosition(frame)
-      onPositionChange?.(frame)
-    },
-    [onPositionChange],
-  )
+  const reportPosition = useCallback((frame: number) => {
+    setPosition(frame)
+  }, [])
 
   // New project: drop any previous transport and source binding.
   useEffect(() => {
@@ -537,6 +533,24 @@ const PlaybackPanel = memo(function PlaybackPanel({
     registerSeek?.(seekFn)
     return () => registerSeek?.(null)
   }, [registerSeek, seekFn])
+
+  // Expose the audible playhead to the waveform editor (M1.14 §16.5):
+  // stable functions that read the transport on demand (display-only).
+  const playheadSource = useMemo<PlayheadSource>(
+    () => ({
+      getPosition: () => transportRef.current?.getAudiblePosition() ?? 0,
+      isPlaying: () => {
+        const state = transportRef.current?.currentState
+        return state === 'playing' || state === 'seeking'
+      },
+    }),
+    [],
+  )
+
+  useEffect(() => {
+    registerPlayhead?.(playheadSource)
+    return () => registerPlayhead?.(null)
+  }, [registerPlayhead, playheadSource])
 
   // Create the transport once the source info is known (M1.12). The
   // playback representation is resolved on first play, when the
@@ -715,6 +729,8 @@ const PlaybackPanel = memo(function PlaybackPanel({
           <dd>{info.sampleRate} Hz</dd>
           <dt>Duration</dt>
           <dd>{formatTime(info.durationFrames, info.sampleRate)}</dd>
+          <dt>Frame</dt>
+          <dd>{position}</dd>
           <dt>Channels</dt>
           <dd>
             {info.channelCount}
@@ -849,28 +865,32 @@ const PlaybackPanel = memo(function PlaybackPanel({
 
 /**
  * Ready-project view (M1.10): transport panel + waveform editor + meta.
- * Owns the playhead frame so position updates re-render only this subtree
- * (and the editor's playhead layer), not the whole app. Also holds the
- * seek function the transport panel registers (M1.11) for the editor.
+ * Holds the seek function (M1.11) and the audible playhead source (M1.14)
+ * the transport panel registers for the editor; the editor reads the
+ * playhead at display rate, so no per-update app state is needed.
  */
 function ProjectView({ project }: { project: ProjectSummary }) {
-  const [playheadFrame, setPlayheadFrame] = useState(0)
   const [seekFn, setSeekFn] = useState<((frame: number) => void) | null>(null)
+  const [playheadSource, setPlayheadSource] = useState<PlayheadSource | null>(null)
   const handleRegisterSeek = useCallback(
     (fn: ((frame: number) => void) | null) => setSeekFn(fn),
+    [],
+  )
+  const handleRegisterPlayhead = useCallback(
+    (source: PlayheadSource | null) => setPlayheadSource(source),
     [],
   )
   return (
     <>
       <PlaybackPanel
         projectId={project.id}
-        onPositionChange={setPlayheadFrame}
         registerSeek={handleRegisterSeek}
+        registerPlayhead={handleRegisterPlayhead}
       />
       <WaveformEditor
         projectId={project.id}
         sourceAssetId={project.canonical_asset_id ?? null}
-        playheadFrame={playheadFrame}
+        playheadSource={playheadSource ?? undefined}
         onSeek={seekFn ?? undefined}
       />
       <dl className="project-meta">

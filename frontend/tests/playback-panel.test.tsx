@@ -329,6 +329,9 @@ describe('playback panel: source info', () => {
     await openReadyProject()
     expect(await screen.findByText('48000 Hz')).toBeInTheDocument()
     expect(screen.getByText('0:01.000')).toBeInTheDocument()
+    // Exact-frame readout (M1.14 §16.3): the current position in frames.
+    expect(screen.getByText('Frame')).toBeInTheDocument()
+    expect(screen.getByText('0')).toBeInTheDocument()
     expect(screen.getByText('2 (stereo)')).toBeInTheDocument()
     expect(screen.getByText('L')).toBeInTheDocument()
     expect(screen.getByText('R')).toBeInTheDocument()

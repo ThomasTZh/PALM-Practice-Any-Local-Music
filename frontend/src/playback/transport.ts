@@ -94,6 +94,8 @@ export interface TransportContextLike {
   createGain(): GainNodeLike
   resume(): Promise<void>
   close(): Promise<void>
+  /** Output-device timestamp (spec §16.2); absent in test fakes. */
+  getOutputTimestamp?(): { contextTime: number; performanceTime: number } | null
 }
 
 export interface TransportOptions {
@@ -136,6 +138,16 @@ export interface LoadSourceOptions {
   projectDurationFrames: number
 }
 
+/**
+ * A transport segment: generation `generation` started playing from
+ * `startFrame` at context time `startContextTime` (spec §16.2.3).
+ */
+interface TransportSegment {
+  startContextTime: number
+  startFrame: number
+  generation: number
+}
+
 /** §15.3 buffer budget: one 12 s retention cap per representation. */
 const RING_SECONDS = 12
 /** Initial prebuffer and post-underrun start threshold. */
@@ -147,6 +159,13 @@ const CHUNK_SECONDS = 1
 const FILL_CHECK_MS = 50
 const MAX_GAIN = 4
 const GAIN_RAMP_TIME_CONSTANT = 0.01
+/**
+ * §16.2.4 documented fallback: without `getOutputTimestamp()` the context
+ * time is assumed to be the audible time (zero output latency).
+ */
+const FALLBACK_OUTPUT_LATENCY_SECONDS = 0
+/** §16.2.3: recent segments retained for time → frame mapping. */
+const MAX_SEGMENTS = 16
 
 function defaultWorkerFactory(): WorkerLike | null {
   if (typeof Worker === 'undefined') return null
@@ -198,6 +217,10 @@ export class PcmTransport {
   private consumedFrame = 0
   /** Context time of the last anchor. */
   private anchorTime = 0
+  /** Recent segments for audible-time → frame mapping (spec §16.2.3). */
+  private segments: TransportSegment[] = []
+  /** Segment the last acknowledged anchor landed in (null before any). */
+  private anchorSegment: TransportSegment | null = null
   /** The worklet ring/queue currently holds samples. */
   private hasData = false
   /** Worklet-reported buffered frames (ring + queue, or writer−reader). */
@@ -256,29 +279,55 @@ export class PcmTransport {
     return this.diagnosticsState
   }
 
-  /** Current playhead position in project frames. */
-  get position(): number {
+  /**
+   * Audible position in project frames (spec §16.2): the source frame at
+   * the output device's current context time, mapped through the retained
+   * transport segments. Extrapolation is frozen while paused, buffering,
+   * suspended, or ended — the last acknowledged anchor is reported.
+   */
+  getAudiblePosition(): number {
     if (!this.target) return this.parkedProjectFrame
     // After context loss the graph (and its consumption tracking) is gone;
     // report the retained position until `rebind` resets the bookkeeping.
     if (this.contextLost) return this.retainedProjectFrame
     const rate = this.target.sampleRate
-    let playbackFrame = this.consumedFrame
-    if (
-      this.context &&
-      !this.suspended &&
-      (this.state === 'playing' || this.state === 'seeking' || this.state === 'buffering')
-    ) {
-      // Extrapolate from the last anchor to the current context time;
-      // while suspended the context time is frozen, so do not.
-      playbackFrame =
-        this.consumedFrame + Math.max(0, this.context.currentTime - this.anchorTime) * rate
+    const context = this.context
+    let playbackFrame: number
+    if (context && !this.suspended && (this.state === 'playing' || this.state === 'seeking')) {
+      const ts = context.getOutputTimestamp ? context.getOutputTimestamp() : null
+      const t = ts
+        ? ts.contextTime
+        : Math.max(0, context.currentTime - FALLBACK_OUTPUT_LATENCY_SECONDS)
+      // Newest segment that started at or before t; a time before all
+      // segments (device latency right after a seek) clamps to the oldest
+      // segment's start (§16.2.3/§16.2.5).
+      const seg = this.segmentAt(t) ?? {
+        startContextTime: this.anchorTime,
+        startFrame: this.genStartFrame,
+        generation: this.generation,
+      }
+      // The last acknowledged anchor in this segment is the freshest
+      // measurement (it absorbs underrun stalls); otherwise map from the
+      // segment start.
+      if (this.anchorSegment === seg && t >= this.anchorTime) {
+        playbackFrame = this.consumedFrame + (t - this.anchorTime) * rate
+      } else {
+        playbackFrame = seg.startFrame + Math.max(0, t - seg.startContextTime) * rate
+      }
+      playbackFrame = Math.max(seg.startFrame, Math.min(playbackFrame, this.target.frameCount))
+    } else {
+      // Frozen (§16.2.6): the last acknowledged anchor, no extrapolation.
+      playbackFrame = this.state === 'ended' ? this.target.frameCount : this.consumedFrame
     }
-    if (this.state === 'ended') playbackFrame = this.target.frameCount
     return clampToDuration(
       projectPosition(playbackFrame, this.projectRate, rate),
       this.projectDurationFrames,
     )
+  }
+
+  /** Current playhead position in project frames (audible estimate). */
+  get position(): number {
+    return this.getAudiblePosition()
   }
 
   /** §15.3 budget: the 12 s ring capacity in frames. */
@@ -386,6 +435,7 @@ export class PcmTransport {
       // The fresh worklet starts at frame 0, generation 0; align it with
       // the transport bookkeeping (a pre-playback seek may have moved it).
       try {
+        this.pushSegment(this.context?.currentTime ?? 0, this.genStartFrame)
         this.node?.port.postMessage({
           type: 'seek',
           frame: this.genStartFrame,
@@ -600,6 +650,24 @@ export class PcmTransport {
    * to flush (synchronous). Bumps the generation so everything from the
    * old generation (fetches, port messages) is dropped.
    */
+  /** The newest segment that started at or before `time` (or null). */
+  private segmentAt(time: number): TransportSegment | null {
+    for (let i = this.segments.length - 1; i >= 0; i--) {
+      if (this.segments[i].startContextTime <= time) return this.segments[i]
+    }
+    return null
+  }
+
+  private pushSegment(startContextTime: number, startFrame: number): void {
+    const seg: TransportSegment = { startContextTime, startFrame, generation: this.generation }
+    this.segments.push(seg)
+    if (this.segments.length > MAX_SEGMENTS) {
+      this.segments = this.segments.slice(-MAX_SEGMENTS)
+    }
+    // The segment start is a virtual anchor (the bookkeeping baseline).
+    this.anchorSegment = seg
+  }
+
   private flushBookkeeping(frame: number): void {
     const target = this.target
     if (!target) return
@@ -614,6 +682,7 @@ export class PcmTransport {
     this.bufferedFrames = 0
     this.workerPaused = false
     if (this.context) this.anchorTime = this.context.currentTime
+    this.pushSegment(this.context ? this.context.currentTime : 0, clamped)
     this.source?.stop()
     this.node?.port.postMessage({ type: 'seek', frame: clamped, generation: this.generation })
   }
@@ -686,9 +755,10 @@ export class PcmTransport {
         }
         break
       case 'anchor': {
-        const m = msg as unknown as { frame: number; time: number }
+        const m = msg as unknown as { frame: number; time: number; paused?: boolean }
         this.consumedFrame = m.frame
         this.anchorTime = m.time
+        this.anchorSegment = this.segmentAt(m.time)
         this.reportPosition()
         break
       }
@@ -769,6 +839,9 @@ export class PcmTransport {
     if (this.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(this.blobUrl)
     this.blobUrl = null
     this.context = null
+    // A fresh context starts a fresh time base; old segments would map
+    // new context times to the dead representation (spec §16.2.3).
+    this.segments = []
   }
 
   private isStale(err: unknown, gen: number): boolean {

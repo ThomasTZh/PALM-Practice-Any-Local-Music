@@ -331,7 +331,8 @@ describe('PcmTransport play', () => {
     rig.transport.pause()
     expect(rig.node.posted('pause')).toHaveLength(1)
     expect(rig.transport.currentState).toBe('paused')
-    // 4800 + (0.1 - 0.05) * 48000 = 7200, frozen from here on.
+    // pause() snapshots the extrapolated position (4800 + 0.05 * 48000 =
+    // 7200), which is then frozen — no further extrapolation.
     expect(rig.transport.position).toBe(7200)
     rig.context.currentTime = 1.0
     expect(rig.transport.position).toBe(7200)
@@ -423,6 +424,7 @@ describe('PcmTransport play', () => {
     rig.node.post({ type: 'buffered', frames: 1000, queuedFrames: 0, generation: 0 })
     expect(rig.transport.currentState).toBe('buffering')
     // At the threshold: playing again, anchored (no skipped frames).
+    rig.context.currentTime = 0.1
     rig.node.post({ type: 'anchor', frame: 5000, time: 0.1, generation: 0 })
     rig.node.post({ type: 'buffered', frames: 2 * RATE, queuedFrames: 0, generation: 0 })
     expect(rig.transport.currentState).toBe('playing')
@@ -790,5 +792,60 @@ describe('sync', () => {
     expect(lost.state).toBe('error')
     expect(lost.contextLost).toBe(true)
     expect(rig.transport.contextLost).toBe(true)
+  })
+})
+
+describe('audible position (spec §16.2)', () => {
+  it('falls back to the context time when getOutputTimestamp is absent', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    rig.context.currentTime = 0.25
+    expect(rig.transport.getAudiblePosition()).toBe(0.25 * RATE)
+  })
+
+  it('uses the output-device timestamp when available', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    // The output device lags the context clock by 0.1 s.
+    rig.context.getOutputTimestamp = () => ({
+      contextTime: rig.context.currentTime - 0.1,
+      performanceTime: 0,
+    })
+    rig.context.currentTime = 0.25
+    expect(rig.transport.getAudiblePosition()).toBe(0.15 * RATE)
+  })
+
+  it('maps delayed output times back through retained segments', async () => {
+    const rig = makeRig()
+    await ready(rig) // segment: frame 0 at context time 0
+    let outTime = 0.5
+    rig.context.getOutputTimestamp = () => ({
+      contextTime: outTime,
+      performanceTime: 0,
+    })
+    rig.context.currentTime = 0.5
+    rig.transport.seek(24_000) // new segment: frame 24000 at context time 0.5
+    expect(rig.transport.currentState).toBe('seeking')
+
+    // The output clock sits exactly on the seek: the new segment.
+    expect(rig.transport.getAudiblePosition()).toBe(24_000)
+    // The output clock is past the seek: extrapolate in the new segment.
+    outTime = 0.55
+    expect(rig.transport.getAudiblePosition()).toBe(24_000 + 0.05 * RATE)
+    // The output clock is still inside the pre-seek segment (device
+    // latency): map it to the old segment, not the new one.
+    outTime = 0.45
+    expect(rig.transport.getAudiblePosition()).toBe(0.45 * RATE)
+  })
+
+  it('freezes at the last anchor while buffering', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    rig.context.currentTime = 0.1
+    rig.node.post({ type: 'anchor', frame: 4800, time: 0.1, generation: 0 })
+    rig.node.post({ type: 'underrun', generation: 0 })
+    expect(rig.transport.currentState).toBe('buffering')
+    rig.context.currentTime = 0.5
+    expect(rig.transport.getAudiblePosition()).toBe(4800)
   })
 })

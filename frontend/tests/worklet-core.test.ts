@@ -175,7 +175,7 @@ describe('ConsumptionState end of source', () => {
     block(core, 128 / RATE, 128)
     const last = block(core, 256 / RATE, 44)
     expect(last.res.ended).toBe(true)
-    expect(last.res.anchor).toEqual({ frame: 300, time: 256 / RATE })
+    expect(last.res.anchor).toEqual({ frame: 300, time: 256 / RATE, paused: false })
     expect(last.output[0][43]).toBeCloseTo(0.25, 5)
     expect(core.position).toBe(300)
     // No repeated end notification; pure silence afterwards.
@@ -188,14 +188,47 @@ describe('ConsumptionState end of source', () => {
 
 describe('ConsumptionState anchors', () => {
   it('emits an anchor every anchorEveryFrames with the block-start position', () => {
-    const core = freshCore(10_000) // default cadence: 480 frames
+    const core = freshCore(10_000, { anchorEvery: 480 })
     core.enqueue(makeBuffer(1_000, () => 0.5))
     const a1 = block(core, 0, 480)
-    expect(a1.res.anchor).toEqual({ frame: 0, time: 0 })
+    expect(a1.res.anchor).toEqual({ frame: 0, time: 0, paused: false })
     const a2 = block(core, 480 / RATE, 480)
-    expect(a2.res.anchor).toEqual({ frame: 480, time: 480 / RATE })
+    expect(a2.res.anchor).toEqual({ frame: 480, time: 480 / RATE, paused: false })
     const a3 = block(core, 960 / RATE, 40)
     expect(a3.res.anchor).toBeNull()
+  })
+
+  it('defaults to ~20 Hz anchors (rate/20 frames)', () => {
+    const core = freshCore(10_000) // 48 kHz default cadence: 2400 frames
+    core.enqueue(makeBuffer(5_000, () => 0.5))
+    const anchors: NonNullable<ReturnType<typeof block>['res']['anchor']>[] = []
+    for (let start = 0; start < 5_000; start += 128) {
+      const r = block(core, start / RATE, 128)
+      if (r.res.anchor) anchors.push(r.res.anchor)
+    }
+    // Second crossing: position 2432 + 2400 = 4832, reached by the block
+    // that starts at 4736 (the next 128-frame boundary).
+    expect(anchors).toEqual([
+      { frame: 0, time: 2_304 / RATE, paused: false },
+      { frame: 2_432, time: 4_736 / RATE, paused: false },
+    ])
+  })
+
+  it('emits one final anchor with paused=true when the pause ramp completes', () => {
+    const core = freshCore(10_000, { anchorEvery: 4_000 })
+    core.enqueue(makeBuffer(5_000, () => 0.5))
+    block(core, 0, 128)
+    core.pause() // ramp: 5 ms = 240 frames at 48 kHz
+    const r1 = block(core, 128 / RATE, 128)
+    expect(r1.res.anchor).toBeNull() // ramp still running (240 → 112)
+    const r2 = block(core, 256 / RATE, 128)
+    expect(r2.res.anchor).toEqual({ frame: 128, time: 256 / RATE, paused: true })
+    const r3 = block(core, 384 / RATE, 128)
+    expect(r3.res.anchor).toBeNull() // one final anchor per pause episode
+    core.resume()
+    core.pause()
+    const r4 = block(core, 512 / RATE, 240)
+    expect(r4.res.anchor).toEqual({ frame: 128, time: 512 / RATE, paused: true })
   })
 })
 

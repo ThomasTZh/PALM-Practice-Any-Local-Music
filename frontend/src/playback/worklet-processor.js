@@ -29,8 +29,10 @@
 
 const PAUSE_RAMP_SECONDS = 0.005
 
-/** Default anchor cadence: 480 frames = 10 ms at 48 kHz. */
-const ANCHOR_EVERY_FRAMES = 480
+/** Default anchor cadence: ~20 times per second (spec §16.1). */
+function defaultAnchorEvery(sampleRate) {
+  return Math.max(1, Math.round(sampleRate / 20))
+}
 
 /**
  * Ring capacity in seconds — the §15.3 total-retention cap per active
@@ -53,7 +55,7 @@ export class ConsumptionState {
     this.sampleRate = sampleRate
     this.channelCount = channelCount
     this.frameCount = frameCount
-    this.anchorEvery = anchorEveryFrames ?? ANCHOR_EVERY_FRAMES
+    this.anchorEvery = anchorEveryFrames ?? defaultAnchorEvery(sampleRate)
     this.capacity = Math.ceil(sampleRate * RING_SECONDS)
     this.rings = []
     for (let c = 0; c < channelCount; c++) {
@@ -79,6 +81,8 @@ export class ConsumptionState {
     this.endedNotified = false
     this.underrunNotified = false
     this.lastAnchorFrame = 0
+    /** Final pause anchor already sent for the current pause episode. */
+    this.pauseAnchorSent = false
   }
 
   /** Frames currently in the rings (transfer path). */
@@ -214,6 +218,7 @@ export class ConsumptionState {
     this.endedNotified = false
     this.underrunNotified = false
     this.lastAnchorFrame = target
+    this.pauseAnchorSent = false
     this.lastSample.fill(0)
   }
 
@@ -229,6 +234,7 @@ export class ConsumptionState {
   resume() {
     this.paused = false
     this.rampRemaining = 0
+    this.pauseAnchorSent = false
   }
 
   /**
@@ -253,6 +259,11 @@ export class ConsumptionState {
           for (let i = 0; i < frames; i++) outputChannels[c][i] = s
         }
         this.rampRemaining -= frames
+        if (this.rampRemaining <= 0 && !this.pauseAnchorSent) {
+          // Final anchor at the exact paused position (spec §16.1).
+          this.pauseAnchorSent = true
+          out.anchor = { frame: this.position, time, paused: true }
+        }
       } else {
         this.fillSilence(outputChannels, 0, frames)
       }
@@ -281,10 +292,10 @@ export class ConsumptionState {
       if (!this.endedNotified) {
         this.endedNotified = true
         out.ended = true
-        out.anchor = { frame: this.position, time }
+        out.anchor = { frame: this.position, time, paused: false }
       }
     } else if (this.position - this.lastAnchorFrame >= this.anchorEvery) {
-      out.anchor = { frame: this.lastAnchorFrame, time }
+      out.anchor = { frame: this.lastAnchorFrame, time, paused: false }
       this.lastAnchorFrame = this.position
     }
     out.consumed = take
@@ -413,6 +424,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
           type: 'anchor',
           frame: res.anchor.frame,
           time: res.anchor.time,
+          paused: res.anchor.paused,
           generation: this.generation,
         })
         this.reportBuffered()

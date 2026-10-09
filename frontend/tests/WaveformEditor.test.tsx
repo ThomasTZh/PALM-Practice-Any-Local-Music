@@ -207,9 +207,7 @@ function mockReady(): void {
 type EditorProps = Parameters<typeof WaveformEditor>[0]
 
 function renderEditor(props: Partial<EditorProps> = {}) {
-  return render(
-    <WaveformEditor projectId={PROJECT_ID} sourceAssetId={ASSET_ID} playheadFrame={0} {...props} />,
-  )
+  return render(<WaveformEditor projectId={PROJECT_ID} sourceAssetId={ASSET_ID} {...props} />)
 }
 
 /** Render, wait for the ready layout, fire a 750 px resize, wait for paint. */
@@ -287,15 +285,53 @@ beforeEach(() => {
   wf.listProjectJobs.mockResolvedValue([])
   mockLatestCompletedImportId.mockResolvedValue(IMPORT_ID)
   wf.createWaveformJob.mockResolvedValue({ id: 'job-1' })
+  rafCbs = new Map()
+  window.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    rafSeq += 1
+    rafCbs.set(rafSeq, cb)
+    return rafSeq
+  }
+  window.cancelAnimationFrame = (id: number) => {
+    rafCbs.delete(id)
+  }
 })
 
 afterEach(() => {
   MockResizeObserver.instances = []
+  window.requestAnimationFrame = realRaf
+  window.cancelAnimationFrame = realCaf
+  rafCbs = new Map()
 })
 
 stubCanvasContext()
 vi.stubGlobal('ResizeObserver', MockResizeObserver)
 Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true })
+
+// jsdom's requestAnimationFrame runs in real time; the playhead loop
+// (M1.14 §16.5) needs deterministic stepping, so it is replaced with a
+// manual scheduler that tests advance with `tickRaf`.
+const realRaf = window.requestAnimationFrame
+const realCaf = window.cancelAnimationFrame
+let rafSeq = 0
+let rafCbs = new Map<number, FrameRequestCallback>()
+
+/** Run every rAF callback registered so far once (one animation frame). */
+function tickRaf(): void {
+  const cbs = [...rafCbs.values()]
+  rafCbs.clear()
+  for (const cb of cbs) cb(0)
+}
+
+/** A mutable audible playhead source for the editor (M1.14 §16.5). */
+function makePlayhead(frame = 0, playing = false) {
+  const src = {
+    frame,
+    playing,
+    getPosition: () => src.frame,
+    isPlaying: () => src.playing,
+  }
+  return src
+}
 
 describe('WaveformEditor states (spec §12.8)', () => {
   it('shows the empty state without a source asset', async () => {
@@ -394,9 +430,13 @@ describe('WaveformEditor drawing', () => {
     expect(ruler.texts.length).toBeGreaterThan(0)
   })
 
-  it('redraws only the playhead layer on position updates (spec §12.3)', async () => {
+  it('redraws only the playhead layer on playhead movement (M1.14 §16.5)', async () => {
     mockReady()
-    const { rerender } = await renderReadyEditor()
+    const playhead = makePlayhead(0)
+    await renderReadyEditor({ playheadSource: playhead })
+    act(() => {
+      tickRaf()
+    })
     const wave = ctxOf(canvasById('lane:0:waveform'))
     const head = ctxOf(canvasById('lane:0:playhead'))
     const waveClears = wave.clears
@@ -405,9 +445,10 @@ describe('WaveformEditor drawing', () => {
     expect(waveRects).toBeGreaterThan(0)
     expect(headStrokes).toBe(1) // playhead at frame 0
 
-    rerender(
-      <WaveformEditor projectId={PROJECT_ID} sourceAssetId={ASSET_ID} playheadFrame={24_000} />,
-    )
+    playhead.frame = 24_000
+    act(() => {
+      tickRaf()
+    })
 
     expect(wave.clears).toBe(waveClears)
     expect(wave.rects.length).toBe(waveRects)
@@ -488,7 +529,7 @@ describe('WaveformEditor horizontal zoom (M1.11 §13.1)', () => {
 
   it('+/- keys zoom anchored at the playhead', async () => {
     mockReady()
-    await renderReadyEditor()
+    await renderReadyEditor({ playheadSource: makePlayhead(0) })
     key(section(), '+')
     expect(thumb()).toEqual({ width: 375, left: 0 })
     key(section(), '-')
@@ -556,27 +597,53 @@ describe('WaveformEditor panning (M1.11 §13.2)', () => {
 
   it('offers return-to-playhead when the playhead leaves the view', async () => {
     mockReady()
-    await renderReadyEditor({ playheadFrame: 37_000 })
+    const playhead = makePlayhead(37_000)
+    await renderReadyEditor({ playheadSource: playhead })
+    act(() => {
+      tickRaf()
+    })
     expect(screen.queryByRole('button', { name: 'Return to playhead' })).toBeNull()
-    await userEvent.click(zoomInH())
+    await userEvent.click(zoomInH()) // {12000, 32}; frame 37 000 is outside [12000, 36000]
+    act(() => {
+      tickRaf()
+    })
     const btn = await screen.findByRole('button', { name: 'Return to playhead' })
-    await userEvent.click(btn)
+    await userEvent.click(btn) // centers (clamped to {24000, 32}), re-enables follow
     expect(thumb()).toEqual({ width: 375, left: 375 })
   })
 
-  it('auto-follows the playhead once follow is re-enabled', async () => {
+  it('page-follows at the 80 % trigger, landing at 20 % (M1.14 §16.4)', async () => {
     mockReady()
-    const { rerender } = await renderReadyEditor() // playhead 0, fit, following
+    const playhead = makePlayhead(0, true)
+    await renderReadyEditor({ playheadSource: playhead })
     await userEvent.click(zoomInH()) // {12000, 32}; manual zoom suspends follow
-    await userEvent.click(screen.getByRole('button', { name: 'Return to playhead' }))
-    // Centered on frame 0: {0, 32}, follow re-enabled.
-    expect(thumb()).toEqual({ width: 375, left: 0 })
+    await userEvent.click(zoomInH()) // {18000, 16}, visible 12000
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Follow playhead' }))
 
-    // Playback reaches frame 37 000: outside [0, 24000] -> follow pans.
-    rerender(
-      <WaveformEditor projectId={PROJECT_ID} sourceAssetId={ASSET_ID} playheadFrame={37_000} />,
-    )
-    await waitFor(() => expect(thumb()).toEqual({ width: 375, left: 375 }))
+    // 80 % of the view: 18000 + 0.8 * 12000 = 27600.
+    playhead.frame = 27_600
+    act(() => {
+      tickRaf()
+    })
+    // Landing: start = 27600 - 0.2 * 12000 = 25200.
+    expect(thumb()).toEqual({ width: 187.5, left: 393.75 })
+
+    // Below the trigger again: the view holds.
+    act(() => {
+      tickRaf()
+    })
+    expect(thumb()).toEqual({ width: 187.5, left: 393.75 })
+  })
+
+  it('persists the follow preference (M1.14 §16.4)', async () => {
+    window.localStorage.setItem('basseparate.playheadFollow', 'false')
+    mockReady()
+    const playhead = makePlayhead()
+    await renderReadyEditor({ playheadSource: playhead })
+    const box = screen.getByRole('checkbox', { name: 'Follow playhead' })
+    expect(box).not.toBeChecked() // persisted off wins over the default
+    await userEvent.click(box)
+    expect(window.localStorage.getItem('basseparate.playheadFollow')).toBe('true')
   })
 })
 
