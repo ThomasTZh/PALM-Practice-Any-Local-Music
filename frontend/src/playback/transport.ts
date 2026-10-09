@@ -1,25 +1,63 @@
 /**
- * AudioWorklet PCM transport (M1.12, spec §14).
+ * AudioWorklet PCM transport (M1.12/M1.13, spec §14–15).
  *
  * Replaces the `AudioBufferSourceNode` scheduling engine (M1.7): the
  * worklet (`worklet-processor.js`) consumes a bounded ring of f32le PCM
  * on the audio thread; this class owns everything on the main thread —
  * the eight transport states plus `desiredPlaying`, chunked prefetch
- * (~1 s network chunks, 2 s prebuffer target), seek generations,
- * anchor-based position extrapolation, and the monitoring gain stage
- * that sits after the worklet (canonical samples are never modified).
+ * (~1 s network chunks, 2 s prebuffer, 8 s steady lookahead, 12 s
+ * total-retention budget), seek generations, anchor-based position
+ * extrapolation, underrun diagnostics, browser-suspend tracking, and
+ * the monitoring gain stage that sits after the worklet (canonical
+ * samples are never modified).
  *
- * The context factory, byte fetcher, and delay are injectable so the
- * transport is fully testable without a browser audio stack (see
- * `tests/transport.test.ts`).
+ * Two data paths (spec §15.1/§15.2), selected by `mode`:
+ * - `shared`: cross-origin isolated; the fetch worker writes the shared
+ *   SAB ring directly (SPSC, atomic indices).
+ * - `transfer`: the fetch worker posts deinterleaved chunks transferred
+ *   to the main thread, which relays them to the worklet's bounded queue.
+ * Both fetch through a `FetchSource`: a real worker when available,
+ * else the identical main-thread logic (jsdom has no `Worker`).
+ *
+ * The context factory, byte fetcher, worker factory, and delay are
+ * injectable so the transport is fully testable without a browser audio
+ * stack (see `tests/transport.test.ts`).
  */
 
 import { clampToDuration, playbackPosition, projectPosition } from './pcm'
 import type { PlaybackTarget } from '../api/playback'
+import { createSharedRing, type SharedRing } from './pcm-fetch'
+import {
+  DirectFetchSource,
+  StaleGenerationError,
+  WorkerFetchSource,
+  type FetchSource,
+  type PcmChunk,
+  type PcmWriteResult,
+  type WorkerLike,
+} from './fetch-source'
 import processorSource from './worklet-processor.js?raw'
 
 export type TransportState =
   'unloaded' | 'preparing' | 'paused' | 'playing' | 'seeking' | 'buffering' | 'ended' | 'error'
+
+/** Data path selection; `auto` picks shared memory when isolated. */
+export type TransportMode = 'auto' | 'shared' | 'transfer'
+
+/** Underrun accounting surfaced to the panel (spec §15.4). */
+export interface TransportDiagnostics {
+  underruns: number
+  lastUnderrunAt: number | null
+  droppedChunks: number
+}
+
+/** Snapshot returned by `sync()` (spec §15.5). */
+export interface SyncInfo {
+  state: TransportState
+  position: number
+  isSuspended: boolean
+  contextLost: boolean
+}
 
 /** Structural subset of a worklet node's message port. */
 export interface WorkletPortLike {
@@ -49,6 +87,7 @@ export interface TransportContextLike {
   currentTime: number
   sampleRate: number
   state: string
+  onstatechange: ((event: { type: string }) => void) | null
   destination: unknown
   audioWorklet: { addModule(url: string): Promise<void> }
   createWorkletNode(name: string, options?: Record<string, unknown>): WorkletNodeLike
@@ -60,7 +99,12 @@ export interface TransportContextLike {
 export interface TransportOptions {
   contextFactory: () => TransportContextLike
   /** Fetch one inclusive byte range of the asset's interleaved f32le PCM. */
-  fetchChunk: (startByte: number, endByte: number, signal?: AbortSignal) => Promise<ArrayBuffer>
+  fetchChunk: (
+    assetId: string,
+    startByte: number,
+    endByte: number,
+    signal?: AbortSignal,
+  ) => Promise<ArrayBuffer>
   /**
    * Injectable delay for the prefetch loop; must settle early when
    * `signal` aborts (a seek/stop). Defaults to an abort-aware setTimeout.
@@ -71,9 +115,19 @@ export interface TransportOptions {
    * Blob URL; tests inject a stub (jsdom has no URL.createObjectURL).
    */
   moduleUrlFactory?: (source: string) => string
+  /**
+   * Create the fetch worker; returning `null` selects the main-thread
+   * fallback. Defaults to the Vite-bundled `fetch-worker.ts` when
+   * `Worker` is available.
+   */
+  workerFactory?: () => WorkerLike | null
+  /** Data path; `auto` picks shared memory when cross-origin isolated. */
+  mode?: TransportMode
   onState?: (state: TransportState) => void
   /** Reports the playhead position in project frames. */
   onPosition?: (frame: number) => void
+  /** Reports browser suspension of the audio context (spec §15.5). */
+  onSuspend?: (suspended: boolean) => void
 }
 
 export interface LoadSourceOptions {
@@ -82,11 +136,33 @@ export interface LoadSourceOptions {
   projectDurationFrames: number
 }
 
+/** §15.3 buffer budget: one 12 s retention cap per representation. */
+const RING_SECONDS = 12
+/** Initial prebuffer and post-underrun start threshold. */
 const PREBUFFER_SECONDS = 2
+/** Steady-state lookahead target. */
+const LOOKAHEAD_SECONDS = 8
+/** One network chunk. */
 const CHUNK_SECONDS = 1
 const FILL_CHECK_MS = 50
 const MAX_GAIN = 4
 const GAIN_RAMP_TIME_CONSTANT = 0.01
+
+function defaultWorkerFactory(): WorkerLike | null {
+  if (typeof Worker === 'undefined') return null
+  // The DOM `Worker` matches the structural `WorkerLike` at runtime; the
+  // `onmessage` signature differs only in the event type.
+  return new Worker(new URL('./fetch-worker.ts', import.meta.url), {
+    type: 'module',
+  }) as unknown as WorkerLike
+}
+
+function resolveMode(requested: TransportMode): 'shared' | 'transfer' {
+  if (requested === 'shared') return 'shared'
+  if (requested === 'transfer') return 'transfer'
+  const isolated = (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+  return isolated && typeof SharedArrayBuffer !== 'undefined' ? 'shared' : 'transfer'
+}
 
 export class PcmTransport {
   private state: TransportState = 'unloaded'
@@ -108,6 +184,11 @@ export class PcmTransport {
   private blobUrl: string | null = null
   private pendingGain = 1
 
+  private mode: 'shared' | 'transfer' = 'transfer'
+  private source: FetchSource | null = null
+  /** Shared ring (shared path only); the SAB is owned by the worklet. */
+  private ring: SharedRing | null = null
+
   /** Bumped on every seek/stop so stale fetches and port messages drop. */
   private generation = 0
   private abort: AbortController | null = null
@@ -117,11 +198,29 @@ export class PcmTransport {
   private consumedFrame = 0
   /** Context time of the last anchor. */
   private anchorTime = 0
-  /** The worklet ring currently holds samples. */
+  /** The worklet ring/queue currently holds samples. */
   private hasData = false
+  /** Worklet-reported buffered frames (ring + queue, or writer−reader). */
+  private bufferedFrames = 0
+  /** Flow control: the worker is paused while the budget is full. */
+  private workerPaused = false
+  /** The context is suspended (browser/tab suspension, spec §15.5). */
+  private suspended = false
+  /** The context closed under us (device change, spec §15.6). */
+  contextLost = false
+  /** Last acknowledged position, retained across context loss. */
+  private retainedProjectFrame = 0
+  /** Generation of the last worklet `flushed` acknowledgment. */
+  private lastFlushedGeneration = -1
+  private flushAckResolve: (() => void) | null = null
   private fillLoopRunning = false
   private disposed = false
   private lastError: string | null = null
+  private diagnosticsState: TransportDiagnostics = {
+    underruns: 0,
+    lastUnderrunAt: null,
+    droppedChunks: 0,
+  }
 
   constructor(opts: TransportOptions) {
     this.opts = opts
@@ -149,16 +248,29 @@ export class PcmTransport {
     return this.lastError
   }
 
+  get isSuspended(): boolean {
+    return this.suspended
+  }
+
+  get diagnostics(): TransportDiagnostics {
+    return this.diagnosticsState
+  }
+
   /** Current playhead position in project frames. */
   get position(): number {
     if (!this.target) return this.parkedProjectFrame
+    // After context loss the graph (and its consumption tracking) is gone;
+    // report the retained position until `rebind` resets the bookkeeping.
+    if (this.contextLost) return this.retainedProjectFrame
     const rate = this.target.sampleRate
     let playbackFrame = this.consumedFrame
     if (
       this.context &&
+      !this.suspended &&
       (this.state === 'playing' || this.state === 'seeking' || this.state === 'buffering')
     ) {
-      // Extrapolate from the last anchor to the current context time.
+      // Extrapolate from the last anchor to the current context time;
+      // while suspended the context time is frozen, so do not.
       playbackFrame =
         this.consumedFrame + Math.max(0, this.context.currentTime - this.anchorTime) * rate
     }
@@ -167,6 +279,25 @@ export class PcmTransport {
       projectPosition(playbackFrame, this.projectRate, rate),
       this.projectDurationFrames,
     )
+  }
+
+  /** §15.3 budget: the 12 s ring capacity in frames. */
+  private get budgetFrames(): number {
+    return this.target ? Math.ceil(this.target.sampleRate * RING_SECONDS) : 0
+  }
+
+  /** §15.3 gate margin: one 1 s chunk. */
+  private get marginFrames(): number {
+    return this.target ? Math.ceil(this.target.sampleRate * CHUNK_SECONDS) : 0
+  }
+
+  /** §15.4 post-underrun start threshold: 2 s. */
+  private get startThresholdFrames(): number {
+    return this.target ? Math.ceil(this.target.sampleRate * PREBUFFER_SECONDS) : 0
+  }
+
+  private isActiveState(s: TransportState): boolean {
+    return s === 'preparing' || s === 'playing' || s === 'buffering' || s === 'seeking'
   }
 
   /**
@@ -183,9 +314,52 @@ export class PcmTransport {
     this.projectDurationFrames = projectDurationFrames
   }
 
+  /**
+   * Rebind to a new playback representation after context loss
+   * (spec §15.6): discards the dead graph, keeps the retained position,
+   * and parks the playhead there. The next `play` creates a fresh
+   * context and starts from the retained position.
+   */
+  rebind({ target, projectRate, projectDurationFrames }: LoadSourceOptions): void {
+    if (this.disposed) return
+    this.teardownGraph()
+    this.target = target
+    this.projectRate = projectRate
+    this.projectDurationFrames = projectDurationFrames
+    this.contextLost = false
+    this.lastError = null
+    this.suspended = false
+    this.generation = 0
+    this.abort = new AbortController()
+    const frame = clampToDuration(
+      playbackPosition(this.retainedProjectFrame, projectRate, target.sampleRate),
+      target.frameCount,
+    )
+    this.genStartFrame = frame
+    this.fetchedFrame = frame
+    this.consumedFrame = frame
+    this.hasData = false
+    this.bufferedFrames = 0
+    this.workerPaused = false
+    this.lastFlushedGeneration = -1
+    this.diagnosticsState = { underruns: 0, lastUnderrunAt: null, droppedChunks: 0 }
+    this.setState('unloaded')
+    this.reportPosition()
+  }
+
   /** Start (or resume) playback from the current position. */
   async play(): Promise<void> {
     if (this.disposed || !this.target) return
+    if (this.context && this.suspended) {
+      // A suspended context freezes the transport even in active states
+      // (spec §15.5); `play` is the user gesture that resumes it.
+      try {
+        await this.context.resume()
+      } catch (err) {
+        this.fail(err)
+        return
+      }
+    }
     if (this.state === 'playing' || this.state === 'preparing' || this.state === 'seeking') {
       return
     }
@@ -199,14 +373,46 @@ export class PcmTransport {
         this.fail(err)
         return
       }
+      if (this.context && this.context.state === 'suspended') {
+        // Resumption needs a user gesture where the browser requires one
+        // (spec §15.5): `play` is that gesture.
+        try {
+          await this.context.resume()
+        } catch (err) {
+          this.fail(err)
+          return
+        }
+      }
+      // The fresh worklet starts at frame 0, generation 0; align it with
+      // the transport bookkeeping (a pre-playback seek may have moved it).
+      try {
+        this.node?.port.postMessage({
+          type: 'seek',
+          frame: this.genStartFrame,
+          generation: this.generation,
+        })
+        await this.alignWorklet()
+      } catch (err) {
+        this.fail(err)
+        return
+      }
     }
     if (this.state === 'ended') {
-      this.flushTo(0)
+      this.flushBookkeeping(0)
+      try {
+        await this.alignWorklet()
+      } catch (err) {
+        this.fail(err)
+        return
+      }
     }
     this.node?.port.postMessage({ type: 'resume' })
-    if (this.hasData) {
+    if (this.state === 'buffering') {
+      // Keep buffering: the 2 s start threshold decides on the next
+      // `buffered` acknowledgment (spec §15.4).
+    } else if (this.hasData) {
       this.setState('playing')
-    } else if (this.state !== 'buffering') {
+    } else {
       this.setState('preparing')
     }
     void this.runFill()
@@ -231,6 +437,7 @@ export class PcmTransport {
       this.anchorTime = this.context.currentTime
     }
     this.node?.port.postMessage({ type: 'pause' })
+    this.source?.stop()
     this.abort?.abort()
     this.setState('paused')
     this.reportPosition()
@@ -240,7 +447,9 @@ export class PcmTransport {
   stop(): void {
     if (this.disposed) return
     this.desiredPlaying = false
-    this.flushTo(0)
+    this.flushBookkeeping(0)
+    const align = this.alignWorklet()
+    if (align !== undefined) void align.catch(() => {})
     this.setState('paused')
     this.reportPosition()
   }
@@ -266,18 +475,26 @@ export class PcmTransport {
       target.frameCount,
     )
     const wasPlaying = this.desiredPlaying
-    this.flushTo(frame)
+    this.flushBookkeeping(frame)
     if (wasPlaying && this.state !== 'unloaded') {
       this.setState('seeking')
-      void this.runFill()
-    } else if (
-      this.state === 'playing' ||
-      this.state === 'buffering' ||
-      this.state === 'preparing' ||
-      this.state === 'seeking'
-    ) {
+    } else if (this.isActiveState(this.state)) {
       this.setState('paused')
       this.reportPosition()
+    }
+    const align = this.alignWorklet()
+    if (wasPlaying && this.state === 'seeking') {
+      if (align === undefined) {
+        // Transfer path: the generation message reached the worker
+        // before this point; refill immediately.
+        void this.runFill()
+      } else {
+        // Shared path: the worker's writer index resets only after the
+        // flush handshake, so refill once it completes.
+        void align.then(() => {
+          if (this.desiredPlaying && this.state === 'seeking') void this.runFill()
+        })
+      }
     }
   }
 
@@ -293,49 +510,63 @@ export class PcmTransport {
     }
   }
 
-  /** Tear down the graph and release the context and Blob URL. */
+  /**
+   * Report the current state and position (spec §15.5). Called on tab
+   * visibility return so the UI redraws from actual transport state.
+   * Also picks up a context that closed while the tab was hidden.
+   */
+  sync(): SyncInfo {
+    if (this.context && this.context.state === 'closed' && !this.contextLost) {
+      this.handleContextLost()
+    }
+    this.reportPosition()
+    return {
+      state: this.state,
+      position: this.position,
+      isSuspended: this.suspended,
+      contextLost: this.contextLost,
+    }
+  }
+
+  /** Tear down the graph, source, and ring, and close the context. */
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
     this.desiredPlaying = false
-    this.abort?.abort()
-    try {
-      this.node?.port.postMessage({ type: 'dispose' })
-      this.node?.disconnect()
-      this.gainNode?.disconnect()
-    } catch {
-      // The graph may already be gone.
+    const context = this.context
+    this.teardownGraph()
+    if (context && context.state !== 'closed') {
+      void context.close().catch(() => {})
     }
-    if (this.context) {
-      void this.context.close().catch(() => {})
-    }
-    if (this.blobUrl?.startsWith('blob:')) {
-      URL.revokeObjectURL(this.blobUrl)
-    }
-    this.blobUrl = null
-    this.node = null
-    this.gainNode = null
-    this.context = null
   }
 
-  /** Create context, worklet node, and gain stage (user-gesture path). */
+  /** Create context, shared ring, worklet node, gain stage, and source. */
   private async initGraph(): Promise<void> {
     const target = this.target
     if (!target) throw new Error('No source loaded')
     const context = this.opts.contextFactory()
     if (context.state === 'suspended') await context.resume()
     this.context = context
+    context.onstatechange = () => this.onContextStateChange()
+    this.mode = resolveMode(this.opts.mode ?? 'auto')
+    if (this.mode === 'shared') {
+      const capacity = Math.ceil(target.sampleRate * RING_SECONDS)
+      this.ring = createSharedRing(16 + capacity * target.channelCount * 4, target.channelCount)
+    }
     this.blobUrl = this.opts.moduleUrlFactory
       ? this.opts.moduleUrlFactory(processorSource)
       : URL.createObjectURL(new Blob([processorSource], { type: 'text/javascript' }))
     await context.audioWorklet.addModule(this.blobUrl)
-    const node = context.createWorkletNode('basseparate-pcm', {
+    const options: Record<string, unknown> = {
       processorOptions: {
         sampleRate: target.sampleRate,
         channelCount: target.channelCount,
         frameCount: target.frameCount,
+        ...(this.ring ? { sab: this.ring.sab } : {}),
       },
-    })
+    }
+    if (this.ring) options.transfer = [this.ring.sab]
+    const node = context.createWorkletNode('basseparate-pcm', options)
     node.port.onmessage = (e) => this.handleWorkletMessage(e.data)
     const gainNode = context.createGain()
     gainNode.gain.value = this.pendingGain
@@ -345,26 +576,75 @@ export class PcmTransport {
     this.gainNode = gainNode
     this.abort = new AbortController()
     this.anchorTime = context.currentTime
+    this.source = this.createSource()
+    if (this.mode === 'shared' && this.ring) {
+      await this.source.attachShared(this.ring.sab, target.channelCount)
+    }
+  }
+
+  /** Pick the fetch source: real worker when available, else main thread. */
+  private createSource(): FetchSource {
+    const target = this.target
+    if (!target) throw new Error('No source loaded')
+    const factory = this.opts.workerFactory ?? defaultWorkerFactory
+    const worker = factory()
+    if (worker) return new WorkerFetchSource(worker, target.channelCount)
+    return new DirectFetchSource(
+      (assetId, start, end) => this.opts.fetchChunk(assetId, start, end, this.abort?.signal),
+      target.channelCount,
+    )
   }
 
   /**
-   * Reset fetch and position bookkeeping to `playbackFrame` and tell the
-   * worklet to flush. Bumps the generation so everything from the old
-   * generation (fetches, port messages) is dropped.
+   * Reset fetch and position bookkeeping to `frame` and tell the worklet
+   * to flush (synchronous). Bumps the generation so everything from the
+   * old generation (fetches, port messages) is dropped.
    */
-  private flushTo(playbackFrame: number): void {
+  private flushBookkeeping(frame: number): void {
     const target = this.target
     if (!target) return
     this.generation += 1
     this.abort?.abort()
     this.abort = new AbortController()
-    const frame = Math.max(0, Math.min(Math.floor(playbackFrame), target.frameCount))
-    this.genStartFrame = frame
-    this.fetchedFrame = frame
-    this.consumedFrame = frame
+    const clamped = Math.max(0, Math.min(Math.floor(frame), target.frameCount))
+    this.genStartFrame = clamped
+    this.fetchedFrame = clamped
+    this.consumedFrame = clamped
     this.hasData = false
+    this.bufferedFrames = 0
+    this.workerPaused = false
     if (this.context) this.anchorTime = this.context.currentTime
-    this.node?.port.postMessage({ type: 'seek', frame, generation: this.generation })
+    this.source?.stop()
+    this.node?.port.postMessage({ type: 'seek', frame: clamped, generation: this.generation })
+  }
+
+  /**
+   * Align the fetch source with the current bookkeeping after a seek.
+   * Transfer path: synchronous (`setGeneration`); shared path: awaits the
+   * worklet's `flushed` acknowledgment and only then resets the worker's
+   * writer index (spec §15.1.6), so the handshake cannot race the
+   * refill. Returns `undefined` when nothing async was needed.
+   */
+  private alignWorklet(): void | Promise<void> {
+    if (this.mode !== 'shared' || !this.source) {
+      this.source?.setGeneration(this.generation)
+      return
+    }
+    return this.awaitFlushedAck(this.generation).then(() =>
+      this.source!.acknowledgeFlush(this.generation, this.genStartFrame),
+    )
+  }
+
+  /**
+   * Resolve when the worklet acknowledges the flush for `generation`.
+   * A `flushed` message that arrived before this call (fast fakes) is
+   * honored via `lastFlushedGeneration`.
+   */
+  private awaitFlushedAck(generation: number): Promise<void> {
+    if (this.lastFlushedGeneration === generation) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.flushAckResolve = resolve
+    })
   }
 
   private handleWorkletMessage(data: unknown): void {
@@ -373,23 +653,48 @@ export class PcmTransport {
     const msg = data as { type: string; generation?: number }
     if (typeof msg.generation === 'number' && msg.generation !== this.generation) return
     switch (msg.type) {
-      case 'data':
-        this.hasData = true
-        if (
-          this.desiredPlaying &&
-          (this.state === 'preparing' || this.state === 'seeking' || this.state === 'buffering')
-        ) {
-          this.setState('playing')
+      case 'buffered': {
+        const m = msg as unknown as { frames: number; queuedFrames: number }
+        this.bufferedFrames = m.frames
+        if (m.frames > 0) this.hasData = true
+        // Flow control: resume the worker below budget − margin.
+        if (this.workerPaused && m.queuedFrames < this.budgetFrames - this.marginFrames) {
+          this.workerPaused = false
+        }
+        if (this.desiredPlaying) {
+          if (this.state === 'buffering' && m.frames >= this.startThresholdFrames) {
+            // Post-underrun resume needs the 2 s threshold (spec §15.4).
+            this.setState('playing')
+          } else if ((this.state === 'preparing' || this.state === 'seeking') && m.frames > 0) {
+            // Initial start: any acknowledged data (M1.12 rule).
+            this.setState('playing')
+          }
+        }
+        break
+      }
+      case 'queue-high':
+        this.workerPaused = true
+        break
+      case 'chunk-dropped':
+        this.diagnosticsState.droppedChunks += 1
+        break
+      case 'flushed':
+        this.lastFlushedGeneration = (msg.generation as number) ?? -1
+        if (this.flushAckResolve) {
+          this.flushAckResolve()
+          this.flushAckResolve = null
         }
         break
       case 'anchor': {
-        const m = msg as { type: string; frame: number; time: number }
+        const m = msg as unknown as { frame: number; time: number }
         this.consumedFrame = m.frame
         this.anchorTime = m.time
         this.reportPosition()
         break
       }
       case 'underrun':
+        this.diagnosticsState.underruns += 1
+        this.diagnosticsState.lastUnderrunAt = Date.now()
         if (this.desiredPlaying && this.state === 'playing') this.setState('buffering')
         break
       case 'ended':
@@ -398,23 +703,95 @@ export class PcmTransport {
         this.reportPosition()
         break
       default:
-        // 'flushed' and 'dispose' need no main-thread action.
         break
     }
   }
 
+  /** React to context state changes (spec §15.5/§15.6). */
+  private onContextStateChange(): void {
+    if (this.disposed) return
+    const context = this.context
+    if (!context) return
+    if (context.state === 'closed') {
+      this.handleContextLost()
+    } else if (context.state === 'suspended') {
+      this.suspended = true
+      this.opts.onSuspend?.(true)
+    } else if (context.state === 'running') {
+      this.suspended = false
+      this.opts.onSuspend?.(false)
+      if (this.desiredPlaying && this.isActiveState(this.state)) void this.runFill()
+    }
+  }
+
   /**
-   * Prefetch loop: keep the worklet ring filled to the target ahead of the
-   * estimated consumed position. A single loop outlives generation bumps:
-   * a seek/stop aborts in-flight fetches and the parking delay, the loop
-   * wakes, and refetches from the new bookkeeping. Runs while
-   * `desiredPlaying` and the state is active.
+   * The context closed under us (device change, spec §15.6): retain the
+   * last acknowledged position, tear everything down, and surface an
+   * error the panel can recover from via `rebind`.
+   */
+  private handleContextLost(): void {
+    if (this.contextLost) return
+    // Read the position before flipping the flag: the getter returns the
+    // retained frame once `contextLost` is set.
+    const retained = this.position
+    this.contextLost = true
+    this.retainedProjectFrame = retained
+    this.desiredPlaying = false
+    this.lastError = 'The audio context was closed (the audio device may have changed)'
+    this.teardownGraph()
+    this.setState('error')
+    this.reportPosition()
+  }
+
+  /**
+   * Disconnect the graph, fetch source, and ring. The context is not
+   * closed here: it is already closed on the loss path, and `dispose`
+   * closes it when it is still open.
+   */
+  private teardownGraph(): void {
+    this.abort?.abort()
+    if (this.flushAckResolve) {
+      this.flushAckResolve()
+      this.flushAckResolve = null
+    }
+    this.source?.dispose()
+    this.source = null
+    try {
+      this.node?.port.postMessage({ type: 'dispose' })
+      this.node?.disconnect()
+      this.gainNode?.disconnect()
+    } catch {
+      // The graph may already be gone.
+    }
+    this.node = null
+    this.gainNode = null
+    this.ring = null
+    if (this.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(this.blobUrl)
+    this.blobUrl = null
+    this.context = null
+  }
+
+  private isStale(err: unknown, gen: number): boolean {
+    return (
+      this.disposed ||
+      gen !== this.generation ||
+      err instanceof StaleGenerationError ||
+      (err instanceof DOMException && err.name === 'AbortError')
+    )
+  }
+
+  /**
+   * Prefetch loop: keep the worklet fed to the §15.3 target ahead of the
+   * estimated consumed position, gated by the 12 s retention budget. A
+   * single loop outlives generation bumps: a seek/stop aborts in-flight
+   * fetches and the parking delay, the loop wakes, and refetches from the
+   * new bookkeeping. Runs while `desiredPlaying` and the state is active.
    */
   private async runFill(): Promise<void> {
     if (this.fillLoopRunning || this.disposed) return
     this.fillLoopRunning = true
     try {
-      while (!this.disposed && this.desiredPlaying && this.node && this.target) {
+      while (!this.disposed && this.desiredPlaying && this.node && this.target && this.source) {
         const s = this.state
         if (s !== 'preparing' && s !== 'playing' && s !== 'buffering' && s !== 'seeking') return
         const target = this.target
@@ -422,36 +799,66 @@ export class PcmTransport {
         const bytesPerFrame = 4 * target.channelCount
         const consumedEstimate =
           this.consumedFrame +
-          (this.context ? Math.max(0, this.context.currentTime - this.anchorTime) * rate : 0)
-        const targetAhead = Math.max(
-          rate * PREBUFFER_SECONDS,
-          target.frameCount - this.genStartFrame,
+          (this.context && !this.suspended
+            ? Math.max(0, this.context.currentTime - this.anchorTime) * rate
+            : 0)
+        const targetAhead = Math.min(
+          rate * LOOKAHEAD_SECONDS,
+          Math.max(rate * PREBUFFER_SECONDS, target.frameCount - this.genStartFrame),
         )
         let fetched = false
         while (
           this.fetchedFrame < target.frameCount &&
-          this.fetchedFrame - consumedEstimate < targetAhead
+          this.fetchedFrame - consumedEstimate < targetAhead &&
+          !this.workerPaused &&
+          this.bufferedFrames < this.budgetFrames - this.marginFrames
         ) {
           const frames = Math.min(rate * CHUNK_SECONDS, target.frameCount - this.fetchedFrame)
+          if (frames <= 0) break
           const start = Math.floor(this.fetchedFrame * bytesPerFrame)
           const end = start + frames * bytesPerFrame - 1
           const gen = this.generation
-          let bytes: ArrayBuffer
-          try {
-            bytes = await this.opts.fetchChunk(start, end, this.abort?.signal)
-          } catch (err) {
-            if (
-              (err instanceof DOMException && err.name === 'AbortError') ||
-              gen !== this.generation
-            ) {
-              break // generation bump: re-evaluate with the new bookkeeping
+          let written = 0
+          if (this.mode === 'shared') {
+            let result: PcmWriteResult
+            try {
+              result = await this.source.writeChunk(target.assetId, start, end, gen)
+            } catch (err) {
+              if (this.isStale(err, gen)) break
+              this.fail(err)
+              return
             }
-            this.fail(err)
-            return
+            if (gen !== this.generation) break
+            written = result.frames
+            if (written <= 0) {
+              // The ring is full (flow control should make this
+              // unreachable): drop and re-check after a park.
+              this.diagnosticsState.droppedChunks += 1
+              break
+            }
+          } else {
+            let chunk: PcmChunk
+            try {
+              chunk = await this.source.fetchChunk(target.assetId, start, end, gen)
+            } catch (err) {
+              if (this.isStale(err, gen)) break
+              this.fail(err)
+              return
+            }
+            if (gen !== this.generation) break
+            this.node.port.postMessage(
+              {
+                type: 'channels',
+                channels: chunk.channels,
+                startFrame: chunk.startFrame,
+                frames: chunk.frames,
+                generation: gen,
+              },
+              chunk.channels.map((c) => c.buffer as ArrayBuffer),
+            )
+            written = chunk.frames
           }
-          if (gen !== this.generation) break // completed after a seek: stale
-          this.node.port.postMessage({ type: 'samples', buffer: bytes }, [bytes])
-          this.fetchedFrame += frames
+          this.fetchedFrame += written
           fetched = true
         }
         if (this.fetchedFrame >= target.frameCount) return // 'ended' will arrive
@@ -464,6 +871,7 @@ export class PcmTransport {
   }
 
   private fail(err: unknown): void {
+    if (this.disposed) return
     this.lastError = err instanceof Error ? err.message : String(err)
     this.desiredPlaying = false
     this.abort?.abort()

@@ -19,7 +19,12 @@ import {
   type UploadState,
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
-import { PcmTransport, type TransportContextLike, type TransportState } from './playback/transport'
+import {
+  PcmTransport,
+  type TransportContextLike,
+  type TransportDiagnostics,
+  type TransportState,
+} from './playback/transport'
 import { formatTime } from './playback/pcm'
 import { WaveformEditor } from './waveform/WaveformEditor'
 import type { ConnectionState, ProjectSummary } from './types'
@@ -451,6 +456,14 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const [position, setPosition] = useState(0)
   const [playError, setPlayError] = useState<string | null>(null)
   const [volume, setVolume] = useState(100)
+  // M1.13: browser suspension and underrun diagnostics. Context loss is
+  // read directly from the transport in the recovery branch.
+  const [suspended, setSuspended] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<TransportDiagnostics>({
+    underruns: 0,
+    lastUnderrunAt: null,
+    droppedChunks: 0,
+  })
   const transportRef = useRef<PcmTransport | null>(null)
   const assetIdRef = useRef<string | null>(null)
   const pendingContextRef = useRef<TransportContextLike | null>(null)
@@ -494,6 +507,8 @@ const PlaybackPanel = memo(function PlaybackPanel({
     setTransportState('unloaded')
     setPosition(0)
     setPlayError(null)
+    setSuspended(false)
+    setDiagnostics({ underruns: 0, lastUnderrunAt: null, droppedChunks: 0 })
   }, [projectId])
 
   useEffect(() => {
@@ -535,17 +550,39 @@ const PlaybackPanel = memo(function PlaybackPanel({
         if (pending && pending.state !== 'closed') return pending
         return (createAudioContext ?? defaultCreateAudioContext)()
       },
-      fetchChunk: (start, end, signal) =>
-        fetchAssetBytes(assetIdRef.current ?? '', start, end, signal).then((r) => r.bytes),
+      fetchChunk: (assetId, start, end, signal) =>
+        fetchAssetBytes(assetId, start, end, signal).then((r) => r.bytes),
       onState: (s) => {
         setTransportState(s)
+        // Diagnostics surface on state changes (an underrun moves the
+        // state to `buffering`).
+        setDiagnostics(transport.diagnostics)
         if (s === 'error') setPlayError(transport.currentError ?? 'Playback failed')
       },
       onPosition: reportPosition,
+      onSuspend: setSuspended,
     })
     transport.setOutputGain(volumeRef.current / 100)
     transportRef.current = transport
   }, [createAudioContext, info, reportPosition])
+
+  // Tab visibility return (spec §15.5): redraw from the actual transport
+  // state; `sync` also picks up a context that closed while the tab was
+  // hidden.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+      const transport = transportRef.current
+      if (!transport) return
+      const snap = transport.sync()
+      setTransportState(snap.state)
+      reportPosition(snap.position)
+      setSuspended(snap.isSuspended)
+      setDiagnostics(transport.diagnostics)
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [reportPosition])
 
   const isStandard51 = info !== null && info.channelCount === 6 && info.channelLayout === '5.1'
 
@@ -571,11 +608,43 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const handlePlayPause = useCallback(async () => {
     const transport = transportRef.current
     if (!transport || !info) return
-    if (transport.currentState === 'playing' || transport.currentState === 'buffering') {
+    setPlayError(null)
+    if (transport.contextLost) {
+      // Audio-device-change recovery (spec §15.6): a fresh context, the
+      // representation re-resolved at its rate, and `rebind` (which keeps
+      // the retained position) before playing.
+      try {
+        const context = (createAudioContext ?? defaultCreateAudioContext)()
+        const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
+        assetIdRef.current = target.assetId
+        pendingContextRef.current = context
+        transport.rebind({
+          target,
+          projectRate: info.sampleRate,
+          projectDurationFrames: info.durationFrames,
+        })
+      } catch (err) {
+        setPlayError(err instanceof Error ? err.message : String(err))
+        return
+      }
+    } else if (
+      suspended &&
+      (transport.currentState === 'playing' ||
+        transport.currentState === 'buffering' ||
+        transport.currentState === 'seeking')
+    ) {
+      // Browser suspension (spec §15.5): `play` is the user gesture that
+      // resumes the frozen context; no state change is needed.
+      try {
+        await transport.play()
+      } catch (err) {
+        setPlayError(err instanceof Error ? err.message : String(err))
+      }
+      return
+    } else if (transport.currentState === 'playing' || transport.currentState === 'buffering') {
       transport.pause()
       return
     }
-    setPlayError(null)
     if (!sourceLoadedRef.current) {
       try {
         const context = (createAudioContext ?? defaultCreateAudioContext)()
@@ -599,7 +668,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
     } catch (err) {
       setPlayError(err instanceof Error ? err.message : String(err))
     }
-  }, [createAudioContext, importId, info, projectId])
+  }, [createAudioContext, importId, info, projectId, suspended])
 
   const handleStop = useCallback(() => {
     transportRef.current?.stop()
@@ -631,7 +700,11 @@ const PlaybackPanel = memo(function PlaybackPanel({
 
   const busy =
     transportState === 'preparing' || transportState === 'seeking' || transportState === 'buffering'
-  const showPause = transportState === 'playing' || transportState === 'buffering'
+  // While suspended the button offers the resume gesture, not a pause.
+  const showPause = (transportState === 'playing' || transportState === 'buffering') && !suspended
+  const showSuspensionHint =
+    suspended &&
+    (transportState === 'playing' || transportState === 'buffering' || transportState === 'seeking')
 
   return (
     <div className="playback-panel">
@@ -755,6 +828,14 @@ const PlaybackPanel = memo(function PlaybackPanel({
           <p className="muted" role="status">
             Preparing playback…
           </p>
+        )}
+        {showSuspensionHint && (
+          <p className="suspension-hint" role="status">
+            Browser suspended audio — click Play to resume
+          </p>
+        )}
+        {diagnostics.underruns > 0 && (
+          <p className="underrun-diagnostics muted">Underruns: {diagnostics.underruns}</p>
         )}
         {playError && (
           <p className="field-error" role="alert">

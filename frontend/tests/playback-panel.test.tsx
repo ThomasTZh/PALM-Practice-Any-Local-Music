@@ -108,9 +108,9 @@ const PLAYBACK_TARGET = {
   role: 'canonical',
   sample_rate: 48000,
   channel_count: 2,
-  frame_count: 60,
-  byte_count: 480,
-  duration_seconds: 60 / 48000,
+  frame_count: 48000,
+  byte_count: 384000,
+  duration_seconds: 1.0,
 }
 
 const COMPLETED_JOB = {
@@ -123,8 +123,8 @@ const COMPLETED_JOB = {
 }
 
 /**
- * Minimal worklet node mimicking the real adapter: it acknowledges
- * enqueued samples with a `data` message, the same way
+ * Minimal worklet node mimicking the real adapter (M1.13 v2 protocol): it
+ * acknowledges enqueued channels with a `buffered` message, the same way
  * `worklet-processor.js` does after a successful enqueue.
  */
 class TestWorkletNode {
@@ -137,12 +137,13 @@ class TestWorkletNode {
   constructor() {
     this.port = {
       postMessage: (message) => {
-        if (message.type === 'samples') {
+        if (message.type === 'channels') {
           queueMicrotask(() => {
             this.port.onmessage?.({
               data: {
-                type: 'data',
-                frames: 1,
+                type: 'buffered',
+                frames: message.frames as number,
+                queuedFrames: 0,
                 generation: (message.generation as number | undefined) ?? 0,
               },
             })
@@ -158,6 +159,16 @@ class TestWorkletNode {
   disconnect(): void {
     this.disconnected = true
   }
+  /** Simulate the worklet reporting a consumed position (M1.13). */
+  postAnchor(frame: number, generation = 0): void {
+    this.port.onmessage?.({
+      data: { type: 'anchor', frame, time: 0, generation },
+    })
+  }
+  /** Simulate a ring underrun (M1.13). */
+  postUnderrun(generation = 0): void {
+    this.port.onmessage?.({ data: { type: 'underrun', generation } })
+  }
 }
 
 class TestGainNode {
@@ -170,21 +181,35 @@ class TestGainNode {
 }
 
 class TestAudioContext {
+  static instances: TestAudioContext[] = []
   currentTime = 0
   sampleRate = 48000
   state: 'suspended' | 'running' | 'closed' = 'running'
+  onstatechange: ((event: { type: string }) => void) | null = null
   readonly destination = {}
   readonly audioWorklet = { addModule: async () => {} }
+  nodes: TestWorkletNode[] = []
+  constructor() {
+    TestAudioContext.instances.push(this)
+  }
+  /** Like a real context, state transitions fire `statechange`. */
+  fireStateChange(): void {
+    this.onstatechange?.({ type: 'statechange' })
+  }
   resume(): Promise<void> {
     this.state = 'running'
+    this.fireStateChange()
     return Promise.resolve()
   }
   close(): Promise<void> {
     this.state = 'closed'
+    this.fireStateChange()
     return Promise.resolve()
   }
   createWorkletNode(): TestWorkletNode {
-    return new TestWorkletNode()
+    const node = new TestWorkletNode()
+    this.nodes.push(node)
+    return node
   }
   createGain(): TestGainNode {
     return new TestGainNode()
@@ -262,11 +287,17 @@ function mockReadyProject(overrides: ReadyMockOverrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  TestAudioContext.instances = []
   sessionStorage.clear()
   sessionStorage.setItem('basseparate.sessionToken', 'test-token')
   window.history.replaceState(null, '', '/')
   vi.stubGlobal('AudioContext', TestAudioContext)
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(pcmResponse(480)))
+  // A fresh Response per call: the fill loop fetches many chunks and a
+  // Response body can only be read once.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(pcmResponse(480))),
+  )
   // jsdom has no Blob URL support; the transport creates one for the
   // worklet module and the fake addModule ignores it.
   vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:test-worklet')
@@ -414,5 +445,92 @@ describe('playback panel: transport', () => {
     expect(
       await screen.findByText('No completed import to derive a playback representation from'),
     ).toBeInTheDocument()
+  })
+
+  it('shows the suspension hint and resumes playback with Play', async () => {
+    const user = userEvent.setup()
+    mockReadyProject({ sourceInfo: SOURCE_INFO_STEREO })
+    await openReadyProject()
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+    const context = TestAudioContext.instances[0]
+    context.state = 'suspended'
+    context.fireStateChange()
+
+    expect(
+      await screen.findByText('Browser suspended audio — click Play to resume'),
+    ).toBeInTheDocument()
+    // While suspended the button offers the resume gesture, not a pause.
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    expect(context.state).toBe('running')
+    expect(
+      screen.queryByText('Browser suspended audio — click Play to resume'),
+    ).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+  })
+
+  it('recovers from context loss by re-resolving and playing the retained position', async () => {
+    const user = userEvent.setup()
+    mockReadyProject({ sourceInfo: SOURCE_INFO_STEREO })
+    await openReadyProject()
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+    const context = TestAudioContext.instances[0]
+    context.nodes[0].postAnchor(24_000)
+    expect(await screen.findByText('0:00.500 / 0:01.000')).toBeInTheDocument()
+
+    // The audio device is lost: the context closes.
+    context.close()
+    expect(
+      await screen.findByText('The audio context was closed (the audio device may have changed)'),
+    ).toBeInTheDocument()
+    // The playhead is retained.
+    expect(screen.getByText('0:00.500 / 0:01.000')).toBeInTheDocument()
+
+    const resolutionsBefore = mockClient.GET.mock.calls.filter(
+      (c) => c[0] === '/api/v1/projects/{project_id}/playback',
+    ).length
+
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+    // A fresh context is created and the representation is re-resolved.
+    expect(TestAudioContext.instances).toHaveLength(2)
+    expect(
+      mockClient.GET.mock.calls.filter((c) => c[0] === '/api/v1/projects/{project_id}/playback')
+        .length,
+    ).toBe(resolutionsBefore + 1)
+    // Playback continues from the retained position.
+    expect(screen.getByText('0:00.500 / 0:01.000')).toBeInTheDocument()
+  })
+
+  it('shows the underrun diagnostics line after an underrun', async () => {
+    const user = userEvent.setup()
+    mockReadyProject({ sourceInfo: SOURCE_INFO_STEREO })
+    await openReadyProject()
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    expect(screen.queryByText(/Underruns:/)).not.toBeInTheDocument()
+
+    TestAudioContext.instances[0].nodes[0].postUnderrun()
+    expect(await screen.findByText('Underruns: 1')).toBeInTheDocument()
+  })
+
+  it('redraws the position from sync() on tab visibility return', async () => {
+    const user = userEvent.setup()
+    mockReadyProject({ sourceInfo: SOURCE_INFO_STEREO })
+    await openReadyProject()
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+    // Context time advances while the UI stays stale.
+    TestAudioContext.instances[0].currentTime = 1.0
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(await screen.findByText('0:01.000 / 0:01.000')).toBeInTheDocument()
   })
 })

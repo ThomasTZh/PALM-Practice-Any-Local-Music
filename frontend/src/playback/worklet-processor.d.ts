@@ -25,6 +25,8 @@ export interface ProcessResult {
    * main-thread extrapolation is `frame + (now - time) * sampleRate`.
    */
   anchor: { frame: number; time: number } | null
+  /** Total frames buffered on the active path after this block. */
+  buffered: number
 }
 
 export class ConsumptionState {
@@ -32,15 +34,38 @@ export class ConsumptionState {
   /** Next frame to consume (playback frames). */
   readonly position: number
   readonly ended: boolean
-  /** Frames currently buffered (identical for every channel). */
+  readonly sampleRate: number
+  readonly channelCount: number
+  /** Ring capacity in frames (12 s at the source rate). */
+  readonly capacity: number
+  /** Frames currently in the rings (transfer path). */
   readonly available: number
+  /** Total buffered frames on the active path (ring + queue, or shared avail). */
+  readonly buffered: number
+  /** Frames in the transfer queue (0 on the shared path). */
+  readonly queued: number
   /**
-   * Deinterleave f32le `buffer` into the rings.
-   * @returns false if the ring would overflow (caller drops the chunk).
+   * Deinterleave f32le `buffer` into the queue.
+   * @returns false if the budget would overflow (caller drops the chunk).
    */
   enqueue(buffer: ArrayBuffer): boolean
-  /** Drop all buffered data and move to `frame` (the stale-audio barrier). */
-  seek(frame: number): void
+  /**
+   * Queue pre-deinterleaved per-channel arrays (transfer path).
+   * @returns false if the budget would overflow (caller drops the chunk).
+   */
+  enqueueChannels(channels: Float32Array[]): boolean
+  /**
+   * Bind the shared ring (shared path): 16-byte Int32 header
+   * `[generation, writerIdx, readerIdx, 0]` + interleaved f32 data.
+   */
+  attachShared(sab: SharedArrayBuffer): void
+  /**
+   * Drop all buffered data and move to `frame` (the stale-audio
+   * barrier). On the shared path this also stores the reader index and
+   * adopts `generation`; the writer index resets only on the worker's
+   * flush acknowledgment.
+   */
+  seek(frame: number, generation?: number): void
   /** Begin the ~5 ms output ramp; consumption stops, position preserved. */
   pause(): void
   /** Resume consumption exactly at the preserved position. */

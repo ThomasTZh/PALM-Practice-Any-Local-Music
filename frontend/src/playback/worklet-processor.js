@@ -1,5 +1,5 @@
 /**
- * AudioWorklet processor for PCM playback (M1.12, spec §14).
+ * AudioWorklet processor for PCM playback (M1.12/M1.13, spec §14–15).
  *
  * Self-contained on purpose: the browser loads this exact file as a
  * Blob-URL worklet module (see `transport.ts`), where imports are not
@@ -7,16 +7,22 @@
  * (the `registerProcessor` call is guarded by a global check, so the
  * module is safe to load on the main thread).
  *
- * `ConsumptionState` is the pure audio-thread state machine: a bounded
- * per-channel ring that fills the output blocks deterministically, emits
- * silence when data is unavailable, ramps to silence over ~5 ms on
- * pause, and reports position anchors. `process` uses the actual
- * output-block length — never an assumed size (spec §14 intro).
+ * `ConsumptionState` is the pure audio-thread state machine. It has two
+ * data paths:
+ * - transfer: `enqueueChannels` appends deinterleaved chunks to a
+ *   bounded queue; `process` drains the queue into a per-channel ring
+ *   and consumes from it.
+ * - shared: `attachShared` binds a SharedArrayBuffer ring (Int32 header
+ *   `[generation, writerIdx, readerIdx, 0]` + interleaved f32 data);
+ *   the fetch worker is the sole writer and this processor the sole
+ *   reader. `process` polls the atomic writer index — never blocks.
+ *
+ * The 12 s ring capacity is the §15.3 total-retention cap (8 s steady
+ * lookahead + 2 s retained history, with headroom). `process` uses the
+ * actual output-block length — never an assumed size (spec §14 intro).
  *
  * Audio-thread constraints (spec §14.7): no network, no filesystem, no
- * promises, no logging, no unbounded allocations, no waits. All
- * preparation (deinterleaving) happens in the message handler, not in
- * `process`.
+ * promises, no logging, no unbounded allocations, no waits.
  */
 
 /* global AudioWorkletProcessor, registerProcessor */
@@ -26,8 +32,11 @@ const PAUSE_RAMP_SECONDS = 0.005
 /** Default anchor cadence: 480 frames = 10 ms at 48 kHz. */
 const ANCHOR_EVERY_FRAMES = 480
 
-/** Ring capacity in seconds; 8 s bounds every allocation (≫ 2 s prebuffer). */
-const RING_SECONDS = 8
+/**
+ * Ring capacity in seconds — the §15.3 total-retention cap per active
+ * playback representation (≫ the 2 s prebuffer and 8 s lookahead).
+ */
+const RING_SECONDS = 12
 
 export class ConsumptionState {
   /**
@@ -50,6 +59,13 @@ export class ConsumptionState {
     for (let c = 0; c < channelCount; c++) {
       this.rings.push({ data: new Float32Array(this.capacity), read: 0, write: 0, count: 0 })
     }
+    /** Transfer-path chunk queue (deinterleaved). */
+    this.queue = []
+    this.queuedFrames = 0
+    /** Shared path: { header, data, capacity } views over the SAB. */
+    this.shared = null
+    /** Shared path: the generation this processor is aligned to. */
+    this.localGen = 0
     /** Next frame to consume (playback frames). */
     this.position = 0
     /** No data expected yet: silence without an underrun flag. */
@@ -65,51 +81,130 @@ export class ConsumptionState {
     this.lastAnchorFrame = 0
   }
 
-  /** Frames currently buffered (identical for every channel). */
+  /** Frames currently in the rings (transfer path). */
   get available() {
     return this.rings[0].count
   }
 
   /**
-   * Deinterleave f32le `buffer` into the rings.
-   * @returns {boolean} false if the ring would overflow (caller drops it).
+   * Total buffered frames on the active path: ring + queue (transfer)
+   * or writer − reader (shared).
+   */
+  get buffered() {
+    if (this.shared) {
+      const { header } = this.shared
+      const writer = Atomics.load(header, 1)
+      const reader = Atomics.load(header, 2)
+      return Math.max(0, writer - reader)
+    }
+    return this.available + this.queuedFrames
+  }
+
+  /** Frames sitting in the transfer queue (0 on the shared path). */
+  get queued() {
+    return this.shared ? 0 : this.queuedFrames
+  }
+
+  /**
+   * Deinterleave f32le `buffer` into the queue.
+   * @returns {boolean} false if the queue would overflow (caller drops it).
    */
   enqueue(buffer) {
-    if (this.ended) return false
     const bytesPerFrame = 4 * this.channelCount
-    let frames = Math.floor(buffer.byteLength / bytesPerFrame)
+    const totalFrames = Math.floor(buffer.byteLength / bytesPerFrame)
+    if (totalFrames <= 0) return false
+    const view = new DataView(buffer)
+    const channels = new Array(this.channelCount)
+    for (let c = 0; c < this.channelCount; c++) {
+      channels[c] = new Float32Array(totalFrames)
+      for (let f = 0; f < totalFrames; f++) {
+        channels[c][f] = view.getFloat32((f * this.channelCount + c) * 4, true)
+      }
+    }
+    return this.enqueueChannels(channels)
+  }
+
+  /**
+   * Queue pre-deinterleaved per-channel arrays (transfer path).
+   * @param {Float32Array[]} channels one array per channel
+   * @returns {boolean} false if the budget would overflow (caller drops it).
+   */
+  enqueueChannels(channels) {
+    if (this.ended || this.shared) return false
+    if (!Array.isArray(channels) || channels.length !== this.channelCount) return false
+    let frames = channels[0].length
     if (frames <= 0) return false
     // Never accept data beyond the valid endpoint (defensive; the
     // transport already clamps chunk ranges). The valid remainder
-    // excludes what is already buffered.
-    frames = Math.min(frames, this.frameCount - this.position - this.available)
+    // excludes everything already buffered (ring + queue).
+    frames = Math.min(frames, this.frameCount - this.position - this.available - this.queuedFrames)
     if (frames <= 0) return false
-    if (this.available + frames > this.capacity) return false
-    const view = new DataView(buffer)
-    for (let c = 0; c < this.channelCount; c++) {
-      const ring = this.rings[c]
-      for (let f = 0; f < frames; f++) {
-        ring.data[ring.write] = view.getFloat32((f * this.channelCount + c) * 4, true)
-        ring.write = (ring.write + 1) % this.capacity
-      }
-      ring.count += frames
-    }
+    if (this.available + this.queuedFrames + frames > this.capacity) return false
+    const trimmed = channels.map((ch) => (ch.length === frames ? ch : ch.subarray(0, frames)))
+    this.queue.push({ channels: trimmed, frames })
+    this.queuedFrames += frames
     this.flushing = false
     this.underrunNotified = false
     return true
   }
 
   /**
+   * Move queued chunks into the rings while they fit. Called from
+   * `process`; a chunk that does not fit waits for consumption to free
+   * space (chunk ≈ 1 s < 12 s capacity, so progress is guaranteed).
+   */
+  drainQueue() {
+    if (this.shared) return
+    while (this.queue.length > 0) {
+      const head = this.queue[0]
+      if (this.available + head.frames > this.capacity) break
+      for (let c = 0; c < this.channelCount; c++) {
+        const ring = this.rings[c]
+        const src = head.channels[c]
+        for (let f = 0; f < head.frames; f++) {
+          ring.data[ring.write] = src[f]
+          ring.write = (ring.write + 1) % this.capacity
+        }
+        ring.count += head.frames
+      }
+      this.queue.shift()
+      this.queuedFrames -= head.frames
+    }
+  }
+
+  /**
+   * Bind the shared ring (shared path). `sab` layout: 16-byte Int32
+   * header `[generation, writerIdx, readerIdx, 0]` + interleaved f32.
+   * The processor aligns to the current header generation.
+   */
+  attachShared(sab) {
+    const header = new Int32Array(sab, 0, 4)
+    const data = new Float32Array(sab, 16)
+    const capacity = Math.floor(data.length / this.channelCount)
+    this.shared = { header, data, capacity }
+    this.localGen = Atomics.load(header, 0)
+  }
+
+  /**
    * Drop all buffered data and move to `frame`. This is the stale-audio
    * barrier: nothing enqueued before the seek can be output after it.
+   * On the shared path the processor stores its own (reader) index and
+   * adopts the new generation; the writer index is reset only when the
+   * worker receives the flush acknowledgment (spec §15.1.6).
    */
-  seek(frame) {
+  seek(frame, generation) {
     const target = Math.max(0, Math.min(Math.floor(frame), this.frameCount))
     for (const ring of this.rings) {
       ring.read = 0
       ring.write = 0
       ring.count = 0
     }
+    this.queue.length = 0
+    this.queuedFrames = 0
+    if (this.shared) {
+      Atomics.store(this.shared.header, 2, target)
+    }
+    if (typeof generation === 'number') this.localGen = generation
     this.position = target
     this.flushing = true
     this.paused = false
@@ -143,9 +238,10 @@ export class ConsumptionState {
    */
   process(time, outputChannels) {
     const frames = outputChannels[0].length
-    const out = { consumed: 0, underrun: false, ended: false, anchor: null }
+    const out = { consumed: 0, underrun: false, ended: false, anchor: null, buffered: 0 }
     if (this.ended) {
       this.fillSilence(outputChannels, 0, frames)
+      out.buffered = this.buffered
       return out
     }
     if (this.paused) {
@@ -160,19 +256,15 @@ export class ConsumptionState {
       } else {
         this.fillSilence(outputChannels, 0, frames)
       }
+      out.buffered = this.buffered
       return out
     }
-    const avail = this.available
-    const take = Math.min(frames, avail)
-    for (let c = 0; c < this.channelCount; c++) {
-      const ring = this.rings[c]
-      for (let i = 0; i < take; i++) {
-        const s = ring.data[ring.read]
-        ring.read = (ring.read + 1) % this.capacity
-        outputChannels[c][i] = s
-      }
-      ring.count -= take
-      if (take > 0) this.lastSample[c] = outputChannels[c][take - 1]
+    let take
+    if (this.shared) {
+      take = this.consumeShared(outputChannels, frames)
+    } else {
+      this.drainQueue()
+      take = this.consumeRing(outputChannels, frames)
     }
     if (take < frames) {
       this.fillSilence(outputChannels, take, frames - take)
@@ -196,7 +288,59 @@ export class ConsumptionState {
       this.lastAnchorFrame = this.position
     }
     out.consumed = take
+    out.buffered = this.buffered
     return out
+  }
+
+  /**
+   * Consume from the transfer-path rings.
+   * @returns {number} frames consumed
+   */
+  consumeRing(outputChannels, frames) {
+    const avail = this.available
+    const take = Math.min(frames, avail)
+    for (let c = 0; c < this.channelCount; c++) {
+      const ring = this.rings[c]
+      for (let i = 0; i < take; i++) {
+        const s = ring.data[ring.read]
+        ring.read = (ring.read + 1) % this.capacity
+        outputChannels[c][i] = s
+      }
+      ring.count -= take
+      if (take > 0) this.lastSample[c] = outputChannels[c][take - 1]
+    }
+    return take
+  }
+
+  /**
+   * Consume from the shared ring (SPSC, polling only).
+   * @returns {number} frames consumed
+   */
+  consumeShared(outputChannels, frames) {
+    const { header, data, capacity } = this.shared
+    const gen = Atomics.load(header, 0)
+    if (gen !== this.localGen) {
+      // Generation mismatch: the ring holds stale data. Silence; the
+      // worker resets it after the flush acknowledgment.
+      return 0
+    }
+    const reader = Atomics.load(header, 2)
+    const writer = Atomics.load(header, 1)
+    const avail = Math.max(0, writer - reader)
+    const take = Math.min(frames, avail, this.frameCount - this.position)
+    if (take <= 0) return 0
+    for (let i = 0; i < take; i++) {
+      const src = ((reader + i) % capacity) * this.channelCount
+      for (let c = 0; c < this.channelCount; c++) {
+        outputChannels[c][i] = data[src + c]
+      }
+    }
+    Atomics.store(header, 2, reader + take)
+    for (let c = 0; c < this.channelCount; c++) {
+      this.lastSample[c] = outputChannels[c][take - 1]
+    }
+    this.flushing = false
+    return take
   }
 
   fillSilence(outputChannels, from, count) {
@@ -218,21 +362,31 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         frameCount: o.frameCount ?? 0,
       })
       this.generation = 0
+      if (o.sab) this.core.attachShared(o.sab)
       this.port.onmessage = (e) => {
         const m = e.data
         if (!m || typeof m !== 'object') return
-        if (m.type === 'samples') {
-          if (this.core.enqueue(m.buffer)) {
-            // Acknowledge so the main thread can leave preparing/seeking.
+        if (m.type === 'channels') {
+          if (this.core.enqueueChannels(m.channels)) {
+            this.reportBuffered()
+            if (this.core.buffered >= this.core.capacity) {
+              this.port.postMessage({ type: 'queue-high', generation: this.generation })
+            }
+          } else {
             this.port.postMessage({
-              type: 'data',
-              frames: this.core.available,
+              type: 'chunk-dropped',
+              frames: m.frames,
               generation: this.generation,
             })
           }
+        } else if (m.type === 'samples') {
+          // Kept for compatibility with the M1.12 protocol.
+          if (this.core.enqueue(m.buffer)) {
+            this.reportBuffered()
+          }
         } else if (m.type === 'seek') {
           this.generation = m.generation
-          this.core.seek(m.frame)
+          this.core.seek(m.frame, this.generation)
           this.port.postMessage({ type: 'flushed', generation: this.generation })
         } else if (m.type === 'pause') {
           this.core.pause()
@@ -241,6 +395,15 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         }
         // 'dispose' needs no worklet-side action.
       }
+    }
+
+    reportBuffered() {
+      this.port.postMessage({
+        type: 'buffered',
+        frames: this.core.buffered,
+        queuedFrames: this.core.queued,
+        generation: this.generation,
+      })
     }
 
     process(time, input, output) {
@@ -252,6 +415,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
           time: res.anchor.time,
           generation: this.generation,
         })
+        this.reportBuffered()
       }
       if (res.underrun) {
         this.port.postMessage({ type: 'underrun', generation: this.generation })

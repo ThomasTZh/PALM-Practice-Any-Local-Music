@@ -7,8 +7,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.12 (AudioWorklet transport) — complete.
-  Plan in `projectPlans/m1.12-plan.md`.
+- **Work package:** M1.13 (buffering and browser compatibility) —
+  complete. Plan in `projectPlans/m1.13-plan.md`.
 - **Last commit:** `bccd7b5` — M1.12 (AudioWorklet transport);
   `fd3468f` — M1.11 (navigation, zoom, selection);
   `62513ce` — M1.10 (waveform editor);
@@ -22,10 +22,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.13 — Buffering and browser compatibility
-  (spec §15): shared-memory path, transferable-buffer fallback,
-  buffer defaults, underrun behavior, browser suspension,
-  audio-device changes. Write `projectPlans/m1.13-plan.md` first.
+- **Next action:** M1.14 (synchronized readouts and follow-playhead,
+  spec §16) — plan first in `projectPlans/`, then implement.
 
 ## Completed requirements (with evidence)
 
@@ -193,6 +191,160 @@ integration + engine removal → 5 frontend gate + commit.
   `engine.ts` + `engine.test.ts` deleted.
 - Phase 5: full gate green — `pnpm test` 224/224 (14 files),
   `pnpm typecheck`, `pnpm lint`, `pnpm format:check` all clean.
+
+### M1.13 — Buffering and browser compatibility (complete)
+
+Spec: `projectPlans/milestone1.md` §15. Plan:
+`projectPlans/m1.13-plan.md`. Frontend-only: extends the M1.12
+transport with a fetch/deinterleave worker, the shared-memory path
+(cross-origin isolated) and the transferable-buffer fallback, the
+§15.3 buffer budget (2 s prebuffer/start threshold, 8 s steady
+lookahead, 12 s retention cap), underrun diagnostics, browser
+suspension handling, and audio-device-change recovery. No backend
+changes. Synchronized-readout refinements and follow-playhead (M1.14)
+are out of scope.
+
+Key design points (see plan):
+- `pcm-fetch.ts` — shared `fetchPcmRange` (Bearer + Range, 416 →
+  `RangeError`) + `deinterleaveChannels`, used by both the worker and
+  the main-thread fallback (jsdom has no `Worker`).
+- `fetch-worker.ts` — Vite-bundled module worker (same pattern as
+  `waveform/worker-script.ts`): sole producer for both paths.
+- Worklet v2 — `enqueueChannels` (deinterleaved input), bounded chunk
+  queue for the transfer path (high-water / consumed acks, flow
+  control), `attachShared` SPSC consumption from a 12 s SAB
+  (Int32 header `[generation, writerIdx, readerIdx]`, polling only,
+  no blocking waits), `{buffered, frames}` reporting at anchor
+  cadence.
+- Transport v2 — mode selection (`auto` = `crossOriginIsolated &&
+  SharedArrayBuffer`), worker lifecycle + main-thread fallback,
+  flow control against the 12 s budget (ring + queue counted
+  together), 2 s post-underrun start threshold, underrun
+  diagnostics, `onstatechange` suspension handling (frozen
+  extrapolation, gesture-resume via Play), context-loss detection +
+  `rebind()` (retained position, representation re-resolved at the
+  new context rate), `sync()` for visibility return.
+- Seek on the shared path: worklet resets its reader + generation
+  and posts `{flushed}`; only then does the transport forward
+  `{flush-ack}` to the worker, which resets generation + writer
+  index (spec §15.1.6).
+
+Phases: 1 plan + ledger → 2 `pcm-fetch.ts` → 3 worker + worklet v2 →
+4 transport v2 → 5 panel integration → 6 frontend gate + commit.
+
+**Phase status:**
+- Phase 1: plan written, ledger updated.
+- Phase 2: `pcm-fetch.ts` (`fetchPcmRange` + `deinterleaveChannels` +
+  shared-ring helpers `createSharedRing` / `writeSharedRing` /
+  `acknowledgeSharedFlush`); `fetchAssetBytes` in `api/playback.ts`
+  delegates to the shared helper; `tests/pcm-fetch.test.ts` 7/7 green.
+- Phase 3: `fetch-worker.ts` (Vite module worker, sole producer,
+  generation discipline); `fetch-source.ts` (`WorkerFetchSource` +
+  `DirectFetchSource` main-thread fallback, `StaleGenerationError`);
+  worklet v2 (`enqueueChannels`, bounded chunk queue, `attachShared`
+  SPSC consumption, `{buffered, frames, queuedFrames}` reporting,
+  12 s budget, generation-aware `seek`); `worklet-processor.d.ts`
+  updated; `tests/worklet-core.test.ts` 22/22 green (12 M1.12 + 10 new).
+- Phase 4 (transport v2) — **verified**: full frontend gate green
+  (256/256 tests, typecheck, lint, format:check). Verification fixes:
+  `position` getter returns `retainedProjectFrame` while `contextLost`
+  (and `handleContextLost` reads the position *before* flipping the
+  flag); `SharedRing` gains `sab` (single source of truth for the
+  buffer); **production bug fixed**: `fetch-worker.ts` and
+  `DirectFetchSource` allocated a *second* SAB on `shared-init` /
+  `attachShared` — both now use the new `viewSharedRing` helper (view
+  the transferred buffer); `FetchSource` interface gains
+  `attachShared`; dead `queuedFrames` field removed; `contextLost` is a
+  public field (was a private field shadowing a same-name getter).
+  Test-side: v2 protocol timing (`settle()` after `play()` — the fill
+  loop's fetch round is a microtask ahead), align-seek expectations
+  (play now posts a gen-0 seek for fresh-worklet alignment), last-
+  generation-message lookup, `TestWorkletNode` in
+  `playback-panel.test.tsx` moved to the v2 protocol (`channels` in →
+  `buffered` ack; was `samples` in → `data` ack).
+  - `transport.ts` fully rewritten: `mode` (`auto`/`shared`/`transfer`;
+    auto = `crossOriginIsolated && SharedArrayBuffer`);
+    `TransportContextLike` gains `onstatechange`; `TransportOptions`
+    gains `workerFactory` + `mode`; `fetchChunk` signature is now
+    `(assetId, start, end, signal)`.
+  - Fill loop v2: transfer path relays `fetchChunk` results to the
+    worklet as `{type:'channels', channels, startFrame, frames,
+    generation}` (transferred); shared path calls `writeChunk` into the
+    SAB. Gate: `fetchedFrame − consumedEstimate < min(8·rate,
+    max(2·rate, frameCount − genStartFrame))` AND `bufferedFrames <
+    12·rate − 1·rate` AND not `workerPaused` (`queue-high`). 0-frame
+    shared write = dropped chunk (diagnostics) + park, not an error.
+  - Shared handshake: `flushBookkeeping(frame)` (sync: gen bump,
+    abort, post `{seek, frame, generation}` to worklet) then
+    `alignWorklet()` — transfer: sync `setGeneration`; shared: await
+    worklet `{flushed}` (`lastFlushedGeneration` handles fast fakes),
+    then `source.acknowledgeFlush(gen, baseFrame)`. `seek()`/`stop()`
+    stay synchronous on the transfer path (M1.12 test behavior);
+    shared-path refill starts only after the handshake. `play()` from
+    `unloaded`/`error` aligns the fresh worklet (posts seek at
+    `genStartFrame`, current gen) — fixes the M1.12 pre-playback-seek
+    misalignment. `play()` from `ended` re-flushes to 0.
+  - Start rules: `preparing`/`seeking` → `playing` on any
+    `buffered > 0`; `buffering` (post-underrun) → `playing` only at
+    `buffered ≥ 2·rate`. Diagnostics: `underruns`, `lastUnderrunAt`,
+    `droppedChunks` (worklet `chunk-dropped` + 0-frame shared writes).
+  - Suspension: `onstatechange` — `suspended` → `isSuspended`,
+    position getter stops extrapolating, state untouched; `running` →
+    re-engage fill. `play()` awaits `context.resume()`.
+  - Context loss: `state === 'closed'` → `handleContextLost()`
+    (retains `position` in `retainedProjectFrame`, teardown, `error` +
+    `contextLost`); `rebind({target, projectRate,
+    projectDurationFrames})` resets to `unloaded` parked at the
+    retained frame (gen reset to 0, fresh abort); `sync()` returns
+    `{state, position, isSuspended, contextLost}` and catches a
+    context that closed while hidden.
+  - Supporting fixes: `fetch-worker.ts` posts `ok: true` with
+    `frames: 0` on ring-full shared writes (flow control, not error);
+    `WorkerFetchSource.dispose()` rejects pending `readyAck`/`flushAck`;
+    `App.tsx` `fetchChunk` call site updated to the `assetId`
+    signature.
+  - `tests/transport.test.ts` rewritten: v2 protocol (`buffered`
+    acks instead of `data`), rig gains `tick()` (parked-delay wake),
+    `mode`/`workerFactory`/`frameCount` injection, `FakeFetchWorker`
+    (protocol recorder + real SAB writes via `writeSharedRing`),
+    `settle()` macrotask helper. New suites: mode selection (4),
+    transfer flow control (4), shared path end-to-end incl. flush
+    handshake + `ConsumptionState` co-consumption (2), suspension (2),
+    context loss + rebind (1), `sync` (2). M1.12 tests carried over
+    with the v2 protocol.
+- Phase 5 (panel integration) — **verified**: full frontend gate green
+  (260/260 tests across 15 files, typecheck, lint, format:check).
+  - `transport.ts`: `TransportOptions` gains `onSuspend(suspended)`;
+    `onContextStateChange` fires it on suspension transitions;
+    **production fix**: `play()` now resumes a suspended context up
+    front (the old early-return for active states made
+    "click Play to resume" a no-op).
+  - `App.tsx` `PlaybackPanel`: `suspended` + `diagnostics` state
+    (diagnostics refreshed in `onState`; an underrun always moves the
+    state to `buffering`, so no separate callback is needed);
+    suspension hint "Browser suspended audio — click Play to resume"
+    while `suspended && state ∈ {playing, buffering, seeking}`; the
+    Play/Pause button offers the resume gesture (not pause) while
+    suspended; muted "Underruns: N" line when `diagnostics.underruns
+    > 0`; context-loss recovery in `handlePlayPause` (fresh context →
+    re-read `sampleRate` → `ensurePlaybackTarget` →
+    `transport.rebind` (retains position) → `play()`);
+    `visibilitychange` listener → `transport.sync()` → redraw state /
+    position / suspension / diagnostics (cleaned up on unmount).
+  - `styles.css`: `.suspension-hint` (warning color),
+    `.underrun-diagnostics` (small, muted via `muted` class).
+  - `tests/playback-panel.test.tsx`: plan items 15–18 (suspension
+    hint + Play-to-resume; context-loss recovery re-resolves and
+    plays the retained position; underrun diagnostics line;
+    visibility `sync()` redraw). Harness: `TestAudioContext` tracks
+    instances + worklet nodes and fires `statechange` on
+    `resume()`/`close()` (like a real context); `TestWorkletNode`
+    gains `postAnchor` / `postUnderrun`; `PLAYBACK_TARGET` is a full
+    48000-frame asset (the 60-frame target made the retained-position
+    story untestable — `rebind` clamps to the target frame count).
+  - Test-side fix: the fetch mock now returns a **fresh** `Response`
+    per call (`mockResolvedValue` reused one consumed body — the
+    longer fill loop hit "Body is unusable" on the second chunk).
 
 ### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 

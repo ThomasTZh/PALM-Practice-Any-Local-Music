@@ -558,6 +558,15 @@ button:hover:not(:disabled) {
   color: var(--warning, #b8860b);
 }
 
+.suspension-hint {
+  font-size: 0.85rem;
+  color: var(--warning, #b8860b);
+}
+
+.underrun-diagnostics {
+  font-size: 0.8rem;
+}
+
 .playback-error {
   background: color-mix(in srgb, var(--error) 10%, var(--panel));
   border: 1px solid var(--error);

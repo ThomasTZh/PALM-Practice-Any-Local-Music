@@ -9,7 +9,7 @@
  */
 
 import { createApiClient, errorMessage } from './client'
-import { getSessionToken } from '../auth'
+import { fetchPcmRange } from '../playback/pcm-fetch'
 import type { components } from './schema'
 
 const client = createApiClient()
@@ -280,8 +280,8 @@ export interface AssetBytes {
 
 /**
  * Fetch raw PCM bytes, optionally for a single inclusive byte range.
- * Uses plain `fetch` because openapi-fetch does not handle binary
- * responses; the Authorization header mirrors the shared client.
+ * Delegates to the shared `fetchPcmRange` helper (also used by the
+ * fetch worker, M1.13).
  */
 export async function fetchAssetBytes(
   assetId: string,
@@ -289,22 +289,5 @@ export async function fetchAssetBytes(
   end?: number,
   signal?: AbortSignal,
 ): Promise<AssetBytes> {
-  const headers: Record<string, string> = {}
-  const token = getSessionToken()
-  if (token) headers.Authorization = `Bearer ${token}`
-  if (start !== undefined && end !== undefined) {
-    headers.Range = `bytes=${start}-${end}`
-  }
-  const res = await fetch(`/api/v1/assets/${assetId}/bytes`, { headers, signal })
-  if (res.status === 416) {
-    throw new RangeError('The requested byte range is not satisfiable')
-  }
-  if (!res.ok) {
-    throw new Error(`Asset bytes failed (${res.status})`)
-  }
-  const contentRange = res.headers.get('content-range')
-  const total = contentRange
-    ? Number(contentRange.split('/')[1])
-    : Number(res.headers.get('content-length') ?? 0)
-  return { bytes: await res.arrayBuffer(), total }
+  return fetchPcmRange(assetId, start, end, signal)
 }
