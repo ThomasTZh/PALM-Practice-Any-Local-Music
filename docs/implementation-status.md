@@ -5,13 +5,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Current position
 
-- **Milestone:** 1 (Import, waveform, and original playback)
-- **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.16 (test corpus and automated verification) —
-  complete (`af51265`). All Milestone 1 work packages M1.1–M1.16 are
-  committed.
-- **Last commit:** `af51265` — M1.16 (test corpus and automated
-  verification); `ede3d26` — M1.15 (markers, persistence, and
+- **Milestone:** 2 (Bass practice workflow)
+- **Gate:** Milestone 1 exit complete — all of M1.1–M1.16 committed; §18
+  test corpus green (748 py + 307 frontend); contract in sync.
+- **Work package:** M2.1 (Confirm prerequisites and extend the domain) —
+  **complete** (800 py + 307 frontend green; commit hash recorded by the
+  ledger follow-up).
+- **Last commit:** `9510656` (ledger M1.16 hash); `af51265` — M1.16 (test
+  corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
   undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
   compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
@@ -27,12 +28,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** Milestone 1 is complete: all work packages
-  M1.1–M1.16 are committed (M1.16 = `af51265`, test corpus and
-  automated verification, spec §18). Remaining milestone-level work is
-  the out-of-scope §19 manual browser/performance/listening acceptance
-  and looping (deferred per milestone1.md). No further automated work
-  packages are defined for Milestone 1.
+- **Next action:** M2.2 assessment — the first package that needs the
+  Demucs/PyTorch/GPU runtime. Check runtime availability (GPU, model
+  download, memory) before starting implementation. Milestone 1 remains
+  fully committed; its only deferred items are the out-of-scope §19
+  manual acceptance and looping.
 
 ## Completed requirements (with evidence)
 
@@ -1491,6 +1491,99 @@ Plan: `projectPlans/m1.4-plan.md` (8 phases).
   `test_storage_db.py`; new `test_import_record.py`, `test_representation.py`,
   `test_repository_m1.py`. 210 py + 19 js tests pass; ruff, format, mypy,
   typecheck, lint, build all clean.
+
+## Milestone 2 progress
+
+### M2.1 — Confirm prerequisites and extend the domain (in progress)
+
+Spec: `projectPlans/milestone2.md` §3; plan: `projectPlans/m2.1-plan.md`.
+Scope is domain + schema + serialization + frontend types only — no Demucs,
+GPU, or network. Acceptance: a result set, its audio, and its playback
+settings can be represented without modifying the original source record.
+
+- **Phase 1 — Plan + ledger:** done. Plan written; ledger section added.
+- **Phase 2 — Prerequisite checks (§3.1):** ran the full M1 test corpus as
+  the prerequisite gate (import/reopen, hashes, playback, waveforms,
+  rapid-seek, interrupted-job recovery, command history, local-only
+  startup are all covered by the M1.16 suite). **Found 1 genuine bug**
+  (`test_oversized_body_rejected`): `import_routes.py` string-parsed the
+  `UploadError` "insufficient disk space" message and crashed with a 500
+  `ValueError` instead of returning 507 `INSUFFICIENT_DISK_SPACE`. Root
+  cause: the message carries an `insufficient disk space: need ` prefix the
+  parser did not strip. The test was also environment-dependent (declared a
+  10 GiB import; `reserve` adds 2 GiB headroom → needs 12 GiB of free disk).
+  **Fix:** added structured `uploads.InsufficientSpaceError(needed, free)`;
+  `reserve` raises it; the route catches it and returns 507. Reduced the
+  chunk test's import to 16 MiB and added
+  `test_insufficient_disk_space_returns_507` (mocks `free_bytes`). Gate now
+  green: 748 py (747 baseline + 1 new, the 1 previously failing now passes).
+- **Phase 3 — Domain records (§3.2–3.4):** done. `domain/separation.py` —
+  `SeparationRun` (requested vs. effective params kept separate for
+  auditability; cuda⇔gpu_uuid, completed⇔result_set invariants),
+  `SeparationResultSet` (a `valid` set requires ≥1 stem + positive frame
+  count; no duplicate roles), `StemRecord` (role from the model's declared
+  label, bounded alignment offset, reuses `Confidence`), `SourceIdentity`,
+  `ReferenceMixIdentity` + enums (`SeparationMode`, `SeparationRunStatus`,
+  `ValidationStatus`, `DeviceType`, `StemRole`). Exported from
+  `domain/__init__.py`.
+- **Phase 4 — Mixer + practice state (§3.5):** done. `domain/practice.py` —
+  `PlaybackMode`, `TrackSettings` (gain/balance/display-height bounds),
+  `PracticeLoop` (end > start), `PracticeState` (stem modes require an active
+  result set; `active_loop_id` references an existing loop; `tracks` keyed by
+  stem role). `ProjectRecord` gains `practice_state` (defaulted, so v3
+  projects deserialize unchanged).
+- **Phase 5 — Versioning (§3.6):** done. DB migration 6→7 (`separation_runs`,
+  `separation_result_sets`, `stems` tables — key columns + `record_json` blob —
+  + `projects.practice_state` column); `DATABASE_SCHEMA_VERSION` 6→7,
+  `PROJECT_SCHEMA_VERSION` 3→4; `SeparationRepository` (create/get/list for
+  run, result set, stem) + `ProjectRepository.set_practice_state` (bumps
+  revision, no history — command integration is M2.17).
+- **Phase 6 — Tests:** done. New `tests/unit/test_separation.py`,
+  `tests/unit/test_practice.py`; extended `tests/unit/test_project.py`
+  (practice_state default/round-trip/v3-JSON-loads); new
+  `tests/integration/test_migration_m2.py` (v6→v7: tables + defaulted
+  practice_state, old project survives) and
+  `tests/integration/test_separation_repository.py` (full round-trip; the
+  original source record is value-for-value unchanged). Updated
+  `test_storage_db.py` (v7 version, new tables) and
+  `test_repository_commands.py` (v7 version assertion).
+- **Phase 7 — Contract + frontend types:** done. Regenerated
+  `contracts/openapi.json` + `frontend/src/api/schema.ts`; `practice_state`
+  is generated **optional** (server default) so no frontend `Project` literal
+  needed updating. Drift check OK. Frontend typecheck + lint + format clean.
+- **Phase 8 — Full gate + commit:** **gates green.** Final full pytest:
+  **800 passed** (748 M1 baseline + 52 new/updated). ruff clean, mypy clean
+  (51 files), vitest 307 passed, frontend typecheck/lint/format clean,
+  contract drift check OK. One observed flake:
+  `test_job_manager.py::TestDecodeCompletion::test_publisher_failure_fails_job`
+  failed once in a full-suite run but passes 3/3 in isolation and 3/3 for the
+  whole class; the same test passed in the prior full run with identical
+  code. Pre-existing async-teardown flake under load (matches the "Event
+  loop is closed" ResourceWarning), unrelated to M2.1 (no job-manager,
+  publisher, or decode-path changes).
+
+**Deliverables:**
+- `src/basseparate/domain/separation.py` — `SeparationRun`,
+  `SeparationResultSet`, `StemRecord`, `SourceIdentity`,
+  `ReferenceMixIdentity` + enums (`SeparationMode`, `SeparationRunStatus`,
+  `ValidationStatus`, `DeviceType`, `StemRole`).
+- `src/basseparate/domain/practice.py` — `PlaybackMode`, `TrackSettings`,
+  `PracticeLoop`, `PracticeState`; `ProjectRecord.practice_state` (defaulted).
+- `src/basseparate/storage/db.py` — migration 6→7 (`separation_runs`,
+  `separation_result_sets`, `stems`, `projects.practice_state`).
+- `src/basseparate/storage/repository.py` — `SeparationRepository`,
+  `ProjectRepository.set_practice_state`.
+- `src/basseparate/uploads.py` + `api/import_routes.py` — prerequisite bug
+  fix (structured `InsufficientSpaceError`, 507 path).
+- Version bumps: `DATABASE_SCHEMA_VERSION` 6→7, `PROJECT_SCHEMA_VERSION`
+  3→4.
+- Tests: `tests/unit/test_separation.py`, `tests/unit/test_practice.py`,
+  `tests/integration/test_migration_m2.py`,
+  `tests/integration/test_separation_repository.py`; extended
+  `test_project.py`, `test_storage_db.py`, `test_repository_commands.py`,
+  `test_imports.py`.
+- Contracts: `contracts/openapi.json` + `frontend/src/api/schema.ts`
+  regenerated (additive; `schema_version` default 3→4).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

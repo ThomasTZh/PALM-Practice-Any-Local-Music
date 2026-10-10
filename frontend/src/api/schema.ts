@@ -949,6 +949,12 @@ export interface components {
             /** Right Channel */
             right_channel: number;
         };
+        /**
+         * PlaybackMode
+         * @description Which source the transport plays (spec §3.5).
+         * @enum {string}
+         */
+        PlaybackMode: "original" | "bass_pair" | "four_stems";
         /** PlaybackPreparationRequest */
         PlaybackPreparationRequest: {
             /** Target Sample Rate */
@@ -990,6 +996,81 @@ export interface components {
             role: string;
             /** Sample Rate */
             sample_rate: number;
+        };
+        /**
+         * PracticeLoop
+         * @description A saved practice loop with integer source-frame boundaries (spec §3.5).
+         */
+        PracticeLoop: {
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            /**
+             * End Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            end_frames: number;
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Start Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            start_frames: number;
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
+        };
+        /**
+         * PracticeState
+         * @description Per-project mixer and practice state (spec §3.5).
+         *
+         *     ``tracks`` is keyed by stem role value (``StemRole``). Stem playback
+         *     modes require an active result set; ``original`` plays the source mix
+         *     and may still remember the last result set.
+         */
+        PracticeState: {
+            /** Active Loop Id */
+            active_loop_id?: string | null;
+            /** Active Result Set Id */
+            active_result_set_id?: string | null;
+            /**
+             * Loop Enabled
+             * @default false
+             */
+            loop_enabled: boolean;
+            /** Loops */
+            loops?: components["schemas"]["PracticeLoop"][];
+            /**
+             * Master Gain
+             * @default 1
+             */
+            master_gain: number;
+            /**
+             * Monitoring Limiter
+             * @default false
+             */
+            monitoring_limiter: boolean;
+            /** @default original */
+            playback_mode: components["schemas"]["PlaybackMode"];
+            /**
+             * Playback Speed
+             * @default 1
+             */
+            playback_speed: number;
+            /** Tracks */
+            tracks?: {
+                [key: string]: components["schemas"]["TrackSettings"];
+            };
         };
         /**
          * ProbeResult
@@ -1069,6 +1150,7 @@ export interface components {
             monitoring_right_channel?: number | null;
             /** Name */
             name: string;
+            practice_state?: components["schemas"]["PracticeState"];
             /**
              * Revision
              * @description Nonnegative integer revision
@@ -1083,7 +1165,7 @@ export interface components {
             /**
              * Schema Version
              * @description Project schema version
-             * @default 3
+             * @default 4
              */
             schema_version: number;
             /** Source Asset Id */
@@ -1236,6 +1318,42 @@ export interface components {
             app_version: string;
             /** Ready */
             ready: boolean;
+        };
+        /**
+         * TrackSettings
+         * @description Mixer settings for one stem track (spec §3.5).
+         */
+        TrackSettings: {
+            /**
+             * Balance
+             * @default 0
+             */
+            balance: number;
+            /**
+             * Display Height
+             * @default 1
+             */
+            display_height: number;
+            /**
+             * Gain
+             * @default 1
+             */
+            gain: number;
+            /**
+             * Mute
+             * @default false
+             */
+            mute: boolean;
+            /**
+             * Solo
+             * @default false
+             */
+            solo: boolean;
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
         };
         /**
          * TransferState

@@ -317,9 +317,11 @@ class TestChunkUpload:
         assert resp.status_code == 400
 
     def test_oversized_body_rejected(self, client: TestClient, auth_headers: dict) -> None:
+        # The import only needs to exist; its declared size is small so the
+        # setup does not depend on the free disk space of the test volume.
         project_id = _make_project(client, auth_headers)
-        import_id = _make_import(client, auth_headers, project_id, size=10 * 1024**3)["import_id"]
-        oversized = b"a" * (8 * 1024**3 + 16)  # exceeds 8 MiB chunk cap
+        import_id = _make_import(client, auth_headers, project_id, size=16 * 1024**2)["import_id"]
+        oversized = b"a" * (8 * 1024**2 + 16)  # exceeds 8 MiB chunk cap
         resp = client.put(
             f"/api/v1/imports/{import_id}/chunks",
             params={"offset": 0},
@@ -328,6 +330,22 @@ class TestChunkUpload:
         )
         assert resp.status_code == 413
         assert resp.json()["error"]["code"] == "CHUNK_SIZE"
+
+    def test_insufficient_disk_space_returns_507(
+        self, client: TestClient, app, auth_headers: dict
+    ) -> None:
+        # Simulate a nearly-full upload volume so reserve() fails on space.
+        app.state.upload_manager.free_bytes = lambda: 1024
+        project_id = _make_project(client, auth_headers)
+        resp = client.post(
+            "/api/v1/imports",
+            json={"project_id": project_id, "filename": "big.wav", "declared_byte_count": 100_000},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 507
+        body = resp.json()["error"]
+        assert body["code"] == "INSUFFICIENT_DISK_SPACE"
+        assert body["details"]["free_bytes"] == 1024
 
     def test_missing_hash_header_rejected(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)

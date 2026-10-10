@@ -306,6 +306,54 @@ def _migration_5_to_6(conn: sqlite3.Connection) -> None:
 
 register_migration(6, _migration_5_to_6)
 
+_MIGRATION_7_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS separation_runs (
+        id              TEXT PRIMARY KEY,
+        project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        status          TEXT NOT NULL
+                        CHECK (status IN ('queued', 'running', 'completed',
+                                          'failed', 'cancelled', 'interrupted')),
+        requested_mode  TEXT NOT NULL,
+        result_set_id   TEXT,
+        record_json     TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_separation_runs_project ON separation_runs(project_id)",
+    """
+    CREATE TABLE IF NOT EXISTS separation_result_sets (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES separation_runs(id) ON DELETE CASCADE,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        validation_status TEXT NOT NULL
+                          CHECK (validation_status IN ('pending', 'valid', 'invalid')),
+        created_at        TEXT NOT NULL,
+        record_json       TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_separation_result_sets_project "
+    "ON separation_result_sets(project_id)",
+    """
+    CREATE TABLE IF NOT EXISTS stems (
+        id              TEXT PRIMARY KEY,
+        result_set_id   TEXT NOT NULL
+                        REFERENCES separation_result_sets(id) ON DELETE CASCADE,
+        role            TEXT NOT NULL,
+        record_json     TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_stems_result_set ON stems(result_set_id)",
+    "ALTER TABLE projects ADD COLUMN practice_state TEXT NOT NULL DEFAULT '{}'",
+)
+
+
+def _migration_6_to_7(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_7_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(7, _migration_6_to_7)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.

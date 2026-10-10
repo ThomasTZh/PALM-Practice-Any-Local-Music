@@ -184,3 +184,38 @@ def test_serialization_roundtrip() -> None:
 def test_forward_compat_rejects_newer_schema() -> None:
     p = _make_project(schema_version=99)
     assert p.schema_version == 99
+
+
+class TestPracticeState:
+    def test_default_practice_state(self) -> None:
+        from basseparate.domain import PlaybackMode, PracticeState
+
+        p = _make_project()
+        assert p.practice_state == PracticeState()
+        assert p.practice_state.playback_mode == PlaybackMode.ORIGINAL
+
+    def test_practice_state_roundtrip(self) -> None:
+        from basseparate.domain import PlaybackMode, PracticeState, TrackSettings
+
+        state = PracticeState(
+            playback_mode=PlaybackMode.FOUR_STEMS,
+            active_result_set_id=uuid4(),
+            tracks={"bass": TrackSettings(gain=0.5, mute=True)},
+            playback_speed=0.75,
+            master_gain=1.5,
+        )
+        p = _make_project(**_ready_overrides(), practice_state=state)
+        restored = ProjectRecord.model_validate(p.model_dump(mode="json"))
+        assert restored.practice_state == state
+
+    def test_v3_project_json_without_practice_state_loads(self) -> None:
+        # A project serialized before M2.1 (schema v3, no practice_state key)
+        # must deserialize with a defaulted practice state.
+        from basseparate.domain import PracticeState
+
+        p = _make_project(**_ready_overrides())
+        data = p.model_dump(mode="json")
+        data.pop("practice_state")
+        data["schema_version"] = 3
+        restored = ProjectRecord.model_validate(data)
+        assert restored.practice_state == PracticeState()

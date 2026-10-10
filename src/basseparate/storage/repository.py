@@ -35,6 +35,7 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
+from basseparate.domain.practice import PracticeState
 from basseparate.domain.project import (
     ProjectRecord,
     ProjectStatus,
@@ -47,6 +48,11 @@ from basseparate.domain.representation import (
     RepresentationProvenance,
     RepresentationRole,
     TimeMapping,
+)
+from basseparate.domain.separation import (
+    SeparationResultSet,
+    SeparationRun,
+    StemRecord,
 )
 from basseparate.domain.waveform import WaveformCacheRecord, WaveformLevelSummary, WaveformResult
 from basseparate.storage.db import DatabaseError
@@ -91,6 +97,7 @@ def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
         waveform_status=WaveformStatus(row["waveform_status"]),
         source_metadata=json.loads(row["source_metadata"]),
         working_state=WorkingState.model_validate_json(row["working_state"]),
+        practice_state=PracticeState.model_validate_json(row["practice_state"]),
     )
 
 
@@ -1025,6 +1032,37 @@ class ProjectRepository:
         assert updated is not None
         return updated
 
+    def set_practice_state(
+        self, project_id: uuid.UUID, practice_state: PracticeState
+    ) -> ProjectRecord:
+        """Persist the project's mixer/practice state (M2.1, spec §3.5).
+
+        Writes the serialized state and bumps the revision. Command/undo
+        integration for practice state arrives with the M2.17 command set;
+        this setter is the direct persistence path used in the meantime.
+        """
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                """
+                UPDATE projects SET
+                    practice_state = ?,
+                    updated_at = ?,
+                    revision = revision + 1
+                WHERE id = ?
+                """,
+                (practice_state.model_dump_json(), _now(), str(project_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"project {project_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        updated = self.get_project(project_id)
+        assert updated is not None
+        return updated
+
 
 class ImportRepository:
     """Synchronous repository for import sessions."""
@@ -1568,5 +1606,158 @@ class WaveformCacheRepository:
         try:
             conn.execute("DELETE FROM waveform_caches WHERE asset_id = ?", (str(asset_id),))
             conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+
+class SeparationRepository:
+    """Synchronous repository for separation runs, result sets, and stems.
+
+    Each record is stored as a JSON blob (``record_json``) plus scalar key
+    columns for indexing. This keeps the schema stable as the records grow
+    across M2.5–M2.7 and makes the round-trip a single ``model_validate_json``.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    # -- Runs ----------------------------------------------------------------
+    def create_run(self, run: SeparationRun) -> SeparationRun:
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO separation_runs (id, project_id, status, requested_mode,
+                                             result_set_id, record_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(run.id),
+                    str(run.project_id),
+                    run.status.value,
+                    run.requested_mode.value,
+                    str(run.result_set_id) if run.result_set_id else None,
+                    run.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create separation run: {exc}") from exc
+        finally:
+            conn.close()
+        return run
+
+    def get_run(self, run_id: uuid.UUID) -> SeparationRun | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM separation_runs WHERE id = ?", (str(run_id),)
+            ).fetchone()
+            return SeparationRun.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_runs_for_project(self, project_id: uuid.UUID) -> list[SeparationRun]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT record_json FROM separation_runs WHERE project_id = ? ORDER BY id",
+                (str(project_id),),
+            ).fetchall()
+            return [SeparationRun.model_validate_json(r["record_json"]) for r in rows]
+        finally:
+            conn.close()
+
+    # -- Result sets ---------------------------------------------------------
+    def create_result_set(self, result_set: SeparationResultSet) -> SeparationResultSet:
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO separation_result_sets (id, run_id, project_id,
+                                                    validation_status, created_at,
+                                                    record_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(result_set.id),
+                    str(result_set.run_id),
+                    str(result_set.project_id),
+                    result_set.validation_status.value,
+                    result_set.created_at.isoformat().replace("+00:00", "Z"),
+                    result_set.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create separation result set: {exc}") from exc
+        finally:
+            conn.close()
+        return result_set
+
+    def get_result_set(self, result_set_id: uuid.UUID) -> SeparationResultSet | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM separation_result_sets WHERE id = ?",
+                (str(result_set_id),),
+            ).fetchone()
+            return SeparationResultSet.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_result_sets_for_project(self, project_id: uuid.UUID) -> list[SeparationResultSet]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT record_json FROM separation_result_sets WHERE project_id = ? "
+                "ORDER BY created_at",
+                (str(project_id),),
+            ).fetchall()
+            return [SeparationResultSet.model_validate_json(r["record_json"]) for r in rows]
+        finally:
+            conn.close()
+
+    # -- Stems ---------------------------------------------------------------
+    def create_stem(self, stem: StemRecord) -> StemRecord:
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO stems (id, result_set_id, role, record_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(stem.id),
+                    str(stem.result_set_id),
+                    stem.role.value,
+                    stem.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create stem: {exc}") from exc
+        finally:
+            conn.close()
+        return stem
+
+    def get_stem(self, stem_id: uuid.UUID) -> StemRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM stems WHERE id = ?", (str(stem_id),)
+            ).fetchone()
+            return StemRecord.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_stems_for_result_set(self, result_set_id: uuid.UUID) -> list[StemRecord]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT record_json FROM stems WHERE result_set_id = ? ORDER BY id",
+                (str(result_set_id),),
+            ).fetchall()
+            return [StemRecord.model_validate_json(r["record_json"]) for r in rows]
         finally:
             conn.close()

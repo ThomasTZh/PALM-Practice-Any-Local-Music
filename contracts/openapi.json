@@ -1060,6 +1060,16 @@
         "title": "MonitoringInfo",
         "type": "object"
       },
+      "PlaybackMode": {
+        "description": "Which source the transport plays (spec \u00a73.5).",
+        "enum": [
+          "original",
+          "bass_pair",
+          "four_stems"
+        ],
+        "title": "PlaybackMode",
+        "type": "string"
+      },
       "PlaybackPreparationRequest": {
         "properties": {
           "target_sample_rate": {
@@ -1192,6 +1202,130 @@
           "duration_seconds"
         ],
         "title": "PlaybackResponse",
+        "type": "object"
+      },
+      "PracticeLoop": {
+        "description": "A saved practice loop with integer source-frame boundaries (spec \u00a73.5).",
+        "properties": {
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "End Frames",
+            "type": "integer"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "start_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Start Frames",
+            "type": "integer"
+          },
+          "updated_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "start_frames",
+          "end_frames",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PracticeLoop",
+        "type": "object"
+      },
+      "PracticeState": {
+        "description": "Per-project mixer and practice state (spec \u00a73.5).\n\n``tracks`` is keyed by stem role value (``StemRole``). Stem playback\nmodes require an active result set; ``original`` plays the source mix\nand may still remember the last result set.",
+        "properties": {
+          "active_loop_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Loop Id"
+          },
+          "active_result_set_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Result Set Id"
+          },
+          "loop_enabled": {
+            "default": false,
+            "title": "Loop Enabled",
+            "type": "boolean"
+          },
+          "loops": {
+            "items": {
+              "$ref": "#/components/schemas/PracticeLoop"
+            },
+            "title": "Loops",
+            "type": "array"
+          },
+          "master_gain": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Master Gain",
+            "type": "number"
+          },
+          "monitoring_limiter": {
+            "default": false,
+            "title": "Monitoring Limiter",
+            "type": "boolean"
+          },
+          "playback_mode": {
+            "$ref": "#/components/schemas/PlaybackMode",
+            "default": "original"
+          },
+          "playback_speed": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.25,
+            "title": "Playback Speed",
+            "type": "number"
+          },
+          "tracks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TrackSettings"
+            },
+            "maxProperties": 8,
+            "title": "Tracks",
+            "type": "object"
+          }
+        },
+        "title": "PracticeState",
         "type": "object"
       },
       "ProbeResult": {
@@ -1404,6 +1538,9 @@
             "title": "Name",
             "type": "string"
           },
+          "practice_state": {
+            "$ref": "#/components/schemas/PracticeState"
+          },
           "revision": {
             "default": 0,
             "description": "Nonnegative integer revision",
@@ -1426,7 +1563,7 @@
             "title": "Sample Rate"
           },
           "schema_version": {
-            "default": 3,
+            "default": 4,
             "description": "Project schema version",
             "minimum": 1.0,
             "title": "Schema Version",
@@ -1796,6 +1933,49 @@
           "ready"
         ],
         "title": "SystemResponse",
+        "type": "object"
+      },
+      "TrackSettings": {
+        "description": "Mixer settings for one stem track (spec \u00a73.5).",
+        "properties": {
+          "balance": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Balance",
+            "type": "number"
+          },
+          "display_height": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.25,
+            "title": "Display Height",
+            "type": "number"
+          },
+          "gain": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Gain",
+            "type": "number"
+          },
+          "mute": {
+            "default": false,
+            "title": "Mute",
+            "type": "boolean"
+          },
+          "solo": {
+            "default": false,
+            "title": "Solo",
+            "type": "boolean"
+          },
+          "visible": {
+            "default": true,
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "title": "TrackSettings",
         "type": "object"
       },
       "TransferState": {

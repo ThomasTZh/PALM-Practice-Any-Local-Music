@@ -1,0 +1,248 @@
+"""Repository round-trip for separation records (M2.1, spec §3.6).
+
+Verifies the acceptance criterion: a result set, its audio, and its playback
+settings can be *represented* (persisted and read back) without modifying the
+original source record of the project.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import uuid
+from pathlib import Path
+
+import pytest
+
+from basseparate.domain import (
+    Confidence,
+    ConfidenceKind,
+    DeviceType,
+    PlaybackMode,
+    PracticeState,
+    SeparationMode,
+    SeparationResultSet,
+    SeparationRun,
+    SeparationRunStatus,
+    SourceIdentity,
+    StemRecord,
+    StemRole,
+    TrackSettings,
+    ValidationStatus,
+)
+from basseparate.domain.separation import ReferenceMixIdentity
+from basseparate.storage.db import initialize_database
+from basseparate.storage.repository import ProjectRepository, SeparationRepository
+
+SOURCE_COLUMNS = (
+    "source_asset_id",
+    "canonical_asset_id",
+    "monitoring_asset_id",
+    "source_stream_index",
+    "sample_rate",
+    "duration_frames",
+    "source_channel_count",
+    "source_channel_layout",
+    "decode_profile_version",
+    "source_metadata",
+    "status",
+)
+
+SOURCE_HASH = "ab" * 32
+PCM_HASH = "cd" * 32
+
+
+@pytest.fixture()
+def db_path(tmp_path: Path) -> Path:
+    path = tmp_path / "data" / "basseparate.db"
+    initialize_database(path)
+    return path
+
+
+def _source_columns(db_path: Path, project_id: uuid.UUID) -> dict[str, object]:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            f"SELECT {', '.join(SOURCE_COLUMNS)} FROM projects WHERE id = ?",
+            (str(project_id),),
+        ).fetchone()
+        assert row is not None
+        return {column: row[column] for column in SOURCE_COLUMNS}
+    finally:
+        conn.close()
+
+
+def _publish_source(db_path: Path, project_id: uuid.UUID) -> None:
+    """Simulate a published (ready) source by setting the source columns."""
+    source_asset = str(uuid.uuid4())
+    pcm_asset = str(uuid.uuid4())
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE projects SET
+                source_asset_id = ?,
+                canonical_asset_id = ?,
+                source_stream_index = 0,
+                sample_rate = 48000,
+                duration_frames = 441000,
+                source_channel_count = 2,
+                source_channel_layout = 'stereo',
+                decode_profile_version = 1,
+                source_metadata = '{"encoder": "test"}',
+                status = 'ready'
+            WHERE id = ?
+            """,
+            (source_asset, pcm_asset, str(project_id)),
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+
+def _build_run(project_id: uuid.UUID, result_set_id: uuid.UUID) -> SeparationRun:
+    return SeparationRun(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        input_asset_id=uuid.uuid4(),
+        input_transform_hash=SOURCE_HASH,
+        requested_mode=SeparationMode.FOUR_STEMS,
+        model_manifest_id=uuid.uuid4(),
+        model_manifest_hash=PCM_HASH,
+        engine_version="demucs-4.1.0",
+        adapter_version="adapter-1",
+        device_type=DeviceType.CPU,
+        status=SeparationRunStatus.COMPLETED,
+        result_set_id=result_set_id,
+        requested_parameters={"split": 8},
+        effective_parameters={"split": 4},
+    )
+
+
+def _build_stem(result_set_id: uuid.UUID, role: StemRole) -> StemRecord:
+    return StemRecord(
+        id=uuid.uuid4(),
+        result_set_id=result_set_id,
+        role=role,
+        display_name=role.value.title(),
+        audio_asset_id=uuid.uuid4(),
+        sample_rate=48_000,
+        channel_count=2,
+        frame_count=441_000,
+        confidence=Confidence(kind=ConfidenceKind.UNAVAILABLE),
+    )
+
+
+def _build_result_set(
+    run: SeparationRun, project_id: uuid.UUID, stem_ids: list[uuid.UUID]
+) -> SeparationResultSet:
+    return SeparationResultSet(
+        id=run.result_set_id,
+        run_id=run.id,
+        project_id=project_id,
+        source=SourceIdentity(
+            asset_id=uuid.uuid4(),
+            source_hash=SOURCE_HASH,
+            sample_rate=48_000,
+            duration_frames=441_000,
+        ),
+        output_sample_rate=48_000,
+        output_channel_count=2,
+        output_frame_count=441_000,
+        available_stem_roles=[StemRole.VOCALS, StemRole.BASS],
+        stem_ids=stem_ids,
+        reference_mix=ReferenceMixIdentity(
+            asset_id=uuid.uuid4(), hash=PCM_HASH, transformation_hash=SOURCE_HASH
+        ),
+        reconstruction_metrics={"l1_error": 0.01},
+        validation_status=ValidationStatus.VALID,
+        created_at="2026-01-01T00:00:00Z",
+    )
+
+
+def test_full_round_trip_and_source_unchanged(db_path: Path) -> None:
+    projects = ProjectRepository(db_path)
+    separation = SeparationRepository(db_path)
+
+    project = projects.create_project("Song")
+    _publish_source(db_path, project.id)
+    before = _source_columns(db_path, project.id)
+
+    # Build and persist a completed run -> result set -> stems.
+    result_set_id = uuid.uuid4()
+    run = _build_run(project.id, result_set_id)
+    stems = [
+        _build_stem(result_set_id, StemRole.VOCALS),
+        _build_stem(result_set_id, StemRole.BASS),
+    ]
+    result_set = _build_result_set(run, project.id, [s.id for s in stems])
+
+    separation.create_run(run)
+    separation.create_result_set(result_set)
+    for stem in stems:
+        separation.create_stem(stem)
+
+    # Persist the playback / mixer settings on the project.
+    projects.set_practice_state(
+        project.id,
+        PracticeState(
+            playback_mode=PlaybackMode.FOUR_STEMS,
+            active_result_set_id=result_set_id,
+            tracks={
+                "bass": TrackSettings(gain=0.5),
+                "vocals": TrackSettings(mute=True),
+            },
+            playback_speed=0.5,
+        ),
+    )
+
+    # Read everything back.
+    got_run = separation.get_run(run.id)
+    assert got_run is not None
+    assert got_run.status == SeparationRunStatus.COMPLETED
+    assert got_run.requested_parameters == {"split": 8}
+    assert got_run.effective_parameters == {"split": 4}
+    assert got_run.result_set_id == result_set_id
+
+    got_set = separation.get_result_set(result_set_id)
+    assert got_set is not None
+    assert got_set.validation_status == ValidationStatus.VALID
+    assert got_set.stem_ids == [s.id for s in stems]
+    assert got_set.reconstruction_metrics == {"l1_error": 0.01}
+
+    got_stems = separation.list_stems_for_result_set(result_set_id)
+    # The repository orders stems by id (a UUID), not insertion order.
+    assert {s.role for s in got_stems} == {StemRole.VOCALS, StemRole.BASS}
+    assert all(s.frame_count == 441_000 for s in got_stems)
+
+    assert len(separation.list_runs_for_project(project.id)) == 1
+    assert len(separation.list_result_sets_for_project(project.id)) == 1
+
+    # The playback settings round-tripped onto the project.
+    reloaded = projects.get_project(project.id)
+    assert reloaded is not None
+    assert reloaded.practice_state.playback_mode == PlaybackMode.FOUR_STEMS
+    assert reloaded.practice_state.active_result_set_id == result_set_id
+    assert reloaded.practice_state.playback_speed == 0.5
+    assert reloaded.practice_state.tracks["bass"].gain == 0.5
+    assert reloaded.practice_state.tracks["vocals"].mute is True
+
+    # The original source record is byte-for-byte unchanged.
+    after = _source_columns(db_path, project.id)
+    assert after == before
+
+
+def test_source_fields_preserved_value_by_value(db_path: Path) -> None:
+    projects = ProjectRepository(db_path)
+    project = projects.create_project("Song")
+    _publish_source(db_path, project.id)
+
+    before = _source_columns(db_path, project.id)
+    assert before["status"] == "ready"
+    assert before["sample_rate"] == 48000
+    assert before["duration_frames"] == 441000
+
+    # Writing only the practice state must not touch the source record.
+    projects.set_practice_state(project.id, PracticeState())
+    after = _source_columns(db_path, project.id)
+    assert after == before

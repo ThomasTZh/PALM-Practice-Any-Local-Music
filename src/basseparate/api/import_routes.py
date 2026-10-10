@@ -55,6 +55,7 @@ from basseparate.storage import ImportRepository, ProjectRepository
 from basseparate.uploads import (
     ChunkAck,
     ImportSessionNotFoundError,
+    InsufficientSpaceError,
     UploadError,
     UploadManager,
 )
@@ -166,11 +167,9 @@ async def create_import(request: Request, body: CreateImportRequest) -> CreateIm
 
     try:
         uploads.reserve(record.id, body.declared_byte_count)
+    except InsufficientSpaceError as exc:
+        raise InsufficientDiskSpaceError(exc.needed, exc.free) from exc
     except UploadError as exc:
-        message = str(exc)
-        if message.startswith("insufficient disk space"):
-            needed, free = message.split(" bytes, ", 1)
-            raise InsufficientDiskSpaceError(int(needed), int(free.split(" free")[0])) from exc
         # Reservation failed for another reason; do not leave a dangling
         # import record.
         _imports(request).update_transfer_state(

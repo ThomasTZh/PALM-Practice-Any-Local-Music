@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.common import Revision, SamplePosition, SampleRate, UtcTimestamp, Uuid
 from basseparate.domain.marker import MarkerRecord
+from basseparate.domain.practice import PracticeState
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -164,6 +165,9 @@ class ProjectRecord(BaseModel):
     # Markers and working state (M1.15, milestone1.md §17).
     markers: list[MarkerRecord] = Field(default_factory=list)
     working_state: WorkingState = Field(default_factory=WorkingState)
+    #: Mixer and practice state (M2.1, milestone2.md §3.5). Defaulted so
+    #: pre-M2 projects deserialize unchanged.
+    practice_state: PracticeState = Field(default_factory=PracticeState)
     #: Undo/redo availability, computed by the repository on read
     #: (M1.15 §17.4); not stored, defaults to "none available".
     can_undo: bool = False

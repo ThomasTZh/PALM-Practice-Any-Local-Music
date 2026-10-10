@@ -94,7 +94,7 @@ def test_migration_created_v6_tables(db_path: Path) -> None:
     conn = _sql(db_path)
     try:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert version == DATABASE_SCHEMA_VERSION == 6
+        assert version == DATABASE_SCHEMA_VERSION == 7
         tables = {
             r[0]
             for r in conn.execute(

@@ -78,6 +78,19 @@ class SessionNotActiveError(UploadError):
         self.state = state
 
 
+class InsufficientSpaceError(UploadError):
+    """The temporary upload volume does not have enough free space.
+
+    Carries the structured byte counts so callers do not have to parse
+    the human-readable message.
+    """
+
+    def __init__(self, needed: int, free: int) -> None:
+        super().__init__(f"insufficient disk space: need {needed} bytes, {free} free")
+        self.needed = needed
+        self.free = free
+
+
 @dataclass(frozen=True)
 class ChunkAck:
     """Durable acknowledgment for an uploaded chunk."""
@@ -170,7 +183,7 @@ class UploadManager:
         # decode/waveform staging that follows the transfer.
         reserve = declared_byte_count + 2 * 1024**3
         if free < reserve:
-            raise UploadError(f"insufficient disk space: need {reserve} bytes, {free} free")
+            raise InsufficientSpaceError(reserve, free)
         # Start from a clean file so a stale .part from a crashed session
         # cannot mix bytes with the new transfer.
         with part.open("wb") as handle:
