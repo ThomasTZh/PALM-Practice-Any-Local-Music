@@ -11,7 +11,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Work package:** M2.1 (Confirm prerequisites and extend the domain) —
   **complete** (800 py + 307 frontend green; commit hash recorded by the
   ledger follow-up).
-- **Last commit:** `9510656` (ledger M1.16 hash); `af51265` — M1.16 (test
+- **Last commit:** `ba0b151` — M2.1 (confirm prerequisites and extend the
+  domain); `9510656` (ledger M1.16 hash); `af51265` — M1.16 (test
   corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
   undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
