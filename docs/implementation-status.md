@@ -8,8 +8,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.16 (test corpus and automated verification) —
-  in progress. Plan in `projectPlans/m1.16-plan.md`.
-- **Last commit:** `ede3d26` — M1.15 (markers, persistence, and
+  complete (`af51265`). All Milestone 1 work packages M1.1–M1.16 are
+  committed.
+- **Last commit:** `af51265` — M1.16 (test corpus and automated
+  verification); `ede3d26` — M1.15 (markers, persistence, and
   undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
   compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
@@ -25,13 +27,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.15 is complete (`ede3d26`). All of Milestone 1
-  work packages M1.1–M1.15 are committed. M1.16 (test corpus and
-  automated verification, spec §18) is in progress: plan in
-  `projectPlans/m1.16-plan.md`; phases 1–7 complete (fixture module,
-  format round-trips + capability doc, import gaps, PCM correctness,
-  waveform gaps, transport gaps, restart/persistence tests); phase 8
-  (full gate + commit) remains.
+- **Next action:** Milestone 1 is complete: all work packages
+  M1.1–M1.16 are committed (M1.16 = `af51265`, test corpus and
+  automated verification, spec §18). Remaining milestone-level work is
+  the out-of-scope §19 manual browser/performance/listening acceptance
+  and looping (deferred per milestone1.md). No further automated work
+  packages are defined for Milestone 1.
 
 ## Completed requirements (with evidence)
 
@@ -580,7 +581,7 @@ autosave wiring → 7 frontend editor marker UI → 8 full gate + commit.
   passed, typecheck, lint, format:check). Committed as a single
   `M1.15: …` change + ledger-hash follow-up.
 
-### M1.16 — Test corpus and automated verification (in progress)
+### M1.16 — Test corpus and automated verification (complete — `af51265`)
 
 Spec: `projectPlans/milestone1.md` §18. Plan:
 `projectPlans/m1.16-plan.md`. Final Milestone 1 work package:
@@ -658,6 +659,16 @@ persistence (`test_persistence.py`) → 8 gate + commit.
   follow) persists, undo/redo history persists, stale revision → 409
   `STALE_REVISION` with state unchanged, running job marked
   `interrupted` on restart, original user file byte-identical.
+- Phase 8 (complete): full gate green — Python `pytest tests/ -q`
+  748 passed (702 baseline + 46 new), `ruff check` clean, `mypy` clean;
+  frontend `vitest` 307 passed, `typecheck` + `lint` + `format:check`
+  clean; contract export → `pnpm contracts` → `check_contract.py` in
+  sync (regenerated stale M1.15 artifacts: `schema_version` default
+  2 → 3). Committed as `af51265`.
+
+**Milestone 1 exit:** all work packages M1.1–M1.16 are committed.
+Out of scope for this milestone (per milestone1.md): §19 manual
+browser/performance/listening acceptance and looping.
 
 ### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 
