@@ -12,12 +12,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   **complete** (800 py + 307 frontend green; `ba0b151`).
 - **M2.2:** complete — `42d8726` (842 py + 307 frontend green; all 3
   devices qualified in the locked analysis env).
-- **M2.3:** complete — hash-pinned `htdemucs_ft` baseline (registry +
-  bundle service + offline qualification; 884 py green; commit hash
-  recorded by the ledger follow-up).
+- **M2.3:** complete — `cd2ca9e` (hash-pinned `htdemucs_ft` baseline;
+  registry + bundle service + offline qualification; 884 py green).
 - **Current work package:** M2.4 (Prepare separation input consistently)
   — not started.
-- **Last commit:** `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
+- **Last commit:** `cd2ca9e` — M2.3 (pin and provision the bundled Demucs
+  baseline); `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
   — M2.1 (confirm prerequisites and extend the domain); `9510656` (ledger
   M1.16 hash); `af51265` — M1.16 (test
   corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
