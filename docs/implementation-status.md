@@ -14,9 +14,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   devices qualified in the locked analysis env).
 - **M2.3:** complete — `cd2ca9e` (hash-pinned `htdemucs_ft` baseline;
   registry + bundle service + offline qualification; 884 py green).
-- **Current work package:** M2.4 (Prepare separation input consistently)
-  — in progress (plan done; domain models next).
-- **Last commit:** `cd2ca9e` — M2.3 (pin and provision the bundled Demucs
+- **M2.4:** complete — `ebd58aa` (reference-mix resolution, one-shot
+  resample to the model rate, prepared-input identity, versioned global
+  normalization profile; 936 py green).
+- **Current work package:** M2.5 (Windowed inference adapter) — not
+  started.
+- **Last commit:** `ebd58aa` — M2.4 (prepare separation input
+  consistently); `cd2ca9e` — M2.3 (pin and provision the bundled Demucs
   baseline); `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
   — M2.1 (confirm prerequisites and extend the domain); `9510656` (ledger
   M1.16 hash); `af51265` — M1.16 (test
@@ -1737,7 +1741,7 @@ adapter that will consume `default_bundle_dir` with
 workspace copy is local-only (git-ignored) — reprovision with the URLs in
 the registry if it is ever lost.
 
-### M2.4 — Prepare separation input consistently (in progress)
+### M2.4 — Prepare separation input consistently (complete — `ebd58aa`)
 
 Spec: `projectPlans/milestone2.md` §6; plan: `projectPlans/m2.4-plan.md`.
 Scope: reference-mix resolution (stereo as-is, mono duplicated for model
