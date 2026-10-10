@@ -1,0 +1,37 @@
+[project]
+name = "basseparate-analysis"
+version = "0.1.0-dev"
+description = "Isolated Demucs analysis environment (M2.2). Inference only; separate from the application environment."
+requires-python = ">=3.11,<3.12"
+license = { text = "Proprietary - unpublished" }
+authors = [{ name = "basseparate" }]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    # Pinned together (M2.2 spec 4.1.4): engine + PyTorch wheel + audio I/O.
+    # torch resolves to the +cu128 wheel from the pytorch-cu128 index below,
+    # which is the first official line covering both SM89 (RTX 4080) and
+    # SM120 (RTX 5060 Ti, Blackwell).
+    "demucs==4.1.0",
+    "torch==2.9.1",
+    "soundfile>=0.12,<1.0",
+]
+
+# No build-system: this is a virtual environment project, not a package.
+# The application never imports from it; the worker is launched with the
+# explicit interpreter path (spec 4.1.7).
+
+[tool.uv]
+# The application is Linux-only; demucs pins torch<2.3 on darwin/x86_64,
+# which would make a full-platform lock unsatisfiable with torch 2.9.1.
+environments = ["sys_platform == 'linux'"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }

@@ -9,8 +9,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Gate:** Milestone 1 exit complete — all of M1.1–M1.16 committed; §18
   test corpus green (748 py + 307 frontend); contract in sync.
 - **Work package:** M2.1 (Confirm prerequisites and extend the domain) —
-  **complete** (800 py + 307 frontend green; commit hash recorded by the
-  ledger follow-up).
+  **complete** (800 py + 307 frontend green; `ba0b151`).
+- **Current work package:** M2.2 (Create the isolated Demucs runtime) —
+  **complete** (842 py + 307 frontend green; all 3 devices qualified;
+  commit hash recorded by the ledger follow-up).
 - **Last commit:** `ba0b151` — M2.1 (confirm prerequisites and extend the
   domain); `9510656` (ledger M1.16 hash); `af51265` — M1.16 (test
   corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
@@ -29,11 +31,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.2 assessment — the first package that needs the
-  Demucs/PyTorch/GPU runtime. Check runtime availability (GPU, model
-  download, memory) before starting implementation. Milestone 1 remains
-  fully committed; its only deferred items are the out-of-scope §19
-  manual acceptance and looping.
+- **Next action:** M2.3 (Pin and provision the bundled Demucs baseline) —
+  the `htdemucs` checkpoint is currently pulled from the Hugging Face
+  cache at qualification time; M2.3 bundles it hash-pinned so no network
+  model install is needed for the baseline. Milestone 1 remains fully
+  committed; its only deferred items are the out-of-scope §19 manual
+  acceptance and looping.
 
 ## Completed requirements (with evidence)
 
@@ -1585,6 +1588,73 @@ settings can be represented without modifying the original source record.
   `test_imports.py`.
 - Contracts: `contracts/openapi.json` + `frontend/src/api/schema.ts`
   regenerated (additive; `schema_version` default 3→4).
+
+### M2.2 — Create the isolated Demucs runtime (in progress)
+
+Spec: `projectPlans/milestone2.md` §4; plan: `projectPlans/m2.2-plan.md`.
+Scope: separately locked analysis environment, PyTorch/CUDA qualification
+(both GPUs + CPU), and device records/selection in the main backend (which
+stays free of PyTorch). Bundled model is M2.3; adapter is M2.5; API is
+M2.17.
+
+**Runtime assessment (2026-10-10):** driver 595.99.02 (CUDA 13.2); GPU0
+RTX 4080 cc 8.9 / 16376 MiB; GPU1 RTX 5060 Ti cc 12.0 (Blackwell) /
+16311 MiB. Blackwell requires cu128 wheels. Selected `torch==2.9.1+cu128`
+(cp311 wheel verified on the official index; latest patched stable line
+covering SM89 + SM120). Demucs 4.1.0 needs `torch>=2.1` — compatible.
+Network to download.pytorch.org + PyPI verified.
+
+- **Phase 1 — Plan + ledger:** done.
+- **Phase 2 — Isolated environment (§4.1):** done. `analysis/` project
+  (Python 3.11, demucs 4.1.0, torch 2.9.1 from the pytorch-cu128 index,
+  soundfile); `uv lock` (48 packages, torch locked at `2.9.1+cu128`) +
+  `uv sync --locked` (47 resolved packages); `tool.uv.environments`
+  restricted to Linux because demucs pins `torch<2.3` on darwin/x86_64.
+  Fingerprint: `docs/evidence/m2.2-analysis-environment.md` (git-ignored
+  local report; the committed lock is the authoritative fingerprint).
+  Main env verified torch/demucs-free (guard test included).
+- **Phase 3 — Qualification (§4.2, §4.3):** done. `analysis/qualify.py`
+  run with the explicit analysis interpreter: tensor/conv/FFT per GPU, a
+  5 s `htdemucs` run per device (4 stems, all finite), CPU path at 4
+  threads including a model run. **All three devices qualified** —
+  including the Blackwell RTX 5060 Ti (SM120) on the cu128 wheel.
+  Results: `docs/evidence/m2.2-qualification.md`. The final qualifying run
+  used the exact `uv sync --locked` environment (an earlier debug round
+  with a locally downgraded cffi was discarded and re-run after re-sync).
+  One script bug fixed along the way: `sf.write` was given
+  channels×frames data (soundfile wants frames×channels; libsndfile then
+  rejected the implied >1024-channel WAV — not a soundfile bug).
+- **Phase 4 — Device records + selection (§4.4–4.5):** done.
+  `domain/device.py` (`DeviceRecord`, `QualificationStatus`, `DeviceKind`
+  + invariants: qualified ⇒ timestamp, failed ⇒ reason, GPU ⇒ total VRAM,
+  CPU ⇒ identifier `cpu` and no VRAM facts); `devices.py`
+  (nvidia-smi discovery subprocess with injectable runner, free-VRAM
+  refresh, JSON `QualificationStore` under the data dir,
+  `select_device` with preference-by-UUID, first-qualified default order,
+  explicit CPU offer, no silent GPU→CPU substitution); 42 unit tests
+  (domain invariants, stubbed-nvidia-smi discovery/refresh, store
+  round-trip, every selection case, environment boundary).
+- **Phase 5 — Full gate + commit:** ruff clean, mypy clean (53 files),
+  **842 passed** (800 M2.1 baseline + 42 new, 186 s), contract drift
+  check OK (no API change — device domain is not API-exposed yet).
+  Commit + ledger hash follow-up.
+
+**Deliverables:**
+- `analysis/pyproject.toml` + `analysis/uv.lock` + `analysis/.python-version`
+  — separately locked inference-only environment (spec 4.1).
+- `analysis/qualify.py` — qualification script, explicit-interpreter entry
+  point (spec 4.1.7, 4.2.4–4.2.8, 4.3).
+- `docs/evidence/m2.2-analysis-environment.md`,
+  `docs/evidence/m2.2-qualification.md` (git-ignored local reports).
+- `src/basseparate/domain/device.py`, `src/basseparate/devices.py`,
+  `domain/__init__.py` exports.
+- `tests/unit/test_device.py`, `tests/unit/test_devices.py`.
+
+**Deferred (out of M2.2 scope):** writing qualification results into the
+runtime store is not wired to a CLI/API yet — `record_qualification()` is
+the tested integration point; the endpoint/CLI belongs to M2.17.
+`htdemucs` checkpoint used the Hugging Face cache (dev qualification);
+the bundled hash-pinned baseline is M2.3.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

@@ -21,6 +21,11 @@ from basseparate.domain.confidence import (
     ConfidenceKind,
     ReviewState,
 )
+from basseparate.domain.device import (
+    DeviceKind,
+    DeviceRecord,
+    QualificationStatus,
+)
 from basseparate.domain.import_record import (
     AudioStreamInfo,
     ImportRecord,
@@ -100,6 +105,9 @@ __all__ = [
     "Confidence",
     "ConfidenceAlternative",
     "ConfidenceKind",
+    "DeviceKind",
+    "DeviceRecord",
+    "QualificationStatus",
     "HalfOpenInterval",
     "ImportRecord",
     "JobState",
