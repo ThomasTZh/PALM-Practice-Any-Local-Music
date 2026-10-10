@@ -52,6 +52,14 @@ from basseparate.domain.practice import (
     PracticeState,
     TrackSettings,
 )
+from basseparate.domain.preparation import (
+    NORMALIZATION_PROFILE_VERSION,
+    ChannelStats,
+    DownmixSpec,
+    NormalizationProfile,
+    PreparedInput,
+    ReferenceMixPlan,
+)
 from basseparate.domain.project import (
     MAX_CHANNEL_COUNT,
     MAX_SAMPLE_RATE,
@@ -130,6 +138,12 @@ __all__ = [
     "PracticeState",
     "PlaybackMode",
     "TrackSettings",
+    "NORMALIZATION_PROFILE_VERSION",
+    "ChannelStats",
+    "DownmixSpec",
+    "NormalizationProfile",
+    "PreparedInput",
+    "ReferenceMixPlan",
     "MAX_ALIGNMENT_OFFSET_FRAMES",
     "DeviceType",
     "ReferenceMixIdentity",

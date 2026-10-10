@@ -15,7 +15,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.3:** complete — `cd2ca9e` (hash-pinned `htdemucs_ft` baseline;
   registry + bundle service + offline qualification; 884 py green).
 - **Current work package:** M2.4 (Prepare separation input consistently)
-  — not started.
+  — in progress (plan done; domain models next).
 - **Last commit:** `cd2ca9e` — M2.3 (pin and provision the bundled Demucs
   baseline); `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
   — M2.1 (confirm prerequisites and extend the domain); `9510656` (ledger
@@ -1736,6 +1736,55 @@ adapter that will consume `default_bundle_dir` with
 `get_model("htdemucs_ft", repo=...)` (M2.5). The `models/htdemucs_ft`
 workspace copy is local-only (git-ignored) — reprovision with the URLs in
 the registry if it is ever lost.
+
+### M2.4 — Prepare separation input consistently (in progress)
+
+Spec: `projectPlans/milestone2.md` §6; plan: `projectPlans/m2.4-plan.md`.
+Scope: reference-mix resolution (stereo as-is, mono duplicated for model
+input, multichannel via the explicit M1.7 stereo downmix), single whole-file
+resample to the model rate (44.1 kHz from the M2.3 registry), hash-identified
+prepared-input asset identity, source-time mapping (no trim), versioned
+global normalization profile (streaming float64 stats, epsilon-capped
+scale, anti-phase full-channel fallback, exact-silence shortcut). No API
+(M2.17), no inference (M2.5). Main env stays torch/demucs-free (numpy +
+the M1.7 ffmpeg driver are reused).
+
+**Resolved facts (2026-10-10):** `resample_playback` (SWR profile v1,
+endpoint_difference_frames), `downmix_monitoring` + `resolve_downmix`
+(standard_5_1 / manual), `validate_pcm` (chunked hash/finiteness/max) all
+exist from M1.5/M1.7 and are reused; demucs normalizes per window
+(mean/std, 1e-5 epsilon) — the M2.4 global profile gives M2.5 a
+whole-track reference scale (kept separate from demucs' internal step,
+§6.3 rule 1).
+
+- **Phase 1 — Plan + ledger:** done.
+- **Phase 2 — Domain:** done — `src/basseparate/domain/preparation.py` —
+  `DownmixSpec`, `ReferenceMixPlan`, `PreparedInput`, `ChannelStats`,
+  `NormalizationProfile` (frozen pydantic, validators; reuses the M1
+  `TimeMapping` for the source-time mapping — no new time type).
+  Exported from `domain/__init__.py`.
+- **Phase 3 — Service:** done — `src/basseparate/media/preparation.py` —
+  `transform_identity_hash` (canonical JSON recipe, pure),
+  `compute_normalization_profile` (streaming float64; modes
+  normal / full_channel_fallback / exact_silence; EPSILON 1e-4,
+  FALLBACK_RATIO 1e-2), `prepare_separation_input` (hash pre-check →
+  optional M1.7 downmix → SWR v1 resample → numpy mono duplication →
+  validate_pcm → endpoint tolerance ±2 frames → profile; staging cleanup
+  on failure).
+- **Phase 4 — Tests:** done — 41 unit
+  (`tests/unit/test_preparation.py`: domain validators, identity purity,
+  profile math on synthetic f32le: silence/DC/anti-phase/near-silence
+  epsilon cap/float64 accuracy/determinism/malformed input) + 11
+  integration (`tests/integration/test_preparation.py`, real ffmpeg:
+  stereo 48k→44.1k, mono duplication byte-exact, 5.1 downmix, manual
+  L/R extraction, two-run byte-identical determinism, hash mismatch,
+  kind/channel mismatch, intermediate cleanup). Ruff clean, mypy clean
+  (58 files), contract drift check OK.
+- **Phase 5 — Commit:** `M2.4: ...` + ledger hash follow-up.
+  Gates: **936 passed** (884 + 52 new), 218.75 s; the 2 suite warnings
+  are pre-existing (fastapi/starlette deprecation; the known
+  `test_publisher_failure_fails_job` subprocess-GC unraisable — that
+  test passes).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
