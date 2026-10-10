@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from synth import FFMPEG, encode_with_ffmpeg, sine, write_wav_s16
 
 from basseparate.media.decode import (
     DISCONTINUITY_FILTER,
@@ -33,52 +34,6 @@ from basseparate.media.decode import (
     EmptyAudioError,
     decode_canonical,
 )
-
-FFMPEG = "ffmpeg"
-
-
-def _write_wav(path: Path, samples: np.ndarray, sample_rate: int, channels: int = 1) -> None:
-    """Write an f32 sample array (mono: (N,); stereo: (N, 2)) as 16-bit WAV."""
-    interleaved = samples if samples.ndim == 2 else samples[:, None]
-    s16 = np.clip(interleaved, -1.0, 1.0)
-    pcm = (s16 * 32767.0).astype("<i2").tobytes()
-    byte_rate = sample_rate * channels * 2
-    header = (
-        b"RIFF"
-        + struct.pack("<I", 36 + len(pcm))
-        + b"WAVE"
-        + b"fmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, byte_rate, channels * 2, 16)
-        + b"data"
-        + struct.pack("<I", len(pcm))
-    )
-    path.write_bytes(header + pcm)
-
-
-def _sine(
-    seconds: float, sample_rate: int, frequency: float = 440.0, amplitude: float = 0.5
-) -> np.ndarray:
-    t = np.arange(int(seconds * sample_rate), dtype="<f8") / sample_rate
-    return (amplitude * np.sin(2.0 * np.pi * frequency * t)).astype("<f4")
-
-
-def _encode(input_path: Path, output_path: Path, *extra: str) -> None:
-    subprocess.run(
-        [
-            FFMPEG,
-            "-hide_banner",
-            "-nostdin",
-            "-v",
-            "error",
-            "-i",
-            str(input_path),
-            *extra,
-            "-y",
-            str(output_path),
-        ],
-        check=True,
-        capture_output=True,
-    )
 
 
 def _run_filter_chain(filter_chain: str, out_path: Path) -> int:
@@ -110,7 +65,7 @@ def _run_filter_chain(filter_chain: str, out_path: Path) -> int:
 class TestWavDecode:
     def test_mono_tone_exact_frames_and_amplitude(self, tmp_path: Path) -> None:
         source = tmp_path / "tone.wav"
-        _write_wav(source, _sine(0.1, 44100), 44100)
+        write_wav_s16(source, sine(0.1, 44100), 44100)
         out = tmp_path / "out.pcm"
 
         result = asyncio.run(
@@ -137,7 +92,7 @@ class TestWavDecode:
 
     def test_deterministic_two_runs(self, tmp_path: Path) -> None:
         source = tmp_path / "tone.wav"
-        _write_wav(source, _sine(0.25, 44100), 44100)
+        write_wav_s16(source, sine(0.25, 44100), 44100)
         out1 = tmp_path / "r1.pcm"
         out2 = tmp_path / "r2.pcm"
 
@@ -164,10 +119,10 @@ class TestWavDecode:
         assert out1.read_bytes() == out2.read_bytes()
 
     def test_stereo_channels_preserved(self, tmp_path: Path) -> None:
-        left = _sine(0.1, 48000, frequency=440.0)
-        right = _sine(0.1, 48000, frequency=880.0)
+        left = sine(0.1, 48000, frequency=440.0)
+        right = sine(0.1, 48000, frequency=880.0)
         source = tmp_path / "stereo.wav"
-        _write_wav(source, np.stack([left, right], axis=1), 48000, channels=2)
+        write_wav_s16(source, np.stack([left, right], axis=1), 48000)
         out = tmp_path / "out.pcm"
 
         result = asyncio.run(
@@ -187,7 +142,7 @@ class TestWavDecode:
 
     def test_progress_reported(self, tmp_path: Path) -> None:
         source = tmp_path / "long.wav"
-        _write_wav(source, _sine(60.0, 48000), 48000)
+        write_wav_s16(source, sine(60.0, 48000), 48000)
         out = tmp_path / "out.pcm"
         events: list[DecodeProgress] = []
 
@@ -225,9 +180,9 @@ class TestLossyContainers:
         self, tmp_path: Path, suffix: str, encoder: list[str], expected_rate: int
     ) -> None:
         tone = tmp_path / "tone.wav"
-        _write_wav(tone, _sine(1.0, 44100), 44100)
+        write_wav_s16(tone, sine(1.0, 44100), 44100)
         source = tmp_path / f"tone.{suffix}"
-        _encode(tone, source, *encoder)
+        encode_with_ffmpeg(tone, source, *encoder)
         out1 = tmp_path / "r1.pcm"
         out2 = tmp_path / "r2.pcm"
 
@@ -289,9 +244,9 @@ class TestFailureModes:
 
     def test_truncated_mp3_records_warnings(self, tmp_path: Path) -> None:
         tone = tmp_path / "tone.wav"
-        _write_wav(tone, _sine(1.0, 44100), 44100)
+        write_wav_s16(tone, sine(1.0, 44100), 44100)
         full = tmp_path / "tone.mp3"
-        _encode(tone, full, "-c:a", "libmp3lame", "-q:a", "2")
+        encode_with_ffmpeg(tone, full, "-c:a", "libmp3lame", "-q:a", "2")
         truncated = tmp_path / "trunc.mp3"
         truncated.write_bytes(full.read_bytes()[:2000])
         out = tmp_path / "out.pcm"
@@ -332,7 +287,7 @@ class TestFailureModes:
         import time
 
         source = tmp_path / "long.wav"
-        _write_wav(source, _sine(3600.0, 48000), 48000)
+        write_wav_s16(source, sine(3600.0, 48000), 48000)
         out = tmp_path / "out.pcm"
         cancel_event = threading.Event()
 
@@ -359,7 +314,7 @@ class TestFailureModes:
 
     def test_cancel_before_start_raises(self, tmp_path: Path) -> None:
         source = tmp_path / "tone.wav"
-        _write_wav(source, _sine(0.1, 44100), 44100)
+        write_wav_s16(source, sine(0.1, 44100), 44100)
         cancel_event = threading.Event()
         cancel_event.set()
 
@@ -377,7 +332,7 @@ class TestFailureModes:
 
     def test_timeout_removes_output(self, tmp_path: Path) -> None:
         source = tmp_path / "long.wav"
-        _write_wav(source, _sine(600.0, 48000), 48000)
+        write_wav_s16(source, sine(600.0, 48000), 48000)
         out = tmp_path / "out.pcm"
 
         with pytest.raises(DecodeTimeoutError):

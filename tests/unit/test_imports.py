@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-import struct
+import os
 import subprocess
 import uuid
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from synth import wav_s16_bytes
 
 from basseparate.app import create_app
 from basseparate.config import AppConfig, resolve_config
@@ -24,22 +25,8 @@ _PNG_BYTES = bytes.fromhex(
 )
 
 
-def _make_wav(pcm: bytes | None = None, sample_rate: int = 44100, channels: int = 1) -> bytes:
-    """Build a minimal valid 16-bit PCM WAV file."""
-    if pcm is None:
-        pcm = b"\x00\x00" * 4410  # 100 ms of silence
-    byte_rate = sample_rate * channels * 2
-    block_align = channels * 2
-    header = (
-        b"RIFF"
-        + struct.pack("<I", 36 + len(pcm))
-        + b"WAVE"
-        + b"fmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, byte_rate, block_align, 16)
-        + b"data"
-        + struct.pack("<I", len(pcm))
-    )
-    return header + pcm
+#: 100 ms of 44.1 kHz mono silence as a 16-bit PCM WAV (probe/decode input).
+_SILENT_WAV = wav_s16_bytes(b"\x00\x00" * 4410, 44100)
 
 
 def _make_multi_audio_file(tmp_path: Path) -> bytes:
@@ -104,10 +91,16 @@ def _make_project(client: TestClient, headers: dict) -> str:
     return resp.json()["id"]
 
 
-def _make_import(client: TestClient, headers: dict, project_id: str, size: int = 100_000) -> dict:
+def _make_import(
+    client: TestClient,
+    headers: dict,
+    project_id: str,
+    size: int = 100_000,
+    filename: str = "take.wav",
+) -> dict:
     resp = client.post(
         "/api/v1/imports",
-        json={"project_id": project_id, "filename": "take.wav", "declared_byte_count": size},
+        json={"project_id": project_id, "filename": filename, "declared_byte_count": size},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text
@@ -384,7 +377,7 @@ class TestChunkUpload:
 
     def test_chunks_rejected_after_completion(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
-        data = _make_wav(pcm=b"\x00\x00" * 32)
+        data = wav_s16_bytes(b"\x00\x00" * 32, 44100)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 32)
         done = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
@@ -405,7 +398,7 @@ class TestCompleteImport:
         self, client: TestClient, auth_headers: dict
     ) -> None:
         project_id = _make_project(client, auth_headers)
-        data = _make_wav(pcm=bytes(reversed(range(256))) * 166)
+        data = wav_s16_bytes(bytes(reversed(range(256))) * 166, 44100)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 64 * 1024)
 
@@ -430,7 +423,7 @@ class TestCompleteImport:
 
     def test_complete_twice_rejected(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
-        data = _make_wav(pcm=b"\x00\x00" * 16)
+        data = wav_s16_bytes(b"\x00\x00" * 16, 44100)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 16)
         assert (
@@ -473,7 +466,7 @@ class TestCancelImport:
 
     def test_cancel_completed_rejected(self, client: TestClient, auth_headers: dict) -> None:
         project_id = _make_project(client, auth_headers)
-        data = _make_wav(pcm=b"\x00\x00" * 8)
+        data = wav_s16_bytes(b"\x00\x00" * 8, 44100)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 8)
         client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
@@ -608,8 +601,11 @@ def _complete_upload(
     auth_headers: dict,
     project_id: str,
     data: bytes,
+    filename: str = "take.wav",
 ) -> tuple[str, dict]:
-    import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
+    import_id = _make_import(client, auth_headers, project_id, size=len(data), filename=filename)[
+        "import_id"
+    ]
     _upload_chunks(client, auth_headers, import_id, data, 4096)
     resp = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
     assert resp.status_code == 200, resp.text
@@ -621,7 +617,7 @@ class TestProbeIntegration:
         self, client: TestClient, auth_headers: dict
     ) -> None:
         project_id = _make_project(client, auth_headers)
-        data = _make_wav()
+        data = _SILENT_WAV
         import_id, body = _complete_upload(client, auth_headers, project_id, data)
 
         assert body["state"] == "complete"
@@ -723,7 +719,7 @@ class TestProbeIntegration:
         self, client: TestClient, auth_headers: dict
     ) -> None:
         project_id = _make_project(client, auth_headers)
-        data = _make_wav(sample_rate=4000)
+        data = wav_s16_bytes(b"\x00\x00" * 4410, 4000)
         import_id = _make_import(client, auth_headers, project_id, size=len(data))["import_id"]
         _upload_chunks(client, auth_headers, import_id, data, 4096)
 
@@ -733,3 +729,101 @@ class TestProbeIntegration:
 
         state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
         assert state["transfer_state"] == "failed"
+
+
+class TestFilenameEdgeCases:
+    """Spec §18.3: unicode/space names, misleading extensions, duplicates."""
+
+    def test_unicode_and_space_filename_round_trips(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        filename = "Töne & spaces (demo) — v2.wav"
+        import_id, body = _complete_upload(client, auth_headers, project_id, _SILENT_WAV, filename)
+
+        assert body["state"] == "complete"
+        state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
+        assert state["filename"] == filename
+
+    def test_misleading_extension_reports_real_container(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        # Genuine WAV bytes under a .mp3 name: the probe must trust the
+        # container bytes, not the filename.
+        _, body = _complete_upload(client, auth_headers, project_id, _SILENT_WAV, "fake.mp3")
+
+        assert body["probe_result"]["format_name"] == "wav"
+        stream = body["probe_result"]["audio_streams"][0]
+        assert stream["codec"] == "pcm_s16le"
+
+    def test_duplicate_file_imports_independently(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        project_id = _make_project(client, auth_headers)
+        first = _complete_upload(client, auth_headers, project_id, _SILENT_WAV, "copy-a.wav")
+        second = _complete_upload(client, auth_headers, project_id, _SILENT_WAV, "copy-b.wav")
+
+        assert first[0] != second[0]
+        listing = client.get(
+            f"/api/v1/projects/{project_id}/imports", headers=auth_headers
+        ).json()["imports"]
+        assert {i["id"] for i in listing} == {first[0], second[0]}
+        assert all(i["transfer_state"] == "complete" for i in listing)
+
+
+class TestProbeTimeout:
+    """Spec §18.3: a hung ffprobe must fail the import, not hang it."""
+
+    def test_complete_marks_failed_on_probe_timeout(
+        self, client: TestClient, auth_headers: dict, tmp_path: Path, monkeypatch
+    ) -> None:
+        bin_dir = _install_fake_slow_ffprobe(tmp_path)
+        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+        # The production timeout is 30 s; shorten it so the test stays fast
+        # while still exercising the real subprocess + timeout machinery.
+        import basseparate.api.import_routes as import_routes
+
+        real_probe = import_routes.probe_media
+
+        async def fast_probe(path, **kwargs):
+            return await real_probe(path, timeout_seconds=0.5)
+
+        monkeypatch.setattr(import_routes, "probe_media", fast_probe)
+
+        project_id = _make_project(client, auth_headers)
+        import_id = _make_import(client, auth_headers, project_id, size=len(_SILENT_WAV))[
+            "import_id"
+        ]
+        _upload_chunks(client, auth_headers, import_id, _SILENT_WAV, 4096)
+
+        resp = client.post(f"/api/v1/imports/{import_id}/complete", headers=auth_headers)
+        assert resp.status_code == 504
+        assert resp.json()["error"]["code"] == "PROBE_TIMEOUT"
+
+        state = client.get(f"/api/v1/imports/{import_id}", headers=auth_headers).json()
+        assert state["transfer_state"] == "failed"
+        assert state["error"] is not None
+
+
+def _install_fake_slow_ffprobe(tmp_path: Path) -> Path:
+    """Install a fake ``ffprobe`` on PATH that sleeps for 30 s on any probe.
+
+    ``exec`` replaces the shell with sleep so SIGTERM reaches the sleeper
+    directly (no orphaned child). ``-version`` answers immediately so
+    ``tool_versions()`` works.
+    """
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "ffprobe"
+    script.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "-version" ]; then\n'
+        '  echo "ffprobe version 6.0-fake"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exec sleep 30\n"
+    )
+    script.chmod(0o755)
+    return bin_dir

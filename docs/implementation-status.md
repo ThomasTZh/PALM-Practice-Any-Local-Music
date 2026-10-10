@@ -7,8 +7,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.15 (markers, persistence, and undo/redo) —
-  complete. Plan in `projectPlans/m1.15-plan.md`.
+- **Work package:** M1.16 (test corpus and automated verification) —
+  in progress. Plan in `projectPlans/m1.16-plan.md`.
 - **Last commit:** `ede3d26` — M1.15 (markers, persistence, and
   undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
@@ -26,9 +26,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
 - **Next action:** M1.15 is complete (`ede3d26`). All of Milestone 1
-  work packages M1.1–M1.15 are committed. The next work package per
-  spec §18 context is M1.16 (looping) — not started; write a plan in
-  `projectPlans/` before implementing.
+  work packages M1.1–M1.15 are committed. M1.16 (test corpus and
+  automated verification, spec §18) is in progress: plan in
+  `projectPlans/m1.16-plan.md`; phases 1–7 complete (fixture module,
+  format round-trips + capability doc, import gaps, PCM correctness,
+  waveform gaps, transport gaps, restart/persistence tests); phase 8
+  (full gate + commit) remains.
 
 ## Completed requirements (with evidence)
 
@@ -576,6 +579,85 @@ autosave wiring → 7 frontend editor marker UI → 8 full gate + commit.
   schema.ts regenerated, check_contract OK), frontend (vitest 303
   passed, typecheck, lint, format:check). Committed as a single
   `M1.15: …` change + ledger-hash follow-up.
+
+### M1.16 — Test corpus and automated verification (in progress)
+
+Spec: `projectPlans/milestone1.md` §18. Plan:
+`projectPlans/m1.16-plan.md`. Final Milestone 1 work package:
+complete the automated test corpus against the §18.1–§18.7
+checklists — shared synthetic fixture module (`tests/synth.py`),
+ffmpeg format fixtures + capability recording (§18.2), import gaps
+(unicode/space names, misleading extension, duplicate, probe
+timeout), PCM correctness suite (§18.4), waveform gaps (outside ±1,
+peak/sample consistency, transform-version cache invalidation,
+corrupt-cache recovery), transport gaps (rapid seeks, near-EOF
+seek, empty/final partial chunk, context-rate mismatch), and
+integration restart/persistence tests (§18.7). Product-code changes
+only for genuine bugs a new test exposes.
+
+Phases: 1 plan + ledger → 2 `tests/synth.py` (+ refactor existing
+local helpers onto it) → 3 format fixtures + `test_formats.py` +
+capability evidence doc → 4 import gaps → 5 PCM correctness
+(`test_pcm_correctness.py`) → 6 waveform gaps → 7 transport +
+persistence (`test_persistence.py`) → 8 gate + commit.
+
+**Phase status:**
+- Phase 1 (complete): plan written (`projectPlans/m1.16-plan.md`),
+  ledger updated. Surveyed coverage: import (test_imports.py, chunk
+  semantics complete), decode (unit + integration, lossy MP3/AAC/
+  Opus), waveform (32 tests incl. all-positive/negative, long
+  multi-tile), transport (play/stop/seek/underrun/both buffering
+  paths), persistence (M1.15 unit + reopen recovery). Gaps listed in
+  plan §1. ffmpeg 8.1.2 verified: encoders pcm_s16le/pcm_f32le/flac/
+  libmp3lame/aac/libvorbis/libopus.
+- Phase 2 (complete): `tests/synth.py` — shared fixture module
+  (tone/sine/stereo/impulse/silence/DC/full-scale/above-full-scale/
+  short-in-bucket/block-edge/channel-impulse generators, s16 + f32
+  WAV writers, chunked 60-min `long_wav_s16`, `encode_with_ffmpeg`).
+  Refactored `tests/integration/test_decode.py` (dropped local
+  `_write_wav`/`_sine`/`_encode`) and
+  `tests/integration/test_media_worker.py` (dropped `_make_wav`) onto
+  it. Full suite green after refactor: 702 passed.
+- Phase 3 (complete): `tests/formats.py` (7 audio codec/container
+  specs, video + cover-art builders, encoder/muxer probes) +
+  `tests/integration/test_formats.py` (22 tests: s16/f32 WAV
+  round-trips incl. above-full-scale, 7 format round-trips ×2, 4
+  video/container tests, capability matrix). Build notes: no `m4a`
+  muxer (AAC fixture uses audio-only `mp4`); lavfi `sine` is mono so
+  video fixtures force `-ac 2`; MP4 stores stream titles in the
+  `name` tag. Evidence: `docs/evidence/m1.16-format-capabilities.md`.
+- Phase 4 (complete): `tests/unit/test_imports.py` gaps — unicode +
+  space filename round-trip, misleading extension (WAV bytes as
+  `.mp3` → probe reports `wav`), duplicate file imports, probe timeout
+  (fake slow ffprobe on PATH + shortened 0.5 s timeout → 504
+  `PROBE_TIMEOUT`, import marked failed). Also refactored the local
+  `_make_wav` onto `synth.wav_s16_bytes`. 38 passed.
+- Phase 5 (complete): `tests/integration/test_pcm_correctness.py`
+  (§18.4) — exact s16→normalized values, byte order (byte-for-byte
+  f32le), channel order (unique impulse position), time zero, EOF,
+  above-full-scale finite (peak 2.0), MP3 t=0 marker survival (no
+  double encoder-delay trim), truncated data serves no partial frame.
+  8 passed.
+- Phase 6 (complete): `tests/unit/test_waveform.py` gaps —
+  above-full-scale extrema preserved (no ±1 clamp), peak/sample
+  consistency vs direct numpy per-bucket reference, cache-version bump
+  invalidation (old manifest rejected, rebuild publishes new version),
+  corrupt-cache recovery (min>max tile detected, rebuild
+  byte-identical). 41 passed.
+- Phase 7 (complete): `frontend/tests/transport.test.ts` §18.6 gaps —
+  rapid repeated seeks (last seek wins, stale-generation buffered/
+  anchor messages dropped), near-EOF/beyond-endpoint seek clamped to
+  the endpoint with no fetch past it, short final chunk (partial frame
+  dropped, remainder refetched, reaches `ended`), context-rate
+  mismatch (bookkeeping, fetch ranges, and clamping stay in target
+  frames). 33 transport tests pass. `tests/integration/test_persistence.py`
+  (§18.7) — 8 restart tests on two full app instances sharing one
+  storage root: import + decoded PCM survive, reopen creates no jobs
+  and leaves the PCM byte/mtime-identical (no re-decode), markers
+  persist, working state (viewport/selection/display/volume/position/
+  follow) persists, undo/redo history persists, stale revision → 409
+  `STALE_REVISION` with state unchanged, running job marked
+  `interrupted` on restart, original user file byte-identical.
 
 ### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 

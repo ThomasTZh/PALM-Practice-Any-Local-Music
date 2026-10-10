@@ -416,3 +416,83 @@ class TestValidation:
                 ),
                 source_hash="ab" * 32,
             )
+
+
+class TestValueRange:
+    """Spec §18.5: values outside ±1 and peak/sample consistency."""
+
+    def test_above_full_scale_extrema_preserved(self, tmp_path: Path) -> None:
+        frames = 64 * 8
+        mono = (2.0 * np.sin(2.0 * np.pi * 440.0 * np.arange(frames) / 44100)).astype("<f4")
+        samples = np.repeat(mono[:, None], 2, axis=1).ravel()
+
+        manifest = _build(tmp_path, samples, channel_count=2, name="hot")
+        tile = _tile(tmp_path / "hot", 0, 0, channels=2)
+        assert tile[:, :, 1].max() > 1.0, "above-full-scale peaks must not be clamped"
+        assert tile[:, :, 0].min() < -1.0
+        validate_manifest(manifest, source_hash=manifest.source_hash)
+
+    def test_peak_matches_sample_exactly(self, tmp_path: Path) -> None:
+        frames = 64 * 10
+        mono = np.zeros(frames, dtype="<f4")
+        mono[10] = 1.0
+        samples = np.repeat(mono[:, None], 2, axis=1).ravel()
+
+        manifest = _build(tmp_path, samples, channel_count=2, name="imp")
+        assert len(manifest.levels) == 1
+        tile0 = _tile(tmp_path / "imp", 0, 0, channels=2)
+        # The stored extrema must equal the direct per-bucket min/max of
+        # the samples (no smoothing, no padding influence).
+        shaped = mono.reshape(-1, 64)
+        reference = np.stack([shaped.min(axis=1), shaped.max(axis=1)], axis=-1)
+        assert np.array_equal(tile0[:, 0, :], reference)
+        # The impulse is the exact tile maximum; the floor stays 0.
+        assert tile0[:, :, 1].max() == 1.0
+        assert tile0[:, :, 0].min() == 0.0
+        validate_manifest(manifest, source_hash=manifest.source_hash)
+
+
+class TestCacheInvalidation:
+    def test_version_bump_invalidates_old_cache(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import basseparate.domain.waveform as domain_wf
+        import basseparate.media.waveform as media_wf
+
+        samples = _sine_pgm(64 * 10, 2)
+        manifest = _build(tmp_path, samples, channel_count=2, name="ver")
+        assert manifest.cache_version == WAVEFORM_CACHE_VERSION
+
+        # Simulate a transform change: bump the version in both namespaces.
+        monkeypatch.setattr(domain_wf, "WAVEFORM_CACHE_VERSION", WAVEFORM_CACHE_VERSION + 1)
+        monkeypatch.setattr(media_wf, "WAVEFORM_CACHE_VERSION", WAVEFORM_CACHE_VERSION + 1)
+
+        with pytest.raises(ValueError, match="cache version"):
+            validate_manifest(manifest, source_hash=manifest.source_hash)
+
+        rebuilt = _build(tmp_path, samples, channel_count=2, name="ver")
+        assert rebuilt.cache_version == WAVEFORM_CACHE_VERSION + 1
+        validate_manifest(rebuilt, source_hash=rebuilt.source_hash)
+
+
+class TestCorruptCacheRecovery:
+    def test_corrupt_tile_rebuilds_byte_identical(self, tmp_path: Path) -> None:
+        samples = _sine_pgm(64 * 10, 2)
+        first = _build(tmp_path, samples, channel_count=2, name="clean")
+        clean_tiles = _all_tiles(tmp_path / "clean", first)
+
+        # Corrupt the (only) level-0 tile with a min > max bucket.
+        buckets = first.levels[0].final_tile_buckets
+        bad = np.zeros((buckets, 2, 2), dtype="<f4")
+        bad[..., 0] = 1.0
+        bad[..., 1] = -1.0
+        tile_path = tmp_path / "clean" / "level_0" / "tile_000000.bin"
+        tile_path.write_bytes(bad.tobytes())
+
+        with pytest.raises(ValueError, match="minimum > maximum"):
+            validate_tile_bytes(tile_path.read_bytes(), tile_byte_count(buckets, 2), 2)
+
+        # Rebuilding over the corrupt directory recovers a valid cache.
+        rebuilt = _build(tmp_path, samples, channel_count=2, name="clean")
+        assert _all_tiles(tmp_path / "clean", rebuilt) == clean_tiles
+        validate_manifest(rebuilt, source_hash=rebuilt.source_hash)

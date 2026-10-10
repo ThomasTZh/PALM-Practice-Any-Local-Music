@@ -849,3 +849,107 @@ describe('audible position (spec §16.2)', () => {
     expect(rig.transport.getAudiblePosition()).toBe(4800)
   })
 })
+
+describe('spec §18.6 gap coverage', () => {
+  it('rapid repeated seeks land on the last one and drop stale generations', async () => {
+    const rig = makeRig()
+    await ready(rig)
+
+    rig.transport.seek(9_600) // 20 %
+    rig.transport.seek(19_200) // 40 %
+    rig.transport.seek(28_800) // 60 %
+    await settle()
+
+    // The play-time alignment seek plus one per rapid seek.
+    const seeks = rig.node.posted('seek')
+    expect(seeks).toHaveLength(4)
+    const gens = seeks.map((m) => m.generation as number)
+    expect(gens[1]).toBeLessThan(gens[2])
+    expect(gens[2]).toBeLessThan(gens[3])
+    expect(rig.transport.currentState).toBe('seeking')
+    expect(rig.transport.position).toBe(28_800)
+
+    // Messages from superseded generations must not move the playhead.
+    rig.node.post({ type: 'buffered', frames: 1000, queuedFrames: 0, generation: gens[1] })
+    rig.node.post({ type: 'anchor', frame: 5_000, time: 0.1, generation: gens[1] })
+    expect(rig.transport.currentState).toBe('seeking')
+    expect(rig.transport.position).toBe(28_800)
+
+    // The current generation's acknowledgement resumes at the last seek.
+    rig.node.post({ type: 'buffered', frames: 1000, queuedFrames: 0, generation: gens[3] })
+    expect(rig.transport.currentState).toBe('playing')
+    expect(rig.transport.position).toBe(28_800)
+  })
+
+  it('clamps seeks at and past EOF to the endpoint', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    const fillsAfterReady = rig.fetchCalls.length
+
+    rig.transport.seek(FRAMES - 1)
+    await settle()
+    expect(rig.transport.position).toBe(FRAMES - 1)
+    // Only the final frame was refetched.
+    expect(rig.fetchCalls).toHaveLength(fillsAfterReady + 1)
+    expect(rig.fetchCalls[1].start).toBe((FRAMES - 1) * BYTES_PER_FRAME)
+
+    rig.transport.seek(FRAMES + 10_000)
+    await settle()
+    expect(rig.transport.currentState).toBe('seeking')
+    expect(rig.transport.position).toBe(FRAMES)
+    // Nothing beyond the endpoint is requested.
+    expect(rig.fetchCalls).toHaveLength(fillsAfterReady + 1)
+  })
+
+  it('drops the partial frame of a short final chunk and refetches the rest', async () => {
+    const total = FRAMES * BYTES_PER_FRAME
+    const calls: { start: number; end: number }[] = []
+    const rig = makeRig({
+      fetchChunk: async (_id, start, end) => {
+        calls.push({ start, end })
+        const len = Math.max(0, Math.min(end + 1, total) - start)
+        // The first response is short by 4 bytes: one partial channel
+        // sample that must not be served.
+        return new ArrayBuffer(start === 0 ? len - 4 : len)
+      },
+    })
+    await load(rig)
+    await rig.transport.play()
+    await settle()
+
+    // The short chunk served 47 999 complete frames; the loop refetched
+    // the single remaining frame instead of serving the partial one.
+    expect(calls).toHaveLength(2)
+    expect(calls[1].start).toBe(47_999 * BYTES_PER_FRAME)
+    expect(calls[1].end).toBe(total - 1)
+
+    rig.node.post({ type: 'buffered', frames: FRAMES, queuedFrames: 0, generation: 0 })
+    expect(rig.transport.currentState).toBe('playing')
+    rig.node.post({ type: 'ended', generation: 0 })
+    expect(rig.transport.currentState).toBe('ended')
+    expect(rig.transport.position).toBe(FRAMES)
+  })
+
+  it('keeps target-rate bookkeeping when the context runs at a different rate', async () => {
+    const rig = makeRig()
+    rig.context.sampleRate = 96_000 // a 96 kHz device context, 48 kHz target
+
+    await load(rig)
+    await rig.transport.play()
+    await settle()
+
+    // Fetch ranges are target bytes, not context-rate bytes.
+    expect(rig.fetchCalls[0].start).toBe(0)
+    expect(rig.fetchCalls[0].end).toBe(FRAMES * BYTES_PER_FRAME - 1)
+    // The worklet is told the target rate.
+    expect(nodeOptions(rig).processorOptions).toEqual(expect.objectContaining({ sampleRate: RATE }))
+
+    rig.node.post({ type: 'buffered', frames: FRAMES, queuedFrames: 0, generation: 0 })
+    expect(rig.transport.currentState).toBe('playing')
+
+    // Position and clamping stay in target frames.
+    rig.transport.seek(FRAMES + 1000)
+    await settle()
+    expect(rig.transport.position).toBe(FRAMES)
+  })
+})

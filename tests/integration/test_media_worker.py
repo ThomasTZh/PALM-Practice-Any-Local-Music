@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import struct
 import threading
 import uuid
 from pathlib import Path
 
 import pytest
+from synth import wav_s16_bytes
 
 from basseparate.domain.media_job import JobStage, JobType
 from basseparate.worker import (
@@ -35,22 +35,8 @@ from basseparate.worker import (
     media_worker_command,
 )
 
-
-def _make_wav(pcm: bytes | None = None, sample_rate: int = 44100, channels: int = 1) -> bytes:
-    if pcm is None:
-        pcm = b"\x00\x00" * 4410
-    byte_rate = sample_rate * channels * 2
-    block_align = channels * 2
-    header = (
-        b"RIFF"
-        + struct.pack("<I", 36 + len(pcm))
-        + b"WAVE"
-        + b"fmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, byte_rate, block_align, 16)
-        + b"data"
-        + struct.pack("<I", len(pcm))
-    )
-    return header + pcm
+# One second of 44.1 kHz mono silence as a 16-bit PCM WAV (probe/decode input).
+_SILENT_WAV = wav_s16_bytes(b"\x00\x00" * 4410, 44100)
 
 
 def _install_fake_slow_ffprobe(tmp_path: Path) -> Path:
@@ -127,7 +113,7 @@ class TestProbeJob:
     ) -> None:
         supervisor.wait_for_handshake()
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         job_id = uuid.uuid4()
         staging = tmp_path / "staging"
 
@@ -187,7 +173,7 @@ class TestDecodeJob:
     ) -> None:
         supervisor.wait_for_handshake()
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         job_id = uuid.uuid4()
         staging = tmp_path / "staging"
 
@@ -229,7 +215,7 @@ class TestDecodeJob:
     ) -> None:
         supervisor.wait_for_handshake()
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         job_id = uuid.uuid4()
 
         supervisor.send(make_run(job_id, JobType.CANONICAL_DECODE, str(wav), str(tmp_path / "s")))
@@ -248,7 +234,7 @@ class TestDecodeJob:
     ) -> None:
         supervisor.wait_for_handshake()
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         job_id = uuid.uuid4()
         bad_params = dict(self.DECODE_PARAMS, sample_rate=1)  # below the 8 kHz floor
 
@@ -310,7 +296,7 @@ class TestDecodeJob:
         try:
             sup.wait_for_handshake()
             wav = tmp_path / "tone.wav"
-            wav.write_bytes(_make_wav())
+            wav.write_bytes(_SILENT_WAV)
             job_id = uuid.uuid4()
             staging = tmp_path / "staging"
             staging.mkdir()
@@ -588,7 +574,7 @@ class TestCancelRunningProbe:
         try:
             sup.wait_for_handshake()
             wav = tmp_path / "tone.wav"
-            wav.write_bytes(_make_wav())
+            wav.write_bytes(_SILENT_WAV)
             job_id = uuid.uuid4()
             staging = tmp_path / "staging"
             staging.mkdir()
@@ -633,7 +619,7 @@ class TestCancelRunningProbe:
         monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
 
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         job_id = uuid.uuid4()
 
         sup = WorkerSupervisor(command=media_worker_command(), cwd=tmp_path)
@@ -681,7 +667,7 @@ class TestProbeCancelledBeforeStart:
         from basseparate.media.probe import ProbeCancelledError, probe_media
 
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         event = threading.Event()
         event.set()
         with pytest.raises(ProbeCancelledError):
@@ -700,7 +686,7 @@ class TestProbeCancelledBeforeStart:
         monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
 
         wav = tmp_path / "tone.wav"
-        wav.write_bytes(_make_wav())
+        wav.write_bytes(_SILENT_WAV)
         event = threading.Event()
 
         def _cancel_soon() -> None:

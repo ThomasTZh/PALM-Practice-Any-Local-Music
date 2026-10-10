@@ -1083,7 +1083,7 @@ export interface components {
             /**
              * Schema Version
              * @description Project schema version
-             * @default 2
+             * @default 3
              */
             schema_version: number;
             /** Source Asset Id */
