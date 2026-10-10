@@ -45,3 +45,41 @@ def test_optional_gpu_failure_does_not_fail_doctor(monkeypatch, config) -> None:
     assert gpu.status == "warn"
     assert gpu.required is False
     assert exit_code_for(checks) == 0
+
+
+def test_model_baseline_check_reports_a_state(config) -> None:
+    """The check must exist, be optional, and name one of the three states."""
+    checks = run_diagnostics(config)  # type: ignore[arg-type]
+    check = next(c for c in checks if c.name == "model-baseline")
+    assert check.required is False
+    assert check.status in {"ok", "warn"}
+    assert any(
+        token in check.detail
+        for token in ("bundled_available", "bundled_missing", "bundled_corrupt")
+    )
+    assert "htdemucs_ft" in check.detail
+    assert exit_code_for(checks) == 0
+
+
+def test_model_baseline_states_for_forced_directories(monkeypatch, config, tmp_path) -> None:
+    import basseparate.models as models
+
+    manifest = models.get_manifest("htdemucs_ft")
+
+    # Missing: an empty directory -> bundled_missing.
+    monkeypatch.setattr(models, "default_bundle_dir", lambda m: tmp_path / "empty")
+    checks = run_diagnostics(config)  # type: ignore[arg-type]
+    check = next(c for c in checks if c.name == "model-baseline")
+    assert check.status == "warn"
+    assert "bundled_missing" in check.detail
+
+    # Corrupt: right file names, wrong bytes -> bundled_corrupt.
+    corrupt_dir = tmp_path / "corrupt"
+    corrupt_dir.mkdir()
+    for spec in manifest.artifacts:
+        (corrupt_dir / spec.name).write_bytes(b"not the real bytes")
+    monkeypatch.setattr(models, "default_bundle_dir", lambda m: corrupt_dir)
+    checks = run_diagnostics(config)  # type: ignore[arg-type]
+    check = next(c for c in checks if c.name == "model-baseline")
+    assert check.status == "warn"
+    assert "bundled_corrupt" in check.detail

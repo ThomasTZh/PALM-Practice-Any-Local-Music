@@ -178,6 +178,8 @@ def run_diagnostics(config: AppConfig) -> list[DiagnosticCheck]:
                 )
             )
 
+    checks.append(_model_baseline_check())
+
     build = _frontend_build_available()
     if build is not None:
         checks.append(DiagnosticCheck("frontend-build", "ok", str(build), required=True))
@@ -233,6 +235,31 @@ def _database_check() -> DiagnosticCheck:
     except sqlite3.Error as exc:
         return DiagnosticCheck("database", "fail", f"SQLite is not usable: {exc}", required=True)
     return DiagnosticCheck("database", "ok", f"sqlite3 {sqlite3.sqlite_version}", required=True)
+
+
+def _model_baseline_check() -> DiagnosticCheck:
+    """Report the bundled model baseline state (spec §5.3.5).
+
+    Distinguishes ``bundled_available``, ``bundled_missing``, and
+    ``bundled_corrupt`` per registered model. Optional capability: inference
+    is not wired until M2.5, so the check never blocks ``doctor``.
+    """
+    from basseparate.models import REGISTRY, default_bundle_dir, verify_bundle
+
+    details = []
+    worst: Status = "ok"
+    for model_id in sorted(REGISTRY):
+        manifest = REGISTRY[model_id]
+        report = verify_bundle(default_bundle_dir(manifest), manifest)
+        details.append(f"{model_id}: {report.describe()}")
+        if report.state != "available" and worst == "ok":
+            worst = "warn"
+    return DiagnosticCheck(
+        "model-baseline",
+        worst,
+        "; ".join(details),
+        required=False,
+    )
 
 
 def format_report(checks: list[DiagnosticCheck]) -> str:

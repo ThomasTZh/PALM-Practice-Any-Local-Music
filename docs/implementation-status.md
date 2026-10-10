@@ -10,9 +10,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   test corpus green (748 py + 307 frontend); contract in sync.
 - **Work package:** M2.1 (Confirm prerequisites and extend the domain) —
   **complete** (800 py + 307 frontend green; `ba0b151`).
-- **Current work package:** M2.2 (Create the isolated Demucs runtime) —
-  **complete** (842 py + 307 frontend green; all 3 devices qualified;
-  commit hash recorded by the ledger follow-up).
+- **M2.2:** complete — `42d8726` (842 py + 307 frontend green; all 3
+  devices qualified in the locked analysis env).
+- **M2.3:** complete — hash-pinned `htdemucs_ft` baseline (registry +
+  bundle service + offline qualification; 884 py green; commit hash
+  recorded by the ledger follow-up).
+- **Current work package:** M2.4 (Prepare separation input consistently)
+  — not started.
 - **Last commit:** `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
   — M2.1 (confirm prerequisites and extend the domain); `9510656` (ledger
   M1.16 hash); `af51265` — M1.16 (test
@@ -32,10 +36,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.3 (Pin and provision the bundled Demucs baseline) —
-  the `htdemucs` checkpoint is currently pulled from the Hugging Face
-  cache at qualification time; M2.3 bundles it hash-pinned so no network
-  model install is needed for the baseline. Milestone 1 remains fully
+- **Next action:** M2.4 (Prepare separation input consistently) —
+  reference-mix resolution (canonical stereo/mono PCM, explicit M1 stereo
+  downmix for multichannel), single whole-file resample to the model rate,
+  channel-layout conversion, transform identity + source-time mapping.
+  Spec: `projectPlans/milestone2.md` §6. Milestone 1 remains fully
   committed; its only deferred items are the out-of-scope §19 manual
   acceptance and looping.
 
@@ -1499,7 +1504,7 @@ Plan: `projectPlans/m1.4-plan.md` (8 phases).
 
 ## Milestone 2 progress
 
-### M2.1 — Confirm prerequisites and extend the domain (in progress)
+### M2.1 — Confirm prerequisites and extend the domain (complete)
 
 Spec: `projectPlans/milestone2.md` §3; plan: `projectPlans/m2.1-plan.md`.
 Scope is domain + schema + serialization + frontend types only — no Demucs,
@@ -1590,7 +1595,7 @@ settings can be represented without modifying the original source record.
 - Contracts: `contracts/openapi.json` + `frontend/src/api/schema.ts`
   regenerated (additive; `schema_version` default 3→4).
 
-### M2.2 — Create the isolated Demucs runtime (in progress)
+### M2.2 — Create the isolated Demucs runtime (complete)
 
 Spec: `projectPlans/milestone2.md` §4; plan: `projectPlans/m2.2-plan.md`.
 Scope: separately locked analysis environment, PyTorch/CUDA qualification
@@ -1656,6 +1661,81 @@ runtime store is not wired to a CLI/API yet — `record_qualification()` is
 the tested integration point; the endpoint/CLI belongs to M2.17.
 `htdemucs` checkpoint used the Hugging Face cache (dev qualification);
 the bundled hash-pinned baseline is M2.3.
+
+### M2.3 — Pin and provision the bundled Demucs baseline (complete)
+
+Spec: `projectPlans/milestone2.md` §5; plan: `projectPlans/m2.3-plan.md`.
+Scope: hash-pinned `htdemucs_ft` preset (4 components, identity ensemble),
+checked-in manifest registry, bundle verification
+(`bundled_available`/`bundled_missing`/`bundled_corrupt`), local
+bundle import (strict file set, executable reject, verify-after-copy),
+provenance store, offline load/inference qualification. No API (M2.17),
+no adapter (M2.5). Main env stays torch/demucs-free.
+
+**Resolved facts (2026-10-10, verified, none invented):** preset yaml 149
+bytes sha256 `69470b8c…16346` (demucs 4.1.0 `remote/htdemucs_ft.yaml`,
+byte-identical to upstream main); four 84,141,271-byte checkpoints with
+full SHA-256 (embedded 8-hex filename checksums all match); total
+336,565,233 bytes; local-repo layout = yaml + `<sig>-<checksum>.th` files;
+`get_model("htdemucs_ft", repo=Path)` loads with no network (HF hub path
+bypassed); offline smoke: load 1.38 s, 5 s CPU inference 7.95 s, output
+(1, 4, 2, 110250) finite. License: code MIT (demucs LICENSE, Meta);
+**no explicit weight license statement found** (README/LICENSE/HF card,
+checked 2026-10-10) — provenance recorded, weight terms not assumed (§5.6).
+
+- **Phase 1 — Plan + ledger:** done.
+- **Phase 2 — Provisioning (§5.2.4):** done. Artifacts in the ignored
+  `models/htdemucs_ft/` workspace dir; hashes computed and cross-checked
+  against the embedded checksums (facts above; plan carries the table).
+- **Phase 3 — Manifest registry (§5.1):** done.
+  `src/basseparate/models/registry.py` — `ArtifactSpec` + `ModelManifest`
+  frozen records, checked-in `REGISTRY` with real hashes/sizes/URLs/labels/
+  notices, import-time invariants (unique plain-file names, no traversal,
+  64-hex hashes, positive sizes, https provenance, label sanity).
+- **Phase 4 — Bundle service (§5.3–5.5):** done.
+  `src/basseparate/models/bundle.py` — `verify_bundle` three states
+  (missing takes precedence; report lists both), `import_local_bundle`
+  (strict manifest file set, executable-extension reject, copy,
+  verify-after-copy, cleanup on failure), `ProvenanceStore` (JSON, data
+  dir, version 1, `record_provisioning`/`record_qualification`),
+  `default_bundle_root`/`default_bundle_dir` (bundle-relative prefix
+  resolved against the repo root in dev); `diagnostics.py` gains a
+  `model-baseline` check (optional — never blocks `doctor` before M2.5).
+  `doctor` on this machine reports `htdemucs_ft: bundled_available`.
+- **Phase 5 — Offline qualification (§5.3.6):** done.
+  `analysis/qualify_bundled.py` sets HF-offline env vars before import,
+  re-verifies artifact hashes against the checked-in registry (loaded by
+  file path — single source of truth), loads from the explicit repo path,
+  runs a 5 s inference. **PASS on cpu (load 1.567 s, inference 8.864 s)
+  and cuda:1 (load 1.384 s, inference 3.151 s)**; output (1, 4, 2, 110250)
+  finite; exit 0. Missing-bundle negative path fails cleanly (exit 1).
+  Evidence: `docs/evidence/m2.3-bundled-qualification.md` (git-ignored).
+- **Phase 6 — Tests + full gate + commit:** done. ruff clean, mypy clean
+  (56 files), **884 passed** (842 M2.2 baseline + 42 new, 186 s),
+  contract drift check OK (no API change — the model registry is not
+  API-exposed yet). `M2.3: ...` commit + ledger hash follow-up.
+
+**Deliverables:**
+- `src/basseparate/models/registry.py` — checked-in hash-pinned manifest
+  for `htdemucs_ft` (5 artifacts, 336,565,233 bytes, full SHA-256 set,
+  upstream provenance URLs, input/output requirements, license notice).
+- `src/basseparate/models/bundle.py` — `verify_bundle` (three states),
+  `import_local_bundle` (strict file set, executable reject,
+  verify-after-copy), `ProvenanceStore`, default dir resolution.
+- `src/basseparate/models/__init__.py` — package exports.
+- `src/basseparate/diagnostics.py` — `model-baseline` doctor check.
+- `analysis/qualify_bundled.py` — offline bundled qualification script.
+- `tests/unit/test_models_registry.py`,
+  `tests/unit/test_models_bundle.py`, diagnostics tests (+2).
+- `projectPlans/m2.3-plan.md`; evidence in
+  `docs/evidence/m2.3-bundled-qualification.md` (git-ignored).
+
+**Deferred (out of M2.3 scope):** CLI/API surface for bundle status and
+import (M2.17); release packaging script (Milestone 7); the inference
+adapter that will consume `default_bundle_dir` with
+`get_model("htdemucs_ft", repo=...)` (M2.5). The `models/htdemucs_ft`
+workspace copy is local-only (git-ignored) — reprovision with the URLs in
+the registry if it is ever lost.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
