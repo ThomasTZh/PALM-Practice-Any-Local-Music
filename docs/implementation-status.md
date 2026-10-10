@@ -8,8 +8,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
 - **Work package:** M1.15 (markers, persistence, and undo/redo) —
-  in progress. Plan in `projectPlans/m1.15-plan.md`.
-- **Last commit:** `934d6c1` — M1.14 (synchronized readout and
+  complete. Plan in `projectPlans/m1.15-plan.md`.
+- **Last commit:** `ede3d26` — M1.15 (markers, persistence, and
+  undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
   compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
   `fd3468f` — M1.11 (navigation, zoom, selection);
@@ -24,12 +25,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.15 Phase 8 — full gate + commit. Python gate
-  (pytest / ruff / mypy), contract check (export_openapi → pnpm
-  contracts → check_contract), frontend gate (vitest / typecheck /
-  lint / format:check); decide the `PROJECT_SCHEMA_VERSION` bump
-  (2 → 3) for the new marker + working-state persistence; then a
-  single `M1.15: …` commit + a ledger-hash follow-up commit.
+- **Next action:** M1.15 is complete (`ede3d26`). All of Milestone 1
+  work packages M1.1–M1.15 are committed. The next work package per
+  spec §18 context is M1.16 (looping) — not started; write a plan in
+  `projectPlans/` before implementing.
 
 ## Completed requirements (with evidence)
 
@@ -417,7 +416,7 @@ line) → 5 frontend gate + commit.
   `playheadFrame` app state is gone. Source inspector `<dl>` gains the
   exact-frame `Frame` line (§16.3) with a panel test.
 
-### M1.15 — Markers, persistence, and undo/redo (in progress)
+### M1.15 — Markers, persistence, and undo/redo (complete — `ede3d26`)
 
 Spec: `projectPlans/milestone1.md` §17. Plan:
 `projectPlans/m1.15-plan.md`. Full-stack: marker model
@@ -494,7 +493,7 @@ autosave wiring → 7 frontend editor marker UI → 8 full gate + commit.
   (8; fake timers, microtask flush instead of waitFor). Full frontend
   suite 283 passed; typecheck/lint/format:check green. Python gate
   green (pytest 576, ruff, mypy).
-- Phase 6 (complete, uncommitted): restore + autosave wiring.
+- Phase 6 (complete): restore + autosave wiring.
   Hook project-switch flush of old project's armed ops
   (fire-and-forget sendCommand to prev id) + chain reset in the
   load/reset effect; pagehide sendBeacon of armed view ops
@@ -539,7 +538,7 @@ autosave wiring → 7 frontend editor marker UI → 8 full gate + commit.
   echo ops). scratch-debug.test.tsx deleted.
   Full frontend suite 289 passed; typecheck / lint / format:check
   green.
-- Phase 7 (complete, uncommitted): editor marker UI (§17.2).
+- Phase 7 (complete): editor marker UI (§17.2).
   render.ts: MARKER_COLORS 6-color palette, MARKER_FLAG_WIDTH/HEIGHT,
   drawMarkerFlag (2 px full-height stem + fixed 76×12 colored body +
   label truncated to 12 chars + dark selection outline; no measureText
