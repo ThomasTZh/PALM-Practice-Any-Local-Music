@@ -42,10 +42,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Marker } from '../api/commands'
 import { formatTime } from '../playback/pcm'
 import {
   drawLaneGrid,
   drawLaneWaveform,
+  drawMarkerFlag,
+  drawMarkerTick,
   drawOverview,
   drawOverviewWindow,
   drawPcmWaveform,
@@ -53,6 +56,8 @@ import {
   drawRuler,
   drawSamplePoints,
   drawSelection,
+  MARKER_COLORS,
+  MARKER_FLAG_WIDTH,
   type BucketSource,
   type PcmPixelSource,
   type SampleSource,
@@ -84,6 +89,12 @@ export interface PlayheadSource {
   isPlaying: () => boolean
 }
 
+/** Channel display state (M1.15 §17.4): link + per-channel scales. */
+export interface ChannelDisplay {
+  linked: boolean
+  scales: number[]
+}
+
 export interface WaveformEditorProps {
   projectId: string
   /** Canonical source asset; null when no source has been imported. */
@@ -92,12 +103,54 @@ export interface WaveformEditorProps {
   playheadSource?: PlayheadSource
   /** Seek the transport to a project frame (M1.11 click / selection). */
   onSeek?: (projectFrame: number) => void
+  /**
+   * Restored working state (M1.15 §17.6). Each is applied once, when the
+   * editor first becomes ready; null → the legacy behavior (fit view, no
+   * selection, localStorage amplitude, legacy follow preference).
+   */
+  initialViewport?: View | null
+  initialSelection?: { start: number; end: number } | null
+  initialChannelDisplay?: ChannelDisplay | null
+  initialFollow?: boolean | null
+  /**
+   * Autosave callbacks (M1.15 §17.5): fire on committed changes after the
+   * restored values have been applied; the caller debounces and sends.
+   */
+  onViewportChange?: (view: View) => void
+  onSelectionChange?: (selection: { start: number; end: number } | null) => void
+  onChannelDisplayChange?: (display: ChannelDisplay) => void
+  onFollowChange?: (follow: boolean) => void
+  /**
+   * Marker state (M1.15 §17.2). All optional: absent → the marker row
+   * renders its empty state (no flags, no list, no add/prev/next).
+   */
+  markers?: Marker[]
+  selectedMarkerId?: string | null
+  /** Add at the playhead (§17.2.1) or at a ruler frame (§17.2.2). */
+  onAddMarker?: (frame: number) => void
+  /** Drag commit: exactly one move per gesture (§17.2.4/§17.4.7). */
+  onMoveMarker?: (id: string, frame: number) => void
+  /** List edits: label / color / exact frame (§17.2.3/§17.2.5/§17.2.6). */
+  onUpdateMarker?: (
+    id: string,
+    patch: { label?: string; color?: string; positionFrames?: number },
+  ) => void
+  onDeleteMarker?: (id: string) => void
+  /** Select without seeking (§17.2.9); null clears the selection. */
+  onSelectMarker?: (id: string | null) => void
+  /** Double-click a flag: seek + select (§17.2.10). */
+  onSeekToMarker?: (frame: number) => void
+  onUndo?: () => void
+  onRedo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }
 
 /** Layout constants (CSS px). */
 const LANE_HEIGHT = 48
 const OVERVIEW_HEIGHT = 44
 const RULER_HEIGHT = 24
+const MARKER_ROW_HEIGHT = 24
 const LANE_AREA_HEIGHT = 240
 
 /** The five stacked layers of a lane (spec §12.3), bottom to top. */
@@ -261,6 +314,26 @@ export function WaveformEditor({
   sourceAssetId,
   playheadSource,
   onSeek,
+  initialViewport,
+  initialSelection,
+  initialChannelDisplay,
+  initialFollow,
+  onViewportChange,
+  onSelectionChange,
+  onChannelDisplayChange,
+  onFollowChange,
+  markers,
+  selectedMarkerId,
+  onAddMarker,
+  onMoveMarker,
+  onUpdateMarker,
+  onDeleteMarker,
+  onSelectMarker,
+  onSeekToMarker,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: WaveformEditorProps) {
   const [contentWidth, setContentWidth] = useState(0)
   const [hidden, setHidden] = useState<Set<number>>(new Set())
@@ -275,6 +348,8 @@ export function WaveformEditor({
   const [amp, setAmp] = useState<AmpState>(() => readAmp(projectId) ?? { linked: true, scales: [] })
   const [pointerFrame, setPointerFrame] = useState<number | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
+  /** Marker being dragged: local preview until pointer-up commits (§17.2.4). */
+  const [markerDrag, setMarkerDrag] = useState<{ id: string; frame: number } | null>(null)
 
   const contentRef = useRef<HTMLDivElement | null>(null)
   const hitRef = useRef<HTMLDivElement | null>(null)
@@ -282,6 +357,16 @@ export function WaveformEditor({
   const laneDragRef = useRef<{ mode: DragMode; downX: number; downFrame: number } | null>(null)
   const scrollDragRef = useRef<{ lastX: number } | null>(null)
   const overviewDragRef = useRef<{ lastX: number } | null>(null)
+  const markerHitRef = useRef<HTMLDivElement | null>(null)
+  const markerDragRef = useRef<{ id: string; downX: number; moved: boolean } | null>(null)
+  /** True once the restored working state has been applied (§17.6). */
+  const restoreAppliedRef = useRef(false)
+  /**
+   * Skip flags for the autosave callbacks: the first report after a
+   * restore (or the initial null selection) echoes state the server
+   * already knows, so it is consumed without sending.
+   */
+  const skipReportRef = useRef({ view: false, selection: true, display: false })
 
   /**
    * The full viewport for the data hook. Derived (not state) so its
@@ -304,15 +389,23 @@ export function WaveformEditor({
     else ctxRef.current.delete(id)
   }, [])
 
-  /** Follow from an explicit user action: apply and persist (§16.4). */
-  const setFollow = useCallback((on: boolean) => {
-    setFollowPlayhead(on)
-    try {
-      window.localStorage.setItem(FOLLOW_KEY, on ? 'true' : 'false')
-    } catch {
-      // Storage unavailable: non-fatal.
-    }
-  }, [])
+  /**
+   * Follow from an explicit user action: apply, persist (§16.4), and
+   * report for autosave (M1.15 §17.5). Passive suspension from manual
+   * navigation stays in memory only.
+   */
+  const setFollow = useCallback(
+    (on: boolean) => {
+      setFollowPlayhead(on)
+      try {
+        window.localStorage.setItem(FOLLOW_KEY, on ? 'true' : 'false')
+      } catch {
+        // Storage unavailable: non-fatal.
+      }
+      onFollowChange?.(on)
+    },
+    [onFollowChange],
+  )
 
   const duration = manifest?.frame_count ?? 0
   const sampleRate = manifest?.sample_rate ?? 0
@@ -340,6 +433,8 @@ export function WaveformEditor({
     setFollowPlayhead(readFollowPref())
     setPlayheadOutside(false)
     setPointerFrame(null)
+    restoreAppliedRef.current = false
+    skipReportRef.current = { view: false, selection: true, display: false }
   }, [projectId, sourceAssetId])
 
   // Fit the whole song once the duration and width are known.
@@ -357,6 +452,49 @@ export function WaveformEditor({
     if (clamped.startFrame !== view.startFrame) setView(clamped)
   }, [view, manifest, contentWidth])
 
+  // Apply the restored working state once, when the editor is ready and
+  // the initial values have arrived (M1.15 §17.6). Undefined props mean
+  // "not loaded yet"; null props keep the legacy behavior.
+  const hasInitials =
+    initialViewport !== undefined ||
+    initialSelection !== undefined ||
+    initialChannelDisplay !== undefined ||
+    initialFollow !== undefined
+  useEffect(() => {
+    if (state !== 'ready' || !manifest || contentWidth <= 0) return
+    if (restoreAppliedRef.current || !hasInitials) return
+    restoreAppliedRef.current = true
+    if (initialViewport) {
+      setView(clampView(initialViewport, manifest.frame_count, contentWidth))
+      skipReportRef.current.view = true
+    }
+    if (initialSelection) {
+      setSelection(initialSelection)
+      skipReportRef.current.selection = true
+    }
+    if (initialFollow !== undefined && initialFollow !== null) {
+      setFollowPlayhead(initialFollow)
+    }
+    if (initialChannelDisplay && initialChannelDisplay.scales.length === manifest.channel_count) {
+      setAmp({
+        linked: initialChannelDisplay.linked,
+        scales: initialChannelDisplay.scales.map(clampScale),
+      })
+      skipReportRef.current.display = true
+    }
+  }, [
+    state,
+    manifest,
+    contentWidth,
+    hasInitials,
+    initialViewport,
+    initialSelection,
+    initialFollow,
+    initialChannelDisplay,
+  ])
+
+  const channelCount = manifest?.channel_count ?? 0
+
   // Persist the amplitude state once the channel count is known.
   useEffect(() => {
     if (amp.scales.length === 0) return
@@ -367,7 +505,38 @@ export function WaveformEditor({
     }
   }, [amp, projectId])
 
-  const channelCount = manifest?.channel_count ?? 0
+  // Autosave the viewport (M1.15 §17.5.2): fire on committed view changes
+  // after the restored value has been applied (the caller debounces).
+  useEffect(() => {
+    if (!view) return
+    if (skipReportRef.current.view) {
+      skipReportRef.current.view = false
+      return
+    }
+    onViewportChange?.(view)
+  }, [view, onViewportChange])
+
+  // Autosave the selection; the initial null is consumed, so only real
+  // changes (create / resize / clear) are reported.
+  useEffect(() => {
+    if (skipReportRef.current.selection) {
+      skipReportRef.current.selection = false
+      return
+    }
+    onSelectionChange?.(selection)
+  }, [selection, onSelectionChange])
+
+  // Autosave the channel display once it has per-channel scales; the
+  // restored display is consumed without echoing it back.
+  useEffect(() => {
+    if (amp.scales.length !== channelCount || channelCount === 0) return
+    if (skipReportRef.current.display) {
+      skipReportRef.current.display = false
+      return
+    }
+    onChannelDisplayChange?.(amp)
+  }, [amp, channelCount, onChannelDisplayChange])
+
   const labels = useMemo(
     () => Array.from({ length: channelCount }, (_, i) => channelLabel(channelCount, i)),
     [channelCount],
@@ -578,6 +747,177 @@ export function WaveformEditor({
     if (!laneDragRef.current) setPointerFrame(null)
   }, [])
 
+  // --- marker interaction (M1.15 §17.2) ---------------------------------------
+
+  /** CSS px within the marker hit surface. */
+  const markerX = useCallback(
+    (clientX: number) => {
+      const el = markerHitRef.current
+      if (!el) return 0
+      const rect = el.getBoundingClientRect()
+      return Math.max(0, Math.min(contentWidth, clientX - rect.left))
+    },
+    [contentWidth],
+  )
+
+  /** The marker under `x` (flag body + stem), if any. */
+  const markerAt = useCallback(
+    (x: number): Marker | null => {
+      if (!viewport) return null
+      const list = markers ?? []
+      for (const mk of list) {
+        const frame = markerDrag?.id === mk.id ? markerDrag.frame : mk.position_frames
+        const fx = frameToX(viewport, frame)
+        if (x >= fx - 2 && x <= fx + MARKER_FLAG_WIDTH) return mk
+      }
+      return null
+    },
+    [viewport, markers, markerDrag],
+  )
+
+  const onMarkerPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!viewport) return
+      e.preventDefault()
+      const mk = markerAt(markerX(e.clientX))
+      if (!mk) {
+        // Empty space: clear the selection (§17.2.9).
+        onSelectMarker?.(null)
+        return
+      }
+      markerDragRef.current = { id: mk.id, downX: markerX(e.clientX), moved: false }
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        // No pointer capture (jsdom): the drag still works.
+      }
+    },
+    [viewport, markerAt, markerX, onSelectMarker],
+  )
+
+  const onMarkerPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = markerDragRef.current
+      if (!drag || !viewport || !manifest) return
+      const x = markerX(e.clientX)
+      if (!drag.moved && Math.abs(x - drag.downX) <= DRAG_THRESHOLD_PX) return
+      drag.moved = true
+      const frame = Math.max(0, Math.min(manifest.frame_count, Math.round(xToFrame(viewport, x))))
+      setMarkerDrag({ id: drag.id, frame })
+    },
+    [viewport, manifest, markerX],
+  )
+
+  const onMarkerPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = markerDragRef.current
+      markerDragRef.current = null
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      } catch {
+        // No pointer capture: nothing to release.
+      }
+      if (!drag) return
+      if (drag.moved && viewport && manifest) {
+        // One move per gesture (§17.2.4/§17.4.7).
+        const frame = Math.max(
+          0,
+          Math.min(manifest.frame_count, Math.round(xToFrame(viewport, markerX(e.clientX)))),
+        )
+        setMarkerDrag(null)
+        onMoveMarker?.(drag.id, frame)
+      } else {
+        // A sub-threshold down/up pair is a click: select, no seek (§17.2.9).
+        onSelectMarker?.(drag.id)
+      }
+    },
+    [viewport, manifest, markerX, onMoveMarker, onSelectMarker],
+  )
+
+  const onMarkerDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const mk = markerAt(markerX(e.clientX))
+      if (!mk) return
+      onSelectMarker?.(mk.id)
+      onSeekToMarker?.(mk.position_frames)
+    },
+    [markerAt, markerX, onSelectMarker, onSeekToMarker],
+  )
+
+  /** Double-click the ruler: add at the pointer frame (§17.2.2). */
+  const onRulerDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!viewport || !manifest) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = Math.max(0, Math.min(contentWidth, e.clientX - rect.left))
+      const frame = Math.max(0, Math.min(manifest.frame_count, Math.round(xToFrame(viewport, x))))
+      onAddMarker?.(frame)
+    },
+    [viewport, manifest, contentWidth, onAddMarker],
+  )
+
+  /** Add at the playhead (§17.2.1). */
+  const addMarkerAtPlayhead = useCallback(() => {
+    if (!playheadSource) return
+    onAddMarker?.(Math.round(playheadSource.getPosition()))
+  }, [playheadSource, onAddMarker])
+
+  /** Prev/next: seek to the nearest marker before/after the playhead (§17.2.8). */
+  const seekRelativeMarker = useCallback(
+    (dir: -1 | 1) => {
+      if (!playheadSource) return
+      const pos = playheadSource.getPosition()
+      let best: Marker | null = null
+      for (const mk of markers ?? []) {
+        const before = dir === -1 ? mk.position_frames < pos : mk.position_frames > pos
+        if (!before) continue
+        if (
+          !best ||
+          (dir === -1
+            ? mk.position_frames > best.position_frames
+            : mk.position_frames < best.position_frames)
+        ) {
+          best = mk
+        }
+      }
+      if (!best) return
+      onSeekToMarker?.(best.position_frames)
+      onSelectMarker?.(best.id)
+    },
+    [markers, playheadSource, onSeekToMarker, onSelectMarker],
+  )
+
+  /** Cycle the swatch through the 6-color palette (§17.2.6). */
+  const cycleMarkerColor = useCallback(
+    (mk: Marker) => {
+      const i = (MARKER_COLORS as readonly string[]).indexOf(mk.color)
+      const next = MARKER_COLORS[(i + 1) % MARKER_COLORS.length]
+      onUpdateMarker?.(mk.id, { color: next })
+    },
+    [onUpdateMarker],
+  )
+
+  const commitMarkerLabel = useCallback(
+    (mk: Marker, value: string) => {
+      const label = value.trim()
+      if (!label || label === mk.label) return
+      onUpdateMarker?.(mk.id, { label })
+    },
+    [onUpdateMarker],
+  )
+
+  const commitMarkerFrame = useCallback(
+    (mk: Marker, value: string) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return
+      const max = manifest?.frame_count ?? n
+      const frame = Math.max(0, Math.min(max, Math.round(n)))
+      if (frame === mk.position_frames) return
+      onUpdateMarker?.(mk.id, { positionFrames: frame })
+    },
+    [manifest, onUpdateMarker],
+  )
+
   // Ctrl/Cmd-wheel zoom + Shift-wheel pan. Native non-passive listener:
   // React root wheel listeners are passive, so `preventDefault` must go
   // through the DOM (spec §13.1.6, §13.2.5).
@@ -744,6 +1084,14 @@ export function WaveformEditor({
   const drawnLanes = shownLanes.slice(firstIdx, lastIdx)
   const drawnKey = drawnLanes.join('|')
 
+  // Marker UI derived state (M1.15 §17.2).
+  const markerList = markers ?? []
+  const playheadPos = playheadSource ? playheadSource.getPosition() : null
+  const hasPrevMarker =
+    playheadPos != null && markerList.some((m) => m.position_frames < playheadPos)
+  const hasNextMarker =
+    playheadPos != null && markerList.some((m) => m.position_frames > playheadPos)
+
   // Overview strip + viewport window indicator, lane waveforms, lane grids.
   useEffect(() => {
     if (state !== 'ready' || !viewport || !manifest || contentWidth <= 0) return
@@ -825,6 +1173,37 @@ export function WaveformEditor({
       }
     }
   }, [state, viewport, selection, contentWidth, shownLanes, drawnKey])
+
+  // Marker layers (M1.15 §17.2): row flags plus one 1 px tick per lane,
+  // the dragged marker drawn at its preview position.
+  useEffect(() => {
+    if (state !== 'ready' || !viewport || contentWidth <= 0) return
+    const list = markers ?? []
+    const mctx = ctxRef.current.get('marker-row')
+    if (mctx) {
+      mctx.clearRect(0, 0, contentWidth, MARKER_ROW_HEIGHT)
+      for (const mk of list) {
+        const frame = markerDrag?.id === mk.id ? markerDrag.frame : mk.position_frames
+        const x = frameToX(viewport, frame)
+        if (x > contentWidth + 2 || x < -MARKER_FLAG_WIDTH - 2) continue
+        drawMarkerFlag(mctx, x, mk.label, MARKER_ROW_HEIGHT, {
+          color: mk.color,
+          selected: mk.id === selectedMarkerId,
+        })
+      }
+    }
+    for (const ch of shownLanes) {
+      const kctx = ctxRef.current.get(`lane:${ch}:markers`)
+      if (!kctx) continue
+      kctx.clearRect(0, 0, contentWidth, LANE_HEIGHT)
+      for (const mk of list) {
+        const frame = markerDrag?.id === mk.id ? markerDrag.frame : mk.position_frames
+        const x = frameToX(viewport, frame)
+        if (x < -1 || x > contentWidth + 1) continue
+        drawMarkerTick(kctx, x, LANE_HEIGHT, mk.color)
+      }
+    }
+  }, [state, viewport, contentWidth, shownLanes, drawnKey, markers, selectedMarkerId, markerDrag])
 
   // Ruler (redrawn when the viewport changes).
   useEffect(() => {
@@ -943,7 +1322,7 @@ export function WaveformEditor({
       {/* Time ruler. */}
       <div className="wave-row wave-ruler-row">
         <span className="wave-col-label" aria-hidden="true" />
-        <div className="wave-content">
+        <div className="wave-content" onDoubleClick={onRulerDoubleClick}>
           <CanvasLayer
             id="ruler"
             width={contentWidth}
@@ -1036,11 +1415,97 @@ export function WaveformEditor({
         )}
       </div>
 
-      {/* Marker lane (M1.11 renders the lane only; markers are M1.13). */}
+      {/* Marker row (M1.15 §17.2): flag canvas, hit surface, toolbar, list. */}
       <div className="wave-row wave-marker-row">
         <span className="wave-col-label" aria-hidden="true" />
         <div className="wave-marker-lane" aria-label="Markers">
-          <span className="muted">Markers</span>
+          <div className="wave-content wave-marker-canvas-wrap">
+            <CanvasLayer
+              id="marker-row"
+              width={contentWidth}
+              height={MARKER_ROW_HEIGHT}
+              register={register}
+              className="wave-canvas"
+            />
+            <div
+              className="wave-marker-hitarea"
+              ref={markerHitRef}
+              onPointerDown={onMarkerPointerDown}
+              onPointerMove={onMarkerPointerMove}
+              onPointerUp={onMarkerPointerUp}
+              onPointerCancel={onMarkerPointerUp}
+              onDoubleClick={onMarkerDoubleClick}
+            />
+          </div>
+          <div className="wave-marker-toolbar">
+            <button type="button" onClick={addMarkerAtPlayhead} disabled={!playheadSource}>
+              Add marker
+            </button>
+            <button type="button" onClick={() => seekRelativeMarker(-1)} disabled={!hasPrevMarker}>
+              Prev
+            </button>
+            <button type="button" onClick={() => seekRelativeMarker(1)} disabled={!hasNextMarker}>
+              Next
+            </button>
+          </div>
+          {markerList.length > 0 && (
+            <ul className="wave-marker-list" aria-label="Marker list">
+              {markerList.map((mk) => (
+                <li
+                  key={mk.id}
+                  className={
+                    mk.id === selectedMarkerId ? 'wave-marker-item selected' : 'wave-marker-item'
+                  }
+                  onClick={() => onSelectMarker?.(mk.id)}
+                >
+                  <button
+                    type="button"
+                    className="wave-marker-swatch"
+                    style={{ backgroundColor: mk.color }}
+                    aria-label={`Marker color ${mk.color}`}
+                    title="Cycle color"
+                    onClick={() => cycleMarkerColor(mk)}
+                  />
+                  <input
+                    key={`label:${mk.id}:${mk.label}`}
+                    className="wave-marker-label"
+                    defaultValue={mk.label}
+                    aria-label="Marker label"
+                    maxLength={80}
+                    onBlur={(e) => commitMarkerLabel(mk, e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                  />
+                  <input
+                    key={`frame:${mk.id}:${mk.position_frames}`}
+                    className="wave-marker-frame"
+                    type="number"
+                    defaultValue={mk.position_frames}
+                    aria-label="Marker frame"
+                    onBlur={(e) => commitMarkerFrame(mk, e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                  />
+                  {sampleRate > 0 && (
+                    <span className="wave-marker-time">
+                      {formatTime(mk.position_frames, sampleRate)}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="wave-marker-delete"
+                    aria-label={`Delete marker ${mk.label}`}
+                    onClick={() => onDeleteMarker?.(mk.id)}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {markerList.length === 0 && <span className="muted">Markers</span>}
         </div>
         <span className="wave-col-action" aria-hidden="true" />
       </div>
@@ -1131,6 +1596,15 @@ export function WaveformEditor({
           </button>
           <button type="button" onClick={fitSelectionAction} disabled={!selection}>
             Fit selection
+          </button>
+        </fieldset>
+        <fieldset className="wave-history-controls">
+          <legend>History</legend>
+          <button type="button" aria-label="Undo" onClick={onUndo} disabled={!canUndo}>
+            Undo
+          </button>
+          <button type="button" aria-label="Redo" onClick={onRedo} disabled={!canRedo}>
+            Redo
           </button>
         </fieldset>
         <fieldset className="wave-amplitude-controls">

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.common import Revision, SamplePosition, SampleRate, UtcTimestamp, Uuid
+from basseparate.domain.marker import MarkerRecord
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -48,6 +49,66 @@ def _validate_name(name: str) -> str:
     if _CONTROL_CHAR_RE.search(trimmed):
         raise ValueError("project name must not contain embedded control characters")
     return trimmed
+
+
+class SelectionRange(BaseModel):
+    """A frame selection ``[start, end)`` in source frames (M1.15 §17.5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start: SamplePosition
+    end: SamplePosition
+
+    def model_post_init(self, __context: object) -> None:
+        if self.end < self.start:
+            raise ValueError("selection end must be >= selection start")
+
+
+class ViewportState(BaseModel):
+    """A persisted editor viewport, width-free (M1.15 §17.5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_frame: SamplePosition
+    frames_per_css_pixel: float = Field(gt=0)
+
+
+class ChannelDisplay(BaseModel):
+    """Channel display (amplitude) settings (M1.15 §17.5).
+
+    ``scales`` are per-channel display amplitudes (editor range
+    0.25-16); at most one entry per source channel.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    linked: bool = True
+    scales: list[float] = Field(default_factory=list, max_length=MAX_CHANNEL_COUNT)
+
+    @field_validator("scales")
+    @classmethod
+    def _validate_scales(cls, v: list[float]) -> list[float]:
+        for scale in v:
+            if not 0.25 <= scale <= 16.0:
+                raise ValueError(f"channel scale {scale} is outside 0.25-16")
+        return v
+
+
+class WorkingState(BaseModel):
+    """Per-project working state persisted by autosave (M1.15 §17.5).
+
+    Frame-valued fields are validated against the project's
+    ``duration_frames`` by ``ProjectRecord``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    selection: SelectionRange | None = None
+    viewport: ViewportState | None = None
+    channel_display: ChannelDisplay = Field(default_factory=ChannelDisplay)
+    monitoring_volume: float = Field(default=1.0, ge=0.0, le=2.0)
+    last_position_frames: SamplePosition = 0
+    follow_playhead: bool = True
 
 
 class ProjectRecord(BaseModel):
@@ -100,6 +161,14 @@ class ProjectRecord(BaseModel):
         description="Source metadata summary (format, title, artist, ...)",
     )
 
+    # Markers and working state (M1.15, milestone1.md §17).
+    markers: list[MarkerRecord] = Field(default_factory=list)
+    working_state: WorkingState = Field(default_factory=WorkingState)
+    #: Undo/redo availability, computed by the repository on read
+    #: (M1.15 §17.4); not stored, defaults to "none available".
+    can_undo: bool = False
+    can_redo: bool = False
+
     @field_validator("name", mode="before")
     @classmethod
     def _trim_and_validate_name(cls, v: str) -> str:
@@ -109,6 +178,7 @@ class ProjectRecord(BaseModel):
         self._check_source_fields_together()
         self._check_status_consistency()
         self._check_sample_rate_bounds()
+        self._check_markers_and_working_state()
 
     def _check_source_fields_together(self) -> None:
         optional_source_fields: tuple[object, ...] = (
@@ -187,4 +257,35 @@ class ProjectRecord(BaseModel):
             raise ValueError(
                 f"source sample rate {self.sample_rate} Hz is outside the supported "
                 f"range {MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz"
+            )
+
+    def _check_markers_and_working_state(self) -> None:
+        if self.status == ProjectStatus.EMPTY and self.markers:
+            raise ValueError("an empty project must not have markers")
+        duration = self.duration_frames
+        if duration is None:
+            return
+        for marker in self.markers:
+            if marker.project_id != self.id:
+                raise ValueError(f"marker {marker.id} belongs to another project")
+            if marker.position_frames > duration:
+                raise ValueError(
+                    f"marker {marker.id} at frame {marker.position_frames} exceeds "
+                    f"the project duration {duration}"
+                )
+        state = self.working_state
+        if state.last_position_frames > duration:
+            raise ValueError(
+                f"working-state position {state.last_position_frames} exceeds the "
+                f"project duration {duration}"
+            )
+        if state.selection is not None and state.selection.end > duration:
+            raise ValueError(
+                f"selection end {state.selection.end} exceeds the project duration "
+                f"{duration}"
+            )
+        if state.viewport is not None and state.viewport.start_frame > duration:
+            raise ValueError(
+                f"viewport start {state.viewport.start_frame} exceeds the project "
+                f"duration {duration}"
             )

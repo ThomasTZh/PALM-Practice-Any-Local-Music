@@ -27,6 +27,8 @@ import {
 } from './playback/transport'
 import { formatTime } from './playback/pcm'
 import { WaveformEditor, type PlayheadSource } from './waveform/WaveformEditor'
+import type { View as EditorView } from './waveform/viewport'
+import { useProjectCommands } from './projects/useProjectCommands'
 import type { ConnectionState, ProjectSummary } from './types'
 
 const client = createApiClient()
@@ -433,6 +435,10 @@ const PlaybackPanel = memo(function PlaybackPanel({
   createAudioContext,
   registerSeek,
   registerPlayhead,
+  initialVolume,
+  onVolumeChange,
+  onPositionReport,
+  parkPosition,
 }: {
   projectId: string
   createAudioContext?: () => TransportContextLike
@@ -442,6 +448,23 @@ const PlaybackPanel = memo(function PlaybackPanel({
   /** Registers the audible playhead source the waveform editor reads at
    * display rate (M1.14 §16.5); null on unmount. */
   registerPlayhead?: (source: PlayheadSource | null) => void
+  /**
+   * Restored monitoring volume in percent, 0–200 (M1.15 §17.6). Applied
+   * once when it first arrives; absent → the default 100 %.
+   */
+  initialVolume?: number
+  /** Autosave the monitoring volume (percent) on explicit change. */
+  onVolumeChange?: (percent: number) => void
+  /**
+   * Report the playhead position for autosave (M1.15 §17.5.3): the caller
+   * applies the pause-immediate / 5 s-while-playing cadence.
+   */
+  onPositionReport?: (frame: number, playing: boolean) => void
+  /**
+   * Last saved playhead position (M1.15 §17.6.4): park the transport here
+   * (staying paused) once it exists; absent → stay at zero.
+   */
+  parkPosition?: number
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -469,6 +492,12 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const pendingContextRef = useRef<TransportContextLike | null>(null)
   const volumeRef = useRef(100)
   const sourceLoadedRef = useRef(false)
+  const volumeSeededRef = useRef(false)
+  const parkedRef = useRef(false)
+  // The transport callbacks are created once; read the latest prop through
+  // a ref so the closure never goes stale.
+  const onPositionReportRef = useRef(onPositionReport)
+  onPositionReportRef.current = onPositionReport
 
   const loadInfo = useCallback(async () => {
     try {
@@ -491,6 +520,11 @@ const PlaybackPanel = memo(function PlaybackPanel({
 
   const reportPosition = useCallback((frame: number) => {
     setPosition(frame)
+    // The transport reports on pause too (preserved position); the playing
+    // flag lets the caller pick the autosave cadence (M1.15 §17.5.3).
+    const state = transportRef.current?.currentState
+    const playing = state === 'playing' || state === 'seeking' || state === 'buffering'
+    onPositionReportRef.current?.(frame, playing)
   }, [])
 
   // New project: drop any previous transport and source binding.
@@ -505,6 +539,11 @@ const PlaybackPanel = memo(function PlaybackPanel({
     setPlayError(null)
     setSuspended(false)
     setDiagnostics({ underruns: 0, lastUnderrunAt: null, droppedChunks: 0 })
+    // The restored volume of the previous project no longer applies.
+    volumeSeededRef.current = false
+    volumeRef.current = 100
+    setVolume(100)
+    parkedRef.current = false
   }, [projectId])
 
   useEffect(() => {
@@ -579,6 +618,30 @@ const PlaybackPanel = memo(function PlaybackPanel({
     transport.setOutputGain(volumeRef.current / 100)
     transportRef.current = transport
   }, [createAudioContext, info, reportPosition])
+
+  // Apply the restored monitoring volume once when it arrives (M1.15
+  // §17.6); the default 100 % stands when it never does. Declared after
+  // the transport effect so a same-commit arrival still finds it.
+  useEffect(() => {
+    if (initialVolume === undefined || volumeSeededRef.current) return
+    volumeSeededRef.current = true
+    const clamped = Math.max(0, Math.min(200, Math.round(initialVolume)))
+    volumeRef.current = clamped
+    setVolume(clamped)
+    transportRef.current?.setOutputGain(clamped / 100)
+  }, [initialVolume])
+
+  // Park the playhead at the last saved position (M1.15 §17.6.4): once
+  // the transport exists, seek there. Playback stays paused (§17.6.5);
+  // the transport applies a pre-target park on first play. Declared
+  // after the transport effect so a same-commit arrival still finds it.
+  useEffect(() => {
+    if (parkPosition === undefined || parkedRef.current) return
+    const transport = transportRef.current
+    if (!transport) return
+    parkedRef.current = true
+    transport.seek(Math.min(parkPosition, info?.durationFrames ?? parkPosition))
+  }, [parkPosition, info])
 
   // Tab visibility return (spec §15.5): redraw from the actual transport
   // state; `sync` also picks up a context that closed while the tab was
@@ -688,11 +751,15 @@ const PlaybackPanel = memo(function PlaybackPanel({
     transportRef.current?.stop()
   }, [])
 
-  const handleVolumeChange = useCallback((value: number) => {
-    volumeRef.current = value
-    setVolume(value)
-    transportRef.current?.setOutputGain(value / 100)
-  }, [])
+  const handleVolumeChange = useCallback(
+    (value: number) => {
+      volumeRef.current = value
+      setVolume(value)
+      transportRef.current?.setOutputGain(value / 100)
+      onVolumeChange?.(value)
+    },
+    [onVolumeChange],
+  )
 
   if (infoError) {
     return (
@@ -868,6 +935,11 @@ const PlaybackPanel = memo(function PlaybackPanel({
  * Holds the seek function (M1.11) and the audible playhead source (M1.14)
  * the transport panel registers for the editor; the editor reads the
  * playhead at display rate, so no per-update app state is needed.
+ *
+ * M1.15: owns the project-command hook — restores the server working
+ * state into the editor and panel (viewport, selection, channel display,
+ * follow, volume, playhead park) and autosaves changes back (debounced
+ * view ops, position cadence, flush on unmount).
  */
 function ProjectView({ project }: { project: ProjectSummary }) {
   const [seekFn, setSeekFn] = useState<((frame: number) => void) | null>(null)
@@ -880,18 +952,190 @@ function ProjectView({ project }: { project: ProjectSummary }) {
     (source: PlayheadSource | null) => setPlayheadSource(source),
     [],
   )
+
+  const commands = useProjectCommands(project.id)
+  // Read the latest hook functions through refs so the callbacks below
+  // stay referentially stable (the panel is memoized; the editor keys
+  // effects on callback identity).
+  const scheduleViewRef = useRef(commands.scheduleView)
+  scheduleViewRef.current = commands.scheduleView
+  const notePositionRef = useRef(commands.notePosition)
+  notePositionRef.current = commands.notePosition
+  const flushRef = useRef(commands.flush)
+  flushRef.current = commands.flush
+  const sendRef = useRef(commands.send)
+  sendRef.current = commands.send
+  const undoRef = useRef(commands.undo)
+  undoRef.current = commands.undo
+  const redoRef = useRef(commands.redo)
+  redoRef.current = commands.redo
+
+  const handleViewportChange = useCallback((view: EditorView) => {
+    scheduleViewRef.current({
+      type: 'set_viewport',
+      viewport: { start_frame: view.startFrame, frames_per_css_pixel: view.fpp },
+    })
+  }, [])
+  const handleSelectionChange = useCallback((selection: { start: number; end: number } | null) => {
+    // Both null clears the selection; present together otherwise.
+    scheduleViewRef.current({
+      type: 'set_selection',
+      start_frames: selection?.start ?? null,
+      end_frames: selection?.end ?? null,
+    })
+  }, [])
+  const handleChannelDisplayChange = useCallback(
+    (display: { linked: boolean; scales: number[] }) => {
+      scheduleViewRef.current({ type: 'set_display', channel_display: display })
+    },
+    [],
+  )
+  const handleFollowChange = useCallback((follow: boolean) => {
+    scheduleViewRef.current({ type: 'set_follow_playhead', follow_playhead: follow })
+  }, [])
+  const handleVolumeChange = useCallback((percent: number) => {
+    scheduleViewRef.current({ type: 'set_monitoring_volume', volume: percent / 100 })
+  }, [])
+  const handlePositionReport = useCallback((frame: number, playing: boolean) => {
+    notePositionRef.current(frame, playing)
+  }, [])
+
+  // Marker state (M1.15 §17.2). The selection is local UI state; the markers
+  // themselves are authoritative server state (commands.markers).
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
+  const seekFnRef = useRef(seekFn)
+  seekFnRef.current = seekFn
+
+  // Reset the selection when the project changes or the marker disappears.
+  useEffect(() => {
+    setSelectedMarkerId(null)
+  }, [project.id])
+  useEffect(() => {
+    if (selectedMarkerId && !commands.markers.some((m) => m.id === selectedMarkerId)) {
+      setSelectedMarkerId(null)
+    }
+  }, [selectedMarkerId, commands.markers])
+
+  const handleAddMarker = useCallback((frame: number) => {
+    void sendRef.current({
+      type: 'add_marker',
+      label: 'Marker',
+      color: '#e11d48',
+      position_frames: frame,
+    })
+  }, [])
+  const handleMoveMarker = useCallback((id: string, frame: number) => {
+    void sendRef.current({ type: 'update_marker', marker_id: id, position_frames: frame })
+  }, [])
+  const handleUpdateMarker = useCallback(
+    (id: string, patch: { label?: string; color?: string; positionFrames?: number }) => {
+      const op: {
+        type: 'update_marker'
+        marker_id: string
+        label?: string
+        color?: string
+        position_frames?: number
+      } = { type: 'update_marker', marker_id: id }
+      if (patch.label !== undefined) op.label = patch.label
+      if (patch.color !== undefined) op.color = patch.color
+      if (patch.positionFrames !== undefined) op.position_frames = patch.positionFrames
+      void sendRef.current(op)
+    },
+    [],
+  )
+  const handleDeleteMarker = useCallback((id: string) => {
+    void sendRef.current({ type: 'delete_marker', marker_id: id })
+  }, [])
+  const handleSelectMarker = useCallback((id: string | null) => {
+    setSelectedMarkerId(id)
+  }, [])
+  const handleSeekToMarker = useCallback((frame: number) => {
+    seekFnRef.current?.(frame)
+  }, [])
+  const handleUndo = useCallback(() => {
+    void undoRef.current()
+  }, [])
+  const handleRedo = useCallback(() => {
+    void redoRef.current()
+  }, [])
+
+  // Flush pending view ops on unmount (M1.15 §17.5.5). Project switches
+  // are flushed inside the hook (armed ops go to the previous project).
+  useEffect(() => {
+    return () => {
+      void flushRef.current()
+    }
+  }, [])
+
+  // Restored working state (M1.15 §17.6). `undefined` until the snapshot
+  // loads (legacy behavior in the meantime); `null` means the server
+  // default → the legacy localStorage fallback.
+  const ws = commands.workingState
+  const display = ws.channel_display ?? { linked: true, scales: [] }
+  const displayIsDefault = display.linked && (display.scales?.length ?? 0) === 0
+  const initialViewport: EditorView | null | undefined = !commands.loaded
+    ? undefined
+    : ws.viewport
+      ? { startFrame: ws.viewport.start_frame, fpp: ws.viewport.frames_per_css_pixel }
+      : null
+  const initialSelection = commands.loaded ? ws.selection : undefined
+  const initialChannelDisplay =
+    commands.loaded && !displayIsDefault
+      ? { linked: display.linked, scales: display.scales ?? [] }
+      : null
+  const initialFollow = commands.loaded && !ws.follow_playhead ? false : null
+  const initialVolume = commands.loaded ? Math.round(ws.monitoring_volume * 100) : undefined
+  const parkPosition = commands.loaded ? ws.last_position_frames : undefined
+
   return (
     <>
+      {commands.pending && (
+        <p className="save-state" role="status">
+          Saving…
+        </p>
+      )}
+      {commands.staleNotice && (
+        <p className="stale-notice" role="status">
+          {commands.staleNotice}{' '}
+          <button type="button" onClick={commands.clearStaleNotice}>
+            Dismiss
+          </button>
+        </p>
+      )}
       <PlaybackPanel
         projectId={project.id}
         registerSeek={handleRegisterSeek}
         registerPlayhead={handleRegisterPlayhead}
+        initialVolume={initialVolume}
+        onVolumeChange={handleVolumeChange}
+        onPositionReport={handlePositionReport}
+        parkPosition={parkPosition}
       />
       <WaveformEditor
         projectId={project.id}
         sourceAssetId={project.canonical_asset_id ?? null}
         playheadSource={playheadSource ?? undefined}
         onSeek={seekFn ?? undefined}
+        initialViewport={initialViewport}
+        initialSelection={initialSelection}
+        initialChannelDisplay={initialChannelDisplay}
+        initialFollow={initialFollow}
+        onViewportChange={handleViewportChange}
+        onSelectionChange={handleSelectionChange}
+        onChannelDisplayChange={handleChannelDisplayChange}
+        onFollowChange={handleFollowChange}
+        markers={commands.markers}
+        selectedMarkerId={selectedMarkerId}
+        onAddMarker={handleAddMarker}
+        onMoveMarker={handleMoveMarker}
+        onUpdateMarker={handleUpdateMarker}
+        onDeleteMarker={handleDeleteMarker}
+        onSelectMarker={handleSelectMarker}
+        onSeekToMarker={handleSeekToMarker}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={commands.canUndo}
+        canRedo={commands.canRedo}
       />
       <dl className="project-meta">
         <dt>Status</dt>

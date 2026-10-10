@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "AddMarkerOp": {
+        "properties": {
+          "color": {
+            "default": "#e11d48",
+            "pattern": "^#[0-9a-f]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "label": {
+            "default": "Marker",
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          },
+          "position_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Position Frames",
+            "type": "integer"
+          },
+          "type": {
+            "const": "add_marker",
+            "default": "add_marker",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "position_frames"
+        ],
+        "title": "AddMarkerOp",
+        "type": "object"
+      },
       "AssetMetadataResponse": {
         "properties": {
           "asset_id": {
@@ -198,6 +232,26 @@
         "title": "CancelImportResponse",
         "type": "object"
       },
+      "ChannelDisplay": {
+        "description": "Channel display (amplitude) settings (M1.15 \u00a717.5).\n\n``scales`` are per-channel display amplitudes (editor range\n0.25-16); at most one entry per source channel.",
+        "properties": {
+          "linked": {
+            "default": true,
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "scales": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 8,
+            "title": "Scales",
+            "type": "array"
+          }
+        },
+        "title": "ChannelDisplay",
+        "type": "object"
+      },
       "ChunkAckResponse": {
         "properties": {
           "chunk_bytes": {
@@ -219,6 +273,120 @@
           "chunk_bytes"
         ],
         "title": "ChunkAckResponse",
+        "type": "object"
+      },
+      "CommandRequest": {
+        "properties": {
+          "base_revision": {
+            "description": "Nonnegative integer revision",
+            "minimum": 0.0,
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "command_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "op": {
+            "discriminator": {
+              "mapping": {
+                "add_marker": "#/components/schemas/AddMarkerOp",
+                "delete_marker": "#/components/schemas/DeleteMarkerOp",
+                "set_display": "#/components/schemas/SetDisplayOp",
+                "set_follow_playhead": "#/components/schemas/SetFollowPlayheadOp",
+                "set_monitoring_volume": "#/components/schemas/SetMonitoringVolumeOp",
+                "set_position": "#/components/schemas/SetPositionOp",
+                "set_selection": "#/components/schemas/SetSelectionOp",
+                "set_viewport": "#/components/schemas/SetViewportOp",
+                "update_marker": "#/components/schemas/UpdateMarkerOp"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AddMarkerOp"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateMarkerOp"
+              },
+              {
+                "$ref": "#/components/schemas/DeleteMarkerOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetSelectionOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetViewportOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetDisplayOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetMonitoringVolumeOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetPositionOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetFollowPlayheadOp"
+              }
+            ],
+            "title": "Op"
+          }
+        },
+        "required": [
+          "command_id",
+          "idempotency_key",
+          "base_revision",
+          "op"
+        ],
+        "title": "CommandRequest",
+        "type": "object"
+      },
+      "CommandResult": {
+        "description": "The resulting project state after a command (\u00a717.4.5).",
+        "properties": {
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/MarkerRecord"
+            },
+            "title": "Markers",
+            "type": "array"
+          },
+          "revision": {
+            "description": "Nonnegative integer revision",
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "working_state": {
+            "$ref": "#/components/schemas/WorkingState"
+          }
+        },
+        "required": [
+          "revision",
+          "markers",
+          "working_state",
+          "can_undo",
+          "can_redo"
+        ],
+        "title": "CommandResult",
         "type": "object"
       },
       "CompleteImportResponse": {
@@ -374,6 +542,27 @@
         "title": "CreateProjectRequest",
         "type": "object"
       },
+      "DeleteMarkerOp": {
+        "properties": {
+          "marker_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Marker Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "delete_marker",
+            "default": "delete_marker",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marker_id"
+        ],
+        "title": "DeleteMarkerOp",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -403,6 +592,20 @@
           "api_version"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "HistoryRequest": {
+        "properties": {
+          "base_revision": {
+            "minimum": 0.0,
+            "title": "Base Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_revision"
+        ],
+        "title": "HistoryRequest",
         "type": "object"
       },
       "ImportListResponse": {
@@ -586,6 +789,61 @@
         ],
         "title": "JobType",
         "type": "string"
+      },
+      "MarkerRecord": {
+        "description": "A single marker annotation in a project (\u00a717.1).",
+        "properties": {
+          "color": {
+            "description": "Hex color #rrggbb",
+            "pattern": "^#[0-9a-f]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "position_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Position Frames",
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "position_frames",
+          "label",
+          "color",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MarkerRecord",
+        "type": "object"
       },
       "MediaJob": {
         "description": "One durable media-processing job.",
@@ -1036,6 +1294,16 @@
       "ProjectRecord": {
         "description": "A persisted working project.\n\nAn empty project has ``status == \"empty\"`` and all source fields\nnull. A ready project has the original-file asset, the canonical\nPCM asset, and complete source timing/channel metadata.",
         "properties": {
+          "can_redo": {
+            "default": false,
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "default": false,
+            "title": "Can Undo",
+            "type": "boolean"
+          },
           "canonical_asset_id": {
             "anyOf": [
               {
@@ -1084,6 +1352,13 @@
             "description": "UUID identifier, serialized as a string",
             "title": "Id",
             "type": "string"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/MarkerRecord"
+            },
+            "title": "Markers",
+            "type": "array"
           },
           "monitoring_asset_id": {
             "anyOf": [
@@ -1227,6 +1502,9 @@
           "waveform_status": {
             "$ref": "#/components/schemas/WaveformStatus",
             "default": "none"
+          },
+          "working_state": {
+            "$ref": "#/components/schemas/WorkingState"
           }
         },
         "required": [
@@ -1258,6 +1536,176 @@
           "stream_index"
         ],
         "title": "SelectStreamRequest",
+        "type": "object"
+      },
+      "SelectionRange": {
+        "description": "A frame selection ``[start, end)`` in source frames (M1.15 \u00a717.5).",
+        "properties": {
+          "end": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "SelectionRange",
+        "type": "object"
+      },
+      "SetDisplayOp": {
+        "properties": {
+          "channel_display": {
+            "$ref": "#/components/schemas/ChannelDisplay"
+          },
+          "type": {
+            "const": "set_display",
+            "default": "set_display",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_display"
+        ],
+        "title": "SetDisplayOp",
+        "type": "object"
+      },
+      "SetFollowPlayheadOp": {
+        "properties": {
+          "follow_playhead": {
+            "title": "Follow Playhead",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "set_follow_playhead",
+            "default": "set_follow_playhead",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "follow_playhead"
+        ],
+        "title": "SetFollowPlayheadOp",
+        "type": "object"
+      },
+      "SetMonitoringVolumeOp": {
+        "properties": {
+          "type": {
+            "const": "set_monitoring_volume",
+            "default": "set_monitoring_volume",
+            "title": "Type",
+            "type": "string"
+          },
+          "volume": {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "volume"
+        ],
+        "title": "SetMonitoringVolumeOp",
+        "type": "object"
+      },
+      "SetPositionOp": {
+        "description": "Continuous playback position \u2014 persisted, never in history (\u00a717.4.10).",
+        "properties": {
+          "position_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Position Frames",
+            "type": "integer"
+          },
+          "type": {
+            "const": "set_position",
+            "default": "set_position",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "position_frames"
+        ],
+        "title": "SetPositionOp",
+        "type": "object"
+      },
+      "SetSelectionOp": {
+        "description": "Both null clears the selection; present together otherwise.",
+        "properties": {
+          "end_frames": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frames"
+          },
+          "start_frames": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Frames"
+          },
+          "type": {
+            "const": "set_selection",
+            "default": "set_selection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SetSelectionOp",
+        "type": "object"
+      },
+      "SetViewportOp": {
+        "description": "Null clears the stored viewport (editor falls back to fit).",
+        "properties": {
+          "type": {
+            "const": "set_viewport",
+            "default": "set_viewport",
+            "title": "Type",
+            "type": "string"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ViewportState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "SetViewportOp",
         "type": "object"
       },
       "SourceInfoResponse": {
@@ -1361,6 +1809,67 @@
         "title": "TransferState",
         "type": "string"
       },
+      "UpdateMarkerOp": {
+        "description": "Partial marker edit; absent fields stay unchanged.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "marker_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Marker Id",
+            "type": "string"
+          },
+          "position_frames": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position Frames"
+          },
+          "type": {
+            "const": "update_marker",
+            "default": "update_marker",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marker_id"
+        ],
+        "title": "UpdateMarkerOp",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1399,6 +1908,29 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ViewportState": {
+        "description": "A persisted editor viewport, width-free (M1.15 \u00a717.5).",
+        "properties": {
+          "frames_per_css_pixel": {
+            "exclusiveMinimum": 0.0,
+            "title": "Frames Per Css Pixel",
+            "type": "number"
+          },
+          "start_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Start Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_frame",
+          "frames_per_css_pixel"
+        ],
+        "title": "ViewportState",
         "type": "object"
       },
       "WaveformCacheInfo": {
@@ -1590,6 +2122,56 @@
         ],
         "title": "WaveformStatus",
         "type": "string"
+      },
+      "WorkingState": {
+        "description": "Per-project working state persisted by autosave (M1.15 \u00a717.5).\n\nFrame-valued fields are validated against the project's\n``duration_frames`` by ``ProjectRecord``.",
+        "properties": {
+          "channel_display": {
+            "$ref": "#/components/schemas/ChannelDisplay"
+          },
+          "follow_playhead": {
+            "default": true,
+            "title": "Follow Playhead",
+            "type": "boolean"
+          },
+          "last_position_frames": {
+            "default": 0,
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Last Position Frames",
+            "type": "integer"
+          },
+          "monitoring_volume": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Monitoring Volume",
+            "type": "number"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ViewportState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WorkingState",
+        "type": "object"
       }
     }
   },
@@ -2321,6 +2903,56 @@
         "summary": "Get Project"
       }
     },
+    "/api/v1/projects/{project_id}/commands": {
+      "post": {
+        "operationId": "apply_command_api_v1_projects__project_id__commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Command"
+      }
+    },
     "/api/v1/projects/{project_id}/imports": {
       "get": {
         "operationId": "list_project_imports_api_v1_projects__project_id__imports_get",
@@ -2601,6 +3233,56 @@
         "summary": "Create Playback Preparation"
       }
     },
+    "/api/v1/projects/{project_id}/redo": {
+      "post": {
+        "operationId": "redo_api_v1_projects__project_id__redo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redo"
+      }
+    },
     "/api/v1/projects/{project_id}/source-info": {
       "get": {
         "operationId": "get_source_info_api_v1_projects__project_id__source_info_get",
@@ -2639,6 +3321,56 @@
           }
         },
         "summary": "Get Source Info"
+      }
+    },
+    "/api/v1/projects/{project_id}/undo": {
+      "post": {
+        "operationId": "undo_api_v1_projects__project_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo"
       }
     },
     "/api/v1/system": {

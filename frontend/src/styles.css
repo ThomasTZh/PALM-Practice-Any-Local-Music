@@ -672,7 +672,6 @@ button:hover:not(:disabled) {
   color: var(--text);
 }
 
-.wave-marker-lane,
 .wave-selection-readout {
   background: var(--bg);
   border-radius: 0.25rem;
@@ -681,6 +680,91 @@ button:hover:not(:disabled) {
   padding: 0 0.5rem;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+/* M1.15 §17.2: the marker row stacks the flag canvas, toolbar, and list. */
+.wave-marker-lane {
+  background: var(--bg);
+  border-radius: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.wave-marker-canvas-wrap {
+  position: relative;
+}
+
+.wave-marker-canvas-wrap .wave-canvas {
+  display: block;
+}
+
+/* Transparent hit surface over the flag canvas (M1.15 §17.2). */
+.wave-marker-hitarea {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.wave-marker-toolbar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.wave-marker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.wave-marker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
+.wave-marker-item.selected {
+  outline: 1px solid var(--accent);
+}
+
+.wave-marker-swatch {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  flex: none;
+}
+
+.wave-marker-label {
+  flex: 1 1 auto;
+  min-width: 4rem;
+}
+
+.wave-marker-frame {
+  width: 5.5rem;
+  flex: none;
+}
+
+.wave-marker-time {
+  color: var(--muted);
+  flex: none;
+}
+
+.wave-marker-delete {
+  flex: none;
 }
 
 /* M1.11: the scrollbar is interactive — track click jumps, thumb drag pans. */

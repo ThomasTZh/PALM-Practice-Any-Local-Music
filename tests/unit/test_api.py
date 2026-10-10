@@ -7,6 +7,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.app import create_app
 from basseparate.config import AppConfig, resolve_config
 
@@ -84,7 +85,7 @@ class TestProjects:
         assert data["source_asset_id"] is None
         assert data["sample_rate"] is None
         assert data["duration_frames"] is None
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == PROJECT_SCHEMA_VERSION
         uuid.UUID(data["id"])
 
     def test_create_project_trims_name(self, client: TestClient, auth_headers: dict) -> None:

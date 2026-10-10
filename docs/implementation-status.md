@@ -7,8 +7,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 - **Milestone:** 1 (Import, waveform, and original playback)
 - **Gate:** F passed (Milestone 0 exit gate); B complete (M1.4–M1.7)
-- **Work package:** M1.14 (synchronized readout and follow-playhead) —
-  complete. Plan in `projectPlans/m1.14-plan.md`.
+- **Work package:** M1.15 (markers, persistence, and undo/redo) —
+  in progress. Plan in `projectPlans/m1.15-plan.md`.
 - **Last commit:** `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
   compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
@@ -24,9 +24,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M1.15 (markers, persistence, and undo/redo, spec
-  §17) — read the spec section, write `projectPlans/m1.15-plan.md`,
-  update this ledger, start phase 1.
+- **Next action:** M1.15 Phase 8 — full gate + commit. Python gate
+  (pytest / ruff / mypy), contract check (export_openapi → pnpm
+  contracts → check_contract), frontend gate (vitest / typecheck /
+  lint / format:check); decide the `PROJECT_SCHEMA_VERSION` bump
+  (2 → 3) for the new marker + working-state persistence; then a
+  single `M1.15: …` commit + a ledger-hash follow-up commit.
 
 ## Completed requirements (with evidence)
 
@@ -413,6 +416,167 @@ line) → 5 frontend gate + commit.
   holds the source in state and forwards it to the editor; the
   `playheadFrame` app state is gone. Source inspector `<dl>` gains the
   exact-frame `Frame` line (§16.3) with a panel test.
+
+### M1.15 — Markers, persistence, and undo/redo (in progress)
+
+Spec: `projectPlans/milestone1.md` §17. Plan:
+`projectPlans/m1.15-plan.md`. Full-stack: marker model
+(UUID/project/position/label/color/timestamps; positions valid at 0
+and exactly at project end), per-project working state (selection,
+viewport, channel display, monitoring volume, last position,
+follow-playhead), a project-command endpoint
+(`POST /projects/{id}/commands`) with base-revision validation (409
+stale), idempotency keys, and resulting-state responses; server-side
+undo/redo history (per-project, snapshots exclude
+`last_position_frames` so undo never moves the playhead; redo branch
+cleared by a new edit; 200-row cap); working autosave (semantic
+commands immediate, view state ~1 s debounce, position on pause + 5 s,
+serialized per tab, flush on navigation, best-effort page close,
+pending indicator); restore-on-reopen (markers/view/selection/display/
+follow/position, remain paused); recovery surfaced (canonical missing
+→ regenerate from retained original via the existing job endpoint;
+original missing + valid canonical → provenance warning).
+
+Phases: 1 plan + ledger → 2 backend domain (marker, working state,
+command ops) → 3 backend storage (migration 6, apply/undo/redo,
+history) → 4 backend API (command + undo/redo routes, idempotency,
+openapi + schema.ts regeneration) → 5 frontend client + command hook
+(serialization, debounce, flush, stale resync) → 6 frontend restore +
+autosave wiring → 7 frontend editor marker UI → 8 full gate + commit.
+
+**Phase status:**
+- Phase 1: plan written, ledger updated.
+- Phase 2: backend domain done. `domain/marker.py` (MarkerRecord:
+  UUID, project_id, position_frames 0..duration inclusive, label 1-80
+  trimmed no control chars, color #rrggbb, timestamps),
+  `domain/project.py` (SelectionRange half-open, ViewportState,
+  ChannelDisplay, WorkingState, ProjectRecord gains markers +
+  working_state with cross-field validation), `domain/commands.py`
+  (9 op models discriminated on `type`, CommandRequest with
+  idempotency_key, CommandResult with revision/markers/working_state/
+  can_undo/can_redo; HISTORY_EXCLUDED_TYPES = {"set_position"}).
+  Tests: test_marker.py + test_commands.py.
+- Phase 3: backend storage done. Migration 6 (projects.working_state,
+  projects.history_seq, markers table, project_history table;
+  DATABASE_SCHEMA_VERSION 5->6, 5->6 upgrade test). Repository gains
+  apply_command/undo/redo returning CommandResult, snapshot-based
+  history (before/after JSON, last_position_frames excluded per
+  §17.4.10), 200-row cap, redo-branch deletion, exceptions
+  (ProjectMissingError, StaleRevisionError, NothingToUndo/RedoError,
+  MarkerNotFoundError, ProjectNotReady). get_project/list_projects
+  attach markers + working_state. 23 tests in
+  test_repository_commands.py; full unit suite green (576).
+- Phase 4: backend API done. `api/command_routes.py` (POST
+  /projects/{id}/commands with base-revision 409 + idempotency
+  replay/conflict, POST /undo, POST /redo; repo exceptions mapped to
+  API errors; repo calls via asyncio.to_thread). api/errors.py gains
+  StaleRevisionError (409 + current_revision), NothingToUndo/RedoError
+  (409), MarkerNotFoundError (404), InvalidCommandError (422).
+  IdempotencyStore generalized to an opaque payload. Router registered
+  in app.py. 15 route tests (test_command_routes.py). OpenAPI
+  contract + frontend schema.ts regenerated; check_contract passes.
+  Python gate green (pytest 576, ruff, mypy).
+- Phase 5: frontend client + command hook done.
+  `frontend/src/api/commands.ts` (sendCommand / undoCommand /
+  redoCommand / getProjectSnapshot; fresh command_id + idempotency_key
+  per call; 409 STALE_REVISION -> StaleRevisionError with
+  currentRevision; camelCase result mapping).
+  `frontend/src/projects/useProjectCommands.ts` (authoritative state
+  from server responses only; serialized per-tab queue with base
+  revision read at send time; ~1 s per-op-type view debounce with
+  last-op-wins coalescing; set_position immediate on pause + 5 s
+  cadence while playing; flush() sends armed ops and awaits the queue;
+  stale -> snapshot refetch, state resync, armed ops dropped, one-line
+  notice). Backend support: ProjectRecord gains can_undo/can_redo
+  (computed by repository.get_project from the history pointer; list
+  keeps defaults), contract + schema.ts regenerated again.
+  Tests: tests/commands.test.ts (8) + tests/use-project-commands.test.ts
+  (8; fake timers, microtask flush instead of waitFor). Full frontend
+  suite 283 passed; typecheck/lint/format:check green. Python gate
+  green (pytest 576, ruff, mypy).
+- Phase 6 (complete, uncommitted): restore + autosave wiring.
+  Hook project-switch flush of old project's armed ops
+  (fire-and-forget sendCommand to prev id) + chain reset in the
+  load/reset effect; pagehide sendBeacon of armed view ops
+  (useProjectCommands.ts). WaveformEditor: initialViewport /
+  initialSelection / initialChannelDisplay / initialFollow props
+  (undefined = not loaded, null = server default -> legacy behavior),
+  applied once at first ready via restoreAppliedRef (reset on
+  projectId/sourceAssetId change); skipReportRef skip-flags so
+  restored values are not echoed back (selection flag starts true —
+  initial null consumed); autosave callback effects for view /
+  selection / channel display; setFollow reports onFollowChange.
+  channelCount declaration moved above the effects (TDZ).
+  PlaybackPanel: initialVolume (seeded once via volumeSeededRef,
+  reset to 100 on project change), onVolumeChange, onPositionReport
+  (playing flag from transport state; transport already reports on
+  pause), parkPosition (seeks once transport exists, stays paused).
+  ProjectView: useProjectCommands(project.id), stable callbacks via
+  refs (set_viewport / set_selection start_frames+end_frames /
+  set_display / set_follow_playhead / set_monitoring_volume volume),
+  notePosition wiring, flush on unmount, derived initial values
+  (undefined until loaded; null on server defaults; channel display
+  only when non-default; follow only when false), pending "Saving…"
+  chip + stale notice with Dismiss. commands.ts toCommandResult
+  gains boundary fallbacks (markers ?? [], working_state ??
+  DEFAULT, can_undo/can_redo ?? false) — without them test fixtures
+  without working_state poisoned hook state.
+  Transport (M1.15 §17.6.4): pre-target `seek` no longer clamps to
+  the zero `projectDurationFrames` placeholder (the park survives to
+  `loadSource`), and `loadSource` now applies a parked frame to the
+  start anchors + reports it. App.tsx: the volume-seed and park
+  effects moved after the transport-creation effect so a same-commit
+  snapshot arrival still finds the transport.
+  Tests: tests/app-restore.test.tsx (new, 6 tests) — full-App render
+  restores selection / viewport / channel display / follow, seeds
+  volume, parks the playhead + saves, autosaves the debounced
+  viewport, shows/clears the pending chip, and resyncs on 409.
+  Fixtures: getAssetPcm buffer is frames x 2 channels x 2 floats
+  (the earlier frames*2*4 size threw a RangeError that silently
+  failed the PCM decode and left the lane unpainted); the zoom-in
+  autosave expects 3.2 fpp (zoom in halves frames-per-pixel); the
+  pending-chip test arms an op via a zoom click (the restore does not
+  echo ops). scratch-debug.test.tsx deleted.
+  Full frontend suite 289 passed; typecheck / lint / format:check
+  green.
+- Phase 7 (complete, uncommitted): editor marker UI (§17.2).
+  render.ts: MARKER_COLORS 6-color palette, MARKER_FLAG_WIDTH/HEIGHT,
+  drawMarkerFlag (2 px full-height stem + fixed 76×12 colored body +
+  label truncated to 12 chars + dark selection outline; no measureText
+  — not in the WaveformContext structural interface), drawMarkerTick
+  (1 px vertical stroke). WaveformEditor: new optional props (markers,
+  selectedMarkerId, onAddMarker, onMoveMarker, onUpdateMarker,
+  onDeleteMarker, onSelectMarker, onSeekToMarker, onUndo, onRedo,
+  canUndo, canRedo) + MARKER_ROW_HEIGHT 24; a `marker-row` CanvasLayer
+  + transparent hit surface; a marker-draw effect (row flags with drag
+  preview, one tick per visible lane, off-viewport flags skipped); a
+  marker-list (color swatch cycles the palette, label input,
+  exact-frame input + time, delete; commits on blur/Enter, uncontrolled
+  inputs re-keyed on the server value so undo/external edits resync);
+  toolbar (Add marker at playhead, Prev, Next) + a History fieldset
+  (Undo/Redo, disabled by canUndo/canRedo). Interactions: click a flag
+  selects (no seek), click empty space clears, drag previews locally and
+  commits exactly one onMoveMarker on release (>3 px threshold),
+  double-click a flag seeks + selects, ruler double-click adds at the
+  pointer frame. App.tsx ProjectView: selectedMarkerId local state
+  (reset on project change / when the marker disappears), stable marker
+  + undo/redo callbacks via refs, markers/canUndo/canRedo from the
+  hook. styles.css: marker row column layout, hit surface, toolbar,
+  list, swatch, and wave-history-controls. Tests:
+  tests/WaveformEditor.test.tsx +14 (render/flags/ticks, add at
+  playhead, ruler dbl-click, select, clear, drag preview + one commit,
+  dbl-click seek+select, prev/next, color cycle, label/frame commit on
+  blur, delete, undo/redo enabled/disabled). Full frontend suite 303
+  passed; typecheck / lint / format:check green.
+- Phase 8 (complete): full gate + commit. `PROJECT_SCHEMA_VERSION`
+  bumped 2 → 3 (per plan §1); two tests that pinned the literal
+  version (tests/unit/test_api.py::test_create_project,
+  tests/unit/test_project.py::test_empty_project_defaults) now import
+  PROJECT_SCHEMA_VERSION. All gates green: Python (pytest 702 passed,
+  ruff clean, mypy clean 49 files), contract (openapi.json +
+  schema.ts regenerated, check_contract OK), frontend (vitest 303
+  passed, typecheck, lint, format:check). Committed as a single
+  `M1.15: …` change + ledger-hash follow-up.
 
 ### M1.11 — Navigation, zoom, and selection (complete — `fd3468f`)
 

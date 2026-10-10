@@ -380,3 +380,72 @@ export function drawOverviewWindow(
   ctx.lineWidth = 1
   ctx.strokeRect(x0 + 0.5, 0.5, Math.max(1, x1 - x0 - 1), height - 1)
 }
+
+// --- markers (M1.15, spec §17.2) ------------------------------------------------
+
+/** The 6-color marker palette cycled by the swatch button (§17.2.6). */
+export const MARKER_COLORS = [
+  '#e11d48',
+  '#f59e0b',
+  '#10b981',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+] as const
+
+/** Fixed flag body size (the label is truncated to fit, §17.2). */
+export const MARKER_FLAG_WIDTH = 76
+export const MARKER_FLAG_HEIGHT = 12
+
+export interface MarkerFlagOptions {
+  color: string
+  /** Draw the selection outline around the flag (§17.2.9). */
+  selected?: boolean
+}
+
+/**
+ * One marker flag on the marker row: a full-height 2 px stem, a fixed-size
+ * colored body at the top, and the label truncated to ~12 characters.
+ * `x` is the flag's left edge in CSS px (ruler-aligned).
+ */
+export function drawMarkerFlag(
+  ctx: WaveformContext,
+  x: number,
+  label: string,
+  height: number,
+  opts: MarkerFlagOptions,
+): void {
+  const fx = Math.round(x)
+  ctx.fillStyle = opts.color
+  ctx.fillRect(fx, 0, 2, height)
+  ctx.fillRect(fx, 0, MARKER_FLAG_WIDTH, MARKER_FLAG_HEIGHT)
+  const text = label.length > 12 ? `${label.slice(0, 11)}…` : label
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '11px system-ui, sans-serif'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, fx + 4, MARKER_FLAG_HEIGHT / 2)
+  if (opts.selected) {
+    ctx.strokeStyle = '#0f172a'
+    ctx.lineWidth = 1
+    ctx.strokeRect(fx + 0.5, 0.5, Math.max(1, MARKER_FLAG_WIDTH - 1), Math.max(1, height - 1))
+  }
+}
+
+/**
+ * A 1 px vertical tick on a lane's `markers` layer at the marker's frame
+ * position (§17.2).
+ */
+export function drawMarkerTick(
+  ctx: WaveformContext,
+  x: number,
+  height: number,
+  color: string,
+): void {
+  const px = Math.round(x) + 0.5
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(px, 0)
+  ctx.lineTo(px, height)
+  ctx.stroke()
+}

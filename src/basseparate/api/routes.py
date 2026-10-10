@@ -113,7 +113,7 @@ async def create_project(request: Request, body: CreateProjectRequest) -> Projec
         if existing is not None:
             if existing.body_hash != body_hash:
                 raise IdempotencyConflictError()
-            return existing.project
+            return cast(ProjectRecord, existing.payload)
 
     trimmed = body.name.strip()
     if not trimmed:

@@ -15,6 +15,7 @@ from basseparate.domain.waveform import WaveformResult, expected_levels
 from basseparate.storage.db import (
     DatabaseError,
     UnsupportedSchemaVersion,
+    _apply_migrations,
     initialize_database,
 )
 from basseparate.storage.repository import ProjectRepository, WaveformCacheRepository
@@ -75,11 +76,52 @@ class TestInitialization:
             "waveform_caches",
         } <= tables
 
-    def test_schema_version_is_5(self, db_path: Path) -> None:
+    def test_schema_version_is_6(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 5
+        assert version == 6
+
+    def test_migration_5_to_6_preserves_existing_projects(self, tmp_path: Path) -> None:
+        # Build a genuine v5 database, insert a project, then upgrade.
+        path = tmp_path / "data" / "basseparate.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        try:
+            conn.execute("PRAGMA user_version = 0")
+            conn.commit()
+            _apply_migrations(conn, 0, 5)
+            conn.execute(
+                "INSERT INTO projects (id, name, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                ("p1", "Old", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        initialize_database(path)
+
+        conn = sqlite3.connect(str(path))
+        conn.row_factory = sqlite3.Row
+        try:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            assert version == 6
+            row = conn.execute(
+                "SELECT name, working_state, history_seq FROM projects WHERE id = 'p1'"
+            ).fetchone()
+            assert row["name"] == "Old"
+            assert row["working_state"] == "{}"
+            assert row["history_seq"] == -1
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+            assert {"markers", "project_history"} <= tables
+        finally:
+            conn.close()
 
     def test_media_jobs_table_shape(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))

@@ -268,6 +268,44 @@ def _migration_4_to_5(conn: sqlite3.Connection) -> None:
 
 register_migration(5, _migration_4_to_5)
 
+_MIGRATION_6_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE projects ADD COLUMN working_state TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE projects ADD COLUMN history_seq INTEGER NOT NULL DEFAULT -1",
+    """
+    CREATE TABLE IF NOT EXISTS markers (
+        id              TEXT PRIMARY KEY,
+        project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        position_frames INTEGER NOT NULL CHECK (position_frames >= 0),
+        label           TEXT NOT NULL,
+        color           TEXT NOT NULL,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_markers_project ON markers(project_id)",
+    """
+    CREATE TABLE IF NOT EXISTS project_history (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        seq         INTEGER NOT NULL,
+        kind        TEXT NOT NULL,
+        before_json TEXT NOT NULL,
+        after_json  TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        UNIQUE (project_id, seq)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_project_history ON project_history(project_id, seq)",
+)
+
+
+def _migration_5_to_6(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_6_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(6, _migration_5_to_6)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.

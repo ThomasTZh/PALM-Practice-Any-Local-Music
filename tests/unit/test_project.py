@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.project import ProjectRecord, ProjectStatus, WaveformStatus
 
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
@@ -53,7 +54,7 @@ def test_empty_project_defaults() -> None:
     assert p.decode_profile_version is None
     assert p.waveform_status == WaveformStatus.NONE
     assert p.source_metadata == {}
-    assert p.schema_version == 2
+    assert p.schema_version == PROJECT_SCHEMA_VERSION
 
 
 def test_ready_project_requires_all_source_fields() -> None:

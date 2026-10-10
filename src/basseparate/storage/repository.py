@@ -12,16 +12,22 @@ import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
+from basseparate.domain.commands import (
+    HISTORY_EXCLUDED_TYPES,
+    CommandResult,
+    ProjectCommandOp,
+)
 from basseparate.domain.import_record import (
     AudioStreamInfo,
     ImportRecord,
     ProbeResult,
     TransferState,
 )
+from basseparate.domain.marker import MarkerRecord
 from basseparate.domain.media_job import (
     JobStage,
     JobState,
@@ -29,7 +35,13 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
-from basseparate.domain.project import ProjectRecord, ProjectStatus, WaveformStatus
+from basseparate.domain.project import (
+    ProjectRecord,
+    ProjectStatus,
+    SelectionRange,
+    WaveformStatus,
+    WorkingState,
+)
 from basseparate.domain.representation import (
     AudioRepresentation,
     RepresentationProvenance,
@@ -78,6 +90,7 @@ def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
         decode_profile_version=row["decode_profile_version"],
         waveform_status=WaveformStatus(row["waveform_status"]),
         source_metadata=json.loads(row["source_metadata"]),
+        working_state=WorkingState.model_validate_json(row["working_state"]),
     )
 
 
@@ -190,6 +203,238 @@ def _row_to_job(row: sqlite3.Row) -> MediaJob:
     )
 
 
+class ProjectMissingError(Exception):
+    """The referenced project does not exist."""
+
+
+class StaleRevisionError(Exception):
+    """The command's base revision does not match the stored revision."""
+
+    def __init__(self, current_revision: int) -> None:
+        super().__init__(f"base revision is stale; current revision is {current_revision}")
+        self.current_revision = current_revision
+
+
+class NothingToUndoError(Exception):
+    """The project has no undo history."""
+
+
+class NothingToRedoError(Exception):
+    """The project has no redo history."""
+
+
+class MarkerNotFoundError(Exception):
+    """The referenced marker does not exist in the project."""
+
+    def __init__(self, marker_id: uuid.UUID) -> None:
+        super().__init__(f"marker {marker_id} not found")
+        self.marker_id = marker_id
+
+
+class ProjectNotReady(Exception):
+    """A position-valued op requires a ready project (a known duration)."""
+
+
+#: Maximum history entries retained per project (M1.15, spec §17.4).
+HISTORY_DEPTH_LIMIT = 200
+
+
+def _row_to_marker(row: sqlite3.Row) -> MarkerRecord:
+    return MarkerRecord(
+        id=uuid.UUID(row["id"]),
+        project_id=uuid.UUID(row["project_id"]),
+        position_frames=row["position_frames"],
+        label=row["label"],
+        color=row["color"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _markers_for(conn: sqlite3.Connection, project_id: uuid.UUID | str) -> list[MarkerRecord]:
+    rows = conn.execute(
+        "SELECT * FROM markers WHERE project_id = ? ORDER BY position_frames, created_at",
+        (str(project_id),),
+    ).fetchall()
+    return [_row_to_marker(r) for r in rows]
+
+
+def _history_flags(
+    conn: sqlite3.Connection, project_id: uuid.UUID | str, history_seq: int
+) -> tuple[bool, bool]:
+    """(can_undo, can_redo) for a project history pointer (M1.15 §17.4)."""
+    can_undo = history_seq >= 0
+    can_redo = False
+    if can_undo:
+        row = conn.execute(
+            "SELECT 1 FROM project_history WHERE project_id = ? AND seq > ? LIMIT 1",
+            (str(project_id), history_seq),
+        ).fetchone()
+        can_redo = row is not None
+    return can_undo, can_redo
+
+
+def _timestamp_z(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _parse_timestamp_z(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _history_snapshot(
+    markers: list[MarkerRecord], working_state: WorkingState
+) -> dict[str, object]:
+    """A before/after history snapshot (M1.15, spec §17.4).
+
+    ``last_position_frames`` is excluded so undo/redo never moves the
+    playhead back to a position the playback clock had passed
+    (§17.4.10); restore keeps the current position.
+    """
+    ws = working_state.model_dump(mode="json")
+    ws.pop("last_position_frames")
+    return {
+        "markers": [
+            {
+                "id": str(m.id),
+                "position_frames": m.position_frames,
+                "label": m.label,
+                "color": m.color,
+                "created_at": _timestamp_z(m.created_at),
+                "updated_at": _timestamp_z(m.updated_at),
+            }
+            for m in markers
+        ],
+        "working_state": ws,
+    }
+
+
+def _markers_from_snapshot(
+    snapshot: dict[str, object], project_id: uuid.UUID
+) -> list[MarkerRecord]:
+    raw_markers = cast(list[dict[str, object]], snapshot["markers"])
+    return [
+        MarkerRecord(
+            id=uuid.UUID(str(m["id"])),
+            project_id=project_id,
+            position_frames=int(cast("int", m["position_frames"])),
+            label=str(m["label"]),
+            color=str(m["color"]),
+            created_at=_parse_timestamp_z(str(m["created_at"])),
+            updated_at=_parse_timestamp_z(str(m["updated_at"])),
+        )
+        for m in raw_markers
+    ]
+
+
+def _write_state(
+    conn: sqlite3.Connection,
+    project_id: str,
+    markers: list[MarkerRecord],
+    working_state: WorkingState,
+    revision: int,
+    history_seq: int,
+    now: str,
+) -> None:
+    """Write markers + working state + revision + history pointer atomically."""
+    conn.execute("DELETE FROM markers WHERE project_id = ?", (project_id,))
+    for m in markers:
+        conn.execute(
+            """
+            INSERT INTO markers (id, project_id, position_frames, label, color,
+                                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(m.id),
+                project_id,
+                m.position_frames,
+                m.label,
+                m.color,
+                _timestamp_z(m.created_at),
+                _timestamp_z(m.updated_at),
+            ),
+        )
+    conn.execute(
+        """
+        UPDATE projects SET working_state = ?, revision = ?, updated_at = ?,
+                            history_seq = ?
+        WHERE id = ?
+        """,
+        (working_state.model_dump_json(), revision, now, history_seq, project_id),
+    )
+
+
+def _apply_op(
+    project: ProjectRecord,
+    markers: list[MarkerRecord],
+    op: ProjectCommandOp,
+) -> tuple[list[MarkerRecord], WorkingState]:
+    """Apply one command op in memory; returns (markers, working state)."""
+    ws = project.working_state
+    now = datetime.now(UTC)
+    if op.type == "add_marker":
+        marker = MarkerRecord(
+            id=uuid.uuid4(),
+            project_id=project.id,
+            position_frames=op.position_frames,
+            label=op.label,
+            color=op.color,
+            created_at=now,
+            updated_at=now,
+        )
+        return [*markers, marker], ws
+    if op.type == "update_marker":
+        current = next((m for m in markers if m.id == op.marker_id), None)
+        if current is None:
+            raise MarkerNotFoundError(op.marker_id)
+        updated = [
+            m
+            if m.id != op.marker_id
+            else MarkerRecord(
+                id=m.id,
+                project_id=m.project_id,
+                position_frames=(
+                    op.position_frames if op.position_frames is not None else m.position_frames
+                ),
+                label=op.label if op.label is not None else m.label,
+                color=op.color if op.color is not None else m.color,
+                created_at=m.created_at,
+                updated_at=now,
+            )
+            for m in markers
+        ]
+        return updated, ws
+    if op.type == "delete_marker":
+        if not any(m.id == op.marker_id for m in markers):
+            raise MarkerNotFoundError(op.marker_id)
+        return [m for m in markers if m.id != op.marker_id], ws
+    if op.type == "set_selection":
+        selection = (
+            None
+            if op.start_frames is None
+            else SelectionRange(start=op.start_frames, end=op.end_frames)
+        )
+        return markers, ws.model_copy(update={"selection": selection})
+    if op.type == "set_viewport":
+        return markers, ws.model_copy(update={"viewport": op.viewport})
+    if op.type == "set_display":
+        return markers, ws.model_copy(update={"channel_display": op.channel_display})
+    if op.type == "set_monitoring_volume":
+        return markers, ws.model_copy(update={"monitoring_volume": op.volume})
+    if op.type == "set_position":
+        return markers, ws.model_copy(update={"last_position_frames": op.position_frames})
+    if op.type == "set_follow_playhead":
+        return markers, ws.model_copy(update={"follow_playhead": op.follow_playhead})
+    raise ValueError(f"unknown command op type: {op.type}")
+
+
+#: Ops that require a ready project (position-valued against a duration).
+_READY_REQUIRED_TYPES: frozenset[str] = frozenset(
+    {"add_marker", "set_position", "set_selection", "set_viewport"}
+)
+
+
 class ProjectRepository:
     """Synchronous repository for project and asset operations.
 
@@ -228,7 +473,14 @@ class ProjectRepository:
         conn = _open(self._db_path)
         try:
             row = conn.execute("SELECT * FROM projects WHERE id = ?", (str(project_id),)).fetchone()
-            return _row_to_project(row) if row else None
+            if row is None:
+                return None
+            record = _row_to_project(row)
+            markers = _markers_for(conn, project_id)
+            can_undo, can_redo = _history_flags(conn, project_id, row["history_seq"])
+            return record.model_copy(
+                update={"markers": markers, "can_undo": can_undo, "can_redo": can_redo}
+            )
         finally:
             conn.close()
 
@@ -236,9 +488,215 @@ class ProjectRepository:
         conn = _open(self._db_path)
         try:
             rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
-            return [_row_to_project(r) for r in rows]
+            records = [_row_to_project(r) for r in rows]
+            marker_rows = conn.execute(
+                "SELECT * FROM markers ORDER BY position_frames, created_at"
+            ).fetchall()
+            by_project: dict[str, list[MarkerRecord]] = {}
+            for marker_row in marker_rows:
+                by_project.setdefault(marker_row["project_id"], []).append(
+                    _row_to_marker(marker_row)
+                )
+            return [
+                record.model_copy(update={"markers": by_project.get(str(record.id), [])})
+                for record in records
+            ]
         finally:
             conn.close()
+
+    def apply_command(
+        self,
+        project_id: uuid.UUID,
+        op: ProjectCommandOp,
+        base_revision: int,
+    ) -> CommandResult:
+        """Apply one project command transactionally (M1.15, spec §17.4).
+
+        Validates the base revision (``StaleRevisionError`` on mismatch),
+        applies the op, records one history entry (except ops in
+        ``HISTORY_EXCLUDED_TYPES``), clears the redo branch, increments
+        the revision, and returns the resulting project.
+        """
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM projects WHERE id = ?", (str(project_id),)
+            ).fetchone()
+            if row is None:
+                raise ProjectMissingError()
+            if row["revision"] != base_revision:
+                raise StaleRevisionError(row["revision"])
+            project = _row_to_project(row)
+            if op.type in _READY_REQUIRED_TYPES and project.duration_frames is None:
+                raise ProjectNotReady()
+            markers = _markers_for(conn, project_id)
+            before = _history_snapshot(markers, project.working_state)
+            new_markers, new_ws = _apply_op(project, markers, op)
+            # Full re-validation (range checks against the duration).
+            ProjectRecord(
+                **{**project.model_dump(), "markers": new_markers, "working_state": new_ws}
+            )
+            now = _now()
+            new_revision = row["revision"] + 1
+            history_seq = row["history_seq"]
+            if op.type not in HISTORY_EXCLUDED_TYPES:
+                conn.execute(
+                    "DELETE FROM project_history WHERE project_id = ? AND seq > ?",
+                    (str(project_id), history_seq),
+                )
+                history_seq += 1
+                after = _history_snapshot(new_markers, new_ws)
+                conn.execute(
+                    """
+                    INSERT INTO project_history (id, project_id, seq, kind,
+                                                 before_json, after_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        str(project_id),
+                        history_seq,
+                        op.type,
+                        json.dumps(before),
+                        json.dumps(after),
+                        now,
+                    ),
+                )
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM project_history WHERE project_id = ?",
+                    (str(project_id),),
+                ).fetchone()[0]
+                if count > HISTORY_DEPTH_LIMIT:
+                    conn.execute(
+                        """
+                        DELETE FROM project_history
+                        WHERE project_id = ? AND seq = (
+                            SELECT MIN(seq) FROM project_history WHERE project_id = ?
+                        )
+                        """,
+                        (str(project_id), str(project_id)),
+                    )
+            _write_state(
+                conn, str(project_id), new_markers, new_ws, new_revision, history_seq, now
+            )
+            conn.execute("COMMIT")
+        except (ProjectMissingError, StaleRevisionError, MarkerNotFoundError, ProjectNotReady):
+            conn.execute("ROLLBACK")
+            raise
+        except sqlite3.IntegrityError as exc:
+            conn.execute("ROLLBACK")
+            raise DatabaseError(f"cannot apply command: {exc}") from exc
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        result = self.get_project(project_id)
+        assert result is not None
+        # The redo branch was deleted above: nothing to redo.
+        return CommandResult(
+            revision=result.revision,
+            markers=result.markers,
+            working_state=result.working_state,
+            can_undo=history_seq >= 0,
+            can_redo=False,
+        )
+
+    def _move_history(
+        self,
+        project_id: uuid.UUID,
+        base_revision: int,
+        direction: int,
+    ) -> CommandResult:
+        """Undo (direction -1) or redo (direction +1) one history entry."""
+        no_entry_error: type[Exception]
+        if direction < 0:
+            no_entry_error = NothingToUndoError
+            json_key = "before_json"
+        else:
+            no_entry_error = NothingToRedoError
+            json_key = "after_json"
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM projects WHERE id = ?", (str(project_id),)
+            ).fetchone()
+            if row is None:
+                raise ProjectMissingError()
+            if row["revision"] != base_revision:
+                raise StaleRevisionError(row["revision"])
+            seq = row["history_seq"]
+            max_seq: int | None = None
+            if direction < 0:
+                if seq < 0:
+                    raise no_entry_error()
+                # Undo restores the *before* state of the entry at the
+                # pointer, then moves the pointer back one.
+                read_seq = seq
+                target_seq = seq - 1
+            else:
+                max_seq = conn.execute(
+                    "SELECT MAX(seq) FROM project_history WHERE project_id = ?",
+                    (str(project_id),),
+                ).fetchone()[0]
+                if max_seq is None or seq + 1 > max_seq:
+                    raise no_entry_error()
+                # Redo restores the *after* state of the next entry.
+                read_seq = seq + 1
+                target_seq = seq + 1
+            entry = conn.execute(
+                f"SELECT {json_key} FROM project_history WHERE project_id = ? AND seq = ?",
+                (str(project_id), read_seq),
+            ).fetchone()
+            assert entry is not None
+            snapshot = json.loads(entry[json_key])
+            # Undo/redo never moves the playhead (§17.4.10): keep the
+            # current last position, restore everything else.
+            current_ws = WorkingState.model_validate_json(row["working_state"])
+            new_markers = _markers_from_snapshot(snapshot, project_id)
+            ws_data = dict(snapshot["working_state"])
+            ws_data["last_position_frames"] = current_ws.last_position_frames
+            new_ws = WorkingState.model_validate(ws_data)
+            _write_state(
+                conn,
+                str(project_id),
+                new_markers,
+                new_ws,
+                row["revision"] + 1,
+                target_seq,
+                _now(),
+            )
+            conn.execute("COMMIT")
+        except (ProjectMissingError, StaleRevisionError, NothingToUndoError, NothingToRedoError):
+            conn.execute("ROLLBACK")
+            raise
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        project = self.get_project(project_id)
+        assert project is not None
+        # After an undo the undone entry still exists (redoable); after a
+        # redo only entries beyond the pointer are redoable.
+        can_redo = True if direction < 0 else max_seq is not None and target_seq + 1 <= max_seq
+        return CommandResult(
+            revision=project.revision,
+            markers=project.markers,
+            working_state=project.working_state,
+            can_undo=target_seq >= 0,
+            can_redo=can_redo,
+        )
+
+    def undo(self, project_id: uuid.UUID, base_revision: int) -> CommandResult:
+        """Undo the newest history entry (M1.15, spec §17.4.3)."""
+        return self._move_history(project_id, base_revision, -1)
+
+    def redo(self, project_id: uuid.UUID, base_revision: int) -> CommandResult:
+        """Redo the newest undone history entry (M1.15, spec §17.4.3)."""
+        return self._move_history(project_id, base_revision, 1)
 
     def register_asset(self, asset: AssetRecord) -> None:
         conn = _open(self._db_path)

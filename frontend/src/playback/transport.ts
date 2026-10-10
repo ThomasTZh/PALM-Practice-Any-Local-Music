@@ -361,6 +361,18 @@ export class PcmTransport {
     this.target = target
     this.projectRate = projectRate
     this.projectDurationFrames = projectDurationFrames
+    // A pre-target park (M1.15 §17.6.4): first play starts from there.
+    if (this.parkedProjectFrame > 0) {
+      const frame = clampToDuration(
+        playbackPosition(this.parkedProjectFrame, projectRate, target.sampleRate),
+        target.frameCount,
+      )
+      this.genStartFrame = frame
+      this.fetchedFrame = frame
+      this.consumedFrame = frame
+      this.parkedProjectFrame = 0
+      this.reportPosition()
+    }
   }
 
   /**
@@ -512,10 +524,11 @@ export class PcmTransport {
   seek(projectFrame: number): void {
     if (this.disposed) return
     if (!this.target) {
-      this.parkedProjectFrame = Math.max(
-        0,
-        Math.min(Math.floor(projectFrame), this.projectDurationFrames),
-      )
+      // No duration is known until the source loads; do not clamp to the
+      // zero placeholder (the park survives to `loadSource`).
+      const max =
+        this.projectDurationFrames > 0 ? this.projectDurationFrames : Number.MAX_SAFE_INTEGER
+      this.parkedProjectFrame = Math.max(0, Math.min(Math.floor(projectFrame), max))
       this.reportPosition()
       return
     }

@@ -55,6 +55,52 @@ class IdempotencyConflictError(ApiError):
         )
 
 
+class StaleRevisionError(ApiError):
+    def __init__(self, current_revision: int) -> None:
+        super().__init__(
+            code="STALE_REVISION",
+            message="The project was modified elsewhere; reload it and retry",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"current_revision": current_revision},
+        )
+
+
+class NothingToUndoError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="NOTHING_TO_UNDO",
+            message="There are no edits to undo",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class NothingToRedoError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="NOTHING_TO_REDO",
+            message="There are no edits to redo",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class MarkerNotFoundError(ApiError):
+    def __init__(self, marker_id: str) -> None:
+        super().__init__(
+            code="MARKER_NOT_FOUND",
+            message=f"The requested marker does not exist: {marker_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class InvalidCommandError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            code="INVALID_COMMAND",
+            message=detail,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
 class StorageContentionError(ApiError):
     def __init__(self) -> None:
         super().__init__(

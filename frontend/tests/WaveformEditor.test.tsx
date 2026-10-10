@@ -333,6 +333,19 @@ function makePlayhead(frame = 0, playing = false) {
   return src
 }
 
+/** A marker record for the editor (M1.15 §17.2). */
+function makeMarker(id: string, frame: number, label = 'Marker', color = '#e11d48') {
+  return {
+    id,
+    project_id: PROJECT_ID,
+    position_frames: frame,
+    label,
+    color,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+}
+
 describe('WaveformEditor states (spec §12.8)', () => {
   it('shows the empty state without a source asset', async () => {
     renderEditor({ sourceAssetId: null })
@@ -806,5 +819,200 @@ describe('WaveformEditor position readout (M1.11 §13.5.5)', () => {
     // React derives onPointerLeave from the bubbling `pointerout` event.
     pointer('pointerout', hit, 375)
     expect(document.querySelector('.wave-frame-readout')).toBeNull()
+  })
+})
+
+// --- M1.15 §17.2 marker UI ---------------------------------------------------
+
+function markerHit(): HTMLElement {
+  return document.querySelector('.wave-marker-hitarea') as HTMLElement
+}
+
+function dblclick(el: Element, clientX: number): void {
+  act(() => {
+    el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX }))
+  })
+}
+
+describe('WaveformEditor markers (M1.15 §17.2)', () => {
+  it('renders the marker canvas and toolbar, and draws flags and lane ticks', async () => {
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m] })
+
+    canvasById('marker-row')
+    // Flag at frame 24 000 (x 375): a 2 px stem + a 76×12 body, one label.
+    const row = ctxOf(canvasById('marker-row'))
+    expect(row.rects).toEqual([
+      [375, 0, 2, 24],
+      [375, 0, 76, 12],
+    ])
+    expect(row.texts).toEqual(['Marker'])
+    // One 1 px tick per visible lane.
+    expect(ctxOf(canvasById('lane:0:markers')).strokes).toBe(1)
+    expect(ctxOf(canvasById('lane:1:markers')).strokes).toBe(1)
+    // Toolbar present; Add marker needs a playhead.
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Prev' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+  })
+
+  it('Add marker uses the playhead frame', async () => {
+    const onAddMarker = vi.fn()
+    mockReady()
+    const playhead = makePlayhead(24_000)
+    await renderReadyEditor({ playheadSource: playhead, onAddMarker })
+    await userEvent.click(screen.getByRole('button', { name: 'Add marker' }))
+    expect(onAddMarker).toHaveBeenCalledWith(24_000)
+  })
+
+  it('a ruler double-click adds a marker at the pointer frame', async () => {
+    const onAddMarker = vi.fn()
+    mockReady()
+    await renderReadyEditor({ onAddMarker })
+    const ruler = document.querySelector('.wave-ruler-row .wave-content') as HTMLElement
+    dblclick(ruler, 375)
+    expect(onAddMarker).toHaveBeenCalledWith(24_000)
+  })
+
+  it('clicking a flag selects it without seeking', async () => {
+    const onSelectMarker = vi.fn()
+    const onSeekToMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m], onSelectMarker, onSeekToMarker })
+    const hit = markerHit()
+    pointer('pointerdown', hit, 375)
+    pointer('pointerup', hit, 375)
+    expect(onSelectMarker).toHaveBeenCalledWith('m1')
+    expect(onSeekToMarker).not.toHaveBeenCalled()
+  })
+
+  it('clicking empty marker space clears the selection', async () => {
+    const onSelectMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m], onSelectMarker })
+    const hit = markerHit()
+    pointer('pointerdown', hit, 10)
+    pointer('pointerup', hit, 10)
+    expect(onSelectMarker).toHaveBeenCalledWith(null)
+  })
+
+  it('dragging a flag previews locally and commits one move on release', async () => {
+    const onMoveMarker = vi.fn()
+    const onSelectMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m], onMoveMarker, onSelectMarker })
+    const hit = markerHit()
+    pointer('pointerdown', hit, 375)
+    pointer('pointermove', hit, 400) // 25 px > the 3 px click threshold
+    // Local preview: the stem redraws at x 400 before the commit.
+    expect(ctxOf(canvasById('marker-row')).rects[0]).toEqual([400, 0, 2, 24])
+    pointer('pointerup', hit, 400)
+    expect(onMoveMarker).toHaveBeenCalledTimes(1)
+    expect(onMoveMarker).toHaveBeenCalledWith('m1', 25_600) // 400 × 64
+    expect(onSelectMarker).not.toHaveBeenCalled()
+  })
+
+  it('double-clicking a flag seeks and selects it', async () => {
+    const onSelectMarker = vi.fn()
+    const onSeekToMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m], onSelectMarker, onSeekToMarker })
+    dblclick(markerHit(), 375)
+    expect(onSelectMarker).toHaveBeenCalledWith('m1')
+    expect(onSeekToMarker).toHaveBeenCalledWith(24_000)
+  })
+
+  it('Prev and Next seek to the nearest markers around the playhead', async () => {
+    const onSelectMarker = vi.fn()
+    const onSeekToMarker = vi.fn()
+    mockReady()
+    const playhead = makePlayhead(24_000)
+    const before = makeMarker('mb', 12_000)
+    const after = makeMarker('ma', 36_000)
+    await renderReadyEditor({
+      markers: [before, after],
+      playheadSource: playhead,
+      onSelectMarker,
+      onSeekToMarker,
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(onSeekToMarker).toHaveBeenCalledWith(36_000)
+    expect(onSelectMarker).toHaveBeenCalledWith('ma')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Prev' }))
+    expect(onSeekToMarker).toHaveBeenLastCalledWith(12_000)
+    expect(onSelectMarker).toHaveBeenLastCalledWith('mb')
+  })
+
+  it('the color swatch cycles through the palette', async () => {
+    const onUpdateMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000, 'Marker', '#e11d48')
+    await renderReadyEditor({ markers: [m], onUpdateMarker })
+    await userEvent.click(screen.getByRole('button', { name: 'Marker color #e11d48' }))
+    expect(onUpdateMarker).toHaveBeenCalledWith('m1', { color: '#f59e0b' })
+  })
+
+  it('editing the label commits on blur', async () => {
+    const onUpdateMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000, 'Marker')
+    await renderReadyEditor({ markers: [m], onUpdateMarker })
+    const input = screen.getByLabelText('Marker label')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Intro')
+    await act(async () => {
+      ;(input as HTMLInputElement).blur()
+    })
+    expect(onUpdateMarker).toHaveBeenCalledWith('m1', { label: 'Intro' })
+  })
+
+  it('editing the exact frame commits on blur', async () => {
+    const onUpdateMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m], onUpdateMarker })
+    const input = screen.getByLabelText('Marker frame')
+    await userEvent.clear(input)
+    await userEvent.type(input, '48000')
+    await act(async () => {
+      ;(input as HTMLInputElement).blur()
+    })
+    expect(onUpdateMarker).toHaveBeenCalledWith('m1', { positionFrames: 48_000 })
+  })
+
+  it('the delete button removes the marker', async () => {
+    const onDeleteMarker = vi.fn()
+    mockReady()
+    const m = makeMarker('m1', 24_000)
+    await renderReadyEditor({ markers: [m], onDeleteMarker })
+    await userEvent.click(screen.getByRole('button', { name: 'Delete marker Marker' }))
+    expect(onDeleteMarker).toHaveBeenCalledWith('m1')
+  })
+
+  it('Undo and Redo are disabled with no history', async () => {
+    mockReady()
+    await renderReadyEditor()
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled()
+  })
+
+  it('Undo and Redo call the handlers when enabled', async () => {
+    const onUndo = vi.fn()
+    const onRedo = vi.fn()
+    mockReady()
+    await renderReadyEditor({ onUndo, onRedo, canUndo: true, canRedo: true })
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    expect(onUndo).toHaveBeenCalledTimes(1)
+    expect(onRedo).toHaveBeenCalledTimes(1)
   })
 })

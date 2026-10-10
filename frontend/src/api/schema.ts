@@ -323,6 +323,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Command */
+        post: operations["apply_command_api_v1_projects__project_id__commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/imports": {
         parameters: {
             query?: never;
@@ -416,6 +433,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/redo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redo */
+        post: operations["redo_api_v1_projects__project_id__redo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/source-info": {
         parameters: {
             query?: never;
@@ -427,6 +461,23 @@ export interface paths {
         get: operations["get_source_info_api_v1_projects__project_id__source_info_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo */
+        post: operations["undo_api_v1_projects__project_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -454,6 +505,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AddMarkerOp */
+        AddMarkerOp: {
+            /**
+             * Color
+             * @default #e11d48
+             */
+            color: string;
+            /**
+             * Label
+             * @default Marker
+             */
+            label: string;
+            /**
+             * Position Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            position_frames: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_marker";
+        };
         /** AssetMetadataResponse */
         AssetMetadataResponse: {
             /**
@@ -517,6 +591,22 @@ export interface components {
             /** State */
             state: string;
         };
+        /**
+         * ChannelDisplay
+         * @description Channel display (amplitude) settings (M1.15 §17.5).
+         *
+         *     ``scales`` are per-channel display amplitudes (editor range
+         *     0.25-16); at most one entry per source channel.
+         */
+        ChannelDisplay: {
+            /**
+             * Linked
+             * @default true
+             */
+            linked: boolean;
+            /** Scales */
+            scales?: number[];
+        };
         /** ChunkAckResponse */
         ChunkAckResponse: {
             /** Chunk Bytes */
@@ -528,6 +618,42 @@ export interface components {
             idempotent_replay: boolean;
             /** Offset */
             offset: number;
+        };
+        /** CommandRequest */
+        CommandRequest: {
+            /**
+             * Base Revision
+             * @description Nonnegative integer revision
+             */
+            base_revision: number;
+            /**
+             * Command Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            command_id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Op */
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"];
+        };
+        /**
+         * CommandResult
+         * @description The resulting project state after a command (§17.4.5).
+         */
+        CommandResult: {
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Markers */
+            markers: components["schemas"]["MarkerRecord"][];
+            /**
+             * Revision
+             * @description Nonnegative integer revision
+             */
+            revision: number;
+            working_state: components["schemas"]["WorkingState"];
         };
         /** CompleteImportResponse */
         CompleteImportResponse: {
@@ -591,6 +717,20 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** DeleteMarkerOp */
+        DeleteMarkerOp: {
+            /**
+             * Marker Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            marker_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_marker";
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -602,6 +742,11 @@ export interface components {
             api_version: number;
             /** Status */
             status: string;
+        };
+        /** HistoryRequest */
+        HistoryRequest: {
+            /** Base Revision */
+            base_revision: number;
         };
         /** ImportListResponse */
         ImportListResponse: {
@@ -678,6 +823,44 @@ export interface components {
          * @enum {string}
          */
         JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform";
+        /**
+         * MarkerRecord
+         * @description A single marker annotation in a project (§17.1).
+         */
+        MarkerRecord: {
+            /**
+             * Color
+             * @description Hex color #rrggbb
+             */
+            color: string;
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Position Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            position_frames: number;
+            /**
+             * Project Id
+             * @description UUID identifier, serialized as a string
+             */
+            project_id: string;
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
+        };
         /**
          * MediaJob
          * @description One durable media-processing job.
@@ -847,6 +1030,16 @@ export interface components {
          *     PCM asset, and complete source timing/channel metadata.
          */
         ProjectRecord: {
+            /**
+             * Can Redo
+             * @default false
+             */
+            can_redo: boolean;
+            /**
+             * Can Undo
+             * @default false
+             */
+            can_undo: boolean;
             /** Canonical Asset Id */
             canonical_asset_id?: string | null;
             /**
@@ -866,6 +1059,8 @@ export interface components {
              * @description UUID identifier, serialized as a string
              */
             id: string;
+            /** Markers */
+            markers?: components["schemas"]["MarkerRecord"][];
             /** Monitoring Asset Id */
             monitoring_asset_id?: string | null;
             /** Monitoring Left Channel */
@@ -915,6 +1110,7 @@ export interface components {
             updated_at: string;
             /** @default none */
             waveform_status: components["schemas"]["WaveformStatus"];
+            working_state?: components["schemas"]["WorkingState"];
         };
         /**
          * ProjectStatus
@@ -925,6 +1121,94 @@ export interface components {
         SelectStreamRequest: {
             /** Stream Index */
             stream_index: number;
+        };
+        /**
+         * SelectionRange
+         * @description A frame selection ``[start, end)`` in source frames (M1.15 §17.5).
+         */
+        SelectionRange: {
+            /**
+             * End
+             * @description Integer source sample position (never milliseconds)
+             */
+            end: number;
+            /**
+             * Start
+             * @description Integer source sample position (never milliseconds)
+             */
+            start: number;
+        };
+        /** SetDisplayOp */
+        SetDisplayOp: {
+            channel_display: components["schemas"]["ChannelDisplay"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_display";
+        };
+        /** SetFollowPlayheadOp */
+        SetFollowPlayheadOp: {
+            /** Follow Playhead */
+            follow_playhead: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_follow_playhead";
+        };
+        /** SetMonitoringVolumeOp */
+        SetMonitoringVolumeOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_monitoring_volume";
+            /** Volume */
+            volume: number;
+        };
+        /**
+         * SetPositionOp
+         * @description Continuous playback position — persisted, never in history (§17.4.10).
+         */
+        SetPositionOp: {
+            /**
+             * Position Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            position_frames: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_position";
+        };
+        /**
+         * SetSelectionOp
+         * @description Both null clears the selection; present together otherwise.
+         */
+        SetSelectionOp: {
+            /** End Frames */
+            end_frames?: number | null;
+            /** Start Frames */
+            start_frames?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_selection";
+        };
+        /**
+         * SetViewportOp
+         * @description Null clears the stored viewport (editor falls back to fit).
+         */
+        SetViewportOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_viewport";
+            viewport?: components["schemas"]["ViewportState"] | null;
         };
         /** SourceInfoResponse */
         SourceInfoResponse: {
@@ -958,6 +1242,29 @@ export interface components {
          * @enum {string}
          */
         TransferState: "created" | "uploading" | "complete" | "cancelled" | "failed";
+        /**
+         * UpdateMarkerOp
+         * @description Partial marker edit; absent fields stay unchanged.
+         */
+        UpdateMarkerOp: {
+            /** Color */
+            color?: string | null;
+            /** Label */
+            label?: string | null;
+            /**
+             * Marker Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            marker_id: string;
+            /** Position Frames */
+            position_frames?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update_marker";
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -970,6 +1277,19 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * ViewportState
+         * @description A persisted editor viewport, width-free (M1.15 §17.5).
+         */
+        ViewportState: {
+            /** Frames Per Css Pixel */
+            frames_per_css_pixel: number;
+            /**
+             * Start Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            start_frame: number;
         };
         /**
          * WaveformCacheInfo
@@ -1073,6 +1393,34 @@ export interface components {
          * @enum {string}
          */
         WaveformStatus: "none" | "pending" | "ready";
+        /**
+         * WorkingState
+         * @description Per-project working state persisted by autosave (M1.15 §17.5).
+         *
+         *     Frame-valued fields are validated against the project's
+         *     ``duration_frames`` by ``ProjectRecord``.
+         */
+        WorkingState: {
+            channel_display?: components["schemas"]["ChannelDisplay"];
+            /**
+             * Follow Playhead
+             * @default true
+             */
+            follow_playhead: boolean;
+            /**
+             * Last Position Frames
+             * @description Integer source sample position (never milliseconds)
+             * @default 0
+             */
+            last_position_frames: number;
+            /**
+             * Monitoring Volume
+             * @default 1
+             */
+            monitoring_volume: number;
+            selection?: components["schemas"]["SelectionRange"] | null;
+            viewport?: components["schemas"]["ViewportState"] | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -1643,6 +1991,41 @@ export interface operations {
             };
         };
     };
+    apply_command_api_v1_projects__project_id__commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_project_imports_api_v1_projects__project_id__imports_get: {
         parameters: {
             query?: never;
@@ -1843,6 +2226,41 @@ export interface operations {
             };
         };
     };
+    redo_api_v1_projects__project_id__redo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_source_info_api_v1_projects__project_id__source_info_get: {
         parameters: {
             query?: never;
@@ -1861,6 +2279,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceInfoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_api_v1_projects__project_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResult"];
                 };
             };
             /** @description Validation Error */

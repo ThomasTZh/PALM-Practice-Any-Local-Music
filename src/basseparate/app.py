@@ -26,6 +26,7 @@ from starlette.staticfiles import StaticFiles
 
 from basseparate import API_VERSION
 from basseparate.api.asset_routes import router as asset_router
+from basseparate.api.command_routes import router as command_router
 from basseparate.api.errors import ApiError, create_error_response
 from basseparate.api.idempotency import IdempotencyStore
 from basseparate.api.import_routes import router as import_router
@@ -353,6 +354,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(job_router)
     app.include_router(playback_router)
     app.include_router(asset_router)
+    app.include_router(command_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.
