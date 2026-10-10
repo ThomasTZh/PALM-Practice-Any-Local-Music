@@ -13,8 +13,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Current work package:** M2.2 (Create the isolated Demucs runtime) —
   **complete** (842 py + 307 frontend green; all 3 devices qualified;
   commit hash recorded by the ledger follow-up).
-- **Last commit:** `ba0b151` — M2.1 (confirm prerequisites and extend the
-  domain); `9510656` (ledger M1.16 hash); `af51265` — M1.16 (test
+- **Last commit:** `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
+  — M2.1 (confirm prerequisites and extend the domain); `9510656` (ledger
+  M1.16 hash); `af51265` — M1.16 (test
   corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
   undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
