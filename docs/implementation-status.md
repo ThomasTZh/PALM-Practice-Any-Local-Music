@@ -17,8 +17,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.4:** complete — `ebd58aa` (reference-mix resolution, one-shot
   resample to the model rate, prepared-input identity, versioned global
   normalization profile; 936 py green).
-- **Current work package:** M2.5 (Windowed inference adapter) — not
-  started.
+- **Current work package:** M2.5 (Implement bounded Demucs separation)
+  — in progress (adapter, reference runner, comparison
+  gate, evidence and cancellation done; commit pending).
 - **Last commit:** `ebd58aa` — M2.4 (prepare separation input
   consistently); `cd2ca9e` — M2.3 (pin and provision the bundled Demucs
   baseline); `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
@@ -1789,6 +1790,109 @@ whole-track reference scale (kept separate from demucs' internal step,
   are pre-existing (fastapi/starlette deprecation; the known
   `test_publisher_failure_fails_job` subprocess-GC unraisable — that
   test passes).
+
+### M2.5 — Implement bounded Demucs separation (in progress)
+
+Spec: `projectPlans/milestone2.md` §7; plan: `projectPlans/m2.5-plan.md`.
+Scope: versioned windowed inference adapter (120 s outer windows, 8 s
+overlap, same global normalization profile for every window, per-window
+seed, output-scale restore, complementary raised-cosine blend,
+incremental staged writes, bounded memory), short-input upstream
+reference runner, §7.3 comparison gate. No API (M2.17), no
+validation/publication (M2.6). Main env stays torch/demucs-free:
+torch-free windowing math lives in the main env (file-path loaded by
+the worker, M2.3 registry pattern); the worker is an analysis-env
+script entry point.
+
+**Resolved facts (2026-10-10, pinned demucs 4.1.0 `apply.py`):**
+`apply_model(..., segment=, callback=, callback_arg=)` — `segment`
+overrides the model segment (memory-recovery lever); HTDemucs default
+segment 10 s, the checked-in yaml does not override it → 7.5 s initial
+internal segment is within the validated maximum; `shifts` draws
+`random.randint(0, 0.5×rate)` from **Python `random`** per
+(model-in-bag, shift) → reproducibility hook `random.seed(seed +
+window_index)`; `split=True` internal handling (triangular weights,
+weighted accumulate+divide) is reused inside each outer window;
+`callback(dict)` fires per internal segment with
+`model_idx_in_bag`/`shift_idx`/`segment_offset`/`models` and a raised
+exception cancels queued chunks (`pool.shutdown(cancel_futures=True)`)
+— the pinned progress/cancellation facility; `htdemucs_ft` output
+`(1, 4, 2, L)`, labels = model `sources` cross-checked against the
+registry.
+
+- **Phase 1 — Plan + ledger:** done.
+- **Phase 2 — Main env:** done. `src/basseparate/media/windowing.py`
+  (torch-free numpy: `window_schedule`, `outer_window_weight`
+  complementary raised cosine, `pre_scale`/`restore_scale`,
+  `accumulate_overlap`, `finalize_region`) + `tests/unit/test_windowing.py`
+  (24 tests). Gates re-run after the zip B905 fix: ruff clean, mypy clean
+  (59 files), contract OK.
+- **Phase 3 — Worker:** done. `analysis/separate.py` (offline model load,
+  bundle hash verification, exact-silence shortcut without model load,
+  window loop with per-window seed + global profile, (batch, channels,
+  length) orientation, float64 overlap-add + incremental finalize,
+  JSON-lines progress, cancel file checked between windows **and inside
+  the per-segment callback**, OOM retry ladder 7.5→5→3 s with distinct
+  staged dirs, run record). Smoke 2 s cuda:1: 8 units, complete, 4 stems,
+  frames exact. `plan_units` now bounds the per-window count with
+  `length + max_shift` (the shifts branch splits a view longer than the
+  window) so the reported fraction never exceeds 1.0 (was 1.029 on the
+  8 min run).
+- **Phase 4 — Reference + gate:** `analysis/reference_separate.py`
+  (one whole-track `apply_model`, same seed/shifts/split/overlap/segment
+  + global pre-scale; `--offset-seconds`/`--seconds` for per-window
+  slices; TF32 pinned off) and `analysis/compare_adapter.py` (two modes:
+  `--reference` single = the literal §7.3 short-input gate; `--refs`
+  windows = per-window upstream baseline + exact weighted-combination
+  check of the blend bands + identity regions + boundary/continuity).
+  **Upstream `apply_model` is not length-invariant:** shift offsets
+  (`random.randint`, `apply.py:245`) interleave with one
+  `random.randrange` per internal segment (`transformer.py:680`,
+  `_get_pos_embedding`; the draw is always 0 but the state is still
+  consumed), so the offsets depend on total track length — 120 s vs
+  480 s draws (same seed, same content): `[11475, 12935, 8799, 19278,
+  10246, 21840, 17690, 7762]` vs `[11475, 7830, 5849, 13893, ...]`.
+  The per-window seeding (`run_seed + window_index`) is therefore the
+  correct policy; the whole-track reference is only a valid baseline
+  for single-window tracks. **Stem layout:** interleaved f32le
+  `(frames, 2)` — the prepared-input PCM convention; window blocks are
+  time-contiguous, so the incremental staged writes form one valid
+  whole-track stream (`separate._stem_block_bytes`, shared with the
+  reference runner).
+- **Phase 5 — Evidence + close (2026-10-11):** done. The comparison
+  gate's apparent 8 min window-0 divergence ("differs on
+  [56 s, 112 s), max 0.285") was root-caused to a **file-layout
+  mismatch in the comparison tooling**, not adapter numerics: the
+  worker serialized each window's `(channels, frames)` block planar
+  while the reference wrote a whole-track planar block, and the gate
+  read the first `2·L` raw floats as `(2, L)` — the first differing
+  float (`4,939,200`) is exactly window 0's second channel block
+  ("56 s" on the row-pair axis; `max 0.285318`). Byte-level checks with
+  correct extraction: adapter window 0 **bit-exact** vs the standalone
+  TF32-off reference (both channels, all stems); an offline numpy
+  replay of demucs' exact accumulation from dumped per-segment submodel
+  outputs reproduced the staged file bit-for-bit; 8 min runs were
+  SHA-stable across re-runs. Writers now emit interleaved f32le;
+  references regenerated with the precision pin (measured torch
+  2.9.1+cu128 defaults: matmul TF32 off, cudnn TF32 **on**; both
+  pinned off — spec float32, removes process-dependent cuDNN
+  algorithm/workspace selection). Final gates: 30 s single-mode
+  **bit-exact** (max_abs_diff 0.0, scale 1.0, lag 0); windows-mode
+  8 min vs 5 pinned per-window refs — identity **0.0**, blend
+  **2.98e-8** (< 1e-6; one f32 ulp), scale 1.0, lag 0, boundary ratio
+  4.2e-5 (< 3.0), bass continuity `[0.902, 1.026, 1.051, 0.928]`
+  (0.8–1.25). `compare_adapter.py` boundary metric fixed for a
+  bit-exact interior (tolerance floor, float division). Cancellation:
+  cancel file at 20 s of the 8 min input → exit 2, staged removed,
+  run-record `cancelled`. RSS (`/usr/bin/time -v`): 2 s **2,601,500
+  KB**, 8 min **4,418,864 KB** (bounded by window size, not track
+  length). Full gates green: pytest 960 passed, ruff clean, mypy clean
+  (59 files), contract OK. Files: `projectPlans/m2.5-plan.md`,
+  `src/basseparate/media/windowing.py`, `tests/unit/test_windowing.py`,
+  `analysis/separate.py`, `analysis/reference_separate.py`,
+  `analysis/compare_adapter.py`. Evidence:
+  `docs/evidence/m2.5-bounded-separation.md`. Commit `M2.5: ...` +
+  ledger hash follow-up.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
