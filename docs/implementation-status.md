@@ -20,15 +20,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.5:** complete — `18ace92` (bounded windowed adapter, whole-track
   reference runner + §7.3 comparison gate, TF32 pinned off; 960 py
   green).
-- **M2.6:** complete — `M2.6: validate and publish stems` (hash in the
-  ledger follow-up commit; 1000 py green: 808 unit + 192 integration).
+- **M2.6:** complete — `a088363` (validate and publish stems; 1000 py
+  green: 808 unit + 192 integration).
   Staged Demucs runs now publish as validated project-rate stem assets
   + immutable result sets with the Bass + Others residual,
   reconstruction diagnostics, and per-stem waveform queueing.
 - **Current work package:** none in flight — M2.6 committed. Next work
   package per `projectPlans/milestone2.md`: M2.7 (separation result
   caching).
-- **Last commit:** `18ace92` — M2.5 (implement bounded Demucs
+- **Last commit:** `a088363` — M2.6 (validate and publish stems);
+  `18ace92` — M2.5 (implement bounded Demucs
   separation); `ebd58aa` — M2.4 (prepare separation input consistently);
   `cd2ca9e` — M2.3 (pin and provision the bundled Demucs baseline);
   `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151` — M2.1 (confirm
