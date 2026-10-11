@@ -29,6 +29,7 @@ from basseparate.domain.import_record import (
     TransferState,
 )
 from basseparate.domain.media_job import JobState, JobType, MediaJob
+from basseparate.domain.project import ProjectRecord
 from basseparate.domain.representation import (
     AudioRepresentation,
     CanonicalDecodeResult,
@@ -468,6 +469,31 @@ def _publish_playback(
         representations.register_representation(representation)
 
 
+def _waveform_target_asset(
+    job: MediaJob,
+    projects: ProjectRepository,
+    project: ProjectRecord,
+) -> AssetRecord:
+    """The asset a WAVEFORM job builds for (M1.8 canonical, M2.6 stems).
+
+    A job parameter ``asset_id`` targets that (stem) asset; jobs without
+    the parameter fall back to the project's canonical asset, so M1 jobs
+    are unaffected.
+    """
+    asset_id = job.parameters.get("asset_id")
+    if asset_id is not None:
+        asset = projects.get_asset(uuid.UUID(str(asset_id)))
+        if asset is None or asset.audio is None:
+            raise PublishError(f"waveform job targets a missing asset: {asset_id}")
+        return asset
+    if project.canonical_asset_id is None:
+        raise PublishError("the project has no canonical asset")
+    canonical = projects.get_asset(project.canonical_asset_id)
+    if canonical is None:
+        raise PublishError("the project's canonical asset is missing")
+    return canonical
+
+
 def _publish_waveform(
     job: MediaJob,
     result: dict[str, Any],
@@ -477,23 +503,20 @@ def _publish_waveform(
     """Publish a waveform pyramid cache: verify on disk, then register (M1.8).
 
     The worker never touches the database; this is the only path that pins
-    the final cache to the canonical asset. The manifest must be final and
-    match the asset hash, and the last level-0 tile is spot-checked
-    (spec §10.4) before the row is written.
+    the final cache to its source asset (the canonical asset for M1 jobs,
+    a stem asset for M2.6 jobs). The manifest must be final and match the
+    asset hash, and the last level-0 tile is spot-checked (spec §10.4)
+    before the row is written.
     """
     waveform = WaveformResult(**result)
     project = projects.get_project(job.project_id)
     if project is None:
         raise PublishError(f"project {job.project_id} no longer exists")
-    if project.canonical_asset_id is None:
-        raise PublishError("the project has no canonical asset")
-    canonical = projects.get_asset(project.canonical_asset_id)
-    if canonical is None:
-        raise PublishError("the project's canonical asset is missing")
-    if canonical.content_hash != waveform.source_hash:
+    asset = _waveform_target_asset(job, projects, project)
+    if asset.content_hash != waveform.source_hash:
         raise PublishError(
             f"waveform cache hash {waveform.source_hash} does not match the "
-            f"canonical asset hash {canonical.content_hash}"
+            f"asset hash {asset.content_hash}"
         )
 
     manifest_path = Path(waveform.manifest_path)
@@ -516,7 +539,7 @@ def _publish_waveform(
     )
 
     # Idempotent: an existing row for the asset wins.
-    cache_repository.register(canonical.id, waveform)
+    cache_repository.register(asset.id, waveform)
 
 
 def _queue_waveform_if_needed(

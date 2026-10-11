@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -211,14 +212,29 @@ def _playback_parameters_for(
 def _waveform_parameters_for(
     job: MediaJob, projects: ProjectRepository, paths: StoragePaths
 ) -> dict[str, Any]:
-    """Worker parameters for a waveform pyramid build (M1.8).
+    """Worker parameters for a waveform pyramid build (M1.8, M2.6 stems).
 
-    The source is the canonical PCM asset; the cache is keyed by its
+    The source is the asset named by the job's ``asset_id`` parameter
+    (a published stem, M2.6); jobs without the parameter fall back to the
+    project's canonical PCM asset. The cache is keyed by the asset's
     content hash under the storage cache category.
     """
     if job.job_type is not JobType.WAVEFORM:
         return {}
-    _project, asset = _canonical_pcm_asset(job, projects)
+    asset_id = job.parameters.get("asset_id")
+    if asset_id is not None:
+        project = projects.get_project(job.project_id)
+        if project is None:
+            raise ParameterResolutionError(
+                "NO_WAVEFORM_ASSET", f"project {job.project_id} no longer exists"
+            )
+        asset = projects.get_asset(uuid.UUID(str(asset_id)))
+        if asset is None or asset.audio is None:
+            raise ParameterResolutionError(
+                "NO_WAVEFORM_ASSET", f"the waveform source asset is unavailable: {asset_id}"
+            )
+    else:
+        _project, asset = _canonical_pcm_asset(job, projects)
     audio = asset.audio
     assert audio is not None
     return {

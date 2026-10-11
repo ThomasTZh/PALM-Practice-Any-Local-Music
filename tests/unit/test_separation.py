@@ -86,7 +86,7 @@ class TestEnums:
         assert {m.value for m in SeparationMode} == {"bass_pair", "four_stems"}
 
     def test_stem_role_values(self) -> None:
-        assert {r.value for r in StemRole} == {"vocals", "drums", "bass", "other"}
+        assert {r.value for r in StemRole} == {"vocals", "drums", "bass", "other", "others"}
 
     def test_run_status_values(self) -> None:
         assert {s.value for s in SeparationRunStatus} == {
@@ -168,6 +168,23 @@ class TestSeparationResultSet:
     def test_duplicate_roles_rejected(self) -> None:
         with pytest.raises(ValidationError, match="duplicate"):
             _result_set(available_stem_roles=[StemRole.BASS, StemRole.BASS])
+
+    def test_others_role_requires_residual_asset(self) -> None:
+        with pytest.raises(ValidationError, match="bass_residual_asset_id"):
+            _result_set(available_stem_roles=[StemRole.BASS, StemRole.OTHERS])
+
+    def test_residual_asset_requires_others_role(self) -> None:
+        with pytest.raises(ValidationError, match="bass_residual_asset_id"):
+            _result_set(bass_residual_asset_id=uuid4())
+
+    def test_others_with_residual_asset_ok(self) -> None:
+        residual_id = uuid4()
+        rs = _result_set(
+            available_stem_roles=[StemRole.BASS, StemRole.OTHERS],
+            bass_residual_asset_id=residual_id,
+        )
+        assert StemRole.OTHERS in rs.available_stem_roles
+        assert rs.bass_residual_asset_id == residual_id
 
     def test_valid_requires_stems(self) -> None:
         with pytest.raises(ValidationError, match="stem"):

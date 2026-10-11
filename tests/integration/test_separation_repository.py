@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from basseparate.domain import (
+    AssetRecord,
+    AssetRole,
+    AudioMetadata,
     Confidence,
     ConfidenceKind,
     DeviceType,
@@ -30,7 +34,7 @@ from basseparate.domain import (
     ValidationStatus,
 )
 from basseparate.domain.separation import ReferenceMixIdentity
-from basseparate.storage.db import initialize_database
+from basseparate.storage.db import DatabaseError, initialize_database
 from basseparate.storage.repository import ProjectRepository, SeparationRepository
 
 SOURCE_COLUMNS = (
@@ -246,3 +250,164 @@ def test_source_fields_preserved_value_by_value(db_path: Path) -> None:
     projects.set_practice_state(project.id, PracticeState())
     after = _source_columns(db_path, project.id)
     assert after == before
+
+
+def _queued_run(project_id: uuid.UUID) -> SeparationRun:
+    """A run in flight, before publication (spec §8.7)."""
+    return SeparationRun(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        input_asset_id=uuid.uuid4(),
+        input_transform_hash=SOURCE_HASH,
+        requested_mode=SeparationMode.FOUR_STEMS,
+        model_manifest_id=uuid.uuid4(),
+        model_manifest_hash=PCM_HASH,
+        engine_version="demucs-4.1.0",
+        adapter_version="outer-window-v1",
+        device_type=DeviceType.CPU,
+        started_at="2026-01-01T00:00:00Z",
+        status=SeparationRunStatus.RUNNING,
+    )
+
+
+def _build_publish_asset(seed: int, frames: int) -> AssetRecord:
+    content_hash = f"{seed:02d}" * 32
+    return AssetRecord(
+        id=uuid.uuid4(),
+        content_hash=content_hash,
+        role=AssetRole.STEM,
+        relative_path=f"assets/{content_hash}.pcm",
+        media_type="audio/pcm",
+        byte_count=frames * 2 * 4,
+        created_at="2026-01-01T00:10:00Z",
+        audio=AudioMetadata(
+            sample_rate=48_000,
+            channel_count=2,
+            frame_count=frames,
+            sample_format="f32le",
+        ),
+    )
+
+
+def _completed_run(running: SeparationRun, result_set_id: uuid.UUID) -> SeparationRun:
+    return running.model_copy(
+        update={
+            "status": SeparationRunStatus.COMPLETED,
+            "result_set_id": result_set_id,
+            "ended_at": datetime(2026, 1, 1, 0, 10, tzinfo=UTC),
+        }
+    )
+
+
+def _project_asset_rows(db_path: Path, project_id: uuid.UUID) -> set[tuple[str, str]]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = conn.execute(
+            "SELECT asset_id, role FROM project_assets WHERE project_id = ?",
+            (str(project_id),),
+        ).fetchall()
+        return {(row[0], row[1]) for row in rows}
+    finally:
+        conn.close()
+
+
+def test_publish_result_set_completes_run_atomically(db_path: Path) -> None:
+    projects = ProjectRepository(db_path)
+    separation = SeparationRepository(db_path)
+    project = projects.create_project("Song")
+
+    running = _queued_run(project.id)
+    separation.create_run(running)
+
+    result_set_id = uuid.uuid4()
+    assets = [_build_publish_asset(1, 441_000), _build_publish_asset(2, 441_000)]
+    bass = _build_stem(result_set_id, StemRole.BASS).model_copy(
+        update={"audio_asset_id": assets[0].id}
+    )
+    others = _build_stem(result_set_id, StemRole.OTHERS).model_copy(
+        update={
+            "audio_asset_id": assets[1].id,
+            "display_name": "Others",
+            "provenance": {"kind": "bass_residual"},
+        }
+    )
+    stems = [bass, others]
+    completed = _completed_run(running, result_set_id)
+    result_set = _build_result_set(completed, project.id, [s.id for s in stems]).model_copy(
+        update={
+            "available_stem_roles": [StemRole.BASS, StemRole.OTHERS],
+            "bass_residual_asset_id": assets[1].id,
+        }
+    )
+    separation.publish_result_set(completed, result_set, stems, assets)
+
+    got_run = separation.get_run(running.id)
+    assert got_run is not None
+    assert got_run.status == SeparationRunStatus.COMPLETED
+    assert got_run.result_set_id == result_set_id
+
+    got_set = separation.get_result_set(result_set_id)
+    assert got_set is not None
+    assert got_set.validation_status == ValidationStatus.VALID
+    assert got_set.bass_residual_asset_id == assets[1].id
+
+    got_stems = separation.list_stems_for_result_set(result_set_id)
+    assert {s.role for s in got_stems} == {StemRole.BASS, StemRole.OTHERS}
+
+    for asset in assets:
+        assert projects.get_asset(asset.id) is not None
+    assert _project_asset_rows(db_path, project.id) == {(str(a.id), "stem") for a in assets}
+
+    # Re-publishing the same run is rejected (results are immutable).
+    with pytest.raises(DatabaseError, match="already published"):
+        separation.publish_result_set(completed, result_set, stems, assets)
+
+
+def test_publish_result_set_rolls_back_on_failure(db_path: Path) -> None:
+    projects = ProjectRepository(db_path)
+    separation = SeparationRepository(db_path)
+    project = projects.create_project("Song")
+
+    running = _queued_run(project.id)
+    separation.create_run(running)
+
+    result_set_id = uuid.uuid4()
+    assets = [_build_publish_asset(3, 441_000)]
+    stem = _build_stem(result_set_id, StemRole.BASS).model_copy(
+        update={"audio_asset_id": assets[0].id}
+    )
+    completed = _completed_run(running, result_set_id)
+    result_set = _build_result_set(completed, project.id, [stem.id])
+
+    # A duplicate stem primary key fails mid-transaction.
+    with pytest.raises(DatabaseError, match="cannot publish"):
+        separation.publish_result_set(completed, result_set, [stem, stem], assets)
+
+    # Every row from the failed transaction is gone.
+    assert separation.get_result_set(result_set_id) is None
+    assert separation.list_stems_for_result_set(result_set_id) == []
+    after = separation.get_run(running.id)
+    assert after is not None and after.status == SeparationRunStatus.RUNNING
+    assert projects.get_asset(assets[0].id) is None
+    assert _project_asset_rows(db_path, project.id) == set()
+
+
+def test_publish_rejects_non_valid_result_set(db_path: Path) -> None:
+    projects = ProjectRepository(db_path)
+    separation = SeparationRepository(db_path)
+    project = projects.create_project("Song")
+
+    running = _queued_run(project.id)
+    separation.create_run(running)
+    result_set_id = uuid.uuid4()
+    assets = [_build_publish_asset(4, 441_000)]
+    stem = _build_stem(result_set_id, StemRole.BASS).model_copy(
+        update={"audio_asset_id": assets[0].id}
+    )
+    completed = _completed_run(running, result_set_id)
+    pending = _build_result_set(completed, project.id, [stem.id]).model_copy(
+        update={"validation_status": ValidationStatus.PENDING}
+    )
+    with pytest.raises(DatabaseError, match="valid"):
+        separation.publish_result_set(completed, pending, [stem], assets)
+    assert separation.get_result_set(result_set_id) is None

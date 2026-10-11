@@ -52,7 +52,9 @@ from basseparate.domain.representation import (
 from basseparate.domain.separation import (
     SeparationResultSet,
     SeparationRun,
+    SeparationRunStatus,
     StemRecord,
+    ValidationStatus,
 )
 from basseparate.domain.waveform import WaveformCacheRecord, WaveformLevelSummary, WaveformResult
 from basseparate.storage.db import DatabaseError
@@ -1761,3 +1763,119 @@ class SeparationRepository:
             return [StemRecord.model_validate_json(r["record_json"]) for r in rows]
         finally:
             conn.close()
+
+    # -- Publication (M2.6) --------------------------------------------------
+    def publish_result_set(
+        self,
+        run: SeparationRun,
+        result_set: SeparationResultSet,
+        stems: list[StemRecord],
+        assets: list[AssetRecord],
+    ) -> SeparationResultSet:
+        """Atomically publish a completed run (M2.6, spec §8.7).
+
+        One transaction registers the published stem assets
+        (hash-idempotent), attaches them to the project as ``stem``
+        assets, inserts the stem records and the result set, and marks
+        the run complete with its result-set reference. Any failure rolls
+        back every row; the audio files were moved into the
+        content-addressed store beforehand, so a retry reuses them.
+        """
+        if run.status != SeparationRunStatus.COMPLETED or run.result_set_id != result_set.id:
+            raise DatabaseError(
+                "the run record must be completed and reference the published result set"
+            )
+        if result_set.validation_status != ValidationStatus.VALID:
+            raise DatabaseError("only a valid result set can be published")
+        if result_set.run_id != run.id or result_set.project_id != run.project_id:
+            raise DatabaseError("result set and run identity mismatch")
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT status FROM separation_runs WHERE id = ?", (str(run.id),)
+            ).fetchone()
+            if row is None:
+                raise DatabaseError(f"separation run {run.id} does not exist")
+            if row["status"] == SeparationRunStatus.COMPLETED.value:
+                raise DatabaseError(f"separation run {run.id} is already published")
+            for asset in assets:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO assets (id, content_hash, role, relative_path,
+                                                  media_type, byte_count, created_at,
+                                                  audio_sample_rate, audio_channel_count,
+                                                  audio_frame_count, audio_sample_format,
+                                                  revision)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(asset.id),
+                        asset.content_hash,
+                        asset.role.value,
+                        asset.relative_path,
+                        asset.media_type,
+                        asset.byte_count,
+                        asset.created_at.isoformat().replace("+00:00", "Z"),
+                        asset.audio.sample_rate if asset.audio else None,
+                        asset.audio.channel_count if asset.audio else None,
+                        asset.audio.frame_count if asset.audio else None,
+                        asset.audio.sample_format if asset.audio else None,
+                        asset.revision,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO project_assets (project_id, asset_id, role)
+                    VALUES (?, ?, ?)
+                    """,
+                    (str(run.project_id), str(asset.id), AssetRole.STEM.value),
+                )
+            conn.execute(
+                """
+                INSERT INTO separation_result_sets (id, run_id, project_id,
+                                                    validation_status, created_at,
+                                                    record_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(result_set.id),
+                    str(result_set.run_id),
+                    str(result_set.project_id),
+                    result_set.validation_status.value,
+                    result_set.created_at.isoformat().replace("+00:00", "Z"),
+                    result_set.model_dump_json(),
+                ),
+            )
+            for stem in stems:
+                conn.execute(
+                    """
+                    INSERT INTO stems (id, result_set_id, role, record_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        str(stem.id),
+                        str(stem.result_set_id),
+                        stem.role.value,
+                        stem.model_dump_json(),
+                    ),
+                )
+            conn.execute(
+                """
+                UPDATE separation_runs
+                SET status = ?, result_set_id = ?, record_json = ?
+                WHERE id = ?
+                """,
+                (
+                    run.status.value,
+                    str(result_set.id),
+                    run.model_dump_json(),
+                    str(run.id),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot publish separation result set: {exc}") from exc
+        finally:
+            conn.close()
+        return result_set

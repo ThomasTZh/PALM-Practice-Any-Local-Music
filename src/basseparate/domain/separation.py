@@ -66,16 +66,20 @@ class DeviceType(StrEnum):
 
 
 class StemRole(StrEnum):
-    """The four declared Demucs source labels (spec §3.4).
+    """Stem roles (spec §3.4, §8.4).
 
-    The role is taken from the model's declared source labels, never from a
-    hard-coded tensor index.
+    ``vocals``/``drums``/``bass``/``other`` mirror the model's declared
+    source labels (never a hard-coded tensor index). ``others`` is a
+    publication-only role for the Bass + Others residual
+    (``reference_mix − bass``), kept distinct from the model's ``other``
+    stem.
     """
 
     VOCALS = "vocals"
     DRUMS = "drums"
     BASS = "bass"
     OTHER = "other"
+    OTHERS = "others"
 
 
 #: Maximum magnitude of a stem's project alignment offset, in frames.
@@ -182,6 +186,12 @@ class SeparationResultSet(BaseModel):
     def _check_roles_and_availability(self) -> SeparationResultSet:
         if len(set(self.available_stem_roles)) != len(self.available_stem_roles):
             raise ValueError("available_stem_roles must not contain duplicates")
+        if (StemRole.OTHERS in self.available_stem_roles) != (
+            self.bass_residual_asset_id is not None
+        ):
+            raise ValueError(
+                "the others role and bass_residual_asset_id must be present together"
+            )
         if self.validation_status == ValidationStatus.VALID:
             if not self.stem_ids:
                 raise ValueError("a valid result set must reference at least one stem")

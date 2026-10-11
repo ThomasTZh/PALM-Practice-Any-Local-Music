@@ -20,8 +20,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.5:** complete — `18ace92` (bounded windowed adapter, whole-track
   reference runner + §7.3 comparison gate, TF32 pinned off; 960 py
   green).
-- **Current work package:** M2.6 (Validate and publish stems) — not
-  started.
+- **M2.6:** complete — `M2.6: validate and publish stems` (hash in the
+  ledger follow-up commit; 1000 py green: 808 unit + 192 integration).
+  Staged Demucs runs now publish as validated project-rate stem assets
+  + immutable result sets with the Bass + Others residual,
+  reconstruction diagnostics, and per-stem waveform queueing.
+- **Current work package:** none in flight — M2.6 committed. Next work
+  package per `projectPlans/milestone2.md`: M2.7 (separation result
+  caching).
 - **Last commit:** `18ace92` — M2.5 (implement bounded Demucs
   separation); `ebd58aa` — M2.4 (prepare separation input consistently);
   `cd2ca9e` — M2.3 (pin and provision the bundled Demucs baseline);
@@ -44,13 +50,18 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.4 (Prepare separation input consistently) —
-  reference-mix resolution (canonical stereo/mono PCM, explicit M1 stereo
-  downmix for multichannel), single whole-file resample to the model rate,
-  channel-layout conversion, transform identity + source-time mapping.
-  Spec: `projectPlans/milestone2.md` §6. Milestone 1 remains fully
-  committed; its only deferred items are the out-of-scope §19 manual
-  acceptance and looping.
+- **Next action:** M2.7 (Separation result caching) per
+  `projectPlans/milestone2.md` §9: cache lookup/keys/retention for
+  published result sets, active-result-set commands, and the decision
+  on persisting the prepared 44.1 kHz input as an asset (deferred from
+  M2.6). Start with a `projectPlans/m2.7-plan.md` + ledger section, as
+  with M2.2–M2.6.
+- **Resume procedure:** read this file; the tree is clean (all M2.x
+  committed); establish the baseline: `.venv/bin/python -m pytest
+  tests/unit -q` (808 passed), `.venv/bin/python -m pytest
+  tests/integration -q` (192 passed), `.venv/bin/python -m ruff check
+  src/ tests/` (clean), `.venv/bin/python -m mypy src/basseparate/`
+  (60 files clean), `.venv/bin/python scripts/check_contract.py` (OK).
 
 ## Completed requirements (with evidence)
 
@@ -1896,6 +1907,121 @@ registry.
   `analysis/compare_adapter.py`. Evidence:
   `docs/evidence/m2.5-bounded-separation.md`. Commit `M2.5: ...` +
   ledger hash follow-up.
+
+### M2.6 — Validate and publish stems (in progress)
+
+Spec: `projectPlans/milestone2.md` §8; plan: `projectPlans/m2.6-plan.md`.
+Scope: turn a completed staged M2.5 run (44.1 kHz f32le stems + run
+record) into published **project-rate validated stem assets + an
+immutable result set**, with the Bass + Others residual, reconstruction
+diagnostics, the standard confidence object, atomic result publication
+and representation queueing. No API/job wiring (M2.17), no cache lookup
+(M2.7), no frontend (M2.8).
+
+**Resolved facts (codebase map, 2026-10-11):** `domain/separation.py`
+already models `SeparationRun`/`SeparationResultSet`/`StemRecord`
+(validators: completed ⇒ result_set_id, valid ⇒ stems+frames, unique
+roles); `Confidence` has the strict `unavailable ⇔ value is None` rule
+(§8.6 standard object); assets are content-addressed
+(`data/assets/<sha256>.pcm`) published with the M1 `publish_source`
+transaction pattern; `SeparationRepository` (schema v7, JSON-blob rows)
+has create/get/list only — no run-status update and no multi-record
+transaction; `media/decode.py::validate_pcm` + `check_frame_alignment`
+and `media/derived.py::resample_playback` (pinned SWR v1, endpoint
+deltas) are the reusable primitives; waveform caches are keyed by asset
+hash (`build_waveform_cache`), but the job/publisher path is
+canonical-only; playback-rate jobs are on-demand in M1
+(`api/playback_routes.py`), not eagerly queued; reference mix comes from
+the M2.4 `ReferenceMixPlan` at project rate; `PreparedInput` is not yet
+persisted as an asset (deferred decision).
+
+**Design decisions:** `StemRole.OTHERS` added as a publication-only role
+for the §8.4 residual (distinct from the model's `other`); the four
+model stems are always published and retained (§8.5);
+`SeparationRepository.publish_result_set` commits hash-idempotent
+assets + `project_assets` stem linkage + result set + stems + run
+completion in one `BEGIN IMMEDIATE` (rollback leaves nothing; no base
+representation rows — the asset `AudioMetadata` carries
+rate/channels/frames); new
+`media/publication.py` service (restore → validate → diagnostics →
+residual → publish) with bounded chunks and the documented endpoint
+policy (±2 frames, exact canonical frame count); waveform queueing
+generalized to arbitrary source assets; playback representations stay
+on-demand; separation staging lives under
+`runtime/separation/<run_id>/attempt-N/` (not wiped job staging).
+
+- **Phase 1 — Plan + ledger:** done (`projectPlans/m2.6-plan.md`).
+- **Phase 2 — Domain + repository:** done. `StemRole.OTHERS`
+  (publication-only residual role, §8.4) with the result-set coupling
+  validator (`others` ⇔ `bass_residual_asset_id`); repository
+  `SeparationRepository.publish_result_set` — one `BEGIN IMMEDIATE`
+  transaction (hash-idempotent assets + `project_assets` stem linkage +
+  result set + stems + run completion), rejecting non-valid sets,
+  identity mismatches and re-publication; 6 new tests (unit + integration
+  incl. rollback and re-publish rejection). Gates so far: ruff clean,
+  mypy clean (59 files), 784 unit + 182 integration tests green
+  (966 total).
+- **Phase 3 — Media services** (restore/validate/reconstruction/
+  residual): done. `src/basseparate/media/publication.py`:
+  `restore_stem_project_representation` (pinned SWR v1; byte-exact
+  identity fast path; mono collapse `(L+R)/2` float64→float32; endpoint
+  policy ±2 frames resampler rounding, final frame count must equal the
+  project frame count exactly — never a blind trim), `validate_stems`
+  (§8.2 checklist: roles complete/unique, frames, alignment, finite,
+  hash, `max_amplitude`), `compute_reconstruction_error` (bounded
+  float64 chunks → rms/max), `derive_bass_residual` (float64→float32,
+  verified within 4× worst-case float32 quantization). 24 unit + 5
+  integration tests (no GPU).
+- **Phase 4 — Publication + queueing:** done.
+  `publish_separation_result` orchestration in `media/publication.py`
+  (restore all model stems → residual when `bass_pair` → §8.2
+  validation → diagnostics → move assets into the content-addressed
+  store (hash-dedup) → `publish_result_set` → per-stem waveform queueing
+  → staging cleanup on success only; on failure staged stems are kept
+  and no partial records commit). `queue_stem_waveforms` per-asset
+  variant (skips while a live WAVEFORM job targets the same asset);
+  `jobs/publisher.py::_publish_waveform` + `app._waveform_parameters_for`
+  resolve the job's `asset_id` parameter with canonical fallback, so M1
+  jobs are unaffected. 4 new integration tests (end-to-end synthetic
+  staged run, bass-pair residual, failure path, queueing dedup).
+- **Phase 5 — Evidence + close:** done. Evidence:
+  `docs/evidence/m2.6-stem-publication.md` (git-ignored). Final gates:
+  ruff clean, mypy clean (60 files), 808 unit + 192 integration = 1000
+  py tests green, `scripts/check_contract.py` OK. Committed as `M2.6:
+  validate and publish stems`; hash recorded below.
+
+**Implementation notes (Phase 2):** in `publish_result_set` the result
+set row is inserted **before** the stems (the stems table has an FK to
+`separation_result_sets`); pydantic `model_copy(update=...)` skips
+validation/coercion, so tests must pass real `datetime` values for
+timestamps (strings raise `AttributeError` in `model_dump_json`); no
+base representation rows are created for stem assets — the asset
+`AudioMetadata` carries rate/channels/frames and playback-rate
+representations stay on-demand (M1 policy); any DB failure inside the
+transaction rolls back everything (tested).
+**Implementation notes (Phase 3/4):** the pinned SWR profile has a
+start transient at float32 rounding level (zero-padded filter history,
+~1e-6 relative on a DC signal) — the DC-based end-to-end tests assert
+`< 1e-5`, not exactness; the residual verification tolerance is
+`peak * 2**-22` (4× the worst-case 0.5-ulp quantization of a difference
+bounded by the input peak); `queue_stem_waveforms` treats
+queued/running/cancelling/completed WAVEFORM jobs as live (a failed or
+cancelled build is retried); WAVEFORM jobs for stems carry
+`parameters["asset_id"]` and the publisher/worker resolve it with a
+canonical fallback, so M1 jobs are byte-identical in behavior; on
+publication failure the `restored/` intermediates are removed but the
+staged stems + run record are kept for diagnostics; assets are
+moved into `data/assets/<hash>.pcm` **before** the DB transaction (a
+failed transaction leaves dedup-able files, a retry reuses them).
+**Files committed with M2.6:** `projectPlans/m2.6-plan.md`,
+`src/basseparate/domain/separation.py`,
+`src/basseparate/storage/repository.py`,
+`src/basseparate/media/publication.py`,
+`src/basseparate/jobs/publisher.py`, `src/basseparate/app.py`,
+`tests/unit/test_separation.py`,
+`tests/integration/test_separation_repository.py`,
+`tests/unit/test_publication.py`,
+`tests/integration/test_publication.py`, `docs/implementation-status.md`.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
