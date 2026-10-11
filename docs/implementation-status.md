@@ -17,14 +17,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.4:** complete — `ebd58aa` (reference-mix resolution, one-shot
   resample to the model rate, prepared-input identity, versioned global
   normalization profile; 936 py green).
-- **Current work package:** M2.5 (Implement bounded Demucs separation)
-  — in progress (adapter, reference runner, comparison
-  gate, evidence and cancellation done; commit pending).
-- **Last commit:** `ebd58aa` — M2.4 (prepare separation input
-  consistently); `cd2ca9e` — M2.3 (pin and provision the bundled Demucs
-  baseline); `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151`
-  — M2.1 (confirm prerequisites and extend the domain); `9510656` (ledger
-  M1.16 hash); `af51265` — M1.16 (test
+- **M2.5:** complete — `18ace92` (bounded windowed adapter, whole-track
+  reference runner + §7.3 comparison gate, TF32 pinned off; 960 py
+  green).
+- **Current work package:** M2.6 (Validate and publish stems) — not
+  started.
+- **Last commit:** `18ace92` — M2.5 (implement bounded Demucs
+  separation); `ebd58aa` — M2.4 (prepare separation input consistently);
+  `cd2ca9e` — M2.3 (pin and provision the bundled Demucs baseline);
+  `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151` — M2.1 (confirm
+  prerequisites and extend the domain); `9510656` (ledger M1.16 hash);
+  `af51265` — M1.16 (test
   corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
   undo/redo); `934d6c1` — M1.14 (synchronized readout and
   follow-playhead); `c7d78ef` — M1.13 (buffering and browser
@@ -1791,7 +1794,7 @@ whole-track reference scale (kept separate from demucs' internal step,
   `test_publisher_failure_fails_job` subprocess-GC unraisable — that
   test passes).
 
-### M2.5 — Implement bounded Demucs separation (in progress)
+### M2.5 — Implement bounded Demucs separation (complete — `18ace92`)
 
 Spec: `projectPlans/milestone2.md` §7; plan: `projectPlans/m2.5-plan.md`.
 Scope: versioned windowed inference adapter (120 s outer windows, 8 s
