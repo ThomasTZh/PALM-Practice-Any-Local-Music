@@ -25,14 +25,19 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   Staged Demucs runs now publish as validated project-rate stem assets
   + immutable result sets with the Bass + Others residual,
   reconstruction diagnostics, and per-stem waveform queueing.
-- **Current work package:** M2.7 (analysis caching and version
-  retention) — in progress: Phases 1–5 done (plan + ledger; domain +
-  schema v8 + config; cache key + lookup; active-result-set command
-  incl. API mapping + 6 integration tests; storage policy report +
-  explicit reclaim + 10 integration tests); Phase 6 (evidence + close)
-  next. M2.7 changes are **uncommitted** in the working tree
-  (files-in-flight list in the M2.7 section below).
-- **Last commit:** `a088363` — M2.6 (validate and publish stems);
+- **M2.7:** complete — `ac12159` (analysis caching and version
+  retention; 1064 py green: 840 unit + 224 integration). Deterministic
+  versioned cache key per separation request, cache lookup +
+  coalescing primitives, effective-parameter keying, undoable
+  active-result-set selection, and the 50 GiB configurable storage
+  policy (pinning, reclaimable-size report, explicit LRU reclaim;
+  records never deleted).
+- **Current work package:** M2.8 (Add aligned tracks and the stem
+  mixer, spec §10) — **not started**. M2.7 leaves the storage-report /
+  reclaim services and the active-result-set command ready for the
+  frontend (report/cleanup routes + scheduler wiring land in M2.17).
+- **Last commit:** `ac12159` — M2.7 (analysis caching and version
+  retention); `a088363` — M2.6 (validate and publish stems);
   `18ace92` — M2.5 (implement bounded Demucs
   separation); `ebd58aa` — M2.4 (prepare separation input consistently);
   `cd2ca9e` — M2.3 (pin and provision the bundled Demucs baseline);
@@ -55,17 +60,20 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action (M2.7 Phase 6 — evidence + close):** full gate
-  (all 1000+ baseline + new tests), evidence doc
-  `docs/evidence/m2.7-analysis-caching.md` (git-ignored), commit
-  `M2.7: ...` + ledger-hash follow-up commit.
-- **Resume procedure:** read this file + `projectPlans/m2.7-plan.md`;
-  `git status` shows the uncommitted M2.7 files in flight (do not
-  discard); establish the baseline: `.venv/bin/python -m pytest
-  tests/unit -q` (808 passed), `.venv/bin/python -m pytest
-  tests/integration -q` (192 passed), `.venv/bin/python -m ruff check
+- **Next action (M2.8 — Add aligned tracks and the stem mixer, spec
+  §10):** write `projectPlans/m2.8-plan.md` (track layout §10.1, mixer
+  controls §10.2, gain/pan §10.3, solo semantics §10.4, ...), then
+  implement phase by phase. The M2.7 backend is ready: the
+  active-result-set command, the storage-report/reclaim services, and
+  per-stem waveform assets. Report/cleanup HTTP routes and scheduler
+  wiring stay in M2.17.
+- **Resume procedure:** read this file; the working tree is clean at
+  `ac12159`. Establish the baseline: `.venv/bin/python -m pytest
+  tests/unit -q` (840 passed), `.venv/bin/python -m pytest
+  tests/integration -q` (224 passed), `.venv/bin/python -m ruff check
   src/ tests/` (clean), `.venv/bin/python -m mypy src/basseparate/`
-  (60 files clean), `.venv/bin/python scripts/check_contract.py` (OK).
+  (62 files clean), `.venv/bin/python scripts/check_contract.py` (OK),
+  `pnpm --dir frontend test` (307 passed).
 
 ## Completed requirements (with evidence)
 
@@ -2159,38 +2167,27 @@ frontend (M2.8).
   rules, pin hook, no-op under limit, LRU eviction until under limit,
   pinned never touched, dedup shared-asset survival + final removal,
   waveform-cache removal, edits survive).
-- **Phase 6 — Evidence + close:** pending (next).
+- **Phase 6 — Evidence + close:** done. Full gate green; evidence doc
+  `docs/evidence/m2.7-analysis-caching.md` (git-ignored); contracts
+  regenerated for the new `set_active_result_set` op.
 
-**Verification (2026-10-13, after Phase 5):** ruff clean (src +
-tests); mypy clean (62 files); 198 passed across the affected suites
-(`test_storage_report`, `test_separation_cache`, `test_cache_lookup`,
-`test_publication`, `test_separation`, `test_config`,
-`test_commands`, `test_migration_m2`, `test_separation_repository`,
-`test_active_result_set`, `test_persistence`, `test_storage_db`,
-`test_repository_commands`). Full gate (all 1000+ baseline) owed in
-Phase 6.
+**Verification (2026-10-13, full gate at close):**
+`pytest tests/unit -q` → 840 passed (baseline 808);
+`pytest tests/integration -q` → 224 passed (baseline 192);
+`pnpm --dir frontend test` → 307/307; `pnpm format:check` clean;
+`ruff check src/ tests/` clean; `mypy src/basseparate/` clean (62
+files); `scripts/check_contract.py` OK (openapi.json + frontend
+schema.ts regenerated).
 
-**Files in flight (uncommitted):** `projectPlans/m2.7-plan.md`,
-`docs/implementation-status.md`, `src/basseparate/__init__.py`,
-`src/basseparate/config.py`,
-`src/basseparate/api/command_routes.py`, `src/basseparate/api/errors.py`,
-`src/basseparate/domain/commands.py`,
-`src/basseparate/domain/separation.py`,
-`src/basseparate/media/publication.py`,
-`src/basseparate/media/separation_cache.py` (new),
-`src/basseparate/media/storage_report.py` (new),
-`src/basseparate/storage/db.py`, `src/basseparate/storage/repository.py`,
-`tests/integration/test_active_result_set.py` (new),
-`tests/integration/test_cache_lookup.py` (new),
-`tests/integration/test_migration_m2.py`,
-`tests/integration/test_publication.py`,
-`tests/integration/test_storage_report.py` (new),
-`tests/unit/test_commands.py`, `tests/unit/test_config.py`,
-`tests/unit/test_repository_commands.py`,
-`tests/unit/test_separation.py`, `tests/unit/test_separation_cache.py`
-(new), `tests/unit/test_storage_db.py`.
-(`domain/project.py` is net-zero after the WorkingState revert —
-verify with `git diff` if in doubt.)
+**Committed:** `ac12159` — M2.7 (analysis caching and version
+retention). 26 files: plan, ledger, domain (`commands`,
+`separation`), config, API (`command_routes`, `errors`),
+`media/publication.py`, new `media/separation_cache.py` +
+`media/storage_report.py`, storage (`db` v8, `repository`),
+contracts (`openapi.json`, `frontend/src/api/schema.ts`), and the test
+additions (`test_separation_cache` new, `test_cache_lookup` new,
+`test_active_result_set` new, `test_storage_report` new,
+`test_publication` +1, plus Phase-2 test files).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
