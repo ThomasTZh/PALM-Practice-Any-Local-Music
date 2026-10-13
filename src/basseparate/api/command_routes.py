@@ -26,6 +26,7 @@ from basseparate.api.errors import (
     NothingToUndoError,
     ProjectNotFoundError,
     ProjectNotReadyError,
+    ResultSetNotFoundError,
     StaleRevisionError,
 )
 from basseparate.api.idempotency import IdempotencyStore
@@ -43,6 +44,9 @@ from basseparate.storage.repository import (
 from basseparate.storage.repository import (
     ProjectMissingError,
     ProjectNotReady,
+)
+from basseparate.storage.repository import (
+    ResultSetNotFoundError as RepoResultSetNotFoundError,
 )
 from basseparate.storage.repository import (
     StaleRevisionError as RepoStaleRevisionError,
@@ -75,6 +79,8 @@ def _raise_mapped(exc: Exception) -> NoReturn:
         raise NothingToRedoError() from exc
     if isinstance(exc, RepoMarkerNotFoundError):
         raise MarkerNotFoundError(str(exc.marker_id)) from exc
+    if isinstance(exc, RepoResultSetNotFoundError):
+        raise ResultSetNotFoundError(str(exc.result_set_id)) from exc
     if isinstance(exc, ProjectNotReady):
         raise ProjectNotReadyError() from exc
     if isinstance(exc, ValidationError):

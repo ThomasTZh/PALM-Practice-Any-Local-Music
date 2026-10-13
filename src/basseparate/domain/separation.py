@@ -132,6 +132,12 @@ class SeparationRun(BaseModel):
     device_type: DeviceType
     gpu_uuid: str | None = Field(default=None, min_length=1, max_length=128)
     runtime_versions: dict[str, str] = Field(default_factory=dict)
+    cache_key: Sha256Hash | None = Field(
+        default=None,
+        description="Deterministic key of the separation request (M2.7, spec "
+        "§9.1); computed from the effective parameters, shared by runs and "
+        "result sets so identical requests can be cached and coalesced",
+    )
     started_at: UtcTimestamp | None = None
     ended_at: UtcTimestamp | None = None
     status: SeparationRunStatus = SeparationRunStatus.QUEUED
@@ -181,6 +187,11 @@ class SeparationResultSet(BaseModel):
     reconstruction_metrics: dict[str, float] | None = None
     validation_status: ValidationStatus = ValidationStatus.PENDING
     created_at: UtcTimestamp
+    cache_key: Sha256Hash | None = Field(
+        default=None,
+        description="Deterministic key of the separation request (M2.7, spec "
+        "§9.1); identical to the completing run's key",
+    )
 
     @model_validator(mode="after")
     def _check_roles_and_availability(self) -> SeparationResultSet:

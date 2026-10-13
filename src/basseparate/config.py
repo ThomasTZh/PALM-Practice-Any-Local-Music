@@ -28,6 +28,10 @@ class ConfigError(ValueError):
 
 DEFAULT_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024  # 8 MiB
 DEFAULT_MAX_IMPORT_BYTES = 20 * 1024**3  # 20 GiB
+#: Rebuildable-cache budget for separation results (M2.7, spec §9.5.1);
+#: model storage is counted separately and never against this limit.
+DEFAULT_CACHE_LIMIT_BYTES = 50 * 1024**3  # 50 GiB
+MIN_CACHE_LIMIT_BYTES = 1024**3  # 1 GiB
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +48,7 @@ class AppConfig:
     database_busy_timeout_seconds: float
     import_chunk_bytes: int
     max_import_bytes: int
+    cache_limit_bytes: int
     storage_root: Path | None
     config_file: Path
 
@@ -60,6 +65,7 @@ class AppConfig:
             f"database_busy_timeout={self.database_busy_timeout_seconds}s "
             f"import_chunk_bytes={self.import_chunk_bytes} "
             f"max_import_bytes={self.max_import_bytes} "
+            f"cache_limit_bytes={self.cache_limit_bytes} "
             f"storage_root={self.storage_root}"
         )
 
@@ -91,6 +97,7 @@ _FIELDS: tuple[_FieldSpec, ...] = (
     _FieldSpec("database_busy_timeout_seconds", float, 5.0),
     _FieldSpec("import_chunk_bytes", int, DEFAULT_IMPORT_CHUNK_BYTES),
     _FieldSpec("max_import_bytes", int, DEFAULT_MAX_IMPORT_BYTES),
+    _FieldSpec("cache_limit_bytes", int, DEFAULT_CACHE_LIMIT_BYTES),
 )
 
 
@@ -179,6 +186,14 @@ def _validate(values: dict[str, object]) -> None:
         )
     if max_bytes < chunk:
         raise ConfigError(f"max_import_bytes must be at least import_chunk_bytes, got {max_bytes}")
+
+    cache_limit = values["cache_limit_bytes"]
+    assert isinstance(cache_limit, int)
+    if cache_limit < MIN_CACHE_LIMIT_BYTES:
+        raise ConfigError(
+            f"cache_limit_bytes must be at least 1 GiB ({MIN_CACHE_LIMIT_BYTES}), "
+            f"got {cache_limit}"
+        )
 
     root = values["storage_root"]
     if root is not None:

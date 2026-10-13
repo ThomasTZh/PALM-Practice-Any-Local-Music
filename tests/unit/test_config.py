@@ -52,6 +52,24 @@ def test_env_typed_parsing() -> None:
     assert config.database_busy_timeout_seconds == 2.5
 
 
+def test_cache_limit_bytes_defaults_to_50_gib() -> None:
+    from basseparate.config import DEFAULT_CACHE_LIMIT_BYTES
+
+    config = resolve_config(env={})
+    assert DEFAULT_CACHE_LIMIT_BYTES == 50 * 1024**3
+    assert config.cache_limit_bytes == DEFAULT_CACHE_LIMIT_BYTES
+
+
+def test_cache_limit_bytes_env_override() -> None:
+    config = resolve_config(env={"BASSEPARATE_CACHE_LIMIT_BYTES": str(10 * 1024**3)})
+    assert config.cache_limit_bytes == 10 * 1024**3
+
+
+def test_cache_limit_bytes_below_minimum_rejected() -> None:
+    with pytest.raises(ConfigError, match="cache_limit_bytes"):
+        resolve_config(env={"BASSEPARATE_CACHE_LIMIT_BYTES": str(1024**2)})  # 1 MiB
+
+
 def test_invalid_port_values() -> None:
     for bad in ("0", "70000", "abc"):
         with pytest.raises(ConfigError):

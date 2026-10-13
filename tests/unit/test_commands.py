@@ -14,6 +14,7 @@ from basseparate.domain.commands import (
     CommandRequest,
     CommandResult,
     DeleteMarkerOp,
+    SetActiveResultSetOp,
     SetDisplayOp,
     SetFollowPlayheadOp,
     SetMonitoringVolumeOp,
@@ -23,6 +24,7 @@ from basseparate.domain.commands import (
     UpdateMarkerOp,
 )
 from basseparate.domain.marker import MarkerRecord
+from basseparate.domain.practice import PracticeState
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
 
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
@@ -86,6 +88,22 @@ def test_set_follow_playhead_op() -> None:
     assert SetFollowPlayheadOp(follow_playhead=False).follow_playhead is False
 
 
+def test_set_active_result_set_op() -> None:
+    # Null clears the selection (M2.7, spec §9.4.3).
+    assert SetActiveResultSetOp().result_set_id is None
+    target = uuid4()
+    op = SetActiveResultSetOp(result_set_id=target)
+    assert op.type == "set_active_result_set"
+    assert op.result_set_id == target
+    # The switch is undoable: it must stay out of the history exclusion.
+    assert "set_active_result_set" not in HISTORY_EXCLUDED_TYPES
+
+
+def test_command_request_parses_set_active_result_set_op() -> None:
+    req = CommandRequest(**_request(SetActiveResultSetOp(result_set_id=uuid4())))
+    assert isinstance(req.op, SetActiveResultSetOp)
+
+
 def test_position_is_excluded_from_history() -> None:
     assert frozenset({"set_position"}) == HISTORY_EXCLUDED_TYPES
 
@@ -136,6 +154,7 @@ def test_command_result_shape() -> None:
         revision=4,
         markers=[marker],
         working_state=WorkingState(),
+        practice_state=PracticeState(),
         can_undo=True,
         can_redo=False,
     )

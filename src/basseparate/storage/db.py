@@ -354,6 +354,23 @@ def _migration_6_to_7(conn: sqlite3.Connection) -> None:
 
 register_migration(7, _migration_6_to_7)
 
+_MIGRATION_8_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE separation_runs ADD COLUMN cache_key TEXT",
+    "ALTER TABLE separation_result_sets ADD COLUMN cache_key TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_separation_runs_key "
+    "ON separation_runs(project_id, cache_key)",
+    "CREATE INDEX IF NOT EXISTS idx_separation_result_sets_key "
+    "ON separation_result_sets(project_id, cache_key)",
+)
+
+
+def _migration_7_to_8(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_8_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(8, _migration_7_to_8)
+
 
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.

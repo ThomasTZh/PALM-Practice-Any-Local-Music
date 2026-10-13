@@ -399,6 +399,47 @@ class TestPublishSeparationResult:
         assert not staging_dir.exists()
 
     @pytest.mark.asyncio
+    async def test_publish_stamps_cache_key(self, tmp_path: Path) -> None:
+        """M2.7 §9.1: the caller-computed key is stamped on run and set."""
+        key = "ff" * 32
+        run, staging_dir, attempt_dir, reference_path = self._staged_run(
+            tmp_path, SeparationMode.FOUR_STEMS
+        )
+        data = tmp_path / "data"
+        db_path = data / "basseparate.db"
+        separation = SeparationRepository(db_path)
+        jobs = JobRepository(db_path)
+        source = SourceIdentity(
+            asset_id=uuid.uuid4(),
+            source_hash="ab" * 32,
+            sample_rate=PROJECT_RATE,
+            duration_frames=PROJECT_RATE,
+        )
+
+        outcome = await publish_separation_result(
+            run=run,
+            staging_dir=staging_dir,
+            attempt_dir=attempt_dir,
+            stem_labels=list(self.LABELS),
+            reference_path=reference_path,
+            source=source,
+            sample_rate=PROJECT_RATE,
+            duration_frames=PROJECT_RATE,
+            channel_count=2,
+            asset_dir=data / "assets",
+            separation_repository=separation,
+            cache_key=key,
+            job_repository=jobs,
+        )
+
+        assert outcome.run.cache_key == key
+        assert outcome.result_set.cache_key == key
+        got_run = separation.get_run(run.id)
+        got_set = separation.get_result_set(outcome.result_set.id)
+        assert got_run is not None and got_run.cache_key == key
+        assert got_set is not None and got_set.cache_key == key
+
+    @pytest.mark.asyncio
     async def test_bass_pair_publishes_residual(self, tmp_path: Path) -> None:
         run, staging_dir, attempt_dir, reference_path = self._staged_run(
             tmp_path, SeparationMode.BASS_PAIR

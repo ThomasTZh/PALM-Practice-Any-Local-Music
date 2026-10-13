@@ -36,6 +36,29 @@ def _build_v6_db(path: Path, project_id: uuid.UUID = OLD_PROJECT_ID) -> None:
         conn.close()
 
 
+def _build_v7_db(path: Path) -> None:
+    """Create a database at exactly schema version 7 with one published run."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("PRAGMA user_version = 0")
+        conn.commit()
+        _apply_migrations(conn, 0, 7)
+        conn.execute(
+            "INSERT INTO projects (id, name, created_at, updated_at, revision) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (str(OLD_PROJECT_ID), "Old Song", "2025-06-01T00:00:00Z", "2025-06-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO separation_runs (id, project_id, status, requested_mode, "
+            "result_set_id, record_json) VALUES (?, ?, 'completed', 'four_stems', NULL, ?)",
+            ("run1", str(OLD_PROJECT_ID), "{}"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_v6_to_v7_adds_separation_tables(tmp_path: Path) -> None:
     path = tmp_path / "data" / "basseparate.db"
     _build_v6_db(path)
@@ -50,7 +73,7 @@ def test_v6_to_v7_adds_separation_tables(tmp_path: Path) -> None:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {
             r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
@@ -88,3 +111,43 @@ def test_v6_project_survives_with_defaulted_practice_state(tmp_path: Path) -> No
     assert isinstance(project, ProjectRecord)
     assert project.practice_state is not None
     assert project.practice_state.loop_enabled is False
+
+
+def test_v7_to_v8_adds_cache_key_columns(tmp_path: Path) -> None:
+    """Migration 7 -> 8 (M2.7, spec §9): cache_key columns + indexes.
+
+    A genuine v7 database upgrades to v8: both separation tables gain a
+    nullable ``cache_key`` column, the (project_id, cache_key) indexes
+    appear, and pre-existing rows survive with a NULL key.
+    """
+    path = tmp_path / "data" / "basseparate.db"
+    _build_v7_db(path)
+
+    conn = sqlite3.connect(str(path))
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+    conn.close()
+
+    initialize_database(path)
+
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    try:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 8
+        for table in ("separation_runs", "separation_result_sets"):
+            columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+            assert "cache_key" in columns
+        indexes = {
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+        }
+        assert {
+            "idx_separation_runs_key",
+            "idx_separation_result_sets_key",
+        } <= indexes
+        row = conn.execute(
+            "SELECT status, cache_key, record_json FROM separation_runs WHERE id = 'run1'"
+        ).fetchone()
+        assert row["status"] == "completed"
+        assert row["cache_key"] is None
+        assert row["record_json"] == "{}"
+    finally:
+        conn.close()

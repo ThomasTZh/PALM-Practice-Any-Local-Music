@@ -113,6 +113,14 @@ class TestSeparationRun:
         assert run.warnings == []
         assert run.metrics is None
         assert run.random_seed == 0
+        assert run.cache_key is None
+
+    def test_cache_key_roundtrip(self) -> None:
+        key = "b" * 64
+        run = _run(cache_key=key)
+        assert run.cache_key == key
+        restored = SeparationRun.model_validate_json(run.model_dump_json())
+        assert restored.cache_key == key
 
     def test_requested_and_effective_parameters_are_separate(self) -> None:
         run = _run(
@@ -164,6 +172,14 @@ class TestSeparationResultSet:
         assert rs.stem_ids == []
         assert rs.bass_residual_asset_id is None
         assert rs.reconstruction_metrics is None
+        assert rs.cache_key is None
+
+    def test_cache_key_roundtrip(self) -> None:
+        key = "c" * 64
+        rs = _result_set(cache_key=key)
+        assert rs.cache_key == key
+        restored = SeparationResultSet.model_validate_json(rs.model_dump_json())
+        assert restored.cache_key == key
 
     def test_duplicate_roles_rejected(self) -> None:
         with pytest.raises(ValidationError, match="duplicate"):

@@ -635,7 +635,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"];
         };
         /**
          * CommandResult
@@ -648,6 +648,7 @@ export interface components {
             can_undo: boolean;
             /** Markers */
             markers: components["schemas"]["MarkerRecord"][];
+            practice_state: components["schemas"]["PracticeState"];
             /**
              * Revision
              * @description Nonnegative integer revision
@@ -1219,6 +1220,23 @@ export interface components {
              * @description Integer source sample position (never milliseconds)
              */
             start: number;
+        };
+        /**
+         * SetActiveResultSetOp
+         * @description Select the project's active separation result set (M2.7, §9.4.3).
+         *
+         *     ``null`` clears the selection. The target must be a result set of
+         *     the same project (validated by the repository, not here — this op
+         *     is data, not a query). Undoable: it is part of the history.
+         */
+        SetActiveResultSetOp: {
+            /** Result Set Id */
+            result_set_id?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_active_result_set";
         };
         /** SetDisplayOp */
         SetDisplayOp: {

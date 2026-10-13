@@ -654,6 +654,7 @@ async def publish_separation_result(
     channel_count: int,
     asset_dir: Path,
     separation_repository: SeparationRepository,
+    cache_key: str | None = None,
     model_rate: int = 44_100,
     job_repository: JobRepository | None = None,
     max_threads: int = 4,
@@ -671,6 +672,12 @@ async def publish_separation_result(
     content-addressed store, the transactional repository publish, and
     the per-stem waveform queueing (§8.7.5–6: audio is available while
     the optional waveform preparation continues).
+
+    ``cache_key`` (M2.7, §9.1) is the deterministic key of the
+    separation request, computed by the caller via
+    ``separation_cache.compute_cache_key``; it is stamped on both the
+    completed run and the published result set so identical requests
+    can be cached and coalesced.
 
     On success the staging is removed (``remove_staging``); on failure
     the staged stems are kept for diagnostics and no partial records are
@@ -826,6 +833,7 @@ async def publish_separation_result(
             reconstruction_metrics=metrics,
             validation_status=ValidationStatus.VALID,
             created_at=now,
+            cache_key=cache_key,
         )
         # ``model_copy`` skips validation: a queued run never set
         # ``started_at``, so backfill it — a completed run must have both
@@ -838,6 +846,8 @@ async def publish_separation_result(
         }
         if run.started_at is None:
             update["started_at"] = now
+        if cache_key is not None:
+            update["cache_key"] = cache_key
         completed_run = run.model_copy(update=update)
 
         # 7. The transactional publish (spec §8.7.1–4).

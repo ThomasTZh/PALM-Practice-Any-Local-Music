@@ -25,9 +25,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   Staged Demucs runs now publish as validated project-rate stem assets
   + immutable result sets with the Bass + Others residual,
   reconstruction diagnostics, and per-stem waveform queueing.
-- **Current work package:** none in flight — M2.6 committed. Next work
-  package per `projectPlans/milestone2.md`: M2.7 (separation result
-  caching).
+- **Current work package:** M2.7 (analysis caching and version
+  retention) — in progress: Phases 1–5 done (plan + ledger; domain +
+  schema v8 + config; cache key + lookup; active-result-set command
+  incl. API mapping + 6 integration tests; storage policy report +
+  explicit reclaim + 10 integration tests); Phase 6 (evidence + close)
+  next. M2.7 changes are **uncommitted** in the working tree
+  (files-in-flight list in the M2.7 section below).
 - **Last commit:** `a088363` — M2.6 (validate and publish stems);
   `18ace92` — M2.5 (implement bounded Demucs
   separation); `ebd58aa` — M2.4 (prepare separation input consistently);
@@ -51,14 +55,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.7 (Separation result caching) per
-  `projectPlans/milestone2.md` §9: cache lookup/keys/retention for
-  published result sets, active-result-set commands, and the decision
-  on persisting the prepared 44.1 kHz input as an asset (deferred from
-  M2.6). Start with a `projectPlans/m2.7-plan.md` + ledger section, as
-  with M2.2–M2.6.
-- **Resume procedure:** read this file; the tree is clean (all M2.x
-  committed); establish the baseline: `.venv/bin/python -m pytest
+- **Next action (M2.7 Phase 6 — evidence + close):** full gate
+  (all 1000+ baseline + new tests), evidence doc
+  `docs/evidence/m2.7-analysis-caching.md` (git-ignored), commit
+  `M2.7: ...` + ledger-hash follow-up commit.
+- **Resume procedure:** read this file + `projectPlans/m2.7-plan.md`;
+  `git status` shows the uncommitted M2.7 files in flight (do not
+  discard); establish the baseline: `.venv/bin/python -m pytest
   tests/unit -q` (808 passed), `.venv/bin/python -m pytest
   tests/integration -q` (192 passed), `.venv/bin/python -m ruff check
   src/ tests/` (clean), `.venv/bin/python -m mypy src/basseparate/`
@@ -2023,6 +2026,171 @@ failed transaction leaves dedup-able files, a retry reuses them).
 `tests/integration/test_separation_repository.py`,
 `tests/unit/test_publication.py`,
 `tests/integration/test_publication.py`, `docs/implementation-status.md`.
+
+## M2.7 — Analysis caching and version retention (spec §9)
+
+**Scope (per `projectPlans/m2.7-plan.md`):** deterministic cache key
+per separation request (§9.1), cache lookup + coalescing primitives
+(§9.2), effective-parameter keying after memory recovery (§9.3),
+undoable active-result-set selection persisted with the project
+(§9.4), and a 50 GiB configurable storage policy with pinning,
+reclaimable-size report, and explicit cleanup (§9.5). No new API
+routes (the existing command endpoint exposes the new op;
+report/cleanup routes are M2.17), no scheduler wiring (M2.17), no
+frontend (M2.8).
+
+**Key design decisions:**
+
+- **Cache key** (`media/separation_cache.py::compute_cache_key`):
+  pure, versioned (`CACHE_KEY_VERSION = "v1"` prefix → payload-format
+  changes are clean misses, not collisions), canonical
+  `json.dumps(sort_keys=True)` → sha256. Covers §9.1 via: source +
+  reference-mix hashes, downmix spec, manifest id + every artifact
+  hash, engine/adapter versions, the **effective** parameter dict
+  (falls back to requested — the M2.5 run record already carries the
+  resampling/normalization/window/segment/shift/precision profiles
+  there), seed, device **profile** (cpu vs cuda; `gpu_uuid` excluded
+  by the float32 pin), output transform profile (rate + channels).
+- **Persistence:** `cache_key: Sha256Hash | None` on `SeparationRun`
+  + `SeparationResultSet` (defaulted); schema v8 adds the query
+  columns + `(project_id, cache_key)` indexes.
+  `publish_separation_result` gains an optional `cache_key` parameter
+  (M2.17 computes it; the orchestrator stamps it).
+- **Lookup (§9.2):** `find_valid_result_set` / `find_active_run`
+  (queued/running only — cancelled/failed never match, §9.2.8) +
+  `lookup_cached_result` service: asset existence **with exact
+  expected byte size** (partial files are misses, §9.2.5), optional
+  `verify_hashes` re-hash pass (§9.2.3). Coalescing (§9.2.6–7) is the
+  M2.17 scheduler's composition of these primitives + M2.6's
+  re-publication rejection + asset hash-dedup.
+- **Active result set (§9.4):** the selection lives in
+  `PracticeState.active_result_set_id` (existing M2.1 field; stem
+  playback modes already require it — **not** `WorkingState`, an early
+  `WorkingState` addition was reverted net-zero). New undoable op
+  `set_active_result_set` (in the `ProjectCommandOp` union, **not** in
+  `HISTORY_EXCLUDED_TYPES`); null clears the selection **and** reverts
+  `playback_mode` to `ORIGINAL` when in a stem mode (PracticeState
+  invariant); setting an id keeps the current mode.
+  `apply_command` validates the set belongs to the project
+  (`ResultSetNotFoundError` → new API 404 `RESULT_SET_NOT_FOUND`).
+  Mechanism: `_history_snapshot` carries `practice_state` (pre-M2.7
+  snapshots lack the key → restore keeps the current practice state);
+  `_apply_op` returns `(markers, working_state, practice_state)`;
+  `_write_state` writes the `practice_state` column; `CommandResult`
+  gained a `practice_state` field. Result-set records are **never
+  deleted**; eviction removes rebuildable bytes of inactive sets only
+  under cache-limit pressure, leaving the immutable record (a set
+  whose assets were reclaimed simply misses lookup → rerun rebuilds
+  it).
+- **Storage policy (§9.5):** new `cache_limit_bytes` config (default
+  50 GiB); `compute_storage_report` counts model storage
+  separately (never against the limit), pins source/canonical +
+  active-result-set stems + edit-history-referenced assets (M2.8
+  hook) + in-flight-job assets, and treats the newest result set per
+  cache key as pinned (the lookup winner); `reclaim_storage` is
+  **explicit** (§9.5.7: report first), LRU by result-set
+  `created_at`, never touches pinned bytes. Edits are project rows,
+  not assets — they cannot be reclaimed.
+
+**Phases:**
+
+- **Phase 1 — Plan + ledger:** done (`projectPlans/m2.7-plan.md`).
+- **Phase 2 — Domain + schema + config:** done. `cache_key` on
+  `SeparationRun`/`SeparationResultSet`; `SetActiveResultSetOp` in the
+  `ProjectCommandOp` union; schema v8 (`cache_key` columns +
+  `(project_id, cache_key)` indexes, `DATABASE_SCHEMA_VERSION = 8`,
+  migration 7→8); `cache_limit_bytes` config (default 50 GiB,
+  validated ≥ 1 GiB); `create_run`/`create_result_set`/
+  `publish_result_set` persist the key + run/result-set key-mismatch
+  guard in `publish_result_set`. Tests: `test_storage_db.py`,
+  `test_migration_m2.py` (+ `test_v7_to_v8_adds_cache_key_columns` +
+  `_build_v7_db`), `test_config.py` (+3), `test_commands.py` (+2),
+  `test_separation.py` (+2), `test_repository_commands.py` (version 8).
+- **Phase 3 — Cache key + lookup:** done.
+  `src/basseparate/media/separation_cache.py`: `compute_cache_key`
+  (pure, versioned `CACHE_KEY_VERSION = "v1"`, canonical
+  `json.dumps(sort_keys=True, separators=(",",":"), ensure_ascii=True)`
+  → sha256; effective-params rule §9.3; device **profile** only,
+  `gpu_uuid` excluded) + `lookup_cached_result` (newest valid set per
+  key → every stem asset + bass residual must exist with **exact**
+  expected byte size `frames × channels × 4`; partial files are
+  misses §9.2.5; optional `verify_hashes` re-hash §9.2.3; the fast
+  path trusts the content-addressed name + size). Repository:
+  `find_valid_result_set` (newest valid by `created_at`) +
+  `find_active_run` (queued/running only, §9.2.8).
+  `publish_separation_result` gained the optional `cache_key` param
+  (stamped on run + result set). Tests:
+  `tests/unit/test_separation_cache.py` (25: determinism,
+  order-independence, asset-id exclusion, 17 per-input changes,
+  effective-params precedence, identical effective/requested share a
+  key, GPU identity excluded, version prefix, non-serializable
+  rejection); `tests/integration/test_cache_lookup.py` (14:
+  hit/with-residual, miss on absent/unknown-key/missing/partial/
+  residual-missing/invalid-set, fast-path vs `verify_hashes`
+  corruption, newest-wins, live-states-only, coalescing
+  composition, run/set key-mismatch guard).
+  `test_publication.py` (+1: `test_publish_stamps_cache_key`).
+- **Phase 4 — Active result set command:** done. Repository
+  (`ResultSetNotFoundError` at ~line 243; 3-tuple `_apply_op` with
+  `set_active_result_set` branch incl. clear-reverts-stem-mode;
+  `_history_snapshot` + `_write_state` carry `practice_state`;
+  `apply_command` validation; `_move_history` backward-compat
+  restore); `CommandResult.practice_state`; API (`api/errors.py`
+  `ResultSetNotFoundError` 404, `command_routes.py` mapping). Tests:
+  `tests/integration/test_active_result_set.py` (6 tests: apply,
+  unknown id 404, foreign project 404, undo/redo,
+  clear-reverts-stem-mode, persistence across reopen).
+- **Phase 5 — Storage policy (§9.5):** done.
+  `src/basseparate/media/storage_report.py`:
+  `compute_storage_report` (frozen `StorageReport`: model bytes counted
+  separately and never against the limit §9.5.2; project bytes =
+  source/canonical/derived + their waveform caches; separation bytes =
+  stem assets deduped by content hash; pins = active set §9.5.3, newest
+  set per cache key (lookup winner), caller pin hook for
+  edit-history/in-flight assets §9.5.4/6) + `reclaim_storage`
+  (explicit §9.5.7 — report first; LRU by `created_at`; deletes stem
+  files + waveform caches only when no remaining result set references
+  the hash/asset — dedup-safe via a shrinking `live` set; **records are
+  never deleted**, an evicted set simply misses lookup and a rerun
+  rebuilds it; edits are project rows and survive). `ProjectRepository`
+  gained `list_project_assets` (project_assets × assets join).
+  `tests/integration/test_storage_report.py` (10: model counted
+  separately + untouched by reclaim, project/separation split, pinning
+  rules, pin hook, no-op under limit, LRU eviction until under limit,
+  pinned never touched, dedup shared-asset survival + final removal,
+  waveform-cache removal, edits survive).
+- **Phase 6 — Evidence + close:** pending (next).
+
+**Verification (2026-10-13, after Phase 5):** ruff clean (src +
+tests); mypy clean (62 files); 198 passed across the affected suites
+(`test_storage_report`, `test_separation_cache`, `test_cache_lookup`,
+`test_publication`, `test_separation`, `test_config`,
+`test_commands`, `test_migration_m2`, `test_separation_repository`,
+`test_active_result_set`, `test_persistence`, `test_storage_db`,
+`test_repository_commands`). Full gate (all 1000+ baseline) owed in
+Phase 6.
+
+**Files in flight (uncommitted):** `projectPlans/m2.7-plan.md`,
+`docs/implementation-status.md`, `src/basseparate/__init__.py`,
+`src/basseparate/config.py`,
+`src/basseparate/api/command_routes.py`, `src/basseparate/api/errors.py`,
+`src/basseparate/domain/commands.py`,
+`src/basseparate/domain/separation.py`,
+`src/basseparate/media/publication.py`,
+`src/basseparate/media/separation_cache.py` (new),
+`src/basseparate/media/storage_report.py` (new),
+`src/basseparate/storage/db.py`, `src/basseparate/storage/repository.py`,
+`tests/integration/test_active_result_set.py` (new),
+`tests/integration/test_cache_lookup.py` (new),
+`tests/integration/test_migration_m2.py`,
+`tests/integration/test_publication.py`,
+`tests/integration/test_storage_report.py` (new),
+`tests/unit/test_commands.py`, `tests/unit/test_config.py`,
+`tests/unit/test_repository_commands.py`,
+`tests/unit/test_separation.py`, `tests/unit/test_separation_cache.py`
+(new), `tests/unit/test_storage_db.py`.
+(`domain/project.py` is net-zero after the WorkingState revert —
+verify with `git diff` if in doubt.)
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

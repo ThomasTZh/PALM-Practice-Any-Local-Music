@@ -300,6 +300,7 @@
               "mapping": {
                 "add_marker": "#/components/schemas/AddMarkerOp",
                 "delete_marker": "#/components/schemas/DeleteMarkerOp",
+                "set_active_result_set": "#/components/schemas/SetActiveResultSetOp",
                 "set_display": "#/components/schemas/SetDisplayOp",
                 "set_follow_playhead": "#/components/schemas/SetFollowPlayheadOp",
                 "set_monitoring_volume": "#/components/schemas/SetMonitoringVolumeOp",
@@ -337,6 +338,9 @@
               },
               {
                 "$ref": "#/components/schemas/SetFollowPlayheadOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetActiveResultSetOp"
               }
             ],
             "title": "Op"
@@ -369,6 +373,9 @@
             "title": "Markers",
             "type": "array"
           },
+          "practice_state": {
+            "$ref": "#/components/schemas/PracticeState"
+          },
           "revision": {
             "description": "Nonnegative integer revision",
             "minimum": 0.0,
@@ -383,6 +390,7 @@
           "revision",
           "markers",
           "working_state",
+          "practice_state",
           "can_undo",
           "can_redo"
         ],
@@ -1698,6 +1706,32 @@
           "end"
         ],
         "title": "SelectionRange",
+        "type": "object"
+      },
+      "SetActiveResultSetOp": {
+        "description": "Select the project's active separation result set (M2.7, \u00a79.4.3).\n\n``null`` clears the selection. The target must be a result set of\nthe same project (validated by the repository, not here \u2014 this op\nis data, not a query). Undoable: it is part of the history.",
+        "properties": {
+          "result_set_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Set Id"
+          },
+          "type": {
+            "const": "set_active_result_set",
+            "default": "set_active_result_set",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SetActiveResultSetOp",
         "type": "object"
       },
       "SetDisplayOp": {

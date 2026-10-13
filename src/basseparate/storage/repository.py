@@ -35,7 +35,7 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
-from basseparate.domain.practice import PracticeState
+from basseparate.domain.practice import PlaybackMode, PracticeState
 from basseparate.domain.project import (
     ProjectRecord,
     ProjectStatus,
@@ -240,6 +240,14 @@ class MarkerNotFoundError(Exception):
         self.marker_id = marker_id
 
 
+class ResultSetNotFoundError(Exception):
+    """The referenced separation result set does not belong to the project."""
+
+    def __init__(self, result_set_id: uuid.UUID) -> None:
+        super().__init__(f"result set {result_set_id} not found")
+        self.result_set_id = result_set_id
+
+
 class ProjectNotReady(Exception):
     """A position-valued op requires a ready project (a known duration)."""
 
@@ -292,13 +300,18 @@ def _parse_timestamp_z(value: str) -> datetime:
 
 
 def _history_snapshot(
-    markers: list[MarkerRecord], working_state: WorkingState
+    markers: list[MarkerRecord],
+    working_state: WorkingState,
+    practice_state: PracticeState,
 ) -> dict[str, object]:
     """A before/after history snapshot (M1.15, spec §17.4).
 
     ``last_position_frames`` is excluded so undo/redo never moves the
     playhead back to a position the playback clock had passed
-    (§17.4.10); restore keeps the current position.
+    (§17.4.10); restore keeps the current position. The practice state
+    (including the active result set selection, M2.7 §9.4.3) is carried
+    so undo/redo restore it; pre-M2.7 snapshots lack the key and the
+    restore keeps the current practice state.
     """
     ws = working_state.model_dump(mode="json")
     ws.pop("last_position_frames")
@@ -315,6 +328,7 @@ def _history_snapshot(
             for m in markers
         ],
         "working_state": ws,
+        "practice_state": practice_state.model_dump(mode="json"),
     }
 
 
@@ -341,11 +355,12 @@ def _write_state(
     project_id: str,
     markers: list[MarkerRecord],
     working_state: WorkingState,
+    practice_state: PracticeState,
     revision: int,
     history_seq: int,
     now: str,
 ) -> None:
-    """Write markers + working state + revision + history pointer atomically."""
+    """Write markers + working state + practice state + revision + history pointer atomically."""
     conn.execute("DELETE FROM markers WHERE project_id = ?", (project_id,))
     for m in markers:
         conn.execute(
@@ -366,11 +381,18 @@ def _write_state(
         )
     conn.execute(
         """
-        UPDATE projects SET working_state = ?, revision = ?, updated_at = ?,
-                            history_seq = ?
+        UPDATE projects SET working_state = ?, practice_state = ?, revision = ?,
+                            updated_at = ?, history_seq = ?
         WHERE id = ?
         """,
-        (working_state.model_dump_json(), revision, now, history_seq, project_id),
+        (
+            working_state.model_dump_json(),
+            practice_state.model_dump_json(),
+            revision,
+            now,
+            history_seq,
+            project_id,
+        ),
     )
 
 
@@ -378,9 +400,14 @@ def _apply_op(
     project: ProjectRecord,
     markers: list[MarkerRecord],
     op: ProjectCommandOp,
-) -> tuple[list[MarkerRecord], WorkingState]:
-    """Apply one command op in memory; returns (markers, working state)."""
+) -> tuple[list[MarkerRecord], WorkingState, PracticeState]:
+    """Apply one command op in memory.
+
+    Returns (markers, working state, practice state); ops that do not
+    touch the practice state return it unchanged.
+    """
     ws = project.working_state
+    ps = project.practice_state
     now = datetime.now(UTC)
     if op.type == "add_marker":
         marker = MarkerRecord(
@@ -392,7 +419,7 @@ def _apply_op(
             created_at=now,
             updated_at=now,
         )
-        return [*markers, marker], ws
+        return [*markers, marker], ws, ps
     if op.type == "update_marker":
         current = next((m for m in markers if m.id == op.marker_id), None)
         if current is None:
@@ -413,28 +440,44 @@ def _apply_op(
             )
             for m in markers
         ]
-        return updated, ws
+        return updated, ws, ps
     if op.type == "delete_marker":
         if not any(m.id == op.marker_id for m in markers):
             raise MarkerNotFoundError(op.marker_id)
-        return [m for m in markers if m.id != op.marker_id], ws
+        return [m for m in markers if m.id != op.marker_id], ws, ps
     if op.type == "set_selection":
         selection = (
             None
             if op.start_frames is None
             else SelectionRange(start=op.start_frames, end=op.end_frames)
         )
-        return markers, ws.model_copy(update={"selection": selection})
+        return markers, ws.model_copy(update={"selection": selection}), ps
     if op.type == "set_viewport":
-        return markers, ws.model_copy(update={"viewport": op.viewport})
+        return markers, ws.model_copy(update={"viewport": op.viewport}), ps
     if op.type == "set_display":
-        return markers, ws.model_copy(update={"channel_display": op.channel_display})
+        return markers, ws.model_copy(update={"channel_display": op.channel_display}), ps
     if op.type == "set_monitoring_volume":
-        return markers, ws.model_copy(update={"monitoring_volume": op.volume})
+        return markers, ws.model_copy(update={"monitoring_volume": op.volume}), ps
     if op.type == "set_position":
-        return markers, ws.model_copy(update={"last_position_frames": op.position_frames})
+        return markers, ws.model_copy(update={"last_position_frames": op.position_frames}), ps
     if op.type == "set_follow_playhead":
-        return markers, ws.model_copy(update={"follow_playhead": op.follow_playhead})
+        return markers, ws.model_copy(update={"follow_playhead": op.follow_playhead}), ps
+    if op.type == "set_active_result_set":
+        if op.result_set_id is None:
+            # Clearing the selection reverts stem playback to the
+            # original mix (PracticeState invariant: stem modes require
+            # an active result set).
+            ps_updated = ps.model_copy(update={"active_result_set_id": None})
+            if ps_updated.playback_mode in (
+                PlaybackMode.BASS_PAIR,
+                PlaybackMode.FOUR_STEMS,
+            ):
+                ps_updated = ps_updated.model_copy(
+                    update={"playback_mode": PlaybackMode.ORIGINAL}
+                )
+        else:
+            ps_updated = ps.model_copy(update={"active_result_set_id": op.result_set_id})
+        return markers, ws, ps_updated
     raise ValueError(f"unknown command op type: {op.type}")
 
 
@@ -539,12 +582,24 @@ class ProjectRepository:
             project = _row_to_project(row)
             if op.type in _READY_REQUIRED_TYPES and project.duration_frames is None:
                 raise ProjectNotReady()
+            if op.type == "set_active_result_set" and op.result_set_id is not None:
+                rs_row = conn.execute(
+                    "SELECT 1 FROM separation_result_sets WHERE id = ? AND project_id = ?",
+                    (str(op.result_set_id), str(project_id)),
+                ).fetchone()
+                if rs_row is None:
+                    raise ResultSetNotFoundError(op.result_set_id)
             markers = _markers_for(conn, project_id)
-            before = _history_snapshot(markers, project.working_state)
-            new_markers, new_ws = _apply_op(project, markers, op)
+            before = _history_snapshot(markers, project.working_state, project.practice_state)
+            new_markers, new_ws, new_ps = _apply_op(project, markers, op)
             # Full re-validation (range checks against the duration).
             ProjectRecord(
-                **{**project.model_dump(), "markers": new_markers, "working_state": new_ws}
+                **{
+                    **project.model_dump(),
+                    "markers": new_markers,
+                    "working_state": new_ws,
+                    "practice_state": new_ps,
+                }
             )
             now = _now()
             new_revision = row["revision"] + 1
@@ -555,7 +610,7 @@ class ProjectRepository:
                     (str(project_id), history_seq),
                 )
                 history_seq += 1
-                after = _history_snapshot(new_markers, new_ws)
+                after = _history_snapshot(new_markers, new_ws, new_ps)
                 conn.execute(
                     """
                     INSERT INTO project_history (id, project_id, seq, kind,
@@ -587,10 +642,23 @@ class ProjectRepository:
                         (str(project_id), str(project_id)),
                     )
             _write_state(
-                conn, str(project_id), new_markers, new_ws, new_revision, history_seq, now
+                conn,
+                str(project_id),
+                new_markers,
+                new_ws,
+                new_ps,
+                new_revision,
+                history_seq,
+                now,
             )
             conn.execute("COMMIT")
-        except (ProjectMissingError, StaleRevisionError, MarkerNotFoundError, ProjectNotReady):
+        except (
+            ProjectMissingError,
+            StaleRevisionError,
+            MarkerNotFoundError,
+            ResultSetNotFoundError,
+            ProjectNotReady,
+        ):
             conn.execute("ROLLBACK")
             raise
         except sqlite3.IntegrityError as exc:
@@ -608,6 +676,7 @@ class ProjectRepository:
             revision=result.revision,
             markers=result.markers,
             working_state=result.working_state,
+            practice_state=result.practice_state,
             can_undo=history_seq >= 0,
             can_redo=False,
         )
@@ -668,11 +737,19 @@ class ProjectRepository:
             ws_data = dict(snapshot["working_state"])
             ws_data["last_position_frames"] = current_ws.last_position_frames
             new_ws = WorkingState.model_validate(ws_data)
+            # Pre-M2.7 snapshots have no practice_state key: keep the
+            # current practice state (it was not undoable before).
+            ps_data = snapshot.get("practice_state")
+            if ps_data is None:
+                new_ps = PracticeState.model_validate_json(row["practice_state"])
+            else:
+                new_ps = PracticeState.model_validate(ps_data)
             _write_state(
                 conn,
                 str(project_id),
                 new_markers,
                 new_ws,
+                new_ps,
                 row["revision"] + 1,
                 target_seq,
                 _now(),
@@ -695,6 +772,7 @@ class ProjectRepository:
             revision=project.revision,
             markers=project.markers,
             working_state=project.working_state,
+            practice_state=project.practice_state,
             can_undo=target_seq >= 0,
             can_redo=can_redo,
         )
@@ -774,6 +852,29 @@ class ProjectRepository:
                 "SELECT * FROM assets WHERE id = ?", (str(asset_id),)
             ).fetchone()
             return _row_to_asset(row) if row else None
+        finally:
+            conn.close()
+
+    def list_project_assets(
+        self, project_id: uuid.UUID
+    ) -> list[tuple[AssetRecord, AssetRole]]:
+        """Every asset linked to a project, with its project-level role.
+
+        The same asset row can carry several links (e.g. one asset used as
+        a stem by two result sets); each link is returned.
+        """
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT a.*, pa.role AS link_role
+                FROM project_assets pa JOIN assets a ON a.id = pa.asset_id
+                WHERE pa.project_id = ?
+                ORDER BY a.id, pa.role
+                """,
+                (str(project_id),),
+            ).fetchall()
+            return [(_row_to_asset(row), AssetRole(row["link_role"])) for row in rows]
         finally:
             conn.close()
 
@@ -1630,8 +1731,8 @@ class SeparationRepository:
             conn.execute(
                 """
                 INSERT INTO separation_runs (id, project_id, status, requested_mode,
-                                             result_set_id, record_json)
-                VALUES (?, ?, ?, ?, ?, ?)
+                                             result_set_id, cache_key, record_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(run.id),
@@ -1639,6 +1740,7 @@ class SeparationRepository:
                     run.status.value,
                     run.requested_mode.value,
                     str(run.result_set_id) if run.result_set_id else None,
+                    run.cache_key,
                     run.model_dump_json(),
                 ),
             )
@@ -1670,6 +1772,30 @@ class SeparationRepository:
         finally:
             conn.close()
 
+    def find_active_run(
+        self, project_id: uuid.UUID, cache_key: str
+    ) -> SeparationRun | None:
+        """A queued/running run for (project, cache key), if any (M2.7 §9.2.8).
+
+        Cancelled, failed, interrupted, and completed runs never match:
+        only a live in-flight run supports coalescing an identical
+        request.
+        """
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT record_json FROM separation_runs
+                WHERE project_id = ? AND cache_key = ?
+                  AND status IN ('queued', 'running')
+                ORDER BY id LIMIT 1
+                """,
+                (str(project_id), cache_key),
+            ).fetchone()
+            return SeparationRun.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
     # -- Result sets ---------------------------------------------------------
     def create_result_set(self, result_set: SeparationResultSet) -> SeparationResultSet:
         conn = _open(self._db_path)
@@ -1678,8 +1804,8 @@ class SeparationRepository:
                 """
                 INSERT INTO separation_result_sets (id, run_id, project_id,
                                                     validation_status, created_at,
-                                                    record_json)
-                VALUES (?, ?, ?, ?, ?, ?)
+                                                    cache_key, record_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(result_set.id),
@@ -1687,6 +1813,7 @@ class SeparationRepository:
                     str(result_set.project_id),
                     result_set.validation_status.value,
                     result_set.created_at.isoformat().replace("+00:00", "Z"),
+                    result_set.cache_key,
                     result_set.model_dump_json(),
                 ),
             )
@@ -1717,6 +1844,29 @@ class SeparationRepository:
                 (str(project_id),),
             ).fetchall()
             return [SeparationResultSet.model_validate_json(r["record_json"]) for r in rows]
+        finally:
+            conn.close()
+
+    def find_valid_result_set(
+        self, project_id: uuid.UUID, cache_key: str
+    ) -> SeparationResultSet | None:
+        """The newest ``valid`` result set for (project, cache key) (M2.7 §9.2.1).
+
+        Pending and invalid sets never match; among valid sets the
+        newest (by ``created_at``) wins — it is the entry a lookup
+        returns for the key.
+        """
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT record_json FROM separation_result_sets
+                WHERE project_id = ? AND cache_key = ? AND validation_status = 'valid'
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """,
+                (str(project_id), cache_key),
+            ).fetchone()
+            return SeparationResultSet.model_validate_json(row["record_json"]) if row else None
         finally:
             conn.close()
 
@@ -1789,6 +1939,12 @@ class SeparationRepository:
             raise DatabaseError("only a valid result set can be published")
         if result_set.run_id != run.id or result_set.project_id != run.project_id:
             raise DatabaseError("result set and run identity mismatch")
+        if (
+            run.cache_key is not None
+            and result_set.cache_key is not None
+            and run.cache_key != result_set.cache_key
+        ):
+            raise DatabaseError("run and result set cache keys must match")
         conn = _open(self._db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -1835,8 +1991,8 @@ class SeparationRepository:
                 """
                 INSERT INTO separation_result_sets (id, run_id, project_id,
                                                     validation_status, created_at,
-                                                    record_json)
-                VALUES (?, ?, ?, ?, ?, ?)
+                                                    cache_key, record_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(result_set.id),
@@ -1844,6 +2000,7 @@ class SeparationRepository:
                     str(result_set.project_id),
                     result_set.validation_status.value,
                     result_set.created_at.isoformat().replace("+00:00", "Z"),
+                    result_set.cache_key,
                     result_set.model_dump_json(),
                 ),
             )
@@ -1863,12 +2020,13 @@ class SeparationRepository:
             conn.execute(
                 """
                 UPDATE separation_runs
-                SET status = ?, result_set_id = ?, record_json = ?
+                SET status = ?, result_set_id = ?, cache_key = ?, record_json = ?
                 WHERE id = ?
                 """,
                 (
                     run.status.value,
                     str(result_set.id),
+                    run.cache_key,
                     run.model_dump_json(),
                     str(run.id),
                 ),

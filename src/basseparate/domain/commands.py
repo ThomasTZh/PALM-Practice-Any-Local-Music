@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.domain.common import Revision, SamplePosition, Uuid
 from basseparate.domain.marker import MAX_MARKER_LABEL_LENGTH, MarkerRecord
+from basseparate.domain.practice import PracticeState
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
 
 DEFAULT_MARKER_LABEL = "Marker"
@@ -102,6 +103,20 @@ class SetFollowPlayheadOp(BaseModel):
     follow_playhead: bool
 
 
+class SetActiveResultSetOp(BaseModel):
+    """Select the project's active separation result set (M2.7, §9.4.3).
+
+    ``null`` clears the selection. The target must be a result set of
+    the same project (validated by the repository, not here — this op
+    is data, not a query). Undoable: it is part of the history.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_active_result_set"] = "set_active_result_set"
+    result_set_id: Uuid | None = None
+
+
 ProjectCommandOp = Annotated[
     (
         AddMarkerOp
@@ -113,6 +128,7 @@ ProjectCommandOp = Annotated[
         | SetMonitoringVolumeOp
         | SetPositionOp
         | SetFollowPlayheadOp
+        | SetActiveResultSetOp
     ),
     Field(discriminator="type"),
 ]
@@ -138,5 +154,8 @@ class CommandResult(BaseModel):
     revision: Revision
     markers: list[MarkerRecord]
     working_state: WorkingState
+    #: The resulting practice state (including the active result set
+    #: selection, M2.7 §9.4.3).
+    practice_state: PracticeState
     can_undo: bool
     can_redo: bool

@@ -92,6 +92,15 @@ class MarkerNotFoundError(ApiError):
         )
 
 
+class ResultSetNotFoundError(ApiError):
+    def __init__(self, result_set_id: str) -> None:
+        super().__init__(
+            code="RESULT_SET_NOT_FOUND",
+            message=f"The requested separation result set does not exist: {result_set_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
 class InvalidCommandError(ApiError):
     def __init__(self, detail: str) -> None:
         super().__init__(
