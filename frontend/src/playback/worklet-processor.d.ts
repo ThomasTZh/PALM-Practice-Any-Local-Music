@@ -101,6 +101,14 @@ export interface MixStateOptions {
   /** Project duration in frames — every source is exactly this long. */
   frameCount: number
   sources: MixSourceSpec[]
+  /**
+   * Stretch engine (M2.9, spec §11): the mixed stereo is fed to the
+   * engine and its output becomes the quantum output. Null keeps the
+   * plain mixer path (unit tests of the mixer math).
+   */
+  engine?: object | null
+  /** Bounded synthesis tail after the source ends (frames). */
+  tailFrames?: number
 }
 
 /** Patch for one source's mixer parameters (spec §10.3). */
@@ -142,6 +150,11 @@ export class MixState {
   setSourceParams(index: number, patch: SourceParamPatch): void
   /** Set the master monitoring gain (linear); ramped over 5 ms. */
   setMasterGain(gain: number): void
+  /**
+   * Set the target playback rate (0.25…2.0); the stretch engine owns
+   * the ≈50 ms ramp (spec §11.7). No-op without an engine.
+   */
+  setRate(rate: number): void
   /** Route a transfer-path chunk to one source. */
   enqueueChannels(index: number, channels: Float32Array[]): boolean
   /** Bind one source's shared ring. */

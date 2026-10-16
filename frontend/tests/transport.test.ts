@@ -161,6 +161,8 @@ interface RigOptions {
   /** Context cannot create a compressor (limiter is then skipped). */
   withCompressor?: boolean
   onPeaks?: (peaks: MixPeaks) => void
+  /** M2.9: stretch artifact bytes for the worklet (jsdom cannot fetch). */
+  fetchStretchBytes?: () => Promise<ArrayBuffer>
 }
 
 interface Rig {
@@ -239,6 +241,7 @@ function makeRig(opts: RigOptions = {}): Rig {
   const transport = new PcmTransport({
     contextFactory: () => context,
     fetchChunk: opts.fetchChunk ?? defaultFetch,
+    fetchStretchBytes: opts.fetchStretchBytes ?? (() => Promise.resolve(new ArrayBuffer(16))),
     delay,
     // jsdom has no URL.createObjectURL; the fake addModule ignores the URL.
     moduleUrlFactory: (source: string) => `blob:fake-worklet-${source.length}`,
@@ -335,6 +338,8 @@ describe('PcmTransport play', () => {
           sampleRate: RATE,
           frameCount: FRAMES,
           sources: [{ channelCount: 2 }],
+          // M2.9: the stretch artifact, transferred to the worklet.
+          stretch: { wasmBytes: expect.any(ArrayBuffer) },
         },
       }),
     )
@@ -524,7 +529,8 @@ describe('mode selection', () => {
     const sabs = processorOptions.sabs as SharedArrayBuffer[]
     expect(sabs).toHaveLength(1)
     expect(sabs[0]).toBeInstanceOf(SharedArrayBuffer)
-    expect(options.transfer).toEqual([sabs[0]])
+    // M2.9: the stretch artifact is always transferred (after the SABs).
+    expect(options.transfer).toEqual([sabs[0], expect.any(ArrayBuffer)])
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(true)
   })
 
@@ -536,7 +542,8 @@ describe('mode selection', () => {
     const options = nodeOptions(rig)
     const processorOptions = options.processorOptions as Record<string, unknown>
     expect(processorOptions).not.toHaveProperty('sabs')
-    expect(options).not.toHaveProperty('transfer')
+    // M2.9: no SABs, but the stretch artifact is still transferred.
+    expect(options.transfer).toEqual([expect.any(ArrayBuffer)])
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(false)
     expect(worker.messages.some((m) => m.kind === 'generation')).toBe(true)
   })
@@ -548,7 +555,8 @@ describe('mode selection', () => {
     await rig.transport.play()
 
     const options = nodeOptions(rig)
-    expect(options).not.toHaveProperty('transfer')
+    // M2.9: no SABs, but the stretch artifact is still transferred.
+    expect(options.transfer).toEqual([expect.any(ArrayBuffer)])
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(false)
   })
 
@@ -1165,5 +1173,63 @@ describe('spec §18.6 gap coverage', () => {
     rig.transport.seek(FRAMES + 1000)
     await settle()
     expect(rig.transport.position).toBe(FRAMES)
+  })
+})
+
+describe('M2.9 stretch integration (spec §11)', () => {
+  it('transfers the stretch artifact with the worklet node', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    const options = nodeOptions(rig)
+    const processorOptions = options.processorOptions as Record<string, unknown>
+    expect(processorOptions.stretch).toEqual({ wasmBytes: expect.any(ArrayBuffer) })
+    // M2.9: the artifact is always transferred (no SABs in transfer mode).
+    expect(options.transfer).toEqual([expect.any(ArrayBuffer)])
+  })
+
+  it('maps the audible position through the speed and engine latency', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    rig.node.post({ type: 'stretch-ready', inputLatency: 2880, outputLatency: 2880 })
+    rig.node.post({ type: 'anchor', frame: 10_000, time: 0.5, generation: 0 })
+    rig.context.currentTime = 1.5
+    // 1 s at 1× is 48 000 source frames; the audible output lags the
+    // consumed cursor by the engine's input latency.
+    expect(rig.transport.position).toBeCloseTo(10_000 + 48_000 - 2880, 0)
+
+    rig.transport.setRate(2)
+    rig.node.post({ type: 'anchor', frame: 58_000, time: 1.5, generation: 0 })
+    rig.context.currentTime = 2.5
+    // 1 s at 2× is 96 000 source frames.
+    expect(rig.transport.position).toBeCloseTo(58_000 + 96_000 - 2880, 0)
+  })
+
+  it('clamps, posts rate, and remembers the speed for a fresh graph', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    rig.transport.setRate(1.5)
+    expect(rig.node.posted('rate')).toEqual([{ type: 'rate', value: 1.5 }])
+    rig.transport.setRate(9) // out of range: clamped to 2.0
+    expect(rig.node.posted('rate')).toEqual([
+      { type: 'rate', value: 1.5 },
+      { type: 'rate', value: 2 },
+    ])
+
+    // Fresh graph after a context loss: the remembered speed is applied
+    // at node creation.
+    rig.context.state = 'closed'
+    rig.context.onstatechange?.({ type: 'statechange' })
+    expect(rig.transport.currentState).toBe('error')
+    const freshNode = new FakeWorkletNode()
+    rig.context.state = 'running'
+    ;(rig.context.createWorkletNode as ReturnType<typeof vi.fn>).mockReturnValue(freshNode)
+    rig.node = freshNode
+    rig.transport.rebind({
+      target: rig.target,
+      projectRate: RATE,
+      projectDurationFrames: rig.target.frameCount,
+    })
+    await rig.transport.play()
+    expect(freshNode.posted('rate')).toEqual([{ type: 'rate', value: 2 }])
   })
 })

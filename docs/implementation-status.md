@@ -2449,6 +2449,265 @@ cache changes (M2.7), no time-stretch (M2.9), no loops UI.
   original playback path preserved). Single M2.8 commit (includes
   `projectPlans/m2.8-plan.md`) + ledger-hash follow-up.
 
+## M2.9 — Time-stretch engine (spec §11)
+
+**Scope (per `projectPlans/m2.9-plan.md`):** pitch-preserving
+playback speed (0.25×–2.0×) via Signalsmith's C++ core through a
+project-owned WASM wrapper inside the existing AudioWorklet. The
+engine controls source-frame consumption (variable demand); all
+playback — including 1× — routes through the stretcher in M2.9.
+Monitoring-only: no source/annotation writes, no pitch shift (0
+semitones), no formant. The app launches with no compiler present
+(artifacts built once in a pinned environment, bundled in the repo).
+
+**Key design decisions (see plan for full detail):**
+
+- **Build:** gitignored `third_party/emsdk` (official workflow, pinned
+  release) + `third_party/signalsmith-stretch` (pinned commit);
+  committed `frontend/src/playback/stretch/` (wrapper `stretch_wrapper.cpp`,
+  `build.mjs`, `dist/` scalar + SIMD artifacts, `BUILD.md` manifest
+  with SDK release + commit + SHA-256 hashes, `NOTICES-signalsmith.md`
+  preserving the MIT notices). No WASM threads; SIMD selected only
+  after capability detection.
+- **Contract (§11.4):** create/configure, input + output latency
+  reports, process (in/out frame counts), set rate, reset, flush
+  tail, destroy. Pre-allocated processing buffers (fixed max block);
+  the WASM heap never grows from the audio callback.
+- **Engine profile:** Signalsmith default quality, 0 semitones, no
+  formant; measured in/out latency + audio-thread cost recorded.
+- **Worklet:** mix (per-stem → stereo sum) → stretcher → master gain;
+  `MixState`'s shared-cursor `take` becomes the stretcher's demand
+  (fractional accumulator inside the wrapper); rate transitions
+  smoothed over ≈ 50 ms (wrapper owns the transition state); `anchor`
+  keeps reporting consumed source frames. The no-stretch path is not
+  preserved (the 1× bypass is M2.10 §12.4).
+- **Transport:** fill lookahead scaled by speed (source frames at
+  `s × rate`/s); minimal bounded position-segment list for
+  `getAudiblePosition` across rate changes (full three-domain ledger
+  is M2.10); `setRate(speed)` (post `rate`, remembered for a fresh
+  graph); engine-profile latencies folded into the audible-time
+  mapping.
+- **Domain:** `SetPlaybackSpeedOp {speed}` (undoable, 0.25…2.0,
+  422 on violation) writing the existing
+  `practice_state.playback_speed`.
+- **UI:** speed control in the PlaybackPanel — slider 0.25…2.0 step
+  0.01, numeric entry, presets (0.25/0.5/0.75/1.0/1.25/1.5/2.0), 1×
+  reset; invalid input clamped + current value preserved; slider
+  gestures coalesced into one undoable op.
+
+**Phases:**
+
+- **Phase 1 — Plan + ledger:** done (`projectPlans/m2.9-plan.md`).
+  Environment facts verified 2026-10-16: network to
+  github.com/emscripten.org OK, 313 GB free on `/home`, git 2.55.0,
+  curl/wget present; no Emscripten on PATH (installed in Phase 2).
+  `playback_speed` already exists in the domain (0.25…2.0, default
+  1.0) — only the op, engine, integration, and UI are missing.
+- **Phase 2 — Environment:** done (2026-10-16). `.gitignore` +
+  `third_party/`; `third_party/emsdk` = `emscripten-core/emsdk` clone,
+  `install 4.0.23` + `activate 4.0.23` (emcc 4.0.23 verified);
+  `third_party/signalsmith-stretch` pinned at
+  `a670068d9aeb64913331d5cc29337b19a457a7df`;
+  `third_party/signalsmith-linear` pinned at tag `0.6.4` /
+  `de55e6a50ffcf6f8f43f649692d94691c7025151`. API study:
+  `SignalsmithStretch<float>` is header-only; **rate is inferred from
+  the `inputSamples/outputSamples` ratio in `process()`** (the wrapper
+  owns `setRate` and computes the input demand — §11.1);
+  `presetDefault(2, rate, false)` is the §11.5 config;
+  `inputLatency()`/`outputLatency()` report the profile latencies
+  (2880/2880 @48k, 2646/2646 @44.1k); fixed-seed ctor makes output
+  deterministic.
+- **Phase 3 — WASM wrapper + build:** done (2026-10-16).
+  `frontend/src/playback/stretch/`: `stretch_wrapper.cpp` (single
+  global engine, fixed seed `0x5EED5EEDL`, `presetDefault(2, rate,
+  false)`; C ABI; one contiguous I/O pool `[inL|inR|outL|outR]` with
+  the **input regions sized for a full 2× priming buffer**
+  (8640 @48k) and output regions maxFrames; `stretch_pool_offset` +
+  `stretch_pool_input_frames` report the layout to JS), `build.mjs`
+  (em++ -O3 -ffast-math -fno-exceptions -fno-rtti, MODULARIZE,
+  ENVIRONMENT=web,worker,shell, INITIAL_MEMORY=2mb,
+  ALLOW_MEMORY_GROWTH=0, STRICT, no threads; scalar + SIMD
+  `-msimd128`), `dist/` artifacts (committed), `BUILD.md` manifest
+  (regenerated every build; hashes in older checkpoints are stale),
+  `NOTICES-signalsmith.md`. The emscripten glue in `dist/*.js` is a
+  byproduct for debugging only — the app instantiates the `.wasm`
+  directly (`WebAssembly.Module`/`Instance`, sync).
+- **Phase 4 — Host API + engine profile + tests:** done
+  (2026-10-16). `stretch-host.ts`: `instantiateStretch()` (direct
+  sync instantiation, import stubs `{a:{a,b,c}}`, start export `e`,
+  export validation), `simdSupported()` (`i8x16.const` probe),
+  `StretchEngine` (configure/latencies/inputDemand/process/setRate/
+  effectiveRate/reset/flushTail/**seekLength/outputSeek** +
+  `inL/inR/outL/outR` views from the pool offset). `stretch-profile.ts`
+  (the §11.5 config + `measureLatencies`). `tests/stretch-host.test.ts`
+  — 12 tests against the real artifacts (latencies 48k/44.1k, impulse
+  alignment, 2×/0.5× consumption ratios, immediate output after
+  priming, determinism, scalar==SIMD (maxDiff 0), re-seek, tail
+  flush→silence, demand monotonicity, profile constants). All 391
+  frontend tests pass.
+  **Engine-silence root cause (resolved):** the engine must be primed
+  with `outputSeek(inputs, outputSeekLength(rate))` before the first
+  `process()` (canonical usage in `cmd/main.cpp` + web demo); without
+  it the output is silent/bursty. `outputSeekLength(rate) =
+  inputLatency + rate*outputLatency` (5760 @1×/48k). Verified natively
+  (sine @1×: 99.8% non-zero, RMS ≈ 0.3535) and in WASM (Node probe,
+  18/18 checks: priming, ratios 1.974/0.513, determinism, scalar==SIMD
+  bit-identical, re-seek, tail decay + second-flush silence, ramp
+  convergence at 2432 frames ≈ 50 ms). A long "bursty output"
+  investigation turned out to be a test-harness bug (reading
+  `outL[base+i]` — the engine writes every call's output to
+  `outL[0..n)`), not an engine/compiler issue.
+- **Phase 5 — Worklet integration:** done (2026-10-16). The worklet
+  blob is a module script with no base URL for relative imports, so
+  the stretch core is shared by **concatenation**: `stretch-worklet.js`
+  (plain JS IIFE, no imports/exports) attaches `globalThis.StretchWasm`
+  and is prepended to `worklet-processor.js` in `transport.ts`
+  (`?raw` imports, both the `moduleUrlFactory` and `URL.createObjectURL`
+  paths) — main thread and worklet run the SAME code (no drift).
+  `stretch-host.ts` is now a typed facade over
+  `globalThis.StretchWasm` (side-effect import + re-exports);
+  `stretch-worklet.d.ts` (`export {}` + `declare global`) satisfies the
+  strict bundler-resolution tsconfig. `MixState` gains an engine path
+  (§11.1 order: per-stem gain/pan/mute/solo → stereo sum → stretch →
+  master gain): `processWithEngine` (demand-driven `take`, M2.8
+  underrun path when starved), `mixSources`/`fillEngineInput`
+  (silence-pad), `processTail` (bounded `flushTail` drain after the
+  source ends, early exit on all-zero), `advance` (shared ended/anchor
+  bookkeeping), `setRate`; `fillCoeffs` split into
+  `fillSourceCoeffs` (input frames) + `fillMasterCoeffs` (output
+  frames). **Priming rule:** before the first output (and after every
+  seek) the engine is primed with exactly `seekLength()` frames at the
+  CURRENT effective rate via `outputSeek`, silence-padded when the seek
+  lands within `seekLength` of the endpoint (no deadlock); scratch
+  capacity grows to `max(block, seekLength)`. Two integration bugs
+  caught by tests and fixed: prime step consumed all buffered frames
+  (wrote past the 128-frame scratch) instead of `seekLength`, and the
+  near-endpoint prime deadlocked on `budget < seekLength`. The adapter
+  (`PcmProcessor`) always builds a `MixState` (1-source init shape
+  wrapped), instantiates the engine synchronously from
+  `processorOptions.stretch.wasmBytes` (no fetch in the worklet,
+  §11.3.11), posts `stretch-ready {inputLatency, outputLatency}` at
+  construction, handles `rate {value}` messages; the legacy `samples`
+  branch is removed (transport never sent it). `worklet-processor.d.ts`
+  updated. `tests/worklet-stretch.test.ts` — 12 tests vs the real WASM:
+  prime + 1× (consumed 128, RMS > 0.15, position 9856 @32 quanta),
+  2× ratio ≈ 1.97, 0.5× ≈ 0.51, ramp smoothness (no silent quantum),
+  anchor bookkeeping (first anchor 0, strictly increasing), seek
+  re-prime (anchor = seek target; no-data seek → silence, no underrun),
+  near-endpoint prime, underrun at 2× (100 frames → silence/underrun;
+  then prime @ 1× seekLength 5760 — the ramp only advances on
+  `process()`), end + tail (ended once, tail decays to silence),
+  pause/resume without re-prime, master gain post-stretch (RMS ≈ 0.5×),
+  plus a worklet-scope adapter block (faked `AudioWorkletProcessor` +
+  `registerProcessor` capture, real engine from transferred bytes,
+  `stretch-ready` {2880, 2880}, `rate` message, real process loop).
+  Gate: frontend 403/403 (391 + 12 new), tsc error set identical to
+  clean HEAD (pre-existing only), prettier clean.
+- **Phase 6 — Transport wiring:** done (2026-10-16). `transport.ts`
+  now loads the stretch artifact on the main thread and hands it to
+  the worklet: `defaultFetchStretchBytes()` picks the SIMD build when
+  `simdSupported()`, else scalar, via two **static** `new URL(...,
+  import.meta.url)` literals (a template literal would defeat Vite's
+  asset rewrite in a production bundle) and returns the bytes; the
+  transport takes an injectable `fetchStretchBytes` (tests stub it —
+  jsdom cannot fetch). `initGraph` `await`s the bytes, adds
+  `processorOptions.stretch = { wasmBytes }`, and **always** transfers
+  (`[...sabs, stretchBytes]`), so the worklet instantiates the engine
+  synchronously with no fetch (spec §11.3.11). A new `stretch-ready`
+  worklet message records the engine latencies (source frames); a
+  public `engineLatencies` getter exposes them (input latency folds
+  into the audible-time mapping; output latency is recorded for the
+  M2.10 three-time-domain ledger). `setRate(speed)` clamps to
+  0.25…2.0, posts `{type:'rate', value}` to the live worklet, remembers
+  the speed for a fresh graph (re-applied at `initGraph`), and — on a
+  live graph — starts a new mapping segment (§11.7.5). `TransportSegment`
+  gains a `speed` field so each segment extrapolates with its own speed.
+  Position mapping: source is consumed at `rate × speed` frames/s, so
+  the anchor/segment extrapolation, the `pause()` freeze, and the
+  `runFill` budget (`consumedEstimate` + `targetAhead`, keeping the
+  1 s / 2 s / 8 s shapes scaled by `s`) all scale with `speed`; the
+  audible position subtracts the engine **input** latency (the anchor
+  reports the consumed cursor, which leads the audible output).
+  `teardownGraph` resets the latencies. Tests: `transport.test.ts`
+  gains an M2.9 block (artifact transferred with the node, audible
+  position through speed + engine latency at 1×/2×, clamp + `rate`
+  post + remembered speed on a fresh graph after context loss) and the
+  mode-selection transfer assertions now expect the artifact; the
+  initial `processorOptions` assertion gains the `stretch` key.
+  Gate: frontend 406/406 (403 + 3 new), tsc error set identical to
+  clean HEAD (verified via throwaway worktree at `12c144f`; the one
+  transient new error — unused `stretchOutputLatency` — was resolved by
+  the `engineLatencies` getter), prettier clean.
+- **Phase 7 — Domain + API:** done (2026-10-16).
+  `SetPlaybackSpeedOp {speed}` in `domain/commands.py` (frozen,
+  discriminated union member, `speed` validated 0.25…2.0 via the
+  existing `MIN/MAX_PLAYBACK_SPEED` constants — out-of-range is a
+  pydantic 422). Undoable: **not** in `HISTORY_EXCLUDED_TYPES` (only
+  `set_position` is). No pre-validation beyond range (speed is
+  independent of the result set). Handler branch in
+  `storage/repository.py` writes
+  `practice_state.playback_speed` (the field and bounds already
+  existed in `PracticeState`). Tests: unit (`test_commands.py`:
+  bounds, undoable list, request parsing) + integration
+  (`test_mixer_commands.py`: `TestSetPlaybackSpeed` — default 1.0,
+  apply min, undo/redo to 2.0, persistence across reopen;
+  `test_result_set_routes.py`: round-trip through the commands
+  endpoint asserts `practice_state.playback_speed == 1.5`, and a
+  parametrized out-of-range 422 for 0.24/2.01). Contracts regenerated
+  (`scripts/export_openapi.py` + `pnpm --dir frontend run contracts`)
+  — the diff is exactly the new `SetPlaybackSpeedOp` schema.
+  Gate: backend 1108/1108 (1102 + 6 new), ruff clean, mypy clean
+  (63 files); frontend 406/406, tsc error set identical to clean HEAD,
+  prettier clean.
+- **Phase 8 — Frontend state + UI:** done (2026-10-16).
+  New `src/tracks/SpeedControl.tsx` (spec §11.6): slider
+  0.25…2.0 step 0.01, numeric entry, presets 0.25 / 0.5 / 0.75 / 1.0 /
+  1.25 / 1.5 / 2.0, and a "1×" reset (distinct `aria-label` so it does
+  not collide with the 1.0 preset's accessible name). Gesture
+  coalescing (§11.7.8): the slider's `input` (React `onChange`) updates
+  only a local `draft` display; one commit on release
+  (`onPointerUp` / `onKeyUp` / `onBlur`) — same for Enter in the
+  numeric entry, preset click, and reset. `clampSpeed` (exported,
+  unit-tested): in-range kept, out-of-range clamped, non-finite → 1.0.
+  Invalid/empty numeric entry preserves the current value (§11.6).
+  `TrackStack` gains the required `onPlaybackSpeed` prop and renders
+  the control in the mode bar (speed from
+  `practiceState?.playback_speed ?? 1`). `App.tsx`: `handlePlaybackSpeed`
+  sends `{type:'set_playback_speed', speed}` through the immediate
+  `commands.send` path (never debounced); `applyMix` now also calls
+  `transport.setRate(ps.playback_speed)` so the live transport follows
+  the committed state (and a fresh graph gets the remembered speed).
+  Styles in `styles.css` (`.speed-*`, matching the existing mode-bar /
+  mixer look). Tests: new `tests/speed-control.test.tsx` (13 tests:
+  clamp bounds + non-finite, render surface, drag coalescing
+  input→display-only→release commits once, key-up and blur commits,
+  release-without-draft no-op, entry Enter + clamp, invalid entry
+  preserves value, preset click, reset, active-preset mark);
+  `track-stack.test.tsx` `baseProps` gains `onPlaybackSpeed: noop`
+  (all render sites spread it). Gate: frontend 419/419
+  (406 + 13 new), tsc error set identical to clean HEAD (32 = 32; the
+  one pre-existing App.tsx union error's *message* now prints "12
+  more" instead of "11 more" because the `CommandRequest` union gained
+  the `set_playback_speed` member — same error, expected display
+  shift), prettier clean.
+- **Phase 9 — Full gate + evidence + commit:** done (2026-10-16).
+  Final gate: backend 1108/1108 pytest, ruff clean, mypy clean
+  (63 files); frontend 419/419 Vitest (391 pre-M2.9 + 12 stretch-host
+  + 12 worklet-stretch + 3 transport + 13 speed-control), `tsc -b`
+  error set identical to clean HEAD (32 pre-existing; the one
+  pre-existing App.tsx union error's message now prints "12 more"
+  instead of "11 more" because the `CommandRequest` union gained
+  `set_playback_speed` — same error, expected display shift),
+  `prettier --check .` clean (the final sweep reformatted three
+  Phase 3/4 stretch files: `BUILD.md`, `build.mjs`,
+  `stretch-profile.ts`); contracts re-exported with no residual diff.
+  No-compiler-launch verified: `dist/` artifacts are committed and
+  instantiated synchronously from transferred bytes — nothing in the
+  runtime path touches emsdk. Evidence doc
+  `docs/evidence/m2.9-time-stretch-engine.md` (git-ignored). Single
+  M2.9 commit (includes `projectPlans/m2.9-plan.md`) + ledger-hash
+  follow-up.
+
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
 - uv 0.12.0; uv-managed Python 3.11.15 installed at

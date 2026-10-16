@@ -512,6 +512,8 @@ def _apply_op(
         return markers, ws, ps.model_copy(update={"master_gain": op.gain})
     if op.type == "set_monitoring_limiter":
         return markers, ws, ps.model_copy(update={"monitoring_limiter": op.enabled})
+    if op.type == "set_playback_speed":
+        return markers, ws, ps.model_copy(update={"playback_speed": op.speed})
     raise ValueError(f"unknown command op type: {op.type}")
 
 

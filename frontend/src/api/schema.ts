@@ -669,7 +669,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"];
         };
         /**
          * CommandResult
@@ -1415,6 +1415,24 @@ export interface components {
              * @enum {string}
              */
             type: "set_playback_mode";
+        };
+        /**
+         * SetPlaybackSpeedOp
+         * @description Set the pitch-preserving playback speed (M2.9, spec §11).
+         *
+         *     Writes ``practice_state.playback_speed``. Undoable: like the other
+         *     mixer ops it is part of the history (not in
+         *     ``HISTORY_EXCLUDED_TYPES``). Speed is independent of the result set,
+         *     so there is no pre-validation beyond the range (422 on violation).
+         */
+        SetPlaybackSpeedOp: {
+            /** Speed */
+            speed: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_playback_speed";
         };
         /**
          * SetPositionOp

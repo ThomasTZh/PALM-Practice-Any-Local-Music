@@ -5,6 +5,8 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# M2.9: the pinned WASM artifacts ARE committed (no compiler at launch).
+!frontend/src/playback/stretch/dist/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
@@ -39,6 +41,11 @@ test-results/
 # Logs and local diagnostic/evidence reports
 logs/
 docs/evidence/
+
+# Third-party build toolchains (pinned, installed locally; never tracked).
+# M2.9: emsdk (Emscripten) + signalsmith-stretch source. Built WASM
+# artifacts are committed under frontend/src/playback/stretch/dist/.
+third_party/
 
 # User-supplied recordings (preserved, never tracked)
 audio2test/

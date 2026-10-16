@@ -19,6 +19,7 @@ import type { PlayheadSource, ViewSource } from '../waveform/WaveformEditor'
 import { MixerStrip, type TrackSettingsPatch } from './MixerStrip'
 import { MonitoringPanel } from './MonitoringPanel'
 import { ModeSelector, type PlaybackMode } from './ModeSelector'
+import { SpeedControl } from './SpeedControl'
 import { TrackLane } from './TrackLane'
 
 export type { PlaybackMode }
@@ -52,6 +53,8 @@ export interface TrackStackProps {
   onMode: (mode: PlaybackMode) => void
   /** Select a result set (sends `set_active_result_set`). */
   onSelectSet: (resultSetId: string) => void
+  /** Set the playback speed (sends `set_playback_speed`). */
+  onPlaybackSpeed: (speed: number) => void
 }
 
 export function TrackStack({
@@ -66,6 +69,7 @@ export function TrackStack({
   onLimiter,
   onMode,
   onSelectSet,
+  onPlaybackSpeed,
 }: TrackStackProps) {
   const mode: PlaybackMode = practiceState?.playback_mode ?? 'original'
   const activeSetId = practiceState?.active_result_set_id ?? null
@@ -122,6 +126,7 @@ export function TrackStack({
           onSelectSet={onSelectSet}
           notice={modeNotice}
         />
+        <SpeedControl speed={practiceState?.playback_speed ?? 1} onCommit={onPlaybackSpeed} />
         <MonitoringPanel
           masterPeak={peaks?.master ?? null}
           masterGain={practiceState?.master_gain ?? 1}

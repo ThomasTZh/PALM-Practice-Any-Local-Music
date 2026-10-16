@@ -18,7 +18,9 @@ from basseparate.domain.marker import MAX_MARKER_LABEL_LENGTH, MarkerRecord
 from basseparate.domain.practice import (
     MAX_DISPLAY_HEIGHT,
     MAX_GAIN,
+    MAX_PLAYBACK_SPEED,
     MIN_DISPLAY_HEIGHT,
+    MIN_PLAYBACK_SPEED,
     PlaybackMode,
     PracticeState,
 )
@@ -184,6 +186,21 @@ class SetMonitoringLimiterOp(BaseModel):
     enabled: bool
 
 
+class SetPlaybackSpeedOp(BaseModel):
+    """Set the pitch-preserving playback speed (M2.9, spec §11).
+
+    Writes ``practice_state.playback_speed``. Undoable: like the other
+    mixer ops it is part of the history (not in
+    ``HISTORY_EXCLUDED_TYPES``). Speed is independent of the result set,
+    so there is no pre-validation beyond the range (422 on violation).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_playback_speed"] = "set_playback_speed"
+    speed: float = Field(ge=MIN_PLAYBACK_SPEED, le=MAX_PLAYBACK_SPEED)
+
+
 ProjectCommandOp = Annotated[
     (
         AddMarkerOp
@@ -200,6 +217,7 @@ ProjectCommandOp = Annotated[
         | SetPlaybackModeOp
         | SetMasterGainOp
         | SetMonitoringLimiterOp
+        | SetPlaybackSpeedOp
     ),
     Field(discriminator="type"),
 ]

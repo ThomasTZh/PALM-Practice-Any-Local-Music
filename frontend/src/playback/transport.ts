@@ -45,6 +45,8 @@ import {
   type WorkerLike,
 } from './fetch-source'
 import processorSource from './worklet-processor.js?raw'
+import stretchWorkletSource from './stretch/stretch-worklet.js?raw'
+import { simdSupported } from './stretch/stretch-host'
 
 export type TransportState =
   'unloaded' | 'preparing' | 'paused' | 'playing' | 'seeking' | 'buffering' | 'ended' | 'error'
@@ -177,6 +179,12 @@ export interface TransportOptions {
    * delay is folded into the audible-time mapping.
    */
   limiter?: boolean
+  /**
+   * M2.9: load the stretch artifact (selected variant) as an
+   * ArrayBuffer for the worklet. Defaults to fetching the bundled
+   * `dist/stretch-<variant>.wasm` (SIMD when supported).
+   */
+  fetchStretchBytes?: () => Promise<ArrayBuffer>
   onState?: (state: TransportState) => void
   /** Reports the playhead position in project frames. */
   onPosition?: (frame: number) => void
@@ -201,11 +209,14 @@ export interface LoadSourceOptions {
 /**
  * A transport segment: generation `generation` started playing from
  * `startFrame` at context time `startContextTime` (spec §16.2.3).
+ * `speed` is the playback speed when the segment started (M2.9,
+ * spec §11.7.5): each segment extrapolates with its own speed.
  */
 interface TransportSegment {
   startContextTime: number
   startFrame: number
   generation: number
+  speed: number
 }
 
 /** §15.3 buffer budget: one 12 s retention cap per representation. */
@@ -251,6 +262,23 @@ function resolveMode(requested: TransportMode): 'shared' | 'transfer' {
   return isolated && typeof SharedArrayBuffer !== 'undefined' ? 'shared' : 'transfer'
 }
 
+/**
+ * M2.9 (spec §11.3.7/§11.3.11): load the bundled stretch artifact —
+ * the SIMD build when the runtime supports it, the scalar build
+ * otherwise. The bytes are transferred to the worklet, which
+ * instantiates the engine synchronously (no fetch in the worklet).
+ */
+async function defaultFetchStretchBytes(): Promise<ArrayBuffer> {
+  const url = simdSupported()
+    ? new URL('./stretch/dist/stretch-simd.wasm', import.meta.url)
+    : new URL('./stretch/dist/stretch-scalar.wasm', import.meta.url)
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`stretch: failed to load the artifact (HTTP ${res.status})`)
+  }
+  return res.arrayBuffer()
+}
+
 export class PcmTransport {
   private state: TransportState = 'unloaded'
   /** Kept separate from the actual state so seeks and underruns can
@@ -258,6 +286,7 @@ export class PcmTransport {
   private desiredPlaying = false
   private readonly opts: TransportOptions
   private readonly delay: (ms: number, signal?: AbortSignal) => Promise<void>
+  private readonly fetchStretchBytes: () => Promise<ArrayBuffer>
 
   /** Every source in the mix (M2.8); all match the project rate/duration. */
   private sources: SourceSpec[] = []
@@ -275,6 +304,25 @@ export class PcmTransport {
   private pendingGain = 1
   /** Master monitoring gain (linear), applied in the worklet mixer. */
   private pendingMasterGain = 1
+  /** M2.9: target playback speed (0.25…2.0), remembered for fresh graphs. */
+  private speed = 1
+  /** M2.9: engine latencies (source frames) from `stretch-ready`. */
+  private stretchInputLatency = 0
+  private stretchOutputLatency = 0
+
+  /**
+   * M2.9: engine latencies (source frames) from `stretch-ready`, or
+   * `null` before the worklet reports them. The input latency folds
+   * into the audible-time mapping; the output latency feeds the M2.10
+   * three-time-domain ledger.
+   */
+  get engineLatencies(): { inputLatency: number; outputLatency: number } | null {
+    if (this.stretchInputLatency === 0 && this.stretchOutputLatency === 0) return null
+    return {
+      inputLatency: this.stretchInputLatency,
+      outputLatency: this.stretchOutputLatency,
+    }
+  }
 
   private mode: 'shared' | 'transfer' = 'transfer'
   private source: FetchSource | null = null
@@ -320,6 +368,7 @@ export class PcmTransport {
 
   constructor(opts: TransportOptions) {
     this.opts = opts
+    this.fetchStretchBytes = opts.fetchStretchBytes ?? defaultFetchStretchBytes
     this.delay =
       opts.delay ??
       ((ms: number, signal?: AbortSignal) =>
@@ -397,15 +446,20 @@ export class PcmTransport {
         startContextTime: this.anchorTime,
         startFrame: this.genStartFrame,
         generation: this.generation,
+        speed: this.speed,
       }
       // The last acknowledged anchor in this segment is the freshest
       // measurement (it absorbs underrun stalls); otherwise map from the
-      // segment start.
+      // segment start. M2.9: the source is consumed at `rate × speed`
+      // frames/s, so extrapolation scales with the speed.
       if (this.anchorSegment === seg && t >= this.anchorTime) {
-        playbackFrame = this.consumedFrame + (t - this.anchorTime) * rate
+        playbackFrame = this.consumedFrame + (t - this.anchorTime) * rate * this.speed
       } else {
-        playbackFrame = seg.startFrame + Math.max(0, t - seg.startContextTime) * rate
+        playbackFrame = seg.startFrame + Math.max(0, t - seg.startContextTime) * rate * seg.speed
       }
+      // M2.9: the anchor reports the consumed cursor; the audible output
+      // lags it by the engine's input latency (spec §11).
+      if (this.stretchInputLatency > 0) playbackFrame -= this.stretchInputLatency
       playbackFrame = Math.max(seg.startFrame, Math.min(playbackFrame, target.frameCount))
     } else {
       // Frozen (§16.2.6): the last acknowledged anchor, no extrapolation.
@@ -623,9 +677,12 @@ export class PcmTransport {
     }
     this.desiredPlaying = false
     if (this.context && this.primary) {
-      // Freeze the playhead at the position extrapolated right now.
+      // Freeze the playhead at the position extrapolated right now
+      // (the source is consumed at `rate × speed` frames/s, M2.9).
       this.consumedFrame +=
-        Math.max(0, this.context.currentTime - this.anchorTime) * this.primary.sampleRate
+        Math.max(0, this.context.currentTime - this.anchorTime) *
+        this.primary.sampleRate *
+        this.speed
       this.anchorTime = this.context.currentTime
     }
     this.node?.port.postMessage({ type: 'pause' })
@@ -725,6 +782,32 @@ export class PcmTransport {
   }
 
   /**
+   * Set the playback speed (0.25…2.0, spec §11). The worklet engine
+   * owns the ≈50 ms rate ramp; the transport remembers the speed for a
+   * fresh graph and scales the source-frame consumption estimates. A
+   * change on a live graph starts a new mapping segment (§11.7.5).
+   */
+  setRate(speed: number): void {
+    const clamped = Math.max(0.25, Math.min(2.0, Number.isFinite(speed) ? speed : 1))
+    this.speed = clamped
+    const node = this.node
+    if (!node) return
+    const context = this.context
+    const target = this.primary
+    if (context && target && this.isActiveState(this.state)) {
+      const now = context.currentTime
+      const frame = Math.min(
+        Math.round(
+          this.consumedFrame + Math.max(0, now - this.anchorTime) * target.sampleRate * this.speed,
+        ),
+        target.frameCount,
+      )
+      this.pushSegment(now, frame)
+    }
+    node.port.postMessage({ type: 'rate', value: clamped })
+  }
+
+  /**
    * Enable or disable the monitoring limiter live (spec §10.6.6).
    * Rewires the gain stage on a live graph; always remembered for a
    * fresh graph. The audible-time mapping follows `limiterNode`.
@@ -800,9 +883,18 @@ export class PcmTransport {
         createSharedRing(16 + capacity * s.channelCount * 4, s.channelCount),
       )
     }
+    // M2.9 (spec §11.3.11): the engine artifact is loaded on the main
+    // thread and transferred to the worklet (no fetch in the worklet).
+    const stretchBytes = await this.fetchStretchBytes()
+    this.stretchInputLatency = 0
+    this.stretchOutputLatency = 0
+    // The blob prepends the stretch core (plain script, no imports): a
+    // blob URL has no base for relative imports, so the worklet gets
+    // `globalThis.StretchWasm` by concatenation (M2.9, spec §11).
+    const workletSource = `${stretchWorkletSource}\n${processorSource}`
     this.blobUrl = this.opts.moduleUrlFactory
-      ? this.opts.moduleUrlFactory(processorSource)
-      : URL.createObjectURL(new Blob([processorSource], { type: 'text/javascript' }))
+      ? this.opts.moduleUrlFactory(workletSource)
+      : URL.createObjectURL(new Blob([workletSource], { type: 'text/javascript' }))
     await context.audioWorklet.addModule(this.blobUrl)
     const sabs = this.rings.map((r) => r.sab)
     const options: Record<string, unknown> = {
@@ -812,9 +904,11 @@ export class PcmTransport {
         // Mixer path (M2.8): the worklet mixes all sources on one cursor.
         sources: this.sources.map((s) => ({ channelCount: s.channelCount })),
         ...(sabs.length > 0 ? { sabs } : {}),
+        // M2.9: the engine instantiates synchronously from the bytes.
+        stretch: { wasmBytes: stretchBytes },
       },
     }
-    if (sabs.length > 0) options.transfer = sabs
+    options.transfer = [...sabs, stretchBytes]
     const node = context.createWorkletNode('basseparate-pcm', options)
     node.port.onmessage = (e) => this.handleWorkletMessage(e.data)
     const gainNode = context.createGain()
@@ -842,9 +936,12 @@ export class PcmTransport {
         this.sources.map((s) => s.channelCount),
       )
     }
-    // Apply the pending master gain to the fresh worklet mixer.
+    // Apply the pending mixer state to the fresh worklet.
     if (this.pendingMasterGain !== 1) {
       node.port.postMessage({ type: 'master', gain: this.pendingMasterGain })
+    }
+    if (this.speed !== 1) {
+      node.port.postMessage({ type: 'rate', value: this.speed })
     }
   }
 
@@ -874,7 +971,12 @@ export class PcmTransport {
   }
 
   private pushSegment(startContextTime: number, startFrame: number): void {
-    const seg: TransportSegment = { startContextTime, startFrame, generation: this.generation }
+    const seg: TransportSegment = {
+      startContextTime,
+      startFrame,
+      generation: this.generation,
+      speed: this.speed,
+    }
     this.segments.push(seg)
     if (this.segments.length > MAX_SEGMENTS) {
       this.segments = this.segments.slice(-MAX_SEGMENTS)
@@ -984,6 +1086,16 @@ export class PcmTransport {
         this.reportPosition()
         break
       }
+      case 'stretch-ready': {
+        // M2.9: engine latencies (source frames) at the context rate.
+        // The audible-time mapping folds the input latency in (the
+        // anchor reports the consumed cursor, which leads the audible
+        // output); the output latency feeds the M2.10 ledger.
+        const m = msg as unknown as { inputLatency: number; outputLatency: number }
+        this.stretchInputLatency = m.inputLatency
+        this.stretchOutputLatency = m.outputLatency
+        break
+      }
       case 'underrun':
         this.diagnosticsState.underruns += 1
         this.diagnosticsState.lastUnderrunAt = Date.now()
@@ -1066,6 +1178,8 @@ export class PcmTransport {
     // A fresh context starts a fresh time base; old segments would map
     // new context times to the dead representation (spec §16.2.3).
     this.segments = []
+    this.stretchInputLatency = 0
+    this.stretchOutputLatency = 0
   }
 
   private isStale(err: unknown, gen: number): boolean {
@@ -1093,14 +1207,16 @@ export class PcmTransport {
         if (s !== 'preparing' && s !== 'playing' && s !== 'buffering' && s !== 'seeking') return
         const target = this.primary
         const rate = target.sampleRate
+        // M2.9: at speed `s` the source is consumed at `rate × s`
+        // frames/s, so the fill budget scales with the speed.
         const consumedEstimate =
           this.consumedFrame +
           (this.context && !this.suspended
-            ? Math.max(0, this.context.currentTime - this.anchorTime) * rate
+            ? Math.max(0, this.context.currentTime - this.anchorTime) * rate * this.speed
             : 0)
         const targetAhead = Math.min(
-          rate * LOOKAHEAD_SECONDS,
-          Math.max(rate * PREBUFFER_SECONDS, target.frameCount - this.genStartFrame),
+          rate * this.speed * LOOKAHEAD_SECONDS,
+          Math.max(rate * this.speed * PREBUFFER_SECONDS, target.frameCount - this.genStartFrame),
         )
         let fetched = false
         while (

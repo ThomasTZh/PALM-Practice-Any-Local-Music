@@ -21,9 +21,16 @@ from basseparate.domain.commands import (
     SetMasterGainOp,
     SetMonitoringLimiterOp,
     SetPlaybackModeOp,
+    SetPlaybackSpeedOp,
     SetTrackSettingsOp,
 )
-from basseparate.domain.practice import MAX_GAIN, PlaybackMode, TrackSettings
+from basseparate.domain.practice import (
+    MAX_GAIN,
+    MAX_PLAYBACK_SPEED,
+    MIN_PLAYBACK_SPEED,
+    PlaybackMode,
+    TrackSettings,
+)
 from basseparate.domain.separation import (
     DeviceType,
     ReferenceMixIdentity,
@@ -320,6 +327,53 @@ class TestSetMonitoringLimiter:
         reopened = ProjectRepository(db_path)
         restored = _current(reopened, project_id)
         assert restored.practice_state.monitoring_limiter is False
+
+
+class TestSetPlaybackSpeed:
+    def test_default_is_one_and_applies(
+        self, repo: ProjectRepository, db_path: Path
+    ) -> None:
+        project_id = _make_ready_project(repo, db_path)
+        project = _current(repo, project_id)
+        # Spec §11.6: the speed defaults to 1.0.
+        assert project.practice_state.playback_speed == 1.0
+
+        project = repo.apply_command(
+            project_id, SetPlaybackSpeedOp(speed=MIN_PLAYBACK_SPEED), project.revision
+        )
+        assert project.practice_state.playback_speed == 0.25
+        assert project.can_undo is True
+
+    def test_applies_and_undoes(
+        self, repo: ProjectRepository, db_path: Path
+    ) -> None:
+        project_id = _make_ready_project(repo, db_path)
+        project = _current(repo, project_id)
+
+        project = repo.apply_command(
+            project_id, SetPlaybackSpeedOp(speed=MAX_PLAYBACK_SPEED), project.revision
+        )
+        assert project.practice_state.playback_speed == 2.0
+
+        project = repo.undo(project_id, project.revision)
+        assert project.practice_state.playback_speed == 1.0
+        assert project.can_redo is True
+
+        project = repo.redo(project_id, project.revision)
+        assert project.practice_state.playback_speed == 2.0
+
+    def test_persists_across_reopen(
+        self, repo: ProjectRepository, db_path: Path
+    ) -> None:
+        project_id = _make_ready_project(repo, db_path)
+        project = _current(repo, project_id)
+        project = repo.apply_command(
+            project_id, SetPlaybackSpeedOp(speed=1.5), project.revision
+        )
+
+        reopened = ProjectRepository(db_path)
+        restored = _current(reopened, project_id)
+        assert restored.practice_state.playback_speed == 1.5
 
 
 def test_track_settings_legacy_json_gains_color_default() -> None:

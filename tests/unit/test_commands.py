@@ -21,6 +21,7 @@ from basseparate.domain.commands import (
     SetMonitoringLimiterOp,
     SetMonitoringVolumeOp,
     SetPlaybackModeOp,
+    SetPlaybackSpeedOp,
     SetPositionOp,
     SetSelectionOp,
     SetTrackSettingsOp,
@@ -28,7 +29,13 @@ from basseparate.domain.commands import (
     UpdateMarkerOp,
 )
 from basseparate.domain.marker import MarkerRecord
-from basseparate.domain.practice import MAX_GAIN, PlaybackMode, PracticeState
+from basseparate.domain.practice import (
+    MAX_GAIN,
+    MAX_PLAYBACK_SPEED,
+    MIN_PLAYBACK_SPEED,
+    PlaybackMode,
+    PracticeState,
+)
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
 from basseparate.domain.separation import StemRole
 
@@ -177,13 +184,25 @@ def test_set_monitoring_limiter_op() -> None:
     assert SetMonitoringLimiterOp(enabled=False).enabled is False
 
 
+def test_set_playback_speed_op_bounds() -> None:
+    # M2.9: 0.25x to 2.0x, inclusive (spec §11.6).
+    assert SetPlaybackSpeedOp(speed=MIN_PLAYBACK_SPEED).speed == 0.25
+    assert SetPlaybackSpeedOp(speed=MAX_PLAYBACK_SPEED).speed == 2.0
+    with pytest.raises(ValidationError):
+        SetPlaybackSpeedOp(speed=MAX_PLAYBACK_SPEED + 0.01)
+    with pytest.raises(ValidationError):
+        SetPlaybackSpeedOp(speed=MIN_PLAYBACK_SPEED - 0.01)
+
+
 def test_mixer_ops_are_undoable() -> None:
     # M2.8: every mixer op joins the history (none are excluded).
+    # M2.9: the playback-speed op is undoable too.
     for op_type in (
         "set_track_settings",
         "set_playback_mode",
         "set_master_gain",
         "set_monitoring_limiter",
+        "set_playback_speed",
     ):
         assert op_type not in HISTORY_EXCLUDED_TYPES
 
@@ -194,6 +213,7 @@ def test_command_request_parses_mixer_ops() -> None:
         SetPlaybackModeOp(mode=PlaybackMode.FOUR_STEMS),
         SetMasterGainOp(gain=1.5),
         SetMonitoringLimiterOp(enabled=False),
+        SetPlaybackSpeedOp(speed=1.5),
     ):
         req = CommandRequest(**_request(op))
         assert req.op is op

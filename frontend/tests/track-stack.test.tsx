@@ -398,6 +398,7 @@ describe('TrackStack', () => {
     onLimiter: noop,
     onMode: noop,
     onSelectSet: noop,
+    onPlaybackSpeed: noop,
   }
 
   it('renders stem lanes in canonical order for four_stems mode', () => {

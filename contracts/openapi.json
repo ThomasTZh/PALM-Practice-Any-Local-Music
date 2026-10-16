@@ -307,6 +307,7 @@
                 "set_monitoring_limiter": "#/components/schemas/SetMonitoringLimiterOp",
                 "set_monitoring_volume": "#/components/schemas/SetMonitoringVolumeOp",
                 "set_playback_mode": "#/components/schemas/SetPlaybackModeOp",
+                "set_playback_speed": "#/components/schemas/SetPlaybackSpeedOp",
                 "set_position": "#/components/schemas/SetPositionOp",
                 "set_selection": "#/components/schemas/SetSelectionOp",
                 "set_track_settings": "#/components/schemas/SetTrackSettingsOp",
@@ -357,6 +358,9 @@
               },
               {
                 "$ref": "#/components/schemas/SetMonitoringLimiterOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetPlaybackSpeedOp"
               }
             ],
             "title": "Op"
@@ -2012,6 +2016,28 @@
           "mode"
         ],
         "title": "SetPlaybackModeOp",
+        "type": "object"
+      },
+      "SetPlaybackSpeedOp": {
+        "description": "Set the pitch-preserving playback speed (M2.9, spec \u00a711).\n\nWrites ``practice_state.playback_speed``. Undoable: like the other\nmixer ops it is part of the history (not in\n``HISTORY_EXCLUDED_TYPES``). Speed is independent of the result set,\nso there is no pre-validation beyond the range (422 on violation).",
+        "properties": {
+          "speed": {
+            "maximum": 2.0,
+            "minimum": 0.25,
+            "title": "Speed",
+            "type": "number"
+          },
+          "type": {
+            "const": "set_playback_speed",
+            "default": "set_playback_speed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "speed"
+        ],
+        "title": "SetPlaybackSpeedOp",
         "type": "object"
       },
       "SetPositionOp": {

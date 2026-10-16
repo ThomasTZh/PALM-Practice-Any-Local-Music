@@ -5,7 +5,10 @@
  * Blob-URL worklet module (see `transport.ts`), where imports are not
  * available, while the unit tests import it directly as an ES module
  * (the `registerProcessor` call is guarded by a global check, so the
- * module is safe to load on the main thread).
+ * module is safe to load on the main thread). The blob prepends
+ * `stretch-worklet.js` (the stretch WASM core, M2.9), which attaches
+ * `globalThis.StretchWasm` before this script runs — a blob URL has no
+ * base for relative imports, so concatenation is the only wiring.
  *
  * `ConsumptionState` is the pure audio-thread state machine. It has two
  * data paths:
@@ -423,6 +426,16 @@ const MIX_RAMP_SECONDS = 0.005
  * Solo eligibility: `!mute && (!anySolo || solo)` — mute always wins,
  * solo only silences the other sources. Visibility is a UI concern and
  * never reaches the audio thread (hidden ≠ muted).
+ *
+ * With a stretch engine (`opts.engine`, M2.9, spec §11) the data path
+ * becomes: per-stem gain/pan/mute/solo → stereo sum → stretch → master
+ * gain → output (§11.1 order). The stretcher controls source
+ * consumption: per quantum it demands `inputDemand` input frames, and
+ * the shared cursor advances by exactly that amount (capped by
+ * buffered/endpoint). Before the first output (and after every seek)
+ * the engine is primed with `seekLength` frames via `outputSeek`,
+ * silence-padded on underrun. After the source ends, the engine's
+ * synthesis tail is drained with `flushTail` (bounded).
  */
 export class MixState {
   /**
@@ -430,8 +443,10 @@ export class MixState {
    * @param {number} opts.sampleRate
    * @param {number} opts.frameCount project duration — all sources equal
    * @param {Array<{channelCount: number}>} opts.sources
+   * @param {object|null} [opts.engine] stretch engine (M2.9, spec §11)
+   * @param {number} [opts.tailFrames] bounded tail after the source ends
    */
-  constructor({ sampleRate, frameCount, sources }) {
+  constructor({ sampleRate, frameCount, sources, engine = null, tailFrames = 24000 }) {
     if (!(sampleRate > 0)) throw new RangeError('sampleRate must be > 0')
     if (!(frameCount >= 0)) throw new RangeError('frameCount must be >= 0')
     if (!Array.isArray(sources) || sources.length === 0) {
@@ -483,6 +498,12 @@ export class MixState {
     /** Per-quantum peaks, reset after each report. */
     this.trackPeaks = sources.map(() => 0)
     this.masterPeak = 0
+    // Stretch engine (M2.9): null keeps the plain mixer path.
+    this.engine = engine
+    this.tailFrames = tailFrames > 0 ? tailFrames : 24000
+    this.tailRemaining = 0
+    /** The engine primes from `seekLength` frames before it outputs. */
+    this.primed = !engine
     // Bounded per-quantum scratch, grown only if a larger block ever
     // arrives (audio thread: no steady-state allocation).
     this.blockCap = 0
@@ -490,6 +511,8 @@ export class MixState {
     this.coeffR = []
     this.temp = []
     this.masterCoeff = null
+    this.mixL = null
+    this.mixR = null
     this.ensureBlockCapacity(128)
   }
 
@@ -523,6 +546,9 @@ export class MixState {
       Array.from({ length: s.channelCount }, () => new Float32Array(frames)),
     )
     this.masterCoeff = new Float32Array(frames)
+    // Engine path: the mixed stereo before the stretcher (§11.1 order).
+    this.mixL = new Float32Array(frames)
+    this.mixR = new Float32Array(frames)
   }
 
   /**
@@ -625,6 +651,15 @@ export class MixState {
     this.pauseAnchorSent = false
     this.lastAnchorFrame = target
     this.lastSample.fill(0)
+    // The engine re-primed from `seekLength` frames before it outputs
+    // (M2.9); any tail from the previous episode is dropped.
+    this.primed = !this.engine
+    this.tailRemaining = 0
+  }
+
+  /** Set the target playback rate (the engine owns the ≈50 ms ramp, §11.7). */
+  setRate(rate) {
+    if (this.engine) this.engine.setRate(rate)
   }
 
   /** Begin the pause ramp on the mixed output; the cursor is preserved. */
@@ -643,12 +678,12 @@ export class MixState {
   }
 
   /**
-   * Fill the per-sample coefficient tables for this quantum. Each
-   * parameter ramps linearly toward its target; within the quantum the
-   * ramp is a start value plus a per-sample slope, so the sample loop
-   * contains only multiply-adds.
+   * Fill the per-sample per-source coefficient tables for `frames`
+   * input frames. Each parameter ramps linearly toward its target;
+   * within the block the ramp is a start value plus a per-sample slope,
+   * so the sample loop contains only multiply-adds.
    */
-  fillCoeffs(frames) {
+  fillSourceCoeffs(frames) {
     for (let i = 0; i < this.sources.length; i++) {
       const p = this.params[i]
       const stereo = this.sources[i].channelCount > 1
@@ -688,6 +723,14 @@ export class MixState {
       }
       p.rampRemaining = Math.max(0, p.rampRemaining - frames)
     }
+  }
+
+  /**
+   * Fill the master-gain coefficient table for `frames` output frames
+   * (the master gain sits after the stretcher, §11.1, and ramps in
+   * output/audition time).
+   */
+  fillMasterCoeffs(frames) {
     const mc = this.masterCoeff
     const remaining = Math.min(this.masterRampRemaining, frames)
     let mStart = this.masterTo
@@ -719,7 +762,11 @@ export class MixState {
       peaks: null,
     }
     if (this.ended) {
-      this.fillOutputSilence(outputChannels, 0, frames)
+      if (this.engine && this.tailRemaining > 0) {
+        this.processTail(outputChannels, frames, out)
+      } else {
+        this.fillOutputSilence(outputChannels, 0, frames)
+      }
       out.buffered = this.buffered
       return out
     }
@@ -743,7 +790,11 @@ export class MixState {
       out.buffered = this.buffered
       return out
     }
-    this.ensureBlockCapacity(frames)
+    // The engine's priming step mixes up to `seekLength` frames, so the
+    // scratch must hold the larger of the output block and the seek.
+    const cap = this.engine ? Math.max(frames, this.engine.seekLength()) : frames
+    this.ensureBlockCapacity(cap)
+    if (this.engine) return this.processWithEngine(time, outputChannels, frames, out)
     // Shared cursor: every source advances by the same amount, so no
     // drift is possible. A starving source pauses the whole group.
     let take = frames
@@ -752,7 +803,8 @@ export class MixState {
     for (let i = 0; i < this.sources.length; i++) {
       this.sources[i].consumeInto(this.temp[i], take)
     }
-    this.fillCoeffs(frames)
+    this.fillSourceCoeffs(frames)
+    this.fillMasterCoeffs(frames)
     const n = this.sources.length
     const ch0 = outputChannels[0]
     const ch1 = outputChannels.length > 1 ? outputChannels[1] : ch0
@@ -791,36 +843,215 @@ export class MixState {
     }
     if (take < frames) {
       this.fillOutputSilence(outputChannels, take, frames - take)
-      // An underrun is only reported when data was available — some
-      // source has frames but the group cannot advance (the weakest
-      // source is starved). Silence with nothing buffered (prebuffer
-      // after a seek) is not one.
-      if (!this.underrunNotified && this.sources.some((s) => s.buffered > 0)) {
-        out.underrun = true
-        this.underrunNotified = true
-      }
+      this.maybeUnderrun(out)
     }
     this.position += take
     for (let c = 0; c < 2; c++) {
       this.lastSample[c] = take > 0 && c < outputChannels.length ? outputChannels[c][take - 1] : 0
     }
-    if (this.position >= this.frameCount) {
-      this.ended = true
-      if (!this.endedNotified) {
-        this.endedNotified = true
-        out.ended = true
-        out.anchor = { frame: this.position, time, paused: false }
-      }
-    } else if (this.position - this.lastAnchorFrame >= this.anchorEvery) {
-      out.anchor = { frame: this.lastAnchorFrame, time, paused: false }
-      this.lastAnchorFrame = this.position
-    }
+    this.advance(time, out)
     out.consumed = take
     out.buffered = this.buffered
     out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
     for (let i = 0; i < this.trackPeaks.length; i++) this.trackPeaks[i] = 0
     this.masterPeak = 0
     return out
+  }
+
+  /**
+   * End-of-source / anchor bookkeeping shared by both data paths.
+   * `position` must already include this quantum's consumption.
+   */
+  advance(time, out) {
+    if (this.position >= this.frameCount) {
+      this.ended = true
+      if (!this.endedNotified) {
+        this.endedNotified = true
+        out.ended = true
+        out.anchor = { frame: this.position, time, paused: false }
+        // The engine keeps a synthesis tail after the last input frame.
+        this.tailRemaining = this.engine ? this.tailFrames : 0
+      }
+    } else if (this.position - this.lastAnchorFrame >= this.anchorEvery) {
+      out.anchor = { frame: this.lastAnchorFrame, time, paused: false }
+      this.lastAnchorFrame = this.position
+    }
+  }
+
+  /**
+   * Report an underrun once per starvation episode. Silence with
+   * nothing buffered (prebuffer after a seek) is not one.
+   */
+  maybeUnderrun(out) {
+    if (!this.underrunNotified && this.sources.some((s) => s.buffered > 0)) {
+      out.underrun = true
+      this.underrunNotified = true
+    }
+  }
+
+  /**
+   * Engine data path (M2.9, spec §11): per-stem gain/pan/mute/solo →
+   * stereo sum → stretch → master gain → output (§11.1 order). The
+   * stretcher demands its own input count per quantum; short supplies
+   * take the M2.8 underrun path (silence, no advance, no engine call)
+   * and the engine's fractional accumulator catches up.
+   */
+  processWithEngine(time, outputChannels, frames, out) {
+    const eng = this.engine
+    if (!this.primed) {
+      // Prime from `seekLength` frames at the cursor (canonical engine
+      // usage): the first output frame aligns with the first priming
+      // frame. Silence-pad the tail on underrun.
+      const seekLen = eng.seekLength()
+      const remaining = this.frameCount - this.position
+      const need = Math.min(seekLen, remaining)
+      if (this.buffered < need) {
+        // Not enough data to prime: silence, no cursor advance. Near
+        // the endpoint the buffer is shorter than seekLen — priming
+        // proceeds with silence padding once it is fully buffered.
+        this.fillOutputSilence(outputChannels, 0, frames)
+        this.maybeUnderrun(out)
+        out.buffered = this.buffered
+        return out
+      }
+      this.mixSources(need)
+      this.fillEngineInput(need, seekLen)
+      eng.outputSeek(seekLen)
+      this.position += need
+      this.primed = true
+    }
+    const remaining = this.frameCount - this.position
+    const demand = eng.inputDemand(frames)
+    let take
+    if (remaining < demand && this.buffered >= remaining) {
+      // Source end: final chunk, silence-padded up to the demand.
+      take = remaining
+    } else if (this.buffered < demand) {
+      // Starved: silence, no advance, no engine call.
+      this.fillOutputSilence(outputChannels, 0, frames)
+      this.maybeUnderrun(out)
+      out.buffered = this.buffered
+      return out
+    } else {
+      take = demand
+    }
+    this.mixSources(take)
+    this.fillEngineInput(take, demand)
+    eng.process(demand, frames)
+    const ch0 = outputChannels[0]
+    const ch1 = outputChannels.length > 1 ? outputChannels[1] : ch0
+    ch0.set(eng.outL.subarray(0, frames))
+    ch1.set(eng.outR.subarray(0, frames))
+    // The master gain sits after the stretcher (§11.1), ramped in
+    // output (audition) time.
+    this.fillMasterCoeffs(frames)
+    for (let i = 0; i < frames; i++) {
+      const g = this.masterCoeff[i]
+      const l = ch0[i] * g
+      const r = ch1[i] * g
+      ch0[i] = l
+      ch1[i] = r
+      const a = Math.abs(l)
+      const b = Math.abs(r)
+      if (a > this.masterPeak) this.masterPeak = a
+      if (b > this.masterPeak) this.masterPeak = b
+    }
+    this.position += take
+    this.lastSample[0] = ch0[frames - 1]
+    this.lastSample[1] = ch1[frames - 1]
+    this.advance(time, out)
+    out.consumed = take
+    out.buffered = this.buffered
+    out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
+    for (let i = 0; i < this.trackPeaks.length; i++) this.trackPeaks[i] = 0
+    this.masterPeak = 0
+    return out
+  }
+
+  /**
+   * Consume `frames` from every source (shared cursor) and mix them
+   * into `mixL`/`mixR` with the per-stem coefficients (the stretch sits
+   * after the stem mixing, §11.1). Tracks per-track peaks.
+   */
+  mixSources(frames) {
+    for (let i = 0; i < this.sources.length; i++) {
+      this.sources[i].consumeInto(this.temp[i], frames)
+    }
+    this.fillSourceCoeffs(frames)
+    const n = this.sources.length
+    const mixL = this.mixL
+    const mixR = this.mixR
+    for (let f = 0; f < frames; f++) {
+      let l = 0
+      let r = 0
+      for (let i = 0; i < n; i++) {
+        const gL = this.coeffL[i][f]
+        const gR = this.coeffR[i][f]
+        let cl
+        let cr
+        if (this.sources[i].channelCount === 1) {
+          const smp = this.temp[i][0][f]
+          cl = smp * gL
+          cr = smp * gR
+        } else {
+          cl = this.temp[i][0][f] * gL
+          cr = this.temp[i][1][f] * gR
+        }
+        l += cl
+        r += cr
+        const a = Math.abs(cl)
+        const b = Math.abs(cr)
+        if (a > this.trackPeaks[i]) this.trackPeaks[i] = a
+        if (b > this.trackPeaks[i]) this.trackPeaks[i] = b
+      }
+      mixL[f] = l
+      mixR[f] = r
+    }
+  }
+
+  /**
+   * Copy the mixed stereo into the engine input regions; silence-pad
+   * `[frames..padTo)` (the engine reads exactly `padTo` frames).
+   */
+  fillEngineInput(frames, padTo) {
+    const eng = this.engine
+    eng.inL.set(this.mixL.subarray(0, frames))
+    eng.inR.set(this.mixR.subarray(0, frames))
+    if (padTo > frames) {
+      eng.inL.fill(0, frames, padTo)
+      eng.inR.fill(0, frames, padTo)
+    }
+  }
+
+  /**
+   * Drain the engine's synthesis tail after the source ended (no more
+   * input). Bounded by `tailFrames`; an all-zero flush ends it early.
+   */
+  processTail(outputChannels, frames, out) {
+    const eng = this.engine
+    const n = Math.min(frames, this.tailRemaining)
+    eng.flushTail(n)
+    const ch0 = outputChannels[0]
+    const ch1 = outputChannels.length > 1 ? outputChannels[1] : ch0
+    let max = 0
+    for (let i = 0; i < n; i++) {
+      const l = eng.outL[i]
+      const r = eng.outR[i]
+      ch0[i] = l
+      ch1[i] = r
+      const a = Math.abs(l)
+      const b = Math.abs(r)
+      if (a > max) max = a
+      if (b > max) max = b
+      if (a > this.masterPeak) this.masterPeak = a
+      if (b > this.masterPeak) this.masterPeak = b
+    }
+    if (n < frames) this.fillOutputSilence(outputChannels, n, frames - n)
+    this.tailRemaining -= n
+    if (max < 1e-9) this.tailRemaining = 0
+    out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
+    for (let i = 0; i < this.trackPeaks.length; i++) this.trackPeaks[i] = 0
+    this.masterPeak = 0
   }
 
   fillOutputSilence(outputChannels, from, count) {
@@ -837,35 +1068,50 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     constructor(options) {
       super()
       const o = (options && options.processorOptions) || {}
+      const sampleRate = o.sampleRate ?? 48000
+      let sources
+      let sabs
       if (Array.isArray(o.sources) && o.sources.length > 0) {
-        // Mixer path (M2.8): one processor consumes all active sources.
-        this.core = new MixState({
-          sampleRate: o.sampleRate ?? 48000,
-          frameCount: o.frameCount ?? 0,
-          sources: o.sources,
-        })
-        if (Array.isArray(o.sabs)) {
-          o.sabs.forEach((sab, i) => this.core.attachShared(i, sab))
-        }
+        sources = o.sources
+        sabs = Array.isArray(o.sabs) ? o.sabs : []
       } else {
-        this.core = new ConsumptionState({
-          sampleRate: o.sampleRate ?? 48000,
-          channelCount: o.channelCount ?? 2,
-          frameCount: o.frameCount ?? 0,
-        })
-        if (o.sab) this.core.attachShared(o.sab)
+        // 1-source init shape (M1 fixtures): wrap in the mixer path.
+        sources = [{ channelCount: o.channelCount ?? 2 }]
+        sabs = Array.isArray(o.sabs) ? o.sabs : o.sab ? [o.sab] : []
       }
+      // M2.9 (spec §11): every playback goes through the stretcher. The
+      // engine is instantiated synchronously from the transferred
+      // artifact bytes (no fetch in the worklet, spec §11.3.11).
+      let engine = null
+      if (o.stretch && o.stretch.wasmBytes) {
+        const api = globalThis.StretchWasm
+        if (!api) throw new Error('stretch: core missing from the worklet bundle')
+        engine = api.instantiateStretch(o.stretch.wasmBytes)
+        engine.configure(sampleRate, o.stretch.maxFrames ?? api.STRETCH_MAX_FRAMES)
+      }
+      this.core = new MixState({
+        sampleRate,
+        frameCount: o.frameCount ?? 0,
+        sources,
+        engine,
+      })
+      sabs.forEach((sab, i) => this.core.attachShared(i, sab))
       this.generation = 0
+      if (engine) {
+        // The transport maps playback position with the engine latencies.
+        const lat = engine.latencies()
+        this.port.postMessage({
+          type: 'stretch-ready',
+          inputLatency: lat.inputFrames,
+          outputLatency: lat.outputFrames,
+        })
+      }
       this.port.onmessage = (e) => {
         const m = e.data
         if (!m || typeof m !== 'object') return
         if (m.type === 'channels') {
           const index = typeof m.source === 'number' ? m.source : 0
-          // The mixer core is per-source; the legacy core is single-source.
-          const ok =
-            this.core instanceof MixState
-              ? this.core.enqueueChannels(index, m.channels)
-              : this.core.enqueueChannels(m.channels)
+          const ok = this.core.enqueueChannels(index, m.channels)
           if (ok) {
             this.reportBuffered()
             if (this.core.buffered >= this.core.capacity) {
@@ -879,11 +1125,6 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
               generation: this.generation,
             })
           }
-        } else if (m.type === 'samples') {
-          // Kept for compatibility with the M1.12 protocol (legacy core).
-          if (this.core instanceof ConsumptionState && this.core.enqueue(m.buffer)) {
-            this.reportBuffered()
-          }
         } else if (m.type === 'seek') {
           if (Array.isArray(m.generations)) {
             this.generation = m.generations.reduce((a, b) => Math.max(a, b), 0)
@@ -894,10 +1135,12 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
           }
           this.port.postMessage({ type: 'flushed', generation: this.generation })
         } else if (m.type === 'params') {
-          // Mixer path only; the legacy core has no mixer parameters.
-          if (this.core instanceof MixState) this.core.setSourceParams(m.source, m)
+          this.core.setSourceParams(m.source, m)
         } else if (m.type === 'master') {
-          if (this.core instanceof MixState) this.core.setMasterGain(m.gain)
+          this.core.setMasterGain(m.gain)
+        } else if (m.type === 'rate') {
+          // The wrapper owns the ≈50 ms rate ramp (spec §11.7).
+          this.core.setRate(m.value)
         } else if (m.type === 'pause') {
           this.core.pause()
         } else if (m.type === 'resume') {

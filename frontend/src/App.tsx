@@ -664,15 +664,16 @@ const PlaybackPanel = memo(function PlaybackPanel({
   }, [createAudioContext, info, reportPosition])
 
   // M2.8 mixer state → live transport (spec §10.3): master gain, limiter,
-  // and one `setSourceParams` per stem in mix order. Safe before the graph
-  // exists (no-ops); `setMasterGain`/`setLimiter` are remembered and apply
-  // to a fresh graph.
+  // and one `setSourceParams` per stem in mix order. M2.9 adds the
+  // playback speed (spec §11): `setRate` is remembered and applies to a
+  // fresh graph. Safe before the graph exists (no-ops).
   const applyMix = useCallback(() => {
     const transport = transportRef.current
     const ps = practiceStateRef.current
     if (!transport || !ps) return
     transport.setMasterGain(ps.master_gain)
     transport.setLimiter(ps.monitoring_limiter)
+    transport.setRate(ps.playback_speed)
     const stems = stemSourcesRef.current
     if (stems && stems.length > 0) {
       stems.forEach((s, i) => {
@@ -1234,6 +1235,9 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const handleLimiter = useCallback((enabled: boolean) => {
     void sendRef.current({ type: 'set_monitoring_limiter', enabled })
   }, [])
+  const handlePlaybackSpeed = useCallback((speed: number) => {
+    void sendRef.current({ type: 'set_playback_speed', speed })
+  }, [])
 
   // Marker state (M1.15 §17.2). The selection is local UI state; the markers
   // themselves are authoritative server state (commands.markers).
@@ -1361,6 +1365,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onLimiter={handleLimiter}
         onMode={handleMode}
         onSelectSet={handleSelectSet}
+        onPlaybackSpeed={handlePlaybackSpeed}
       />
       <div className="original-track-label">
         <span className="track-name">Original</span>

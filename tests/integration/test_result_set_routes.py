@@ -339,6 +339,7 @@ class TestPlaybackModeCommandMapping:
             ),
             ("mix-3", {"type": "set_master_gain", "gain": 3.5}),
             ("mix-4", {"type": "set_monitoring_limiter", "enabled": False}),
+            ("mix-5", {"type": "set_playback_speed", "speed": 1.5}),
         ):
             resp = client.post(
                 f"/api/v1/projects/{project_id}/commands",
@@ -361,6 +362,7 @@ class TestPlaybackModeCommandMapping:
         assert track["solo"] is False
         assert state["master_gain"] == 3.5
         assert state["monitoring_limiter"] is False
+        assert state["playback_speed"] == 1.5
 
     def test_track_settings_without_fields_is_422(
         self,
@@ -375,6 +377,26 @@ class TestPlaybackModeCommandMapping:
                 "idempotency_key": "empty-patch",
                 "base_revision": 0,
                 "op": {"type": "set_track_settings", "stem_role": "bass"},
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.parametrize("speed", [0.24, 2.01])
+    def test_playback_speed_out_of_range_is_422(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        speed: float,
+    ) -> None:
+        project_id = _create_project(client, auth_headers, "P")
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/commands",
+            json={
+                "command_id": str(uuid4()),
+                "idempotency_key": f"speed-{speed}",
+                "base_revision": 0,
+                "op": {"type": "set_playback_speed", "speed": speed},
             },
             headers=auth_headers,
         )
