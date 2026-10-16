@@ -32,13 +32,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.8 (Add aligned tracks and the stem
-  mixer, spec §10) — **complete** (all 7 phases; gate green; evidence
-  doc written). Plan: `projectPlans/m2.8-plan.md` (committed).
-  M2.7 leaves the storage-report / reclaim services and the
-  active-result-set command ready for the frontend (report/cleanup
-  routes + scheduler wiring land in M2.17).
-- **Last commit:** `79d898e` — M2.8 (add aligned tracks and the stem
+- **Current work package:** M2.9 (Integrate the time-stretch engine,
+  spec §11) — **complete** (all 9 phases; gate green; evidence doc
+  written). Plan: `projectPlans/m2.9-plan.md` (committed). M2.8 leaves
+  the mixer + monitoring surface ready; the 1× bypass with an aligned
+  dry/wet transition and the three-time-domain transport ledger land in
+  M2.10 (§12).
+- **Last commit:** `3e12570` — M2.9 (integrate the time-stretch
+  engine); `79d898e` — M2.8 (add aligned tracks and the stem
   mixer); `ac12159` — M2.7 (analysis caching and version
   retention); `a088363` — M2.6 (validate and publish stems);
   `18ace92` — M2.5 (implement bounded Demucs
