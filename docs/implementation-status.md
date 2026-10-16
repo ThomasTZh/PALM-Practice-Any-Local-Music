@@ -33,7 +33,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.10 (Latency, bypass, and transport
-  mapping, spec §12) — **complete, pending commit**. Plan:
+  mapping, spec §12) — **complete** — `f46baaf`. Plan:
   `projectPlans/m2.10-plan.md` (as-built). All phases done: wrapper
   rolling-seek surface + rebuilt artifacts, worklet rolling data path
   + warm-up + exact-pair anchors, 1× bypass with aligned transitions,
@@ -44,7 +44,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
+- **Last commit:** `f46baaf` — M2.10 (latency, bypass, and transport
+  mapping); `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
   M2.9 (integrate the time-stretch
   engine); `79d898e` — M2.8 (add aligned tracks and the stem
   mixer); `ac12159` — M2.7 (analysis caching and version
@@ -71,16 +72,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** commit M2.10 (single `M2.10: …` commit + a
-  `Ledger: record M2.10 commit hash (<hash>)` follow-up), then start
-  M2.11 (saved practice loops) from `projectPlans/milestone2.md` §13.
+- **Next action:** start M2.11 (saved practice loops) from
+  `projectPlans/milestone2.md` §13; write the M2.11 plan + ledger
+  section first, as with prior packages. M2.10 is committed at
+  `f46baaf`.
   No M2.9 follow-ups remain; the e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `37e1eeb` (M2.9
-  complete + ledger hash) with the M2.10 work complete but uncommitted
-  in the working tree. Establish the baseline:
+- **Resume procedure:** read this file; HEAD is `f46baaf` (M2.10
+  complete; the ledger-hash follow-up follows). Establish the
+  baseline:
   `.venv/bin/python -m pytest tests/ -q` (1108 passed),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
   `.venv/bin/python -m mypy src/` (63 files clean),
@@ -2755,7 +2757,7 @@ ledger carries their hook field.
 - `set_rate`/`set_rate_now`/`effective_rate` stay as probes; the
   playback path passes its own ramped rate to every `seek`.
 
-**Phase log (all complete; pending commit):**
+**Phase log (all complete — `f46baaf`):**
 
 - **Phase 1 — Plan + ledger:** `projectPlans/m2.10-plan.md` written
   and later revised as-built; this section added.
