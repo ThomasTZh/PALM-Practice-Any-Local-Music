@@ -1,19 +1,27 @@
 /**
- * AudioWorklet PCM transport (M1.12/M1.13, spec §14–15).
+ * AudioWorklet PCM transport (M1.12/M1.13, spec §14–15; M2.8, spec §10).
  *
  * Replaces the `AudioBufferSourceNode` scheduling engine (M1.7): the
- * worklet (`worklet-processor.js`) consumes a bounded ring of f32le PCM
- * on the audio thread; this class owns everything on the main thread —
- * the eight transport states plus `desiredPlaying`, chunked prefetch
- * (~1 s network chunks, 2 s prebuffer, 8 s steady lookahead, 12 s
+ * worklet (`worklet-processor.js`) consumes bounded PCM on the audio
+ * thread; this class owns everything on the main thread — the eight
+ * transport states plus `desiredPlaying`, chunked prefetch (~1 s
+ * network chunks, 2 s prebuffer, 8 s steady lookahead, 12 s
  * total-retention budget), seek generations, anchor-based position
  * extrapolation, underrun diagnostics, browser-suspend tracking, and
- * the monitoring gain stage that sits after the worklet (canonical
- * samples are never modified).
+ * the monitoring gain/limiter stages that sit after the worklet
+ * (canonical samples are never modified).
+ *
+ * Multi-source mixing (M2.8, spec §10.5): the transport binds N
+ * `SourceSpec`s that all match the project rate and duration (hard
+ * validation, no resampling). One fetch source serves the whole mix —
+ * N per-asset queues behind a single worker — and the worklet mixes the
+ * sources with a shared cursor (one `MixState`), so drift is impossible.
+ * Mixer parameters (gain/balance/mute/solo, master gain) are forwarded
+ * to the worklet; per-quantum peaks come back on the `anchor` messages.
  *
  * Two data paths (spec §15.1/§15.2), selected by `mode`:
  * - `shared`: cross-origin isolated; the fetch worker writes the shared
- *   SAB ring directly (SPSC, atomic indices).
+ *   SAB rings directly (SPSC, atomic indices; one ring per source).
  * - `transfer`: the fetch worker posts deinterleaved chunks transferred
  *   to the main thread, which relays them to the worklet's bounded queue.
  * Both fetch through a `FetchSource`: a real worker when available,
@@ -43,6 +51,35 @@ export type TransportState =
 
 /** Data path selection; `auto` picks shared memory when isolated. */
 export type TransportMode = 'auto' | 'shared' | 'transfer'
+
+/**
+ * One playback source in the mix (M2.8, spec §10.5). All sources must
+ * match the project rate and duration; `loadSource` validates this and
+ * refuses to resample.
+ */
+export interface SourceSpec {
+  assetId: string
+  sampleRate: number
+  channelCount: number
+  frameCount: number
+}
+
+/**
+ * Mixer parameter patch for one source (spec §10.3). `gain` is linear
+ * amplitude; the worklet ramps changes over 5 ms.
+ */
+export interface SourceParamPatch {
+  gain?: number
+  balance?: number
+  mute?: boolean
+  solo?: boolean
+}
+
+/** Per-quantum peak metering (spec §10.3.7), ~20 Hz, mixer path only. */
+export interface MixPeaks {
+  tracks: number[]
+  master: number
+}
 
 /** Underrun accounting surfaced to the panel (spec §15.4). */
 export interface TransportDiagnostics {
@@ -82,6 +119,13 @@ export interface GainNodeLike {
   disconnect(): void
 }
 
+/** Structural subset of a `DynamicsCompressorNode` (monitoring only). */
+export interface CompressorNodeLike {
+  threshold: GainParamLike
+  connect(destination: unknown): void
+  disconnect(): void
+}
+
 /** Structural subset of the `AudioContext` the transport drives. */
 export interface TransportContextLike {
   currentTime: number
@@ -92,6 +136,8 @@ export interface TransportContextLike {
   audioWorklet: { addModule(url: string): Promise<void> }
   createWorkletNode(name: string, options?: Record<string, unknown>): WorkletNodeLike
   createGain(): GainNodeLike
+  /** Absent in minimal test fakes; the limiter is then skipped. */
+  createDynamicsCompressor?(): CompressorNodeLike
   resume(): Promise<void>
   close(): Promise<void>
   /** Output-device timestamp (spec §16.2); absent in test fakes. */
@@ -125,15 +171,29 @@ export interface TransportOptions {
   workerFactory?: () => WorkerLike | null
   /** Data path; `auto` picks shared memory when cross-origin isolated. */
   mode?: TransportMode
+  /**
+   * Monitoring-only limiter (spec §10.6.5): a DynamicsCompressor after
+   * the monitoring gain. Never touches sample storage; its documented
+   * delay is folded into the audible-time mapping.
+   */
+  limiter?: boolean
   onState?: (state: TransportState) => void
   /** Reports the playhead position in project frames. */
   onPosition?: (frame: number) => void
   /** Reports browser suspension of the audio context (spec §15.5). */
   onSuspend?: (suspended: boolean) => void
+  /** Per-quantum peak metering from the worklet mixer (~20 Hz). */
+  onPeaks?: (peaks: MixPeaks) => void
 }
 
 export interface LoadSourceOptions {
-  target: PlaybackTarget
+  /**
+   * M2.8: every source in the mix. All must match the project rate and
+   * duration (hard validation, no resampling).
+   */
+  sources?: SourceSpec[]
+  /** Legacy single-source form (equivalent to `sources: [target]`). */
+  target?: PlaybackTarget
   projectRate: number
   projectDurationFrames: number
 }
@@ -164,6 +224,14 @@ const GAIN_RAMP_TIME_CONSTANT = 0.01
  * time is assumed to be the audible time (zero output latency).
  */
 const FALLBACK_OUTPUT_LATENCY_SECONDS = 0
+/**
+ * §10.6.5 documented limiter delay: the monitoring compressor adds this
+ * much graph latency between the worklet and the output device. It is
+ * folded into the audible-time mapping while the limiter is active.
+ */
+const LIMITER_DELAY_SECONDS = 0.01
+/** §10.6.5 limiter threshold in dBFS (monitoring only). */
+const LIMITER_THRESHOLD_DB = -1
 /** §16.2.3: recent segments retained for time → frame mapping. */
 const MAX_SEGMENTS = 16
 
@@ -191,7 +259,8 @@ export class PcmTransport {
   private readonly opts: TransportOptions
   private readonly delay: (ms: number, signal?: AbortSignal) => Promise<void>
 
-  private target: PlaybackTarget | null = null
+  /** Every source in the mix (M2.8); all match the project rate/duration. */
+  private sources: SourceSpec[] = []
   private projectRate = 0
   private projectDurationFrames = 0
   /** Position park (project frames) before any source is loaded. */
@@ -200,13 +269,17 @@ export class PcmTransport {
   private context: TransportContextLike | null = null
   private node: WorkletNodeLike | null = null
   private gainNode: GainNodeLike | null = null
+  /** Monitoring-only limiter after the gain stage (spec §10.6.5). */
+  private limiterNode: CompressorNodeLike | null = null
   private blobUrl: string | null = null
   private pendingGain = 1
+  /** Master monitoring gain (linear), applied in the worklet mixer. */
+  private pendingMasterGain = 1
 
   private mode: 'shared' | 'transfer' = 'transfer'
   private source: FetchSource | null = null
-  /** Shared ring (shared path only); the SAB is owned by the worklet. */
-  private ring: SharedRing | null = null
+  /** Shared rings (shared path only, one per source); SABs worklet-owned. */
+  private rings: SharedRing[] = []
 
   /** Bumped on every seek/stop so stale fetches and port messages drop. */
   private generation = 0
@@ -275,8 +348,27 @@ export class PcmTransport {
     return this.suspended
   }
 
+  /** Sample rate of the live context (null before the graph exists). */
+  get contextRate(): number | null {
+    return this.context ? this.context.sampleRate : null
+  }
+
   get diagnostics(): TransportDiagnostics {
     return this.diagnosticsState
+  }
+
+  /**
+   * The first source in the mix. All sources are equal in rate and
+   * duration (hard-validated in `loadSource`), so the first is the
+   * position-mapping reference.
+   */
+  private get primary(): SourceSpec | null {
+    return this.sources[0] ?? null
+  }
+
+  /** Output latency folded into the audible-time mapping (spec §10.6.5). */
+  private get effectiveLatency(): number {
+    return this.limiterNode ? LIMITER_DELAY_SECONDS : FALLBACK_OUTPUT_LATENCY_SECONDS
   }
 
   /**
@@ -286,18 +378,18 @@ export class PcmTransport {
    * suspended, or ended — the last acknowledged anchor is reported.
    */
   getAudiblePosition(): number {
-    if (!this.target) return this.parkedProjectFrame
+    const target = this.primary
+    if (!target) return this.parkedProjectFrame
     // After context loss the graph (and its consumption tracking) is gone;
     // report the retained position until `rebind` resets the bookkeeping.
     if (this.contextLost) return this.retainedProjectFrame
-    const rate = this.target.sampleRate
+    const rate = target.sampleRate
     const context = this.context
     let playbackFrame: number
     if (context && !this.suspended && (this.state === 'playing' || this.state === 'seeking')) {
       const ts = context.getOutputTimestamp ? context.getOutputTimestamp() : null
-      const t = ts
-        ? ts.contextTime
-        : Math.max(0, context.currentTime - FALLBACK_OUTPUT_LATENCY_SECONDS)
+      const latency = this.effectiveLatency
+      const t = ts ? ts.contextTime - latency : Math.max(0, context.currentTime - latency)
       // Newest segment that started at or before t; a time before all
       // segments (device latency right after a seek) clamps to the oldest
       // segment's start (§16.2.3/§16.2.5).
@@ -314,10 +406,10 @@ export class PcmTransport {
       } else {
         playbackFrame = seg.startFrame + Math.max(0, t - seg.startContextTime) * rate
       }
-      playbackFrame = Math.max(seg.startFrame, Math.min(playbackFrame, this.target.frameCount))
+      playbackFrame = Math.max(seg.startFrame, Math.min(playbackFrame, target.frameCount))
     } else {
       // Frozen (§16.2.6): the last acknowledged anchor, no extrapolation.
-      playbackFrame = this.state === 'ended' ? this.target.frameCount : this.consumedFrame
+      playbackFrame = this.state === 'ended' ? target.frameCount : this.consumedFrame
     }
     return clampToDuration(
       projectPosition(playbackFrame, this.projectRate, rate),
@@ -332,17 +424,17 @@ export class PcmTransport {
 
   /** §15.3 budget: the 12 s ring capacity in frames. */
   private get budgetFrames(): number {
-    return this.target ? Math.ceil(this.target.sampleRate * RING_SECONDS) : 0
+    return this.primary ? Math.ceil(this.primary.sampleRate * RING_SECONDS) : 0
   }
 
   /** §15.3 gate margin: one 1 s chunk. */
   private get marginFrames(): number {
-    return this.target ? Math.ceil(this.target.sampleRate * CHUNK_SECONDS) : 0
+    return this.primary ? Math.ceil(this.primary.sampleRate * CHUNK_SECONDS) : 0
   }
 
   /** §15.4 post-underrun start threshold: 2 s. */
   private get startThresholdFrames(): number {
-    return this.target ? Math.ceil(this.target.sampleRate * PREBUFFER_SECONDS) : 0
+    return this.primary ? Math.ceil(this.primary.sampleRate * PREBUFFER_SECONDS) : 0
   }
 
   private isActiveState(s: TransportState): boolean {
@@ -350,22 +442,54 @@ export class PcmTransport {
   }
 
   /**
-   * Bind the playback representation to this transport. No audio graph is
-   * created yet; `play` does that on a user gesture (spec §14.4).
+   * Normalize and hard-validate the mix sources (M2.8, spec §10.5):
+   * every source must match the project rate and duration. A mismatch is
+   * a prepare error — the transport never resamples.
+   */
+  private normalizeSources(opts: LoadSourceOptions): SourceSpec[] {
+    const specs = opts.sources ?? (opts.target ? [opts.target] : [])
+    if (specs.length === 0) throw new RangeError('at least one source is required')
+    for (const s of specs) {
+      if (s.sampleRate !== opts.projectRate) {
+        throw new RangeError(
+          `source ${s.assetId}: sample rate ${s.sampleRate} does not match the ` +
+            `project rate ${opts.projectRate} (no resampling)`,
+        )
+      }
+      if (s.frameCount !== opts.projectDurationFrames) {
+        throw new RangeError(
+          `source ${s.assetId}: ${s.frameCount} frames does not match the ` +
+            `project duration ${opts.projectDurationFrames}`,
+        )
+      }
+    }
+    return specs
+  }
+
+  /**
+   * Bind the mix sources to this transport. No audio graph is created
+   * yet; `play` does that on a user gesture (spec §14.4).
    */
   async loadSource({
+    sources,
     target,
     projectRate,
     projectDurationFrames,
   }: LoadSourceOptions): Promise<void> {
-    this.target = target
+    this.sources = this.normalizeSources({
+      sources,
+      target,
+      projectRate,
+      projectDurationFrames,
+    })
     this.projectRate = projectRate
     this.projectDurationFrames = projectDurationFrames
     // A pre-target park (M1.15 §17.6.4): first play starts from there.
     if (this.parkedProjectFrame > 0) {
+      const primary = this.primary
       const frame = clampToDuration(
-        playbackPosition(this.parkedProjectFrame, projectRate, target.sampleRate),
-        target.frameCount,
+        playbackPosition(this.parkedProjectFrame, projectRate, primary.sampleRate),
+        primary.frameCount,
       )
       this.genStartFrame = frame
       this.fetchedFrame = frame
@@ -376,15 +500,20 @@ export class PcmTransport {
   }
 
   /**
-   * Rebind to a new playback representation after context loss
+   * Rebind to a new set of mix sources after context loss
    * (spec §15.6): discards the dead graph, keeps the retained position,
    * and parks the playhead there. The next `play` creates a fresh
    * context and starts from the retained position.
    */
-  rebind({ target, projectRate, projectDurationFrames }: LoadSourceOptions): void {
+  rebind({ sources, target, projectRate, projectDurationFrames }: LoadSourceOptions): void {
     if (this.disposed) return
     this.teardownGraph()
-    this.target = target
+    this.sources = this.normalizeSources({
+      sources,
+      target,
+      projectRate,
+      projectDurationFrames,
+    })
     this.projectRate = projectRate
     this.projectDurationFrames = projectDurationFrames
     this.contextLost = false
@@ -392,9 +521,10 @@ export class PcmTransport {
     this.suspended = false
     this.generation = 0
     this.abort = new AbortController()
+    const primary = this.primary
     const frame = clampToDuration(
-      playbackPosition(this.retainedProjectFrame, projectRate, target.sampleRate),
-      target.frameCount,
+      playbackPosition(this.retainedProjectFrame, projectRate, primary.sampleRate),
+      primary.frameCount,
     )
     this.genStartFrame = frame
     this.fetchedFrame = frame
@@ -410,7 +540,7 @@ export class PcmTransport {
 
   /** Start (or resume) playback from the current position. */
   async play(): Promise<void> {
-    if (this.disposed || !this.target) return
+    if (this.disposed || this.sources.length === 0) return
     if (this.context && this.suspended) {
       // A suspended context freezes the transport even in active states
       // (spec §15.5); `play` is the user gesture that resumes it.
@@ -492,10 +622,10 @@ export class PcmTransport {
       return
     }
     this.desiredPlaying = false
-    if (this.context && this.target) {
+    if (this.context && this.primary) {
       // Freeze the playhead at the position extrapolated right now.
       this.consumedFrame +=
-        Math.max(0, this.context.currentTime - this.anchorTime) * this.target.sampleRate
+        Math.max(0, this.context.currentTime - this.anchorTime) * this.primary.sampleRate
       this.anchorTime = this.context.currentTime
     }
     this.node?.port.postMessage({ type: 'pause' })
@@ -523,7 +653,8 @@ export class PcmTransport {
    */
   seek(projectFrame: number): void {
     if (this.disposed) return
-    if (!this.target) {
+    const target = this.primary
+    if (!target) {
       // No duration is known until the source loads; do not clamp to the
       // zero placeholder (the park survives to `loadSource`).
       const max =
@@ -532,7 +663,6 @@ export class PcmTransport {
       this.reportPosition()
       return
     }
-    const target = this.target
     const frame = clampToDuration(
       playbackPosition(projectFrame, this.projectRate, target.sampleRate),
       target.frameCount,
@@ -574,6 +704,54 @@ export class PcmTransport {
   }
 
   /**
+   * Set one source's mixer parameters (spec §10.3). `gain` is linear
+   * amplitude; the worklet ramps the change over 5 ms. No-op until the
+   * graph exists — re-apply after (re)load.
+   */
+  setSourceParams(index: number, patch: SourceParamPatch): void {
+    if (!this.node) return
+    this.node.port.postMessage({ type: 'params', source: index, ...patch })
+  }
+
+  /**
+   * Set the master monitoring gain (linear amplitude, spec §10.3.8).
+   * Applied in the worklet mixer — never to the stored samples.
+   * Remembered and applied to a fresh graph on `play`.
+   */
+  setMasterGain(gain: number): void {
+    const clamped = Math.max(0, Number.isFinite(gain) ? gain : 0)
+    this.pendingMasterGain = clamped
+    if (this.node) this.node.port.postMessage({ type: 'master', gain: clamped })
+  }
+
+  /**
+   * Enable or disable the monitoring limiter live (spec §10.6.6).
+   * Rewires the gain stage on a live graph; always remembered for a
+   * fresh graph. The audible-time mapping follows `limiterNode`.
+   */
+  setLimiter(enabled: boolean): void {
+    this.opts.limiter = enabled
+    const context = this.context
+    const gainNode = this.gainNode
+    if (!context || !gainNode) return
+    if (enabled) {
+      if (this.limiterNode) return
+      if (typeof context.createDynamicsCompressor !== 'function') return
+      gainNode.disconnect()
+      const limiter = context.createDynamicsCompressor()
+      limiter.threshold.value = LIMITER_THRESHOLD_DB
+      gainNode.connect(limiter)
+      limiter.connect(context.destination)
+      this.limiterNode = limiter
+    } else {
+      this.limiterNode?.disconnect()
+      this.limiterNode = null
+      gainNode.disconnect()
+      gainNode.connect(context.destination)
+    }
+  }
+
+  /**
    * Report the current state and position (spec §15.5). Called on tab
    * visibility return so the UI redraws from actual transport state.
    * Also picks up a context that closed while the tab was hidden.
@@ -603,10 +781,13 @@ export class PcmTransport {
     }
   }
 
-  /** Create context, shared ring, worklet node, gain stage, and source. */
+  /**
+   * Create context, shared rings (one per source), worklet node, gain
+   * stage, optional limiter, and the fetch source.
+   */
   private async initGraph(): Promise<void> {
-    const target = this.target
-    if (!target) throw new Error('No source loaded')
+    const target = this.primary
+    if (!target) throw new Error('No sources loaded')
     const context = this.opts.contextFactory()
     if (context.state === 'suspended') await context.resume()
     this.context = context
@@ -614,47 +795,68 @@ export class PcmTransport {
     this.mode = resolveMode(this.opts.mode ?? 'auto')
     if (this.mode === 'shared') {
       const capacity = Math.ceil(target.sampleRate * RING_SECONDS)
-      this.ring = createSharedRing(16 + capacity * target.channelCount * 4, target.channelCount)
+      // One ring per source; each holds the §15.3 12 s retention budget.
+      this.rings = this.sources.map((s) =>
+        createSharedRing(16 + capacity * s.channelCount * 4, s.channelCount),
+      )
     }
     this.blobUrl = this.opts.moduleUrlFactory
       ? this.opts.moduleUrlFactory(processorSource)
       : URL.createObjectURL(new Blob([processorSource], { type: 'text/javascript' }))
     await context.audioWorklet.addModule(this.blobUrl)
+    const sabs = this.rings.map((r) => r.sab)
     const options: Record<string, unknown> = {
       processorOptions: {
         sampleRate: target.sampleRate,
-        channelCount: target.channelCount,
         frameCount: target.frameCount,
-        ...(this.ring ? { sab: this.ring.sab } : {}),
+        // Mixer path (M2.8): the worklet mixes all sources on one cursor.
+        sources: this.sources.map((s) => ({ channelCount: s.channelCount })),
+        ...(sabs.length > 0 ? { sabs } : {}),
       },
     }
-    if (this.ring) options.transfer = [this.ring.sab]
+    if (sabs.length > 0) options.transfer = sabs
     const node = context.createWorkletNode('basseparate-pcm', options)
     node.port.onmessage = (e) => this.handleWorkletMessage(e.data)
     const gainNode = context.createGain()
     gainNode.gain.value = this.pendingGain
     node.connect(gainNode)
-    gainNode.connect(context.destination)
+    if (this.opts.limiter && typeof context.createDynamicsCompressor === 'function') {
+      // Monitoring-only limiter (spec §10.6.5): after the gain, never in
+      // the sample storage path.
+      const limiter = context.createDynamicsCompressor()
+      limiter.threshold.value = LIMITER_THRESHOLD_DB
+      gainNode.connect(limiter)
+      limiter.connect(context.destination)
+      this.limiterNode = limiter
+    } else {
+      gainNode.connect(context.destination)
+    }
     this.node = node
     this.gainNode = gainNode
     this.abort = new AbortController()
     this.anchorTime = context.currentTime
     this.source = this.createSource()
-    if (this.mode === 'shared' && this.ring) {
-      await this.source.attachShared(this.ring.sab, target.channelCount)
+    if (sabs.length > 0) {
+      await this.source.attachShared(
+        sabs,
+        this.sources.map((s) => s.channelCount),
+      )
+    }
+    // Apply the pending master gain to the fresh worklet mixer.
+    if (this.pendingMasterGain !== 1) {
+      node.port.postMessage({ type: 'master', gain: this.pendingMasterGain })
     }
   }
 
   /** Pick the fetch source: real worker when available, else main thread. */
   private createSource(): FetchSource {
-    const target = this.target
-    if (!target) throw new Error('No source loaded')
+    const channelCounts = this.sources.map((s) => s.channelCount)
     const factory = this.opts.workerFactory ?? defaultWorkerFactory
     const worker = factory()
-    if (worker) return new WorkerFetchSource(worker, target.channelCount)
+    if (worker) return new WorkerFetchSource(worker, channelCounts)
     return new DirectFetchSource(
       (assetId, start, end) => this.opts.fetchChunk(assetId, start, end, this.abort?.signal),
-      target.channelCount,
+      channelCounts,
     )
   }
 
@@ -682,7 +884,7 @@ export class PcmTransport {
   }
 
   private flushBookkeeping(frame: number): void {
-    const target = this.target
+    const target = this.primary
     if (!target) return
     this.generation += 1
     this.abort?.abort()
@@ -768,10 +970,17 @@ export class PcmTransport {
         }
         break
       case 'anchor': {
-        const m = msg as unknown as { frame: number; time: number; paused?: boolean }
+        const m = msg as unknown as {
+          frame: number
+          time: number
+          paused?: boolean
+          peaks?: MixPeaks
+        }
         this.consumedFrame = m.frame
         this.anchorTime = m.time
         this.anchorSegment = this.segmentAt(m.time)
+        // Per-quantum peak metering (spec §10.3.7), mixer path only.
+        if (m.peaks) this.opts.onPeaks?.(m.peaks)
         this.reportPosition()
         break
       }
@@ -843,12 +1052,14 @@ export class PcmTransport {
       this.node?.port.postMessage({ type: 'dispose' })
       this.node?.disconnect()
       this.gainNode?.disconnect()
+      this.limiterNode?.disconnect()
     } catch {
       // The graph may already be gone.
     }
     this.node = null
     this.gainNode = null
-    this.ring = null
+    this.limiterNode = null
+    this.rings = []
     if (this.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(this.blobUrl)
     this.blobUrl = null
     this.context = null
@@ -877,12 +1088,11 @@ export class PcmTransport {
     if (this.fillLoopRunning || this.disposed) return
     this.fillLoopRunning = true
     try {
-      while (!this.disposed && this.desiredPlaying && this.node && this.target && this.source) {
+      while (!this.disposed && this.desiredPlaying && this.node && this.primary && this.source) {
         const s = this.state
         if (s !== 'preparing' && s !== 'playing' && s !== 'buffering' && s !== 'seeking') return
-        const target = this.target
+        const target = this.primary
         const rate = target.sampleRate
-        const bytesPerFrame = 4 * target.channelCount
         const consumedEstimate =
           this.consumedFrame +
           (this.context && !this.suspended
@@ -901,49 +1111,74 @@ export class PcmTransport {
         ) {
           const frames = Math.min(rate * CHUNK_SECONDS, target.frameCount - this.fetchedFrame)
           if (frames <= 0) break
-          const start = Math.floor(this.fetchedFrame * bytesPerFrame)
-          const end = start + frames * bytesPerFrame - 1
           const gen = this.generation
-          let written = 0
-          if (this.mode === 'shared') {
-            let result: PcmWriteResult
-            try {
-              result = await this.source.writeChunk(target.assetId, start, end, gen)
-            } catch (err) {
-              if (this.isStale(err, gen)) break
-              this.fail(err)
-              return
+          // One round fetches the same frame range for every source
+          // (shared cursor, M2.8); the cursor advances by the minimum
+          // written, so the sources can never drift apart.
+          let roundFailed = false
+          let written = Infinity
+          for (let i = 0; i < this.sources.length; i++) {
+            const src = this.sources[i]
+            const bytesPerFrame = 4 * src.channelCount
+            const start = Math.floor(this.fetchedFrame * bytesPerFrame)
+            const end = start + frames * bytesPerFrame - 1
+            let w = 0
+            if (this.mode === 'shared') {
+              let result: PcmWriteResult
+              try {
+                result = await this.source.writeChunk(i, src.assetId, start, end, gen)
+              } catch (err) {
+                if (this.isStale(err, gen)) {
+                  roundFailed = true
+                  break
+                }
+                this.fail(err)
+                return
+              }
+              if (gen !== this.generation) {
+                roundFailed = true
+                break
+              }
+              w = result.frames
+            } else {
+              let chunk: PcmChunk
+              try {
+                chunk = await this.source.fetchChunk(i, src.assetId, start, end, gen)
+              } catch (err) {
+                if (this.isStale(err, gen)) {
+                  roundFailed = true
+                  break
+                }
+                this.fail(err)
+                return
+              }
+              if (gen !== this.generation) {
+                roundFailed = true
+                break
+              }
+              this.node.port.postMessage(
+                {
+                  type: 'channels',
+                  source: i,
+                  channels: chunk.channels,
+                  startFrame: chunk.startFrame,
+                  frames: chunk.frames,
+                  generation: gen,
+                },
+                chunk.channels.map((c) => c.buffer as ArrayBuffer),
+              )
+              w = chunk.frames
             }
-            if (gen !== this.generation) break
-            written = result.frames
-            if (written <= 0) {
-              // The ring is full (flow control should make this
-              // unreachable): drop and re-check after a park.
+            if (w <= 0) {
+              // A source's ring is full (flow control should make this
+              // unreachable): drop the round and re-check after a park.
               this.diagnosticsState.droppedChunks += 1
+              roundFailed = true
               break
             }
-          } else {
-            let chunk: PcmChunk
-            try {
-              chunk = await this.source.fetchChunk(target.assetId, start, end, gen)
-            } catch (err) {
-              if (this.isStale(err, gen)) break
-              this.fail(err)
-              return
-            }
-            if (gen !== this.generation) break
-            this.node.port.postMessage(
-              {
-                type: 'channels',
-                channels: chunk.channels,
-                startFrame: chunk.startFrame,
-                frames: chunk.frames,
-                generation: gen,
-              },
-              chunk.channels.map((c) => c.buffer as ArrayBuffer),
-            )
-            written = chunk.frames
+            if (w < written) written = w
           }
+          if (roundFailed) break
           this.fetchedFrame += written
           fetched = true
         }

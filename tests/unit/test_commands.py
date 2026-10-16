@@ -17,15 +17,20 @@ from basseparate.domain.commands import (
     SetActiveResultSetOp,
     SetDisplayOp,
     SetFollowPlayheadOp,
+    SetMasterGainOp,
+    SetMonitoringLimiterOp,
     SetMonitoringVolumeOp,
+    SetPlaybackModeOp,
     SetPositionOp,
     SetSelectionOp,
+    SetTrackSettingsOp,
     SetViewportOp,
     UpdateMarkerOp,
 )
 from basseparate.domain.marker import MarkerRecord
-from basseparate.domain.practice import PracticeState
+from basseparate.domain.practice import MAX_GAIN, PlaybackMode, PracticeState
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
+from basseparate.domain.separation import StemRole
 
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
 
@@ -102,6 +107,96 @@ def test_set_active_result_set_op() -> None:
 def test_command_request_parses_set_active_result_set_op() -> None:
     req = CommandRequest(**_request(SetActiveResultSetOp(result_set_id=uuid4())))
     assert isinstance(req.op, SetActiveResultSetOp)
+
+
+def test_set_track_settings_op_patch_semantics() -> None:
+    op = SetTrackSettingsOp(stem_role=StemRole.BASS, gain=0.5)
+    assert op.type == "set_track_settings"
+    assert op.stem_role == StemRole.BASS
+    assert op.gain == 0.5
+    assert op.balance is None
+    assert op.mute is None
+    assert op.solo is None
+    assert op.visible is None
+    assert op.display_height is None
+    assert op.color is None
+
+
+def test_set_track_settings_op_requires_a_field() -> None:
+    with pytest.raises(ValidationError, match="at least one field"):
+        SetTrackSettingsOp(stem_role=StemRole.BASS)
+
+
+def test_set_track_settings_op_rejects_unknown_role() -> None:
+    with pytest.raises(ValidationError, match="stem_role"):
+        SetTrackSettingsOp(stem_role="guitar", gain=0.5)
+
+
+def test_set_track_settings_op_field_bounds() -> None:
+    with pytest.raises(ValidationError):
+        SetTrackSettingsOp(stem_role=StemRole.BASS, gain=MAX_GAIN + 0.1)
+    with pytest.raises(ValidationError):
+        SetTrackSettingsOp(stem_role=StemRole.BASS, balance=1.5)
+    with pytest.raises(ValidationError):
+        SetTrackSettingsOp(stem_role=StemRole.BASS, display_height=0.1)
+    with pytest.raises(ValidationError, match="color"):
+        SetTrackSettingsOp(stem_role=StemRole.BASS, color="red")
+    # Every field is accepted when in range.
+    op = SetTrackSettingsOp(
+        stem_role=StemRole.BASS,
+        gain=MAX_GAIN,
+        balance=-1.0,
+        mute=True,
+        solo=True,
+        visible=False,
+        display_height=2.0,
+        color="#ABCDEF",
+    )
+    assert op.color == "#ABCDEF"
+
+
+def test_set_playback_mode_op() -> None:
+    op = SetPlaybackModeOp(mode=PlaybackMode.BASS_PAIR)
+    assert op.type == "set_playback_mode"
+    assert op.mode == PlaybackMode.BASS_PAIR
+    with pytest.raises(ValidationError):
+        SetPlaybackModeOp(mode="loop")
+
+
+def test_set_master_gain_op_bounds() -> None:
+    assert SetMasterGainOp(gain=0.0).gain == 0.0
+    assert SetMasterGainOp(gain=MAX_GAIN).gain == MAX_GAIN
+    with pytest.raises(ValidationError):
+        SetMasterGainOp(gain=MAX_GAIN + 0.1)
+    with pytest.raises(ValidationError):
+        SetMasterGainOp(gain=-0.1)
+
+
+def test_set_monitoring_limiter_op() -> None:
+    assert SetMonitoringLimiterOp(enabled=True).enabled is True
+    assert SetMonitoringLimiterOp(enabled=False).enabled is False
+
+
+def test_mixer_ops_are_undoable() -> None:
+    # M2.8: every mixer op joins the history (none are excluded).
+    for op_type in (
+        "set_track_settings",
+        "set_playback_mode",
+        "set_master_gain",
+        "set_monitoring_limiter",
+    ):
+        assert op_type not in HISTORY_EXCLUDED_TYPES
+
+
+def test_command_request_parses_mixer_ops() -> None:
+    for op in (
+        SetTrackSettingsOp(stem_role=StemRole.BASS, mute=True),
+        SetPlaybackModeOp(mode=PlaybackMode.FOUR_STEMS),
+        SetMasterGainOp(gain=1.5),
+        SetMonitoringLimiterOp(enabled=False),
+    ):
+        req = CommandRequest(**_request(op))
+        assert req.op is op
 
 
 def test_position_is_excluded_from_history() -> None:

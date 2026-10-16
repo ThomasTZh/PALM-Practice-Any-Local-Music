@@ -106,6 +106,45 @@ describe('sendCommand', () => {
     expect(result.canRedo).toBe(false)
   })
 
+  it('maps practice_state from the command result', async () => {
+    mockClient.POST.mockResolvedValue(
+      ok(
+        resultPayload({
+          practice_state: {
+            loop_enabled: false,
+            master_gain: 1.5,
+            monitoring_limiter: true,
+            playback_mode: 'bass_pair',
+            playback_speed: 1.0,
+            active_result_set_id: '88888888-8888-4888-8888-888888888888',
+            tracks: {
+              bass: {
+                gain: 0.5,
+                mute: false,
+                solo: false,
+                balance: 0,
+                visible: true,
+                display_height: 1,
+                color: '#2563eb',
+              },
+            },
+          },
+        }),
+      ),
+    )
+    const result = await sendCommand(PROJECT_ID, 0, ADD_MARKER)
+    expect(result.practiceState?.playback_mode).toBe('bass_pair')
+    expect(result.practiceState?.master_gain).toBe(1.5)
+    expect(result.practiceState?.active_result_set_id).toBe('88888888-8888-4888-8888-888888888888')
+    expect(result.practiceState?.tracks?.bass.gain).toBe(0.5)
+  })
+
+  it('maps a missing practice_state to null', async () => {
+    mockClient.POST.mockResolvedValue(ok(resultPayload()))
+    const result = await sendCommand(PROJECT_ID, 0, ADD_MARKER)
+    expect(result.practiceState).toBeNull()
+  })
+
   it('throws StaleRevisionError with the current revision on 409 STALE_REVISION', async () => {
     mockClient.POST.mockResolvedValue(fail(409, 'STALE_REVISION', 'stale', { current_revision: 9 }))
     const err = await sendCommand(PROJECT_ID, 3, ADD_MARKER).catch((e) => e)
@@ -162,6 +201,14 @@ describe('getProjectSnapshot', () => {
         revision: 5,
         markers: resultPayload().markers,
         working_state: { ...DEFAULT_WORKING_STATE, monitoring_volume: 1.5 },
+        practice_state: {
+          loop_enabled: false,
+          master_gain: 1.0,
+          monitoring_limiter: true,
+          playback_mode: 'four_stems',
+          playback_speed: 1.0,
+          active_result_set_id: '88888888-8888-4888-8888-888888888888',
+        },
         can_undo: true,
         can_redo: true,
         sample_rate: 48000,
@@ -173,6 +220,7 @@ describe('getProjectSnapshot', () => {
     expect(snap.revision).toBe(5)
     expect(snap.markers).toHaveLength(1)
     expect(snap.workingState.monitoring_volume).toBe(1.5)
+    expect(snap.practiceState?.playback_mode).toBe('four_stems')
     expect(snap.canUndo).toBe(true)
     expect(snap.canRedo).toBe(true)
     expect(snap.sampleRate).toBe(48000)

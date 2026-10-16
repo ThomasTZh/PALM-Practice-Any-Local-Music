@@ -35,18 +35,21 @@ type Job =
   | {
       id: number
       kind: 'fetch'
+      /** Index of the mix source this job feeds (M2.8). */
+      source: number
       assetId: string
       start: number
       end: number
       generation: number
       channelCount: number
     }
-  | { kind: 'shared-init'; sab: SharedArrayBuffer; channelCount: number }
+  | { kind: 'shared-init'; sabs: SharedArrayBuffer[]; channelCounts: number[] }
   | { kind: 'generation'; generation: number }
   | { kind: 'flush-ack'; generation: number; baseFrame: number }
   | { kind: 'stop' }
 
-let ring: SharedRing | null = null
+/** One ring per mix source (M2.8); the mix shares a single cursor. */
+let rings: SharedRing[] = []
 /** Current generation; -1 means "no valid generation yet". */
 let currentGen = -1
 let inflight: AbortController | null = null
@@ -68,8 +71,8 @@ function post(msg: Record<string, unknown>, transfers?: Transferable[]): void {
 async function handle(job: Job): Promise<void> {
   try {
     if (job.kind === 'shared-init') {
-      // View the transferred SAB; never allocate a second one.
-      ring = viewSharedRing(job.sab, job.channelCount)
+      // View the transferred SABs; never allocate a second one.
+      rings = job.sabs.map((sab, i) => viewSharedRing(sab, job.channelCounts[i]))
       post({ kind: 'ready' })
       return
     }
@@ -80,9 +83,10 @@ async function handle(job: Job): Promise<void> {
       return
     }
     if (job.kind === 'flush-ack') {
-      if (!ring) return
+      if (rings.length === 0) return
       currentGen = job.generation
-      acknowledgeSharedFlush(ring, job.generation, job.baseFrame)
+      // One shared cursor: the same base frame resets every ring.
+      for (const ring of rings) acknowledgeSharedFlush(ring, job.generation, job.baseFrame)
       post({ kind: 'flushed' })
       return
     }
@@ -106,6 +110,7 @@ async function handle(job: Job): Promise<void> {
       return
     }
     const startFrame = Math.floor(job.start / (4 * job.channelCount))
+    const ring = rings[job.source]
     if (ring) {
       // `frames` may be 0 when the ring is full: a dropped write is
       // normal flow control (the transport parks and retries), not an

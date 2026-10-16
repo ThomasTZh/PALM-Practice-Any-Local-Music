@@ -964,3 +964,281 @@ button:hover:not(:disabled) {
   gap: 0.35rem;
   font-size: 0.85rem;
 }
+
+/* ── Track stack (M2.8, spec §10) ─────────────────────────────────── */
+
+.track-stack {
+  margin-top: 0.75rem;
+  border: 1px solid #2a3441;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  background: #141a22;
+}
+
+.track-mode-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #2a3441;
+}
+
+.mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.mode-btn {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.82rem;
+  border: 1px solid #3a4a5c;
+  border-radius: 4px;
+  background: #1e2833;
+  color: #c8d4e0;
+  cursor: pointer;
+}
+
+.mode-btn.active {
+  background: #2a4a6a;
+  border-color: #4da3ff;
+  color: #e6ebf0;
+}
+
+.mode-set-select {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.82rem;
+  border: 1px solid #3a4a5c;
+  border-radius: 4px;
+  background: #1e2833;
+  color: #c8d4e0;
+  max-width: 180px;
+}
+
+.mode-notice {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #f59e0b;
+}
+
+.monitoring-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.monitoring-master-peak {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.monitoring-label {
+  color: #9aa7b4;
+  font-weight: 600;
+}
+
+.monitoring-peak-db {
+  min-width: 3.5em;
+  text-align: right;
+  color: #c8d4e0;
+}
+
+/* Track rows (one per stem) */
+.track-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 240px;
+  gap: 0.5rem;
+  align-items: start;
+  margin-bottom: 0.5rem;
+}
+
+.track-label {
+  padding-top: 0.3rem;
+}
+
+.track-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #c8d4e0;
+}
+
+/* Original reference label above the editor */
+.original-track-label {
+  margin-top: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  background: #141a22;
+}
+
+.original-track-label .track-name {
+  color: #8fa3bf;
+}
+
+/* Lane canvases */
+.track-lane {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  background: #0e1319;
+}
+
+.track-lane-canvases {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.track-lane-canvases canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.track-lane-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  color: #9aa7b4;
+  pointer-events: none;
+}
+
+.track-lane-hidden {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 0.78rem;
+  color: #5a6a7a;
+  border: 1px dashed #2a3441;
+  border-radius: 4px;
+  background: #0e1319;
+}
+
+.track-lane-provenance {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  color: #5a6a7a;
+}
+
+/* Mixer strip */
+.mixer-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  background: #1a222d;
+  font-size: 0.78rem;
+}
+
+.mixer-buttons {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.mixer-btn {
+  width: 2rem;
+  height: 1.8rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid #3a4a5c;
+  border-radius: 3px;
+  background: #1e2833;
+  color: #c8d4e0;
+  cursor: pointer;
+}
+
+.mixer-btn.active {
+  background: #2a4a6a;
+  border-color: #4da3ff;
+  color: #e6ebf0;
+}
+
+.mixer-peak {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mixer-peak-bar {
+  flex: 1;
+  height: 6px;
+  background: #0e1319;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mixer-peak-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+  border-radius: 3px;
+  transition: width 80ms linear;
+}
+
+.mixer-peak-db {
+  min-width: 3em;
+  text-align: right;
+  color: #9aa7b4;
+  font-size: 0.72rem;
+}
+
+.mixer-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mixer-field-inline {
+  font-size: 0.78rem;
+  color: #9aa7b4;
+}
+
+.mixer-field-label {
+  min-width: 3.2em;
+  color: #9aa7b4;
+  font-size: 0.72rem;
+}
+
+.mixer-field-value {
+  min-width: 3.5em;
+  text-align: right;
+  color: #c8d4e0;
+  font-size: 0.72rem;
+}
+
+.mixer-gain,
+.mixer-balance,
+.mixer-height,
+.monitoring-master-gain {
+  flex: 1;
+  height: 4px;
+  accent-color: #4da3ff;
+}
+
+.mixer-visible,
+.monitoring-limiter {
+  accent-color: #4da3ff;
+}
+
+.mixer-color {
+  width: 1.6rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+}

@@ -303,9 +303,13 @@
                 "set_active_result_set": "#/components/schemas/SetActiveResultSetOp",
                 "set_display": "#/components/schemas/SetDisplayOp",
                 "set_follow_playhead": "#/components/schemas/SetFollowPlayheadOp",
+                "set_master_gain": "#/components/schemas/SetMasterGainOp",
+                "set_monitoring_limiter": "#/components/schemas/SetMonitoringLimiterOp",
                 "set_monitoring_volume": "#/components/schemas/SetMonitoringVolumeOp",
+                "set_playback_mode": "#/components/schemas/SetPlaybackModeOp",
                 "set_position": "#/components/schemas/SetPositionOp",
                 "set_selection": "#/components/schemas/SetSelectionOp",
+                "set_track_settings": "#/components/schemas/SetTrackSettingsOp",
                 "set_viewport": "#/components/schemas/SetViewportOp",
                 "update_marker": "#/components/schemas/UpdateMarkerOp"
               },
@@ -341,6 +345,18 @@
               },
               {
                 "$ref": "#/components/schemas/SetActiveResultSetOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetTrackSettingsOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetPlaybackModeOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetMasterGainOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetMonitoringLimiterOp"
               }
             ],
             "title": "Op"
@@ -1303,13 +1319,13 @@
           },
           "master_gain": {
             "default": 1.0,
-            "maximum": 2.0,
+            "maximum": 3.9810717055349722,
             "minimum": 0.0,
             "title": "Master Gain",
             "type": "number"
           },
           "monitoring_limiter": {
-            "default": false,
+            "default": true,
             "title": "Monitoring Limiter",
             "type": "boolean"
           },
@@ -1669,6 +1685,151 @@
         "title": "ProjectStatus",
         "type": "string"
       },
+      "ResultSetDetail": {
+        "description": "A result set with its stems and run provenance (spec \u00a710.1.6).",
+        "properties": {
+          "adapter_version": {
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Key"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_manifest_hash": {
+            "title": "Model Manifest Hash",
+            "type": "string"
+          },
+          "model_manifest_id": {
+            "format": "uuid",
+            "title": "Model Manifest Id",
+            "type": "string"
+          },
+          "stems": {
+            "items": {
+              "$ref": "#/components/schemas/ResultSetStemDetail"
+            },
+            "title": "Stems",
+            "type": "array"
+          },
+          "validation_status": {
+            "title": "Validation Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "validation_status",
+          "cache_key",
+          "stems",
+          "engine_version",
+          "adapter_version",
+          "model_manifest_id",
+          "model_manifest_hash"
+        ],
+        "title": "ResultSetDetail",
+        "type": "object"
+      },
+      "ResultSetStemDetail": {
+        "description": "One published stem of a result set (spec \u00a710.1.6).",
+        "properties": {
+          "audio_asset_id": {
+            "format": "uuid",
+            "title": "Audio Asset Id",
+            "type": "string"
+          },
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "display_name",
+          "audio_asset_id",
+          "sample_rate",
+          "channel_count",
+          "frame_count"
+        ],
+        "title": "ResultSetStemDetail",
+        "type": "object"
+      },
+      "ResultSetSummary": {
+        "description": "One result set in the project's list (spec \u00a710.4.5\u20136 selector).",
+        "properties": {
+          "available_stem_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Stem Roles",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "validation_status": {
+            "title": "Validation Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "validation_status",
+          "available_stem_roles"
+        ],
+        "title": "ResultSetSummary",
+        "type": "object"
+      },
       "SelectStreamRequest": {
         "properties": {
           "stream_index": {
@@ -1771,6 +1932,48 @@
         "title": "SetFollowPlayheadOp",
         "type": "object"
       },
+      "SetMasterGainOp": {
+        "description": "Set the master monitoring gain (M2.8, spec \u00a710.3).",
+        "properties": {
+          "gain": {
+            "maximum": 3.9810717055349722,
+            "minimum": 0.0,
+            "title": "Gain",
+            "type": "number"
+          },
+          "type": {
+            "const": "set_master_gain",
+            "default": "set_master_gain",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gain"
+        ],
+        "title": "SetMasterGainOp",
+        "type": "object"
+      },
+      "SetMonitoringLimiterOp": {
+        "description": "Enable or disable the monitoring-path limiter (M2.8, spec \u00a710.6).",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "set_monitoring_limiter",
+            "default": "set_monitoring_limiter",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SetMonitoringLimiterOp",
+        "type": "object"
+      },
       "SetMonitoringVolumeOp": {
         "properties": {
           "type": {
@@ -1790,6 +1993,25 @@
           "volume"
         ],
         "title": "SetMonitoringVolumeOp",
+        "type": "object"
+      },
+      "SetPlaybackModeOp": {
+        "description": "Select the playback mode (M2.8, spec \u00a710.4.5\u20136).\n\nStem modes require an active result set; the repository pre-validates\nand raises ``PlaybackModeRequiresResultSetError`` (409) when none is\nactive.",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/PlaybackMode"
+          },
+          "type": {
+            "const": "set_playback_mode",
+            "default": "set_playback_mode",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "SetPlaybackModeOp",
         "type": "object"
       },
       "SetPositionOp": {
@@ -1854,6 +2076,109 @@
           }
         },
         "title": "SetSelectionOp",
+        "type": "object"
+      },
+      "SetTrackSettingsOp": {
+        "description": "Patch one stem track's mixer settings (M2.8, spec \u00a710.2).\n\n``None`` fields stay unchanged; at least one field must be present.\nThe track entry is created with defaults when absent.",
+        "properties": {
+          "balance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": -1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "display_height": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.25,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Height"
+          },
+          "gain": {
+            "anyOf": [
+              {
+                "maximum": 3.9810717055349722,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain"
+          },
+          "mute": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mute"
+          },
+          "solo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solo"
+          },
+          "stem_role": {
+            "$ref": "#/components/schemas/StemRole"
+          },
+          "type": {
+            "const": "set_track_settings",
+            "default": "set_track_settings",
+            "title": "Type",
+            "type": "string"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible"
+          }
+        },
+        "required": [
+          "stem_role"
+        ],
+        "title": "SetTrackSettingsOp",
         "type": "object"
       },
       "SetViewportOp": {
@@ -1946,6 +2271,18 @@
         "title": "SourceInfoResponse",
         "type": "object"
       },
+      "StemRole": {
+        "description": "Stem roles (spec \u00a73.4, \u00a78.4).\n\n``vocals``/``drums``/``bass``/``other`` mirror the model's declared\nsource labels (never a hard-coded tensor index). ``others`` is a\npublication-only role for the Bass + Others residual\n(``reference_mix \u2212 bass``), kept distinct from the model's ``other``\nstem.",
+        "enum": [
+          "vocals",
+          "drums",
+          "bass",
+          "other",
+          "others"
+        ],
+        "title": "StemRole",
+        "type": "string"
+      },
       "SystemResponse": {
         "properties": {
           "api_version": {
@@ -1979,6 +2316,12 @@
             "title": "Balance",
             "type": "number"
           },
+          "color": {
+            "default": "#8fa3bf",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
           "display_height": {
             "default": 1.0,
             "maximum": 2.0,
@@ -1988,7 +2331,7 @@
           },
           "gain": {
             "default": 1.0,
-            "maximum": 2.0,
+            "maximum": 3.9810717055349722,
             "minimum": 0.0,
             "title": "Gain",
             "type": "number"
@@ -3495,6 +3838,100 @@
           }
         },
         "summary": "Redo"
+      }
+    },
+    "/api/v1/projects/{project_id}/result-sets": {
+      "get": {
+        "operationId": "list_result_sets_api_v1_projects__project_id__result_sets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResultSetSummary"
+                  },
+                  "title": "Response List Result Sets Api V1 Projects  Project Id  Result Sets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Result Sets"
+      }
+    },
+    "/api/v1/projects/{project_id}/result-sets/{result_set_id}": {
+      "get": {
+        "operationId": "get_result_set_detail_api_v1_projects__project_id__result_sets__result_set_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "result_set_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Result Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultSetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Result Set Detail"
       }
     },
     "/api/v1/projects/{project_id}/source-info": {

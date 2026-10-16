@@ -19,17 +19,32 @@ import {
   type UploadState,
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
+import { fetchResultSetDetail, type ResultSetDetail } from './api/result-sets'
+import type { PracticeState } from './api/commands'
 import {
   PcmTransport,
+  type MixPeaks,
+  type SourceSpec,
   type TransportContextLike,
   type TransportDiagnostics,
   type TransportState,
 } from './playback/transport'
 import { formatTime } from './playback/pcm'
-import { WaveformEditor, type PlayheadSource } from './waveform/WaveformEditor'
+import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import type { View as EditorView } from './waveform/viewport'
 import { useProjectCommands } from './projects/useProjectCommands'
 import type { ConnectionState, ProjectSummary } from './types'
+import {
+  BASS_PAIR_ROLES,
+  FOUR_STEM_ROLES,
+  TrackStack,
+  type PlaybackMode,
+} from './tracks/TrackStack'
+import type { TrackSettingsPatch } from './tracks/MixerStrip'
+import type { PlaybackTarget } from './api/playback'
+
+/** A mix source plus the stem role it plays (UI-layer mapping). */
+export type StemSource = SourceSpec & { role: string }
 
 const client = createApiClient()
 
@@ -426,8 +441,11 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
   )
 }
 
-function defaultCreateAudioContext(): TransportContextLike {
-  return new AudioContext() as unknown as TransportContextLike
+function defaultCreateAudioContext(sampleRate?: number): TransportContextLike {
+  // Stem-mode playback runs at the project rate (spec §10.5.1): the stems
+  // are stored at the project rate and the transport never resamples.
+  const context = sampleRate ? new AudioContext({ sampleRate }) : new AudioContext()
+  return context as unknown as TransportContextLike
 }
 
 const PlaybackPanel = memo(function PlaybackPanel({
@@ -439,9 +457,12 @@ const PlaybackPanel = memo(function PlaybackPanel({
   onVolumeChange,
   onPositionReport,
   parkPosition,
+  practiceState,
+  stemSources,
+  onPeaks,
 }: {
   projectId: string
-  createAudioContext?: () => TransportContextLike
+  createAudioContext?: (sampleRate?: number) => TransportContextLike
   /** Registers a seek function the waveform editor can use for click-to-seek
    * and "Seek to selection start" (M1.11 §13.4); null on unmount. */
   registerSeek?: (seek: ((frame: number) => void) | null) => void
@@ -465,6 +486,15 @@ const PlaybackPanel = memo(function PlaybackPanel({
    * (staying paused) once it exists; absent → stay at zero.
    */
   parkPosition?: number
+  /** The project's mixer/practice state (M2.8); null before first load. */
+  practiceState?: PracticeState | null
+  /**
+   * The active group's mix sources (M2.8, spec §10.4.5): the stems for a
+   * stem mode, null/absent for original mode (the source mix plays alone).
+   */
+  stemSources?: StemSource[] | null
+  /** Per-quantum peak meters from the transport (spec §10.3.7). */
+  onPeaks?: (peaks: MixPeaks) => void
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -494,10 +524,19 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const sourceLoadedRef = useRef(false)
   const volumeSeededRef = useRef(false)
   const parkedRef = useRef(false)
+  // M2.8: the last resolved original-mode target (for mode-switch rebinds)
+  // and the latest mixer props (the transport is created once).
+  const targetRef = useRef<PlaybackTarget | null>(null)
+  const practiceStateRef = useRef(practiceState ?? null)
+  practiceStateRef.current = practiceState ?? null
+  const stemSourcesRef = useRef(stemSources ?? null)
+  stemSourcesRef.current = stemSources ?? null
   // The transport callbacks are created once; read the latest prop through
   // a ref so the closure never goes stale.
   const onPositionReportRef = useRef(onPositionReport)
   onPositionReportRef.current = onPositionReport
+  const onPeaksRef = useRef(onPeaks)
+  onPeaksRef.current = onPeaks
 
   const loadInfo = useCallback(async () => {
     try {
@@ -533,6 +572,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
     transportRef.current = null
     sourceLoadedRef.current = false
     assetIdRef.current = null
+    targetRef.current = null
     pendingContextRef.current = null
     setTransportState('unloaded')
     setPosition(0)
@@ -614,10 +654,99 @@ const PlaybackPanel = memo(function PlaybackPanel({
       },
       onPosition: reportPosition,
       onSuspend: setSuspended,
+      // M2.8 monitoring (spec §10.6): limiter default-on; the live toggle
+      // arrives through `setLimiter` once the practice state is known.
+      limiter: practiceStateRef.current?.monitoring_limiter ?? true,
+      onPeaks: (peaks) => onPeaksRef.current?.(peaks),
     })
     transport.setOutputGain(volumeRef.current / 100)
     transportRef.current = transport
   }, [createAudioContext, info, reportPosition])
+
+  // M2.8 mixer state → live transport (spec §10.3): master gain, limiter,
+  // and one `setSourceParams` per stem in mix order. Safe before the graph
+  // exists (no-ops); `setMasterGain`/`setLimiter` are remembered and apply
+  // to a fresh graph.
+  const applyMix = useCallback(() => {
+    const transport = transportRef.current
+    const ps = practiceStateRef.current
+    if (!transport || !ps) return
+    transport.setMasterGain(ps.master_gain)
+    transport.setLimiter(ps.monitoring_limiter)
+    const stems = stemSourcesRef.current
+    if (stems && stems.length > 0) {
+      stems.forEach((s, i) => {
+        const t = ps.tracks?.[s.role]
+        if (t) {
+          transport.setSourceParams(i, {
+            gain: t.gain,
+            balance: t.balance,
+            mute: t.mute,
+            solo: t.solo,
+          })
+        }
+      })
+    }
+  }, [])
+
+  // Re-apply the mixer whenever the practice state or the mix group
+  // changes (and once when the transport first exists).
+  useEffect(() => {
+    applyMix()
+  }, [applyMix, practiceState, stemSources])
+
+  // M2.8 mode switch (spec §10.4.5): the groups are mutually exclusive,
+  // so a loaded transport is rebound to the new group's sources (the
+  // retained position is kept; the next play builds a fresh graph).
+  const modeKey = useMemo(
+    () =>
+      stemSources && stemSources.length > 0
+        ? `stems:${stemSources.map((s) => s.assetId).join(',')}`
+        : 'original',
+    [stemSources],
+  )
+  useEffect(() => {
+    const transport = transportRef.current
+    if (!transport || !info || !sourceLoadedRef.current) return
+    transport.pause()
+    const stems = stemSourcesRef.current
+    if (stems && stems.length > 0) {
+      transport.rebind({
+        sources: stems,
+        projectRate: info.sampleRate,
+        projectDurationFrames: info.durationFrames,
+      })
+      sourceLoadedRef.current = false
+      setTransportState('unloaded')
+    } else if (targetRef.current) {
+      transport.rebind({
+        target: targetRef.current,
+        projectRate: info.sampleRate,
+        projectDurationFrames: info.durationFrames,
+      })
+      sourceLoadedRef.current = false
+      setTransportState('unloaded')
+    } else {
+      // No original target has been resolved yet: resolve it now (at the
+      // live context's rate) and rebind, keeping the retained position.
+      const rate = transport.contextRate ?? info.sampleRate
+      void ensurePlaybackTarget(projectId, importId, rate)
+        .then((target) => {
+          targetRef.current = target
+          transport.rebind({
+            target,
+            projectRate: info.sampleRate,
+            projectDurationFrames: info.durationFrames,
+          })
+          sourceLoadedRef.current = false
+          setTransportState('unloaded')
+        })
+        .catch((err) => {
+          sourceLoadedRef.current = false
+          setPlayError(err instanceof Error ? err.message : String(err))
+        })
+    }
+  }, [modeKey, info, importId, projectId])
 
   // Apply the restored monitoring volume once when it arrives (M1.15
   // §17.6); the default 100 % stands when it never does. Declared after
@@ -686,20 +815,42 @@ const PlaybackPanel = memo(function PlaybackPanel({
     const transport = transportRef.current
     if (!transport || !info) return
     setPlayError(null)
+    const stems = stemSourcesRef.current
+    const stemMode = stems !== null && stems.length > 0
+    // Spec §10.5.1: stem playback runs at the project rate (the stems are
+    // stored there and the transport never resamples); original mode keeps
+    // the M1 behavior (context at the device rate, converted target).
+    const makeContext = async (): Promise<TransportContextLike> => {
+      const context = (createAudioContext ?? defaultCreateAudioContext)(
+        stemMode ? info.sampleRate : undefined,
+      )
+      await context.resume()
+      return context
+    }
     if (transport.contextLost) {
       // Audio-device-change recovery (spec §15.6): a fresh context, the
-      // representation re-resolved at its rate, and `rebind` (which keeps
-      // the retained position) before playing.
+      // sources re-bound at their rates, and `rebind` (which keeps the
+      // retained position) before playing.
       try {
-        const context = (createAudioContext ?? defaultCreateAudioContext)()
-        const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
-        assetIdRef.current = target.assetId
+        const context = await makeContext()
         pendingContextRef.current = context
-        transport.rebind({
-          target,
-          projectRate: info.sampleRate,
-          projectDurationFrames: info.durationFrames,
-        })
+        if (stemMode) {
+          assetIdRef.current = stems[0].assetId
+          transport.rebind({
+            sources: stems,
+            projectRate: info.sampleRate,
+            projectDurationFrames: info.durationFrames,
+          })
+        } else {
+          const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
+          targetRef.current = target
+          assetIdRef.current = target.assetId
+          transport.rebind({
+            target,
+            projectRate: info.sampleRate,
+            projectDurationFrames: info.durationFrames,
+          })
+        }
       } catch (err) {
         setPlayError(err instanceof Error ? err.message : String(err))
         return
@@ -724,16 +875,25 @@ const PlaybackPanel = memo(function PlaybackPanel({
     }
     if (!sourceLoadedRef.current) {
       try {
-        const context = (createAudioContext ?? defaultCreateAudioContext)()
-        await context.resume()
-        const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
-        assetIdRef.current = target.assetId
+        const context = await makeContext()
         pendingContextRef.current = context
-        await transport.loadSource({
-          target,
-          projectRate: info.sampleRate,
-          projectDurationFrames: info.durationFrames,
-        })
+        if (stemMode) {
+          assetIdRef.current = stems[0].assetId
+          await transport.loadSource({
+            sources: stems,
+            projectRate: info.sampleRate,
+            projectDurationFrames: info.durationFrames,
+          })
+        } else {
+          const target = await ensurePlaybackTarget(projectId, importId, context.sampleRate)
+          targetRef.current = target
+          assetIdRef.current = target.assetId
+          await transport.loadSource({
+            target,
+            projectRate: info.sampleRate,
+            projectDurationFrames: info.durationFrames,
+          })
+        }
         sourceLoadedRef.current = true
       } catch (err) {
         setPlayError(err instanceof Error ? err.message : String(err))
@@ -744,8 +904,12 @@ const PlaybackPanel = memo(function PlaybackPanel({
       await transport.play()
     } catch (err) {
       setPlayError(err instanceof Error ? err.message : String(err))
+      return
     }
-  }, [createAudioContext, importId, info, projectId, suspended])
+    // The fresh graph starts at defaults: apply the current mixer state
+    // (spec §10.3) now that the worklet node exists.
+    applyMix()
+  }, [applyMix, createAudioContext, importId, info, projectId, suspended])
 
   const handleStop = useCallback(() => {
     transportRef.current?.stop()
@@ -953,6 +1117,13 @@ function ProjectView({ project }: { project: ProjectSummary }) {
     [],
   )
 
+  // M2.8: the editor's shared view (drives the stem lanes, spec §10.1.4)
+  // and the transport's per-quantum peaks (spec §10.3.7).
+  const [viewSource, setViewSource] = useState<ViewSource | null>(null)
+  const handleRegisterView = useCallback((source: ViewSource | null) => setViewSource(source), [])
+  const [peaks, setPeaks] = useState<MixPeaks | null>(null)
+  const handlePeaks = useCallback((p: MixPeaks) => setPeaks(p), [])
+
   const commands = useProjectCommands(project.id)
   // Read the latest hook functions through refs so the callbacks below
   // stay referentially stable (the panel is memoized; the editor keys
@@ -998,6 +1169,70 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   }, [])
   const handlePositionReport = useCallback((frame: number, playing: boolean) => {
     notePositionRef.current(frame, playing)
+  }, [])
+
+  // M2.8 track stack (spec §10): the active set's detail feeds the stem
+  // lanes (provenance, spec §10.1.6) and the transport's mix sources
+  // (spec §10.4.5: the groups are mutually exclusive).
+  const practiceState = commands.practiceState
+  const mode: PlaybackMode = practiceState?.playback_mode ?? 'original'
+  const activeSetId = practiceState?.active_result_set_id ?? null
+  const [detail, setDetail] = useState<ResultSetDetail | null>(null)
+  useEffect(() => {
+    if (mode === 'original' || !activeSetId) {
+      setDetail(null)
+      return
+    }
+    const ctrl = new AbortController()
+    fetchResultSetDetail(project.id, activeSetId, ctrl.signal)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+    return () => ctrl.abort()
+  }, [project.id, mode, activeSetId])
+
+  const stemSources = useMemo<StemSource[] | null>(() => {
+    if (mode === 'original' || !detail) return null
+    const order = mode === 'bass_pair' ? BASS_PAIR_ROLES : FOUR_STEM_ROLES
+    const byRole = new Map(detail.stems.map((s) => [s.role, s]))
+    return order
+      .filter((role) => byRole.has(role))
+      .map((role) => {
+        const s = byRole.get(role)!
+        return {
+          role: s.role,
+          assetId: s.assetId,
+          sampleRate: s.sampleRate,
+          channelCount: s.channelCount,
+          frameCount: s.frameCount,
+        }
+      })
+  }, [mode, detail])
+
+  const handleMode = useCallback((m: PlaybackMode) => {
+    void sendRef.current({ type: 'set_playback_mode', mode: m })
+  }, [])
+  const handleSelectSet = useCallback((resultSetId: string) => {
+    void sendRef.current({ type: 'set_active_result_set', result_set_id: resultSetId })
+  }, [])
+  const handleTrackSettings = useCallback((role: string, patch: TrackSettingsPatch) => {
+    const op = { type: 'set_track_settings', stem_role: role } as {
+      type: 'set_track_settings'
+      stem_role: string
+    } & Partial<TrackSettingsPatch>
+    if (patch.gain !== undefined) op.gain = patch.gain
+    if (patch.mute !== undefined) op.mute = patch.mute
+    if (patch.solo !== undefined) op.solo = patch.solo
+    if (patch.balance !== undefined) op.balance = patch.balance
+    if (patch.visible !== undefined) op.visible = patch.visible
+    if (patch.display_height !== undefined) op.display_height = patch.display_height
+    if (patch.color !== undefined) op.color = patch.color
+    void sendRef.current(op)
+  }, [])
+  const handleMasterGain = useCallback((linear: number) => {
+    void sendRef.current({ type: 'set_master_gain', gain: linear })
+  }, [])
+  const handleLimiter = useCallback((enabled: boolean) => {
+    void sendRef.current({ type: 'set_monitoring_limiter', enabled })
   }, [])
 
   // Marker state (M1.15 §17.2). The selection is local UI state; the markers
@@ -1110,7 +1345,26 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onVolumeChange={handleVolumeChange}
         onPositionReport={handlePositionReport}
         parkPosition={parkPosition}
+        practiceState={practiceState}
+        stemSources={stemSources}
+        onPeaks={handlePeaks}
       />
+      <TrackStack
+        projectId={project.id}
+        viewSource={viewSource}
+        playheadSource={playheadSource ?? undefined}
+        practiceState={practiceState}
+        detail={detail}
+        peaks={peaks}
+        onTrackSettings={handleTrackSettings}
+        onMasterGain={handleMasterGain}
+        onLimiter={handleLimiter}
+        onMode={handleMode}
+        onSelectSet={handleSelectSet}
+      />
+      <div className="original-track-label">
+        <span className="track-name">Original</span>
+      </div>
       <WaveformEditor
         projectId={project.id}
         sourceAssetId={project.canonical_asset_id ?? null}
@@ -1136,6 +1390,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onRedo={handleRedo}
         canUndo={commands.canUndo}
         canRedo={commands.canRedo}
+        registerView={handleRegisterView}
       />
       <dl className="project-meta">
         <dt>Status</dt>

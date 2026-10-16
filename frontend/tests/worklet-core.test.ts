@@ -14,7 +14,7 @@ import {
   writeSharedRing,
   type SharedRing,
 } from '../src/playback/pcm-fetch'
-import { ConsumptionState } from '../src/playback/worklet-processor.js'
+import { ConsumptionState, MixState } from '../src/playback/worklet-processor.js'
 
 const RATE = 48_000
 const CH = 2
@@ -470,5 +470,448 @@ describe('ConsumptionState shared ring', () => {
       ),
     ).toBe(750)
     expect(core.buffered).toBe(750)
+  })
+})
+
+describe('MixState', () => {
+  const R = 1_000 // 1 kHz keeps the 5 ms ramp at 5 samples
+
+  function freshMix(frameCount = 48_000, channels: number[] = [2, 2]): MixState {
+    return new MixState({
+      sampleRate: R,
+      frameCount,
+      sources: channels.map((channelCount) => ({ channelCount })),
+    })
+  }
+
+  function mixBlock(mix: MixState, time: number, frames: number) {
+    const output = [new Float32Array(frames), new Float32Array(frames)]
+    const res = mix.process(time, output)
+    return { output, res }
+  }
+
+  function stereoChunk(frames: number, l: (f: number) => number, r: (f: number) => number) {
+    return [
+      Array.from({ length: frames }, (_, f) => l(f)),
+      Array.from({ length: frames }, (_, f) => r(f)),
+    ]
+  }
+
+  function monoChunk(frames: number, v: number) {
+    return [new Float32Array(frames).fill(v)]
+  }
+
+  const CENTER = Math.cos(Math.PI / 4) // mono center-pan level
+
+  it('validates constructor arguments', () => {
+    expect(
+      () => new MixState({ sampleRate: 0, frameCount: 10, sources: [{ channelCount: 2 }] }),
+    ).toThrow(RangeError)
+    expect(
+      () => new MixState({ sampleRate: 1_000, frameCount: -1, sources: [{ channelCount: 2 }] }),
+    ).toThrow(RangeError)
+    expect(() => new MixState({ sampleRate: 1_000, frameCount: 10, sources: [] })).toThrow(
+      RangeError,
+    )
+  })
+
+  it('sums stereo and mono sources with the mono equal-power center pan', () => {
+    const mix = freshMix(1_000, [2, 1])
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 0.25,
+        () => 0.5,
+      ),
+    )
+    mix.enqueueChannels(1, monoChunk(1_000, 0.25))
+    const { output, res } = mixBlock(mix, 0, 128)
+    expect(res.consumed).toBe(128)
+    for (const i of [0, 64, 127]) {
+      expect(output[0][i]).toBeCloseTo(0.25 + 0.25 * CENTER, 5)
+      expect(output[1][i]).toBeCloseTo(0.5 + 0.25 * CENTER, 5)
+    }
+  })
+
+  it('routes chunks to the right source and reports the weakest budget', () => {
+    const mix = freshMix(10_000, [2, 2])
+    expect(
+      mix.enqueueChannels(
+        1,
+        stereoChunk(
+          800,
+          () => 1,
+          () => 1,
+        ),
+      ),
+    ).toBe(true)
+    expect(mix.sources[0].buffered).toBe(0)
+    expect(mix.sources[1].buffered).toBe(800)
+    expect(mix.buffered).toBe(0)
+    expect(
+      mix.enqueueChannels(
+        0,
+        stereoChunk(
+          300,
+          () => 1,
+          () => 1,
+        ),
+      ),
+    ).toBe(true)
+    expect(mix.buffered).toBe(300)
+    // An index out of range is rejected.
+    expect(mix.enqueueChannels(5, monoChunk(10, 1))).toBe(false)
+  })
+
+  it('keeps the shared cursor in lockstep: a starving source pauses the group', () => {
+    const mix = freshMix(10_000, [2, 2])
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    mix.enqueueChannels(
+      1,
+      stereoChunk(
+        10_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    const { res } = mixBlock(mix, 0, 1_000)
+    expect(res.consumed).toBe(1_000)
+    expect(res.underrun).toBe(false)
+    expect(mix.sources[0].position).toBe(1_000)
+    expect(mix.sources[1].position).toBe(1_000)
+    // Source 0 is empty: the group stalls, and the underrun is reported.
+    const stall = mixBlock(mix, 1, 1_000)
+    expect(stall.res.consumed).toBe(0)
+    expect(stall.res.underrun).toBe(true)
+    expect(mix.sources[0].position).toBe(1_000)
+    expect(mix.sources[1].position).toBe(1_000)
+    // No double report while still starved.
+    expect(mixBlock(mix, 2, 128).res.underrun).toBe(false)
+    // New data for the starving source re-arms the group from the cursor.
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 2,
+        () => 2,
+      ),
+    )
+    const go = mixBlock(mix, 2.128, 512)
+    expect(go.res.consumed).toBe(512)
+    expect(go.res.underrun).toBe(false)
+    expect(mix.position).toBe(1_512)
+    expect(mix.sources[0].position).toBe(1_512)
+    expect(mix.sources[1].position).toBe(1_512)
+  })
+
+  it('plays silence without an underrun while every source is flushing', () => {
+    const mix = freshMix(1_000, [2, 2])
+    const { res, output } = mixBlock(mix, 0, 128)
+    expect(res.consumed).toBe(0)
+    expect(res.underrun).toBe(false)
+    expect(output[0][0]).toBe(0)
+    expect(output[1][127]).toBe(0)
+    // One source has data, the other does not: the group cannot advance,
+    // and data WAS expected — that is an underrun.
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        128,
+        () => 1,
+        () => 1,
+      ),
+    )
+    const partial = mixBlock(mix, 0.128, 128)
+    expect(partial.res.consumed).toBe(0)
+    expect(partial.res.underrun).toBe(true)
+  })
+
+  it('applies a 3 dB/side stereo balance (spec §10.3.5)', () => {
+    const mix = freshMix(1_000, [2])
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    mix.setSourceParams(0, { balance: 1 })
+    mixBlock(mix, 0, 100) // absorb the 5-sample ramp
+    const { output } = mixBlock(mix, 0.1, 100)
+    expect(output[0][0]).toBeCloseTo(Math.pow(10, -0.3), 5)
+    expect(output[1][0]).toBeCloseTo(Math.pow(10, 0.3), 5)
+    // Balance −1 is the mirror.
+    mix.setSourceParams(0, { balance: -1 })
+    mixBlock(mix, 0.2, 100)
+    const flipped = mixBlock(mix, 0.3, 100)
+    expect(flipped.output[0][0]).toBeCloseTo(Math.pow(10, 0.3), 5)
+    expect(flipped.output[1][0]).toBeCloseTo(Math.pow(10, -0.3), 5)
+  })
+
+  it('applies the mono equal-power pan law (spec §10.3.6)', () => {
+    const mix = freshMix(1_000, [1])
+    mix.enqueueChannels(0, monoChunk(1_000, 1))
+    mix.setSourceParams(0, { balance: 1 })
+    mixBlock(mix, 0, 100)
+    const hard = mixBlock(mix, 0.1, 100)
+    expect(hard.output[0][0]).toBeCloseTo(0, 5) // cos(π/2)
+    expect(hard.output[1][0]).toBeCloseTo(1, 5) // sin(π/2)
+    mix.setSourceParams(0, { balance: 0 })
+    mixBlock(mix, 0.2, 100)
+    const center = mixBlock(mix, 0.3, 100)
+    expect(center.output[0][0]).toBeCloseTo(CENTER, 5)
+    expect(center.output[1][0]).toBeCloseTo(CENTER, 5)
+  })
+
+  it('honors solo semantics: mute overrides solo, solo silences the rest', () => {
+    const mix = freshMix(1_000, [2, 2])
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    mix.enqueueChannels(
+      1,
+      stereoChunk(
+        1_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    let { output } = mixBlock(mix, 0, 100)
+    expect(output[0][0]).toBeCloseTo(2, 5)
+    // Solo source 1: source 0 goes silent.
+    mix.setSourceParams(1, { solo: true })
+    mixBlock(mix, 0.1, 100)
+    ;({ output } = mixBlock(mix, 0.2, 100))
+    expect(output[0][0]).toBeCloseTo(1, 5)
+    // Muting the soloed source silences everything (mute wins).
+    mix.setSourceParams(1, { mute: true })
+    mixBlock(mix, 0.3, 100)
+    ;({ output } = mixBlock(mix, 0.4, 100))
+    expect(output[0][0]).toBe(0)
+    // Clear solo/mute, then mute source 0 alone: source 1 stays.
+    mix.setSourceParams(1, { mute: false, solo: false })
+    mix.setSourceParams(0, { mute: true })
+    mixBlock(mix, 0.5, 100)
+    ;({ output } = mixBlock(mix, 0.6, 100))
+    expect(output[0][0]).toBeCloseTo(1, 5)
+    // Unmute: both back.
+    mix.setSourceParams(0, { mute: false })
+    mixBlock(mix, 0.7, 100)
+    ;({ output } = mixBlock(mix, 0.8, 100))
+    expect(output[0][0]).toBeCloseTo(2, 5)
+  })
+
+  it('ramps parameter changes linearly over 5 ms', () => {
+    const mix = freshMix(1_000, [1])
+    mix.enqueueChannels(0, monoChunk(1_000, 1))
+    mix.setMasterGain(0.5)
+    // The ramp is 5 samples at 1 kHz: 1.0 → 0.5 in unit steps.
+    const { output } = mixBlock(mix, 0, 10)
+    expect(output[0][0]).toBeCloseTo(1.0 * CENTER, 5)
+    expect(output[0][1]).toBeCloseTo(0.9 * CENTER, 5)
+    expect(output[0][4]).toBeCloseTo(0.6 * CENTER, 5)
+    expect(output[0][9]).toBeCloseTo(0.5 * CENTER, 5)
+    // Steady afterwards.
+    const steady = mixBlock(mix, 0.01, 10)
+    expect(steady.output[0][9]).toBeCloseTo(0.5 * CENTER, 5)
+  })
+
+  it('applies the master gain to the summed output', () => {
+    const mix = freshMix(1_000, [1])
+    mix.enqueueChannels(0, monoChunk(1_000, 1))
+    mix.setMasterGain(2)
+    mixBlock(mix, 0, 100)
+    const { output } = mixBlock(mix, 0.1, 100)
+    expect(output[0][0]).toBeCloseTo(2 * CENTER, 5)
+  })
+
+  it('reports per-track and master peaks with consumed, reset per quantum', () => {
+    // frameCount 1 200 so the drain below starves without ending the mix.
+    // The mono source runs out first, leaving the stereo source buffered
+    // — that is exactly the "group paused by a starving source" state.
+    const mix = freshMix(1_200, [2, 1])
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 0.5,
+        () => 0.5,
+      ),
+    )
+    mix.enqueueChannels(1, monoChunk(800, 1))
+    const { res } = mixBlock(mix, 0, 128)
+    expect(res.peaks).not.toBeNull()
+    expect(res.peaks!.tracks[0]).toBeCloseTo(0.5, 5)
+    expect(res.peaks!.tracks[1]).toBeCloseTo(CENTER, 5)
+    expect(res.peaks!.master).toBeCloseTo(0.5 + CENTER, 5)
+    // Drain until the mono source starves: the stalling block reports the
+    // underrun once, and the following silent block reports zero peaks
+    // (the per-quantum reset is visible).
+    let t = 0.128
+    let stalling = null
+    while (mix.position < 800) {
+      stalling = mixBlock(mix, t, 128)
+      t += 0.128
+    }
+    expect(stalling.res.underrun).toBe(true)
+    const silent = mixBlock(mix, t, 128)
+    expect(silent.res.consumed).toBe(0)
+    expect(silent.res.underrun).toBe(false) // one report per episode
+    expect(silent.res.peaks!.tracks).toEqual([0, 0])
+    expect(silent.res.peaks!.master).toBe(0)
+  })
+
+  it('pauses the whole group and resumes at the preserved cursor', () => {
+    const mix = freshMix(10_000, [1])
+    mix.enqueueChannels(0, monoChunk(10_000, 0.5))
+    mixBlock(mix, 0, 100)
+    const held = mix.position
+    expect(held).toBe(100)
+    mix.pause()
+    const ramp = mixBlock(mix, 0.1, 100)
+    expect(ramp.res.consumed).toBe(0)
+    expect(ramp.output[0][0]).not.toBe(0) // holds the last mixed sample
+    expect(mix.sources[0].position).toBe(held)
+    mix.resume()
+    const after = mixBlock(mix, 0.2, 100)
+    expect(after.res.consumed).toBe(100)
+    expect(after.output[0][0]).toBeCloseTo(0.5 * CENTER, 5)
+    expect(mix.position).toBe(held + 100)
+    expect(mix.sources[0].position).toBe(held + 100)
+  })
+
+  it('seeks every source together; stale data is never output', () => {
+    const mix = freshMix(10_000, [2, 2])
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        1_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    mix.enqueueChannels(
+      1,
+      stereoChunk(
+        1_000,
+        () => 1,
+        () => 1,
+      ),
+    )
+    mixBlock(mix, 0, 100)
+    mix.seek(5_000, [1, 1])
+    expect(mix.position).toBe(5_000)
+    expect(mix.sources[0].position).toBe(5_000)
+    expect(mix.sources[1].position).toBe(5_000)
+    const stale = mixBlock(mix, 5, 100)
+    expect(stale.res.consumed).toBe(0)
+    expect(stale.output[0][0]).toBe(0)
+    expect(stale.res.underrun).toBe(false) // flushing
+    mix.enqueueChannels(
+      0,
+      stereoChunk(
+        100,
+        () => 2,
+        () => 2,
+      ),
+    )
+    mix.enqueueChannels(
+      1,
+      stereoChunk(
+        100,
+        () => 2,
+        () => 2,
+      ),
+    )
+    const fresh = mixBlock(mix, 5.1, 100)
+    expect(fresh.res.consumed).toBe(100)
+    expect(fresh.output[0][0]).toBeCloseTo(4, 5) // both sources at 2
+    expect(mix.position).toBe(5_100)
+  })
+
+  it('ends at the shared endpoint with a final anchor', () => {
+    const mix = freshMix(300, [1, 1])
+    mix.enqueueChannels(0, monoChunk(300, 0.5))
+    mix.enqueueChannels(1, monoChunk(300, 0.25))
+    mixBlock(mix, 0, 200)
+    const last = mixBlock(mix, 0.2, 100)
+    expect(last.res.ended).toBe(true)
+    expect(last.res.anchor).toEqual({ frame: 300, time: 0.2, paused: false })
+    expect(last.output[0][99]).toBeCloseTo(0.75 * CENTER, 5)
+    expect(mix.position).toBe(300)
+    const after = mixBlock(mix, 0.3, 128)
+    expect(after.res.ended).toBe(false)
+    expect(after.output[0][0]).toBe(0)
+  })
+
+  it('consumes per-source shared rings with per-source generations', () => {
+    const mix = freshMix(10_000, [2, 2])
+    const ring0 = createSharedRing(16 + 2_000 * 2 * 4, 2)
+    const ring1 = createSharedRing(16 + 2_000 * 2 * 4, 2)
+    mix.attachShared(0, ring0.sab)
+    mix.attachShared(1, ring1.sab)
+    mix.seek(0, [1, 1])
+    acknowledgeSharedFlush(ring0, 1, 0)
+    acknowledgeSharedFlush(ring1, 1, 0)
+    expect(
+      writeSharedRing(
+        ring0,
+        makeBuffer(1_000, (f, c) => (f + c * 10_000) * 0.001, 2),
+      ),
+    ).toBe(1_000)
+    expect(
+      writeSharedRing(
+        ring1,
+        makeBuffer(1_000, () => 0.5, 2),
+      ),
+    ).toBe(1_000)
+    const { output, res } = mixBlock(mix, 0, 500)
+    expect(res.consumed).toBe(500)
+    // f=100: source 0 L=0.1 R=10.1; source 1 L=R=0.5.
+    expect(output[0][100]).toBeCloseTo(0.6, 5)
+    expect(output[1][100]).toBeCloseTo(10.6, 5)
+    expect(mix.sources[0].position).toBe(500)
+    expect(mix.sources[1].position).toBe(500)
+
+    // A seek to new generations stalls both rings until acknowledged…
+    mix.seek(1_000, [2, 2])
+    const stale = mixBlock(mix, 1, 100)
+    expect(stale.res.consumed).toBe(0)
+    expect(stale.res.underrun).toBe(false) // still flushing
+    // …and one ready source is not enough: the group needs all of them.
+    acknowledgeSharedFlush(ring0, 2, 1_000)
+    expect(
+      writeSharedRing(
+        ring0,
+        makeBuffer(1_000, () => 0.5, 2),
+      ),
+    ).toBe(1_000)
+    const partial = mixBlock(mix, 1.1, 100)
+    expect(partial.res.consumed).toBe(0)
+    expect(partial.res.underrun).toBe(true)
+    acknowledgeSharedFlush(ring1, 2, 1_000)
+    expect(
+      writeSharedRing(
+        ring1,
+        makeBuffer(1_000, () => 0.5, 2),
+      ),
+    ).toBe(1_000)
+    const go = mixBlock(mix, 1.2, 100)
+    expect(go.res.consumed).toBe(100)
+    expect(go.output[0][0]).toBeCloseTo(1, 5)
   })
 })

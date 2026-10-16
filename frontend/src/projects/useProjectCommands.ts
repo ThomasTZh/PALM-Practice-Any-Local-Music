@@ -32,6 +32,7 @@ import {
   type CommandOp,
   type CommandResult,
   type Marker,
+  type PracticeState,
   type WorkingState,
 } from '../api/commands'
 
@@ -43,6 +44,8 @@ export interface ProjectCommands {
   revision: number
   markers: Marker[]
   workingState: WorkingState
+  /** The project's mixer/practice state (M2.8); null before first load. */
+  practiceState: PracticeState | null
   canUndo: boolean
   canRedo: boolean
   /** Commands currently in flight. */
@@ -74,6 +77,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
   const [revision, setRevision] = useState(0)
   const [markers, setMarkers] = useState<Marker[]>([])
   const [workingState, setWorkingState] = useState<WorkingState>(DEFAULT_WORKING_STATE)
+  const [practiceState, setPracticeState] = useState<PracticeState | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
@@ -94,6 +98,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
     setRevision(result.revision)
     setMarkers(result.markers)
     setWorkingState(result.workingState)
+    setPracticeState(result.practiceState)
     setCanUndo(result.canUndo)
     setCanRedo(result.canRedo)
   }, [])
@@ -117,6 +122,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
       setRevision(snap.revision)
       setMarkers(snap.markers)
       setWorkingState(snap.workingState)
+      setPracticeState(snap.practiceState)
       setCanUndo(snap.canUndo)
       setCanRedo(snap.canRedo)
       setStaleNotice('Project changed elsewhere — reloaded.')
@@ -251,6 +257,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
       setRevision(0)
       setMarkers([])
       setWorkingState(DEFAULT_WORKING_STATE)
+      setPracticeState(null)
       setCanUndo(false)
       setCanRedo(false)
       return
@@ -264,6 +271,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
         setRevision(snap.revision)
         setMarkers(snap.markers)
         setWorkingState(snap.workingState)
+        setPracticeState(snap.practiceState)
         setCanUndo(snap.canUndo)
         setCanRedo(snap.canRedo)
         setLoaded(true)
@@ -316,6 +324,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
     revision,
     markers,
     workingState,
+    practiceState,
     canUndo,
     canRedo,
     pendingCount,

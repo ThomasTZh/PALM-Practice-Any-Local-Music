@@ -25,8 +25,9 @@ MAX_LOOP_NAME_LENGTH = 80
 MIN_PLAYBACK_SPEED = 0.25
 MAX_PLAYBACK_SPEED = 2.0
 
-#: Master gain and per-track gain bounds.
-MAX_GAIN = 2.0
+#: Master gain and per-track gain bounds: 0.0 (exact silence is ``mute``,
+#: §10.3.3) to +12 dB (10^(12/20), §10.3.2).
+MAX_GAIN = 10.0 ** (12.0 / 20.0)
 
 #: Per-track display height bounds (editor range).
 MIN_DISPLAY_HEIGHT = 0.25
@@ -68,6 +69,10 @@ class TrackSettings(BaseModel):
     balance: float = Field(default=0.0, ge=-1.0, le=1.0)
     visible: bool = True
     display_height: float = Field(default=1.0, ge=MIN_DISPLAY_HEIGHT, le=MAX_DISPLAY_HEIGHT)
+    #: Track color (spec §10.2). The domain is palette-agnostic: the
+    #: frontend applies the role-palette color as the displayed initial
+    #: value.
+    color: str = Field(default="#8fa3bf", pattern=r"^#[0-9a-fA-F]{6}$")
 
 
 class PracticeLoop(BaseModel):
@@ -106,7 +111,9 @@ class PracticeState(BaseModel):
     active_result_set_id: Uuid | None = None
     tracks: dict[str, TrackSettings] = Field(default_factory=dict, max_length=8)
     master_gain: float = Field(default=1.0, ge=0.0, le=MAX_GAIN)
-    monitoring_limiter: bool = False
+    #: Monitoring-path limiter, on by default (spec §10.6.3). Monitoring
+    #: only: it never touches stored samples.
+    monitoring_limiter: bool = True
     playback_speed: float = Field(
         default=1.0, ge=MIN_PLAYBACK_SPEED, le=MAX_PLAYBACK_SPEED
     )

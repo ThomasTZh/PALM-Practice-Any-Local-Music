@@ -101,6 +101,16 @@ class ResultSetNotFoundError(ApiError):
         )
 
 
+class PlaybackModeRequiresResultSetError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="PLAYBACK_MODE_REQUIRES_RESULT_SET",
+            message="Stem playback modes require an active separation result set; "
+            "select a result set first",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
 class InvalidCommandError(ApiError):
     def __init__(self, detail: str) -> None:
         super().__init__(

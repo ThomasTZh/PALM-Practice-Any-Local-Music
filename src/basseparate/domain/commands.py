@@ -15,8 +15,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.domain.common import Revision, SamplePosition, Uuid
 from basseparate.domain.marker import MAX_MARKER_LABEL_LENGTH, MarkerRecord
-from basseparate.domain.practice import PracticeState
+from basseparate.domain.practice import (
+    MAX_DISPLAY_HEIGHT,
+    MAX_GAIN,
+    MIN_DISPLAY_HEIGHT,
+    PlaybackMode,
+    PracticeState,
+)
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
+from basseparate.domain.separation import StemRole
 
 DEFAULT_MARKER_LABEL = "Marker"
 DEFAULT_MARKER_COLOR = "#e11d48"
@@ -117,6 +124,66 @@ class SetActiveResultSetOp(BaseModel):
     result_set_id: Uuid | None = None
 
 
+class SetTrackSettingsOp(BaseModel):
+    """Patch one stem track's mixer settings (M2.8, spec §10.2).
+
+    ``None`` fields stay unchanged; at least one field must be present.
+    The track entry is created with defaults when absent.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_track_settings"] = "set_track_settings"
+    stem_role: StemRole
+    gain: float | None = Field(default=None, ge=0.0, le=MAX_GAIN)
+    balance: float | None = Field(default=None, ge=-1.0, le=1.0)
+    mute: bool | None = None
+    solo: bool | None = None
+    visible: bool | None = None
+    display_height: float | None = Field(
+        default=None, ge=MIN_DISPLAY_HEIGHT, le=MAX_DISPLAY_HEIGHT
+    )
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+    def model_post_init(self, __context: object) -> None:
+        patch = (self.gain, self.balance, self.mute, self.solo, self.visible,
+                 self.display_height, self.color)
+        if all(value is None for value in patch):
+            raise ValueError("set_track_settings requires at least one field to change")
+
+
+class SetPlaybackModeOp(BaseModel):
+    """Select the playback mode (M2.8, spec §10.4.5–6).
+
+    Stem modes require an active result set; the repository pre-validates
+    and raises ``PlaybackModeRequiresResultSetError`` (409) when none is
+    active.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_playback_mode"] = "set_playback_mode"
+    mode: PlaybackMode
+
+
+class SetMasterGainOp(BaseModel):
+    """Set the master monitoring gain (M2.8, spec §10.3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_master_gain"] = "set_master_gain"
+    gain: float = Field(ge=0.0, le=MAX_GAIN)
+
+
+class SetMonitoringLimiterOp(BaseModel):
+    """Enable or disable the monitoring-path limiter (M2.8, spec §10.6)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_monitoring_limiter"] = "set_monitoring_limiter"
+    enabled: bool
+
+
 ProjectCommandOp = Annotated[
     (
         AddMarkerOp
@@ -129,6 +196,10 @@ ProjectCommandOp = Annotated[
         | SetPositionOp
         | SetFollowPlayheadOp
         | SetActiveResultSetOp
+        | SetTrackSettingsOp
+        | SetPlaybackModeOp
+        | SetMasterGainOp
+        | SetMonitoringLimiterOp
     ),
     Field(discriminator="type"),
 ]

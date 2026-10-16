@@ -34,6 +34,7 @@ from basseparate.api.import_routes import router as import_router
 from basseparate.api.job_routes import router as job_router
 from basseparate.api.middleware import RequestTracingMiddleware
 from basseparate.api.playback_routes import router as playback_router
+from basseparate.api.result_set_routes import router as result_set_router
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
@@ -52,6 +53,7 @@ from basseparate.storage import (
     JobRepository,
     ProjectRepository,
     RepresentationRepository,
+    SeparationRepository,
     StoragePaths,
     WaveformCacheRepository,
     initialize_database,
@@ -308,6 +310,7 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.idempotency_store = IdempotencyStore()
         app.state.session_token = session_token
         app.state.job_repository = JobRepository(paths.database_path)
+        app.state.separation_repository = SeparationRepository(paths.database_path)
         representation_repository = RepresentationRepository(paths.database_path)
         app.state.representation_repository = representation_repository
         cache_repository = WaveformCacheRepository(paths.database_path, paths.cache)
@@ -371,6 +374,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(playback_router)
     app.include_router(asset_router)
     app.include_router(command_router)
+    app.include_router(result_set_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

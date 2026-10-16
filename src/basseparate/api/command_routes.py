@@ -24,6 +24,7 @@ from basseparate.api.errors import (
     MarkerNotFoundError,
     NothingToRedoError,
     NothingToUndoError,
+    PlaybackModeRequiresResultSetError,
     ProjectNotFoundError,
     ProjectNotReadyError,
     ResultSetNotFoundError,
@@ -40,6 +41,9 @@ from basseparate.storage.repository import (
 )
 from basseparate.storage.repository import (
     NothingToUndoError as RepoNothingToUndoError,
+)
+from basseparate.storage.repository import (
+    PlaybackModeRequiresResultSetError as RepoPlaybackModeRequiresResultSetError,
 )
 from basseparate.storage.repository import (
     ProjectMissingError,
@@ -81,6 +85,8 @@ def _raise_mapped(exc: Exception) -> NoReturn:
         raise MarkerNotFoundError(str(exc.marker_id)) from exc
     if isinstance(exc, RepoResultSetNotFoundError):
         raise ResultSetNotFoundError(str(exc.result_set_id)) from exc
+    if isinstance(exc, RepoPlaybackModeRequiresResultSetError):
+        raise PlaybackModeRequiresResultSetError() from exc
     if isinstance(exc, ProjectNotReady):
         raise ProjectNotReadyError() from exc
     if isinstance(exc, ValidationError):

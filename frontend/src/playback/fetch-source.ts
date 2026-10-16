@@ -43,10 +43,20 @@ export interface PcmWriteResult {
 }
 
 export interface FetchSource {
-  /** Transfer path: fetch + deinterleave an inclusive byte range. */
-  fetchChunk(assetId: string, start: number, end: number, generation: number): Promise<PcmChunk>
-  /** Shared path: fetch + write into the ring. 0 frames = ring full (dropped). */
+  /**
+   * Transfer path: fetch + deinterleave an inclusive byte range for the
+   * source at `source` (M2.8: one fetch source serves the whole mix).
+   */
+  fetchChunk(
+    source: number,
+    assetId: string,
+    start: number,
+    end: number,
+    generation: number,
+  ): Promise<PcmChunk>
+  /** Shared path: fetch + write into the source's ring. 0 frames = full. */
   writeChunk(
+    source: number,
     assetId: string,
     start: number,
     end: number,
@@ -54,10 +64,13 @@ export interface FetchSource {
   ): Promise<PcmWriteResult>
   /** Transfer path: adopt a new generation; older in-flight work is dropped. */
   setGeneration(generation: number): void
-  /** Shared path: flush ack — sets the generation and the writer base frame. */
+  /**
+   * Shared path: flush ack — sets the generation and the writer base
+   * frame (one shared cursor: the base frame applies to every ring).
+   */
   acknowledgeFlush(generation: number, baseFrame: number): Promise<void>
-  /** Shared path: hand the SAB to the writer side; resolves when ready. */
-  attachShared(sab: SharedArrayBuffer, channelCount: number): Promise<void>
+  /** Shared path: hand the SABs (one per source) to the writer side. */
+  attachShared(sabs: SharedArrayBuffer[], channelCounts: number[]): Promise<void>
   /** Abort in-flight network work (seek/stop). */
   stop(): void
   dispose(): void
@@ -84,16 +97,16 @@ export class WorkerFetchSource implements FetchSource {
 
   constructor(
     private worker: WorkerLike,
-    private channelCount: number,
+    private channelCounts: number[],
   ) {
     worker.onmessage = (event) => this.onMessage(event.data)
   }
 
-  /** Hand the SAB to the worker (shared path); resolves on its `ready`. */
-  attachShared(sab: SharedArrayBuffer, channelCount: number): Promise<void> {
+  /** Hand the SABs to the worker (shared path); resolves on its `ready`. */
+  attachShared(sabs: SharedArrayBuffer[], channelCounts: number[]): Promise<void> {
     return new Promise((resolve, reject) => {
       this.readyAck = { resolve, reject }
-      this.worker.postMessage({ kind: 'shared-init', sab, channelCount }, [sab])
+      this.worker.postMessage({ kind: 'shared-init', sabs, channelCounts }, sabs)
     })
   }
 
@@ -108,7 +121,13 @@ export class WorkerFetchSource implements FetchSource {
     })
   }
 
-  fetchChunk(assetId: string, start: number, end: number, generation: number): Promise<PcmChunk> {
+  fetchChunk(
+    source: number,
+    assetId: string,
+    start: number,
+    end: number,
+    generation: number,
+  ): Promise<PcmChunk> {
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
       this.pending.set(id, {
@@ -118,16 +137,18 @@ export class WorkerFetchSource implements FetchSource {
       this.worker.postMessage({
         id,
         kind: 'fetch',
+        source,
         assetId,
         start,
         end,
         generation,
-        channelCount: this.channelCount,
+        channelCount: this.channelCounts[source],
       })
     })
   }
 
   writeChunk(
+    source: number,
     assetId: string,
     start: number,
     end: number,
@@ -142,11 +163,12 @@ export class WorkerFetchSource implements FetchSource {
       this.worker.postMessage({
         id,
         kind: 'fetch',
+        source,
         assetId,
         start,
         end,
         generation,
-        channelCount: this.channelCount,
+        channelCount: this.channelCounts[source],
       })
     })
   }
@@ -215,16 +237,16 @@ export class WorkerFetchSource implements FetchSource {
  */
 export class DirectFetchSource implements FetchSource {
   private gen = -1
-  private ring: SharedRing | null = null
+  private rings: SharedRing[] = []
 
   constructor(
     private fetcher: (assetId: string, start: number, end: number) => Promise<ArrayBuffer>,
-    private channelCount: number,
+    private channelCounts: number[],
   ) {}
 
-  attachShared(sab: SharedArrayBuffer, channelCount: number): Promise<void> {
-    // View the transferred SAB; never allocate a second one.
-    this.ring = viewSharedRing(sab, channelCount)
+  attachShared(sabs: SharedArrayBuffer[], channelCounts: number[]): Promise<void> {
+    // View the transferred SABs; never allocate a second one.
+    this.rings = sabs.map((sab, i) => viewSharedRing(sab, channelCounts[i]))
     return Promise.resolve()
   }
 
@@ -234,17 +256,24 @@ export class DirectFetchSource implements FetchSource {
 
   acknowledgeFlush(generation: number, baseFrame: number): Promise<void> {
     this.gen = generation
-    if (this.ring) acknowledgeSharedFlush(this.ring, generation, baseFrame)
+    for (const ring of this.rings) acknowledgeSharedFlush(ring, generation, baseFrame)
     return Promise.resolve()
   }
 
-  fetchChunk(assetId: string, start: number, end: number, generation: number): Promise<PcmChunk> {
+  fetchChunk(
+    source: number,
+    assetId: string,
+    start: number,
+    end: number,
+    generation: number,
+  ): Promise<PcmChunk> {
     if (generation !== this.gen) return Promise.reject(new StaleGenerationError())
+    const channelCount = this.channelCounts[source]
     return this.fetcher(assetId, start, end).then((bytes) => {
       if (generation !== this.gen) throw new StaleGenerationError()
-      const channels = deinterleaveChannels(bytes, this.channelCount)
+      const channels = deinterleaveChannels(bytes, channelCount)
       return {
-        startFrame: Math.floor(start / (4 * this.channelCount)),
+        startFrame: Math.floor(start / (4 * channelCount)),
         frames: channels.length > 0 ? channels[0].length : 0,
         channels,
       }
@@ -252,22 +281,24 @@ export class DirectFetchSource implements FetchSource {
   }
 
   writeChunk(
+    source: number,
     assetId: string,
     start: number,
     end: number,
     generation: number,
   ): Promise<PcmWriteResult> {
     if (generation !== this.gen) return Promise.reject(new StaleGenerationError())
+    const channelCount = this.channelCounts[source]
     return this.fetcher(assetId, start, end).then((bytes) => {
       if (generation !== this.gen) throw new StaleGenerationError()
-      const frames = this.ring ? writeSharedRing(this.ring, bytes) : 0
-      return { startFrame: Math.floor(start / (4 * this.channelCount)), frames }
+      const frames = this.rings[source] ? writeSharedRing(this.rings[source], bytes) : 0
+      return { startFrame: Math.floor(start / (4 * channelCount)), frames }
     })
   }
 
   stop(): void {}
 
   dispose(): void {
-    this.ring = null
+    this.rings = []
   }
 }

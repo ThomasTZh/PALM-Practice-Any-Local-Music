@@ -33,7 +33,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.8 (Add aligned tracks and the stem
-  mixer, spec §10) — **not started**. M2.7 leaves the storage-report /
+  mixer, spec §10) — **in progress** (Phases 1–6 done; Phase 7 next:
+  full gate + evidence + commit).
+  Plan: `projectPlans/m2.8-plan.md`. M2.7 leaves the storage-report /
   reclaim services and the active-result-set command ready for the
   frontend (report/cleanup routes + scheduler wiring land in M2.17).
 - **Last commit:** `ac12159` — M2.7 (analysis caching and version
@@ -60,15 +62,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action (M2.8 — Add aligned tracks and the stem mixer, spec
-  §10):** write `projectPlans/m2.8-plan.md` (track layout §10.1, mixer
-  controls §10.2, gain/pan §10.3, solo semantics §10.4, ...), then
-  implement phase by phase. The M2.7 backend is ready: the
-  active-result-set command, the storage-report/reclaim services, and
-  per-stem waveform assets. Report/cleanup HTTP routes and scheduler
-  wiring stay in M2.17.
-- **Resume procedure:** read this file; the working tree is clean at
-  `ac12159`. Establish the baseline: `.venv/bin/python -m pytest
+- **Next action (M2.8 Phase 7 — closeout):** full gate (unit +
+  integration py, ruff, mypy, contracts in sync, frontend test + tsc +
+  prettier), evidence doc `docs/evidence/m2.8-aligned-tracks-mixer.md`
+  (git-ignored), then the single M2.8 commit (includes
+  `projectPlans/m2.8-plan.md`) + ledger-hash follow-up, per
+  `projectPlans/m2.8-plan.md`.
+- **Resume procedure:** read this file; HEAD is `7852920` with the
+  untracked `projectPlans/m2.8-plan.md` (M2.8 Phase 1 output; committed
+  with the M2.8 work in Phase 7). Establish the baseline: `.venv/bin/python -m pytest
   tests/unit -q` (840 passed), `.venv/bin/python -m pytest
   tests/integration -q` (224 passed), `.venv/bin/python -m ruff check
   src/ tests/` (clean), `.venv/bin/python -m mypy src/basseparate/`
@@ -1920,7 +1922,7 @@ registry.
   `docs/evidence/m2.5-bounded-separation.md`. Commit `M2.5: ...` +
   ledger hash follow-up.
 
-### M2.6 — Validate and publish stems (in progress)
+### M2.6 — Validate and publish stems (complete — `a088363`)
 
 Spec: `projectPlans/milestone2.md` §8; plan: `projectPlans/m2.6-plan.md`.
 Scope: turn a completed staged M2.5 run (44.1 kHz f32le stems + run
@@ -2188,6 +2190,263 @@ contracts (`openapi.json`, `frontend/src/api/schema.ts`), and the test
 additions (`test_separation_cache` new, `test_cache_lookup` new,
 `test_active_result_set` new, `test_storage_report` new,
 `test_publication` +1, plus Phase-2 test files).
+
+## M2.8 — Aligned tracks and the stem mixer (spec §10)
+
+**Scope (per `projectPlans/m2.8-plan.md`):** turn the active result
+set into a usable practice surface — the original as a reference track
+plus the active stem group (bass pair or four stems) as aligned
+waveforms, a per-track mixer (mute / solo / gain / pan / visibility /
+color / height), a shared-timeline multi-source transport, and
+monitoring safety (peak meters + default-on limiter). The mixer is
+**monitoring-only** (§10.3.8): no write path touches stem assets and
+the limiter stays out of raw-stem exports. No separation runs, no
+cache changes (M2.7), no time-stretch (M2.9), no loops UI.
+
+**Key design decisions (see plan for full detail):**
+
+- **Domain:** `TrackSettings.color` (hex `^#[0-9a-fA-F]{6}$`, default
+  `#8fa3bf`; the domain is palette-agnostic — the frontend applies the
+  role palette as the displayed initial value); `MAX_GAIN` 2.0 →
+  `10 ** (12.0 / 20.0)` (+12 dB, §10.3.2) with the 0.0 floor kept
+  (mute is exact silence, §10.3.3); `monitoring_limiter` default
+  `True` (§10.6.3). No schema migration — `tracks` lives in the
+  record JSON (pydantic defaults fill old rows).
+- **Commands:** four new undoable ops (none in
+  `HISTORY_EXCLUDED_TYPES`): `set_track_settings` (patch semantics on
+  `practice_state.tracks[stem_role]`, at least one non-`None` field),
+  `set_playback_mode` (pre-validation: a stem mode without an active
+  result set → new `PlaybackModeRequiresResultSetError` → 409
+  `PLAYBACK_MODE_REQUIRES_RESULT_SET`), `set_master_gain`,
+  `set_monitoring_limiter`. Undo/redo come free from M1.15 history
+  snapshots (`practice_state` included since M2.7).
+- **Route:** read-only
+  `GET /api/v1/projects/{id}/result-sets/{result_set_id}` →
+  `ResultSetDetail` (set + stems + run provenance; 404 on missing or
+  foreign). M2.17 keeps the storage report/cleanup routes.
+- **Worklet:** ONE processor consumes all active sources — per-source
+  `ConsumptionState`, one shared cursor (drift impossible); per-quantum
+  mix: solo eligibility (`!mute && (!anySolo || solo)` — mute
+  overrides solo; hidden ≠ muted), 5 ms linear ramp on parameter
+  change, stereo 3 dB/side balance vs mono equal-power pan, per-track +
+  master peaks reported with `consumed`; any-source underrun pauses
+  the whole group; the legacy 1-source `init` path is preserved.
+- **Transport:** N `SourceSpec`s; prepare validates `sampleRate` and
+  `frameCount` against the project rate/duration (hard error, no
+  resample); N per-asset fetch queues behind the one worker;
+  `LIMITER_DELAY_SECONDS = 0.010` added to reported latency when the
+  limiter is on; limiter = WebAudio `DynamicsCompressorNode` on the
+  monitoring path only (threshold −1 dBFS, §10.6.4).
+- **UI:** track stack (original + active group from `practice_state`)
+  over the shared viewport, per-track lane height + amplitude zoom,
+  labels + provenance, mixer strip (−60…+12 dB, pan, M/S, visibility,
+  color, height), mode selector (Original / Bass pair / Four stems;
+  the no-set 409 becomes a selection notice), monitoring panel
+  (peaks + limiter toggle).
+- **Frontend state:** `practice_state` was dropped in
+  `toCommandResult()` / `getProjectSnapshot()` — mapped; the hook owns
+  it; mixer ops are immediate sends (never debounced); new
+  `api/result-sets.ts` client.
+
+**Phases:**
+
+- **Phase 1 — Plan + ledger:** done (`projectPlans/m2.8-plan.md`).
+- **Phase 2 — Backend: domain + ops + route:** done.
+  `domain/practice.py`: `TrackSettings.color` (hex pattern, default
+  `#8fa3bf`), `MAX_GAIN = 10 ** (12.0 / 20.0)` (+12 dB),
+  `monitoring_limiter` default `True` (no migration — tracks live in
+  the record JSON). `domain/commands.py`: four undoable ops
+  (`set_track_settings` patch semantics + ≥1 field + `StemRole` check,
+  `set_playback_mode`, `set_master_gain`, `set_monitoring_limiter`);
+  none in `HISTORY_EXCLUDED_TYPES`. `storage/repository.py`: the four
+  `_apply_op` handlers; `set_playback_mode` pre-validation in
+  `apply_command` (stem mode without active set → new
+  `PlaybackModeRequiresResultSetError`, in the rollback tuple);
+  `SeparationRepository.get_result_set_detail` (one connection:
+  project-owned set + run + stems, `None` on missing/foreign).
+  `api/errors.py` + `api/command_routes.py`: 409
+  `PLAYBACK_MODE_REQUIRES_RESULT_SET` mapping. New
+  `api/result_set_routes.py`: `GET
+  /api/v1/projects/{id}/result-sets/{id}` → `ResultSetDetail` (404
+  `RESULT_SET_NOT_FOUND` / `PROJECT_NOT_FOUND`); `app.state.
+  separation_repository` wired in `app.py`. Tests:
+  `test_practice.py` (cap +12 dB, color, limiter default),
+  `test_commands.py` (9 op tests), new
+  `tests/integration/test_mixer_commands.py` (12: patch/create,
+  preserve, undo/redo, persistence, mode 409 + apply, legacy-JSON
+  color default) and new
+  `tests/integration/test_result_set_routes.py` (9: detail happy +
+  404s + auth, 409 mapping, mixer op round-trips, empty-patch 422).
+  Gates at Phase 2: 852 unit + 245 integration py green, ruff clean,
+  mypy clean (63 files), contracts regenerated + `check_contract.py`
+  OK, frontend 307/307.
+- **Phase 3 — Frontend state:** done. `api/commands.ts`:
+  `practiceState` mapped in `toCommandResult()` +
+  `getProjectSnapshot()` (both were dropping it); `PracticeState` type
+  exported. `projects/useProjectCommands.ts`: the hook owns
+  `practiceState` (initial load, every command result, stale resync,
+  reset on project switch). New `api/result-sets.ts`:
+  `fetchResultSetDetail(projectId, resultSetId)` snake→camel +
+  `ResultSetNotFoundError` on 404. New `projects/trackSettings.ts`:
+  `ROLE_PALETTE` (displayed initial colors; domain stays
+  palette-agnostic), `defaultSettingsFor(role)`,
+  `effectiveTracks(practiceState, roles)` (stored entries win, missing
+  roles get display defaults). Tests: new
+  `tests/result-sets.test.ts` (4), new `tests/track-settings.test.ts`
+  (5), `commands.test.ts` +2 (practice_state mapping both directions),
+  `use-project-commands.test.ts` +1 (hook tracks practiceState from
+  results). Gate at Phase 3: frontend 319/319 (307 + 12), prettier
+  clean.
+- **Phase 4 — Worklet mixing DSP:** done. `worklet-processor.js`:
+  new `MixState` class — ONE audio-thread state machine consuming every
+  active source in lockstep (one shared cursor: `take = min(block, min
+  buffered, endpoint)` per quantum, so drift is impossible and a
+  starving source pauses the whole group). Each source is a plain
+  `ConsumptionState` (new `consumeInto(out, frames)` method added).
+  Per quantum: per-sample coefficient tables (5 ms linear ramps for
+  gain, balance, mute/solo envelope, master gain — transcendentals stay
+  out of the sample loop), stereo 3 dB/side balance vs mono equal-power
+  pan, per-track + master peaks reported with `consumed` (peaks ride
+  the ~20 Hz anchor message; reset per quantum). Solo eligibility
+  `!mute && (!anySolo || solo)` — mute wins; visibility never reaches
+  the audio thread (hidden ≠ muted). `PcmProcessor` adapter: mixer path
+  when `processorOptions.sources` is set (per-source `sabs`,
+  per-source `seek` generations, `params`/`master` messages,
+  `chunk-dropped` carries `source` index); legacy 1-source `init`
+  path preserved. `worklet-processor.d.ts`: `MixState`/`MixStateOptions`/
+  `SourceParamPatch`/`MixSourceSpec` + `consumeInto` + `ProcessResult.peaks`.
+  Tests: `worklet-core.test.ts` +15 MixState cases (sum stereo+mono,
+  cursor lockstep + underrun, flushing silence, 3 dB balance, mono pan,
+  solo/mute semantics, 5 ms ramp, master gain, peaks+reset, pause/resume,
+  seek, end, per-source shared rings + generations). Gate at Phase 4:
+  frontend 334/334 (319 + 15), prettier clean.
+- **Phase 5 — Multi-source transport:** done.
+  `playback/transport.ts`: `LoadSourceOptions` now takes
+  `sources: SourceSpec[]` (legacy `target` form still accepted,
+  normalized); `normalizeSources` hard-validates every source's
+  `sampleRate === projectRate` && `frameCount ===
+  projectDurationFrames` (RangeError, no resample). The transport
+  always uses the worklet mixer path: `processorOptions` carries
+  `sources: [{channelCount}]` (plus per-source `sabs` in shared mode)
+  — one ring per source, one shared cursor. `runFill` fetches the
+  same frame range for every source per round and advances the shared
+  `fetchedFrame` by the minimum written (sources can never drift);
+  relayed `channels` messages carry the `source` index. New public
+  API: `setSourceParams(index, patch)` → `params` message,
+  `setMasterGain(linear)` → `master` message (remembered as
+  `pendingMasterGain`, applied to a fresh graph on play).
+  `TransportOptions` gains `limiter` (monitoring-only
+  `DynamicsCompressorNode`, threshold −1 dBFS, inserted
+  gain → limiter → destination; skipped when the context cannot
+  create one) and `onPeaks` (per-quantum peaks from the anchor
+  message). `LIMITER_DELAY_SECONDS = 0.010` is folded into
+  `getAudiblePosition`'s audible-time mapping while the limiter is
+  active (both the `getOutputTimestamp` and fallback branches).
+  Seek/flush handshake unchanged: one generation for the whole mix;
+  the flush-ack resets every ring's writer index at the shared base
+  frame. `playback/fetch-source.ts`: `FetchSource` serves the whole
+  mix — `fetchChunk`/`writeChunk`/`attachShared` take a source index
+  (and `attachShared` takes the SAB array + channel counts); both
+  `WorkerFetchSource` and `DirectFetchSource` keep N per-source
+  queues/rings behind one generation. `playback/fetch-worker.ts`:
+  one worker, N rings; `shared-init` carries the SAB array,
+  `flush-ack` resets all rings, fetch jobs route by `source` index.
+  `worklet-processor.js`: adapter guards — `channels` dispatches to
+  the per-source `MixState.enqueueChannels` vs the legacy single
+  `ConsumptionState.enqueueChannels`; `params`/`master` are no-ops on
+  the legacy core. Tests: `transport.test.ts` updated (mixer
+  `processorOptions` shape, plural `sabs`, `FakeFetchWorker` N-ring
+  protocol, shared path consumes via `MixState`) + 8 new M2.8 cases
+  (validation rate/duration/empty, two-source transfer init + per-
+  source fetch routing + `source` index on relayed chunks, two-ring
+  shared path + single flush handshake, params/master forwarding,
+  pending master gain on fresh graph, anchor peaks surfaced, limiter
+  graph + 10 ms latency fold, limiter skip). Gate at Phase 5:
+  frontend 342/342 (334 + 8), tsc clean, prettier clean.
+- **Phase 6 — UI: track stack + stem mixer:** done.
+  `api/result_set_routes.py`: read-only `GET
+  /api/v1/projects/{id}/result-sets` → `ResultSetSummary[]`
+  (`id`, `created_at`, `validation_status`, `available_stem_roles`;
+  oldest first via `list_result_sets_for_project`; 404 on foreign
+  project, 401 unauth) — the selector needs the list to prompt
+  selection. `tests/integration/test_result_set_routes.py` +
+  `TestResultSetListRoute` (5). `api/result-sets.ts`:
+  `fetchResultSets(projectId, signal?)` + `ResultSetSummary`.
+  `playback/transport.ts`: live `setLimiter(enabled)` (rewires
+  gain → [limiter] → destination on the live graph; always remembered
+  for a fresh graph; `getAudiblePosition` already follows
+  `limiterNode`) and a `contextRate` getter (sample rate of the live
+  context, null before the graph). `waveform/WaveformEditor.tsx`:
+  additive `registerView?: (source: ViewSource | null) => void` prop +
+  `SharedView`/`ViewSource` types — the editor is 100 % unchanged
+  otherwise (zero regression risk) and registers a stable getter
+  (`{startFrame, fpp, widthCssPx} | null`) that lanes poll at display
+  rate. New `src/tracks/` module: `db.ts` (dB math:
+  `10^(dB/20)`, −60…+12 dB slider span, dBFS meter, balance label);
+  `TrackLane.tsx` (RAF poll of the shared view, numeric-equality-gated
+  `setState`; `useWaveform(projectId, assetId, viewport)`; two
+  canvases — waveform layer redrawn on data/view/style change via the
+  M1 painters, playhead layer redrawn on x movement; local copies of
+  the editor's private source adapters; lane = channel 0; non-ready
+  states show a text overlay; hidden = "Hidden (audio still plays)"
+  — visibility never mutes); `MixerStrip.tsx` (M/S aria-pressed
+  buttons, gain slider −60…+12 dB step 0.5 → linear, balance −1…+1,
+  visibility checkbox, color input, height slider 0.25…2, peak meter
+  dBFS; every control patches through `set_track_settings`);
+  `ModeSelector.tsx` (three aria-pressed buttons + result-set
+  `<select>` listing only `valid` sets + one-line notice);
+  `MonitoringPanel.tsx` (master peak meter dBFS, master gain slider,
+  limiter checkbox — state always visible); `TrackStack.tsx`
+  (composes mode bar + one row per stem in canonical order
+  `BASS_PAIR_ROLES = [bass, others]` /
+  `FOUR_STEM_ROLES = [vocals, drums, bass, other]`; fetches the set
+  list for the selector; the no-set prompt is a UI-side precondition
+  check — stem mode without `active_result_set_id` → notice, no op
+  sent, server 409 stays the backstop; provenance =
+  `engineVersion · model <8-char manifest id>`; `LANE_BASE_HEIGHT`
+  48 CSS px × `display_height`; settings from `effectiveTracks`).
+  `App.tsx`: `ProjectView` owns the active-set detail fetch
+  (`fetchResultSetDetail`, stem modes only), computes
+  `stemSources: (SourceSpec & {role})[] | null` (mutually exclusive
+  groups, §10.4.5), and sends the four ops (`set_playback_mode`,
+  `set_active_result_set`, `set_track_settings`, `set_master_gain`,
+  `set_monitoring_limiter`); holds `viewSource` (from
+  `registerView`) + `peaks` (from the transport) state; renders
+  `<TrackStack>` + the "Original" reference label above the editor.
+  `PlaybackPanel`: new props `practiceState`, `stemSources`,
+  `onPeaks`; `createAudioContext?: (sampleRate?)` — stem mode creates
+  the AudioContext at the project rate (§10.5.1: stems are stored
+  there, the transport never resamples), original mode keeps the M1
+  device-rate context; `handlePlayPause` load path is dual (stem
+  `loadSource({sources})` vs original `ensurePlaybackTarget`) and so
+  is the context-loss recovery path; `targetRef` keeps the last
+  resolved original target for mode-switch rebinds; mode-change
+  effect → `pause()` + `rebind` (stems sync; original via
+  `targetRef` or an on-demand resolution at the live context rate) +
+  `sourceLoadedRef = false` (next play re-loads); `applyMix` =
+  `setMasterGain` + `setLimiter` + per-index `setSourceParams`
+  (called on every `practiceState`/`stemSources` change AND after a
+  successful `play()` — the graph is where params take effect).
+  `styles.css`: track stack, mode bar, mixer strip, meters, lane
+  canvases, notice. Tests: new `tests/track-stack.test.tsx` (37:
+  db helpers, ModeSelector buttons/sets/notice/onMode,
+  MonitoringPanel meter/gain/limiter, MixerStrip M/S/gain/balance/
+  visibility/color/peak, TrackStack canonical order per mode,
+  provenance, color, height, hidden state, no-set notice, op
+  callbacks, peak meters). Gate at Phase 6: 852 unit + 250
+  integration py, ruff + mypy (63 files) clean, contracts in sync,
+  frontend 379/379 (342 + 37), tsc clean, prettier clean.
+- **Phase 7 — closeout:** done. Full gate re-run 2026-10-16: 852
+  unit + 250 integration py green, ruff clean, mypy clean (63 files),
+  contracts regenerate with no residual diff, frontend 379/379 +
+  tsc clean + prettier clean. Evidence doc
+  `docs/evidence/m2.8-aligned-tracks-mixer.md` (git-ignored). e2e
+  `app.spec.ts` not runnable in this environment (pre-existing harness
+  bug: it spawns the Python server via `process.execPath`; only the
+  Firefox Playwright browser is installed) — the original-only flow is
+  unchanged by construction (`WaveformEditor` 100 % untouched, M1
+  original playback path preserved). Single M2.8 commit (includes
+  `projectPlans/m2.8-plan.md`) + ledger-hash follow-up.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

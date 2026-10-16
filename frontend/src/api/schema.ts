@@ -450,6 +450,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/result-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Result Sets */
+        get: operations["list_result_sets_api_v1_projects__project_id__result_sets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/result-sets/{result_set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Result Set Detail */
+        get: operations["get_result_set_detail_api_v1_projects__project_id__result_sets__result_set_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/source-info": {
         parameters: {
             query?: never;
@@ -635,7 +669,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"];
         };
         /**
          * CommandResult
@@ -1058,7 +1092,7 @@ export interface components {
             master_gain: number;
             /**
              * Monitoring Limiter
-             * @default false
+             * @default true
              */
             monitoring_limiter: boolean;
             /** @default original */
@@ -1200,6 +1234,79 @@ export interface components {
          * @enum {string}
          */
         ProjectStatus: "empty" | "ready";
+        /**
+         * ResultSetDetail
+         * @description A result set with its stems and run provenance (spec §10.1.6).
+         */
+        ResultSetDetail: {
+            /** Adapter Version */
+            adapter_version: string;
+            /** Cache Key */
+            cache_key: string | null;
+            /** Created At */
+            created_at: string;
+            /** Engine Version */
+            engine_version: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Model Manifest Hash */
+            model_manifest_hash: string;
+            /**
+             * Model Manifest Id
+             * Format: uuid
+             */
+            model_manifest_id: string;
+            /** Stems */
+            stems: components["schemas"]["ResultSetStemDetail"][];
+            /** Validation Status */
+            validation_status: string;
+        };
+        /**
+         * ResultSetStemDetail
+         * @description One published stem of a result set (spec §10.1.6).
+         */
+        ResultSetStemDetail: {
+            /**
+             * Audio Asset Id
+             * Format: uuid
+             */
+            audio_asset_id: string;
+            /** Channel Count */
+            channel_count: number;
+            /** Display Name */
+            display_name: string;
+            /** Frame Count */
+            frame_count: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Role */
+            role: string;
+            /** Sample Rate */
+            sample_rate: number;
+        };
+        /**
+         * ResultSetSummary
+         * @description One result set in the project's list (spec §10.4.5–6 selector).
+         */
+        ResultSetSummary: {
+            /** Available Stem Roles */
+            available_stem_roles: string[];
+            /** Created At */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Validation Status */
+            validation_status: string;
+        };
         /** SelectStreamRequest */
         SelectStreamRequest: {
             /** Stream Index */
@@ -1257,6 +1364,32 @@ export interface components {
              */
             type: "set_follow_playhead";
         };
+        /**
+         * SetMasterGainOp
+         * @description Set the master monitoring gain (M2.8, spec §10.3).
+         */
+        SetMasterGainOp: {
+            /** Gain */
+            gain: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_master_gain";
+        };
+        /**
+         * SetMonitoringLimiterOp
+         * @description Enable or disable the monitoring-path limiter (M2.8, spec §10.6).
+         */
+        SetMonitoringLimiterOp: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_monitoring_limiter";
+        };
         /** SetMonitoringVolumeOp */
         SetMonitoringVolumeOp: {
             /**
@@ -1266,6 +1399,22 @@ export interface components {
             type: "set_monitoring_volume";
             /** Volume */
             volume: number;
+        };
+        /**
+         * SetPlaybackModeOp
+         * @description Select the playback mode (M2.8, spec §10.4.5–6).
+         *
+         *     Stem modes require an active result set; the repository pre-validates
+         *     and raises ``PlaybackModeRequiresResultSetError`` (409) when none is
+         *     active.
+         */
+        SetPlaybackModeOp: {
+            mode: components["schemas"]["PlaybackMode"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_playback_mode";
         };
         /**
          * SetPositionOp
@@ -1299,6 +1448,35 @@ export interface components {
             type: "set_selection";
         };
         /**
+         * SetTrackSettingsOp
+         * @description Patch one stem track's mixer settings (M2.8, spec §10.2).
+         *
+         *     ``None`` fields stay unchanged; at least one field must be present.
+         *     The track entry is created with defaults when absent.
+         */
+        SetTrackSettingsOp: {
+            /** Balance */
+            balance?: number | null;
+            /** Color */
+            color?: string | null;
+            /** Display Height */
+            display_height?: number | null;
+            /** Gain */
+            gain?: number | null;
+            /** Mute */
+            mute?: boolean | null;
+            /** Solo */
+            solo?: boolean | null;
+            stem_role: components["schemas"]["StemRole"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_track_settings";
+            /** Visible */
+            visible?: boolean | null;
+        };
+        /**
          * SetViewportOp
          * @description Null clears the stored viewport (editor falls back to fit).
          */
@@ -1328,6 +1506,18 @@ export interface components {
             /** Sample Rate */
             sample_rate: number;
         };
+        /**
+         * StemRole
+         * @description Stem roles (spec §3.4, §8.4).
+         *
+         *     ``vocals``/``drums``/``bass``/``other`` mirror the model's declared
+         *     source labels (never a hard-coded tensor index). ``others`` is a
+         *     publication-only role for the Bass + Others residual
+         *     (``reference_mix − bass``), kept distinct from the model's ``other``
+         *     stem.
+         * @enum {string}
+         */
+        StemRole: "vocals" | "drums" | "bass" | "other" | "others";
         /** SystemResponse */
         SystemResponse: {
             /** Api Version */
@@ -1347,6 +1537,11 @@ export interface components {
              * @default 0
              */
             balance: number;
+            /**
+             * Color
+             * @default #8fa3bf
+             */
+            color: string;
             /**
              * Display Height
              * @default 1
@@ -2384,6 +2579,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_result_sets_api_v1_projects__project_id__result_sets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultSetSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_result_set_detail_api_v1_projects__project_id__result_sets__result_set_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                result_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultSetDetail"];
                 };
             };
             /** @description Validation Error */

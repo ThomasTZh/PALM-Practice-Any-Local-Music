@@ -56,12 +56,22 @@ const VIEWPORT_OP = {
   viewport: { start_frame: 10, frames_per_css_pixel: 2 },
 } as const
 
+const PRACTICE_STATE = {
+  loop_enabled: false,
+  master_gain: 1.0,
+  monitoring_limiter: true,
+  playback_mode: 'original',
+  playback_speed: 1.0,
+  tracks: {},
+}
+
 function snapshot(overrides: Record<string, unknown> = {}) {
   return {
     status: 'ready',
     revision: 0,
     markers: [],
     workingState: { ...m.DEFAULT_WORKING_STATE },
+    practiceState: PRACTICE_STATE,
     canUndo: false,
     canRedo: false,
     sampleRate: 48000,
@@ -75,6 +85,7 @@ function commandResult(revision: number, overrides: Record<string, unknown> = {}
     revision,
     markers: [],
     workingState: { ...m.DEFAULT_WORKING_STATE },
+    practiceState: PRACTICE_STATE,
     canUndo: revision > 0,
     canRedo: false,
     ...overrides,
@@ -129,8 +140,25 @@ describe('useProjectCommands', () => {
     expect(result.current.markers).toHaveLength(1)
     expect(result.current.markers[0].label).toBe('Intro')
     expect(result.current.workingState.monitoring_volume).toBe(1.25)
+    expect(result.current.practiceState?.playback_mode).toBe('original')
     expect(result.current.canUndo).toBe(true)
     expect(result.current.canRedo).toBe(false)
+  })
+
+  it('tracks practiceState from command results', async () => {
+    const { result } = await loadHook()
+    expect(result.current.practiceState?.monitoring_limiter).toBe(true)
+
+    m.sendCommand.mockResolvedValueOnce(
+      commandResult(1, {
+        practiceState: { ...PRACTICE_STATE, monitoring_limiter: false, master_gain: 2.0 },
+      }),
+    )
+    await act(async () => {
+      await result.current.send({ type: 'set_monitoring_limiter', enabled: false })
+    })
+    expect(result.current.practiceState?.monitoring_limiter).toBe(false)
+    expect(result.current.practiceState?.master_gain).toBe(2.0)
   })
 
   it('serializes concurrent sends: one in flight, base revisions chain', async () => {

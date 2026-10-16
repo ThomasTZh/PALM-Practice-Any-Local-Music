@@ -48,12 +48,26 @@ class TestTrackSettings:
         assert t.balance == 0.0
         assert t.visible is True
         assert t.display_height == 1.0
+        assert t.color == "#8fa3bf"
 
     def test_gain_bounds(self) -> None:
+        assert TrackSettings(gain=MAX_GAIN).gain == MAX_GAIN
         with pytest.raises(ValidationError):
-            TrackSettings(gain=2.1)
+            TrackSettings(gain=MAX_GAIN + 0.1)
         with pytest.raises(ValidationError):
             TrackSettings(gain=-0.1)
+
+    def test_gain_cap_is_plus_12_db(self) -> None:
+        # Spec §10.3.2: the cap is +12 dB, not the old 2.0.
+        assert pytest.approx(10.0 ** (12.0 / 20.0)) == MAX_GAIN
+        assert TrackSettings(gain=2.0).gain == 2.0
+
+    def test_color(self) -> None:
+        assert TrackSettings(color="#ABC123").color == "#ABC123"
+        with pytest.raises(ValidationError):
+            TrackSettings(color="#12345")
+        with pytest.raises(ValidationError):
+            TrackSettings(color="123456")
 
     def test_balance_bounds(self) -> None:
         with pytest.raises(ValidationError):
@@ -93,7 +107,7 @@ class TestPracticeState:
         assert s.active_result_set_id is None
         assert s.tracks == {}
         assert s.master_gain == 1.0
-        assert s.monitoring_limiter is False
+        assert s.monitoring_limiter is True
         assert s.playback_speed == 1.0
         assert s.loops == []
         assert s.active_loop_id is None
@@ -145,5 +159,9 @@ class TestPracticeState:
         assert PracticeState(playback_speed=2.0).playback_speed == 2.0
 
     def test_master_gain_bounds(self) -> None:
+        assert PracticeState(master_gain=MAX_GAIN).master_gain == MAX_GAIN
         with pytest.raises(ValidationError):
             PracticeState(master_gain=MAX_GAIN + 0.1)
+
+    def test_monitoring_limiter_can_be_disabled(self) -> None:
+        assert PracticeState(monitoring_limiter=False).monitoring_limiter is False

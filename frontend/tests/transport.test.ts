@@ -15,7 +15,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   PcmTransport,
+  type CompressorNodeLike,
   type GainNodeLike,
+  type MixPeaks,
   type TransportContextLike,
   type TransportMode,
   type TransportState,
@@ -29,7 +31,7 @@ import {
   type SharedRing,
 } from '../src/playback/pcm-fetch'
 import type { WorkerLike } from '../src/playback/fetch-source'
-import { ConsumptionState } from '../src/playback/worklet-processor.js'
+import { MixState } from '../src/playback/worklet-processor.js'
 
 const RATE = 48_000
 const FRAMES = 48_000 // a one-second source
@@ -85,10 +87,12 @@ class FakeFetchWorker implements WorkerLike {
   messages: Record<string, unknown>[] = []
   onmessage: ((event: { data: unknown }) => void) | null = null
   terminated = false
-  private ring: SharedRing | null = null
+  /** One ring per mix source (M2.8). */
+  private rings: SharedRing[] = []
 
-  get fetchJobs(): Array<{ start: number; end: number; generation: number }> {
+  get fetchJobs(): Array<{ source: number; start: number; end: number; generation: number }> {
     return this.messages.filter((m) => m.kind === 'fetch') as Array<{
+      source: number
       start: number
       end: number
       generation: number
@@ -107,14 +111,17 @@ class FakeFetchWorker implements WorkerLike {
 
   private async handle(msg: Record<string, unknown>): Promise<void> {
     if (msg.kind === 'shared-init') {
-      // View the transferred SAB (like the real worker), not a new one.
-      this.ring = ringView(msg.sab as SharedArrayBuffer, msg.channelCount as number)
+      // View the transferred SABs (like the real worker), not new ones.
+      const sabs = msg.sabs as SharedArrayBuffer[]
+      const channelCounts = msg.channelCounts as number[]
+      this.rings = sabs.map((sab, i) => ringView(sab, channelCounts[i]))
       this.onmessage?.({ data: { kind: 'ready' } })
       return
     }
     if (msg.kind === 'flush-ack') {
-      if (this.ring) {
-        acknowledgeSharedFlush(this.ring, msg.generation as number, msg.baseFrame as number)
+      // One shared cursor: the same base frame resets every ring.
+      for (const ring of this.rings) {
+        acknowledgeSharedFlush(ring, msg.generation as number, msg.baseFrame as number)
       }
       this.onmessage?.({ data: { kind: 'flushed' } })
       return
@@ -124,8 +131,9 @@ class FakeFetchWorker implements WorkerLike {
     const bytesPerFrame = 4 * channelCount
     const frames = Math.floor(((msg.end as number) - (msg.start as number) + 1) / bytesPerFrame)
     const startFrame = Math.floor((msg.start as number) / bytesPerFrame)
-    if (this.ring) {
-      const written = writeSharedRing(this.ring, new ArrayBuffer(frames * bytesPerFrame))
+    const ring = this.rings[msg.source as number]
+    if (ring) {
+      const written = writeSharedRing(ring, new ArrayBuffer(frames * bytesPerFrame))
       this.onmessage?.({
         data: { id: msg.id, kind: 'shared-chunk', ok: true, startFrame, frames: written },
       })
@@ -148,6 +156,11 @@ interface RigOptions {
   mode?: TransportMode
   workerFactory?: () => WorkerLike | null
   frameCount?: number
+  /** Monitoring-only limiter (spec §10.6.5). */
+  limiter?: boolean
+  /** Context cannot create a compressor (limiter is then skipped). */
+  withCompressor?: boolean
+  onPeaks?: (peaks: MixPeaks) => void
 }
 
 interface Rig {
@@ -155,6 +168,8 @@ interface Rig {
   context: TransportContextLike
   node: FakeWorkletNode
   gain: GainNodeLike
+  /** The fake compressor; `null` when the context cannot create one. */
+  compressor: CompressorNodeLike | null
   target: PlaybackTarget
   fetchCalls: { assetId: string; start: number; end: number; signal: AbortSignal | undefined }[]
   delay: ReturnType<typeof vi.fn>
@@ -173,6 +188,14 @@ function makeRig(opts: RigOptions = {}): Rig {
     connect: vi.fn(),
     disconnect: vi.fn(),
   }
+  const compressor: CompressorNodeLike | null =
+    opts.limiter && opts.withCompressor !== false
+      ? {
+          threshold: { value: 0, setTargetAtTime: vi.fn() },
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+        }
+      : null
   const context: TransportContextLike = {
     currentTime: 0,
     sampleRate: RATE,
@@ -182,6 +205,7 @@ function makeRig(opts: RigOptions = {}): Rig {
     audioWorklet: { addModule: vi.fn().mockResolvedValue(undefined) },
     createWorkletNode: vi.fn().mockReturnValue(node),
     createGain: vi.fn().mockReturnValue(gain),
+    ...(compressor ? { createDynamicsCompressor: () => compressor } : {}),
     resume: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
   }
@@ -220,14 +244,17 @@ function makeRig(opts: RigOptions = {}): Rig {
     moduleUrlFactory: (source: string) => `blob:fake-worklet-${source.length}`,
     mode: opts.mode,
     workerFactory: opts.workerFactory ?? (() => null),
+    limiter: opts.limiter,
     onState: (s) => states.push(s),
     onPosition: (f) => positions.push(f),
+    onPeaks: opts.onPeaks,
   })
   return {
     transport,
     context,
     node,
     gain,
+    compressor,
     target: rigTarget,
     fetchCalls,
     delay,
@@ -303,7 +330,12 @@ describe('PcmTransport play', () => {
     expect(rig.context.createWorkletNode).toHaveBeenCalledWith(
       'basseparate-pcm',
       expect.objectContaining({
-        processorOptions: { sampleRate: RATE, channelCount: 2, frameCount: FRAMES },
+        // Mixer path (M2.8): the worklet mixes all sources on one cursor.
+        processorOptions: {
+          sampleRate: RATE,
+          frameCount: FRAMES,
+          sources: [{ channelCount: 2 }],
+        },
       }),
     )
     // One-second file: the whole file is fetched in a single chunk.
@@ -489,8 +521,10 @@ describe('mode selection', () => {
 
     const options = nodeOptions(rig)
     const processorOptions = options.processorOptions as Record<string, unknown>
-    expect(processorOptions.sab).toBeInstanceOf(SharedArrayBuffer)
-    expect(options.transfer).toEqual([processorOptions.sab])
+    const sabs = processorOptions.sabs as SharedArrayBuffer[]
+    expect(sabs).toHaveLength(1)
+    expect(sabs[0]).toBeInstanceOf(SharedArrayBuffer)
+    expect(options.transfer).toEqual([sabs[0]])
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(true)
   })
 
@@ -501,7 +535,7 @@ describe('mode selection', () => {
 
     const options = nodeOptions(rig)
     const processorOptions = options.processorOptions as Record<string, unknown>
-    expect(processorOptions).not.toHaveProperty('sab')
+    expect(processorOptions).not.toHaveProperty('sabs')
     expect(options).not.toHaveProperty('transfer')
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(false)
     expect(worker.messages.some((m) => m.kind === 'generation')).toBe(true)
@@ -530,7 +564,7 @@ describe('mode selection', () => {
 
     const options = nodeOptions(rig)
     const processorOptions = options.processorOptions as Record<string, unknown>
-    expect(processorOptions.sab).toBeInstanceOf(SharedArrayBuffer)
+    expect((processorOptions.sabs as SharedArrayBuffer[])[0]).toBeInstanceOf(SharedArrayBuffer)
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(true)
   })
 })
@@ -633,15 +667,19 @@ describe('shared path', () => {
     // The worker wrote the one-second file into the ring.
     const options = nodeOptions(rig)
     const processorOptions = options.processorOptions as Record<string, unknown>
-    const sab = processorOptions.sab as SharedArrayBuffer
+    const sab = (processorOptions.sabs as SharedArrayBuffer[])[0]
     const ring = ringView(sab, 2)
     expect(Atomics.load(ring.header, 0)).toBe(0)
     expect(Atomics.load(ring.header, 1)).toBe(FRAMES) // writer: end of file
     expect(Atomics.load(ring.header, 2)).toBe(0) // reader: not consumed yet
 
-    // The worklet side consumes what the worker wrote.
-    const core = new ConsumptionState({ sampleRate: RATE, channelCount: 2, frameCount: FRAMES })
-    core.attachShared(sab)
+    // The worklet side (mixer path) consumes what the worker wrote.
+    const core = new MixState({
+      sampleRate: RATE,
+      frameCount: FRAMES,
+      sources: [{ channelCount: 2 }],
+    })
+    core.attachShared(0, sab)
     const out = [new Float32Array(128), new Float32Array(128)]
     const res = core.process(0, out)
     expect(res.consumed).toBe(128)
@@ -681,9 +719,185 @@ describe('shared path', () => {
 
     const options = nodeOptions(rig)
     const processorOptions = options.processorOptions as Record<string, unknown>
-    const sab = processorOptions.sab as SharedArrayBuffer
+    const sab = (processorOptions.sabs as SharedArrayBuffer[])[0]
     const ring = ringView(sab, 2)
     expect(Atomics.load(ring.header, 1)).toBe(FRAMES)
+  })
+})
+
+describe('multi-source mix (M2.8, spec §10.5)', () => {
+  const MIX_SOURCES = [
+    { assetId: 'vocals', sampleRate: RATE, channelCount: 2, frameCount: FRAMES },
+    { assetId: 'drums', sampleRate: RATE, channelCount: 1, frameCount: FRAMES },
+  ]
+
+  it('refuses sources that do not match the project rate or duration', async () => {
+    const rig = makeRig()
+    // Rate mismatch: a hard prepare error, never a resample.
+    await expect(
+      rig.transport.loadSource({
+        sources: [{ assetId: 'a', sampleRate: 44_100, channelCount: 2, frameCount: FRAMES }],
+        projectRate: RATE,
+        projectDurationFrames: FRAMES,
+      }),
+    ).rejects.toThrow(RangeError)
+    // Duration mismatch: hard prepare error.
+    await expect(
+      rig.transport.loadSource({
+        sources: [{ assetId: 'a', sampleRate: RATE, channelCount: 2, frameCount: FRAMES - 1 }],
+        projectRate: RATE,
+        projectDurationFrames: FRAMES,
+      }),
+    ).rejects.toThrow(RangeError)
+    // No sources at all.
+    await expect(
+      rig.transport.loadSource({ sources: [], projectRate: RATE, projectDurationFrames: FRAMES }),
+    ).rejects.toThrow(RangeError)
+  })
+
+  it('initializes a two-source mix and fetches both assets per round', async () => {
+    const { rig, worker } = makeWorkerRig('transfer')
+    await rig.transport.loadSource({
+      sources: MIX_SOURCES,
+      projectRate: RATE,
+      projectDurationFrames: FRAMES,
+    })
+    await rig.transport.play()
+    await settle()
+
+    const processorOptions = nodeOptions(rig).processorOptions as Record<string, unknown>
+    expect(processorOptions.sources).toEqual([{ channelCount: 2 }, { channelCount: 1 }])
+    expect(processorOptions).not.toHaveProperty('sabs')
+
+    // One 1 s chunk per source (stereo bytes for vocals, mono for drums).
+    const jobs = worker.fetchJobs
+    expect(jobs).toHaveLength(2)
+    expect(jobs[0]).toMatchObject({ source: 0, start: 0, generation: 0 })
+    expect(jobs[1]).toMatchObject({ source: 1, start: 0, generation: 0 })
+    const init = worker.messages.find((m) => m.kind === 'shared-init')
+    expect(init).toBeUndefined() // transfer mode: no SABs
+
+    // The relayed chunks carry the source index and per-source channels.
+    const chunks = rig.node.posted('channels')
+    expect(chunks).toHaveLength(2)
+    expect(chunks[0].source).toBe(0)
+    expect(chunks[0].channels).toHaveLength(2)
+    expect(chunks[1].source).toBe(1)
+    expect(chunks[1].channels).toHaveLength(1)
+  })
+
+  it('fills one ring per source and seeks through a single flush handshake', async () => {
+    const { rig, worker } = makeWorkerRig('shared')
+    await rig.transport.loadSource({
+      sources: MIX_SOURCES,
+      projectRate: RATE,
+      projectDurationFrames: FRAMES,
+    })
+    const p = rig.transport.play()
+    // Let the graph finish initializing so the port's onmessage is wired
+    // before the worklet's flush acknowledgment arrives.
+    await settle()
+    rig.node.post({ type: 'flushed', generation: 0 })
+    await p
+    await settle()
+
+    const processorOptions = nodeOptions(rig).processorOptions as Record<string, unknown>
+    const sabs = processorOptions.sabs as SharedArrayBuffer[]
+    expect(sabs).toHaveLength(2)
+    // Both rings were filled to end of file by their own writer index.
+    const ringA = ringView(sabs[0], 2)
+    const ringB = ringView(sabs[1], 1)
+    expect(Atomics.load(ringA.header, 1)).toBe(FRAMES)
+    expect(Atomics.load(ringB.header, 1)).toBe(FRAMES)
+
+    // One seek flushes both rings through a single flush-ack.
+    rig.transport.seek(24_000)
+    expect(rig.transport.currentState).toBe('seeking')
+    const core = new MixState({
+      sampleRate: RATE,
+      frameCount: FRAMES,
+      sources: [{ channelCount: 2 }, { channelCount: 1 }],
+    })
+    core.attachShared(0, sabs[0])
+    core.attachShared(1, sabs[1])
+    core.seek(24_000, 1) // what the real worklet does on the seek message
+    rig.node.post({ type: 'flushed', generation: 1 })
+    await settle()
+
+    // The shared cursor reset both writer indices; the refill covered the
+    // remainder of both assets.
+    expect(Atomics.load(ringA.header, 2)).toBe(24_000)
+    expect(Atomics.load(ringB.header, 2)).toBe(24_000)
+    expect(Atomics.load(ringA.header, 1)).toBe(FRAMES)
+    expect(Atomics.load(ringB.header, 1)).toBe(FRAMES)
+    const refill = worker.fetchJobs.filter((j) => j.generation === 1)
+    expect(refill.map((j) => j.source).sort((a, b) => a - b)).toEqual([0, 1])
+  })
+
+  it('forwards mixer params and master gain to the worklet', async () => {
+    const rig = makeRig()
+    await ready(rig)
+
+    rig.transport.setSourceParams(0, { gain: 1.41, balance: 0.25, mute: false, solo: true })
+    expect(rig.node.posted('params')).toEqual([
+      { type: 'params', source: 0, gain: 1.41, balance: 0.25, mute: false, solo: true },
+    ])
+
+    rig.transport.setMasterGain(2)
+    expect(rig.node.posted('master')).toEqual([{ type: 'master', gain: 2 }])
+  })
+
+  it('applies a pending master gain to a fresh graph on play', async () => {
+    const rig = makeRig()
+    await load(rig)
+    rig.transport.setMasterGain(0.5) // no graph yet: remembered
+    await rig.transport.play()
+    expect(rig.node.posted('master')).toEqual([{ type: 'master', gain: 0.5 }])
+  })
+
+  it('surfaces per-quantum peaks from anchor messages', async () => {
+    const peaks: MixPeaks[] = []
+    const rig = makeRig({ onPeaks: (p) => peaks.push(p) })
+    await ready(rig)
+
+    rig.node.post({
+      type: 'anchor',
+      frame: 4800,
+      time: 0.05,
+      generation: 0,
+      peaks: { tracks: [0.5, 0.25], master: 0.75 },
+    })
+    expect(peaks).toEqual([{ tracks: [0.5, 0.25], master: 0.75 }])
+
+    // Anchors without peaks (legacy core) must not report.
+    rig.node.post({ type: 'anchor', frame: 9600, time: 0.1, generation: 0 })
+    expect(peaks).toHaveLength(1)
+  })
+
+  it('inserts the monitoring limiter after the gain and folds its delay in', async () => {
+    const rig = makeRig({ limiter: true })
+    expect(rig.compressor).not.toBeNull()
+    await ready(rig)
+
+    // Graph: node → gain → limiter → destination.
+    expect(rig.node.connectedTo).toEqual([rig.gain])
+    expect(rig.gain.connect).toHaveBeenCalledWith(rig.compressor)
+    expect(rig.compressor!.connect).toHaveBeenCalledWith(rig.context.destination)
+    expect(rig.compressor!.threshold.value).toBe(-1)
+
+    // The 10 ms limiter delay is folded into the audible-time mapping.
+    rig.context.currentTime = 0.25
+    expect(rig.transport.getAudiblePosition()).toBe((0.25 - 0.01) * RATE)
+  })
+
+  it('skips the limiter when the context cannot create one', async () => {
+    const rig = makeRig({ limiter: true, withCompressor: false })
+    expect(rig.compressor).toBeNull()
+    await ready(rig)
+    expect(rig.gain.connect).toHaveBeenCalledWith(rig.context.destination)
+    // No limiter: no added latency.
+    rig.context.currentTime = 0.25
+    expect(rig.transport.getAudiblePosition()).toBe(0.25 * RATE)
   })
 })
 

@@ -35,7 +35,7 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
-from basseparate.domain.practice import PlaybackMode, PracticeState
+from basseparate.domain.practice import PlaybackMode, PracticeState, TrackSettings
 from basseparate.domain.project import (
     ProjectRecord,
     ProjectStatus,
@@ -246,6 +246,10 @@ class ResultSetNotFoundError(Exception):
     def __init__(self, result_set_id: uuid.UUID) -> None:
         super().__init__(f"result set {result_set_id} not found")
         self.result_set_id = result_set_id
+
+
+class PlaybackModeRequiresResultSetError(Exception):
+    """A stem playback mode requires an active separation result set."""
 
 
 class ProjectNotReady(Exception):
@@ -478,6 +482,36 @@ def _apply_op(
         else:
             ps_updated = ps.model_copy(update={"active_result_set_id": op.result_set_id})
         return markers, ws, ps_updated
+    if op.type == "set_track_settings":
+        # Patch semantics: None fields stay unchanged; a missing track
+        # entry is created with defaults first (M2.8, spec §10.2).
+        existing = ps.tracks.get(op.stem_role.value, TrackSettings())
+        patch = {
+            name: getattr(op, name)
+            for name in (
+                "gain",
+                "balance",
+                "mute",
+                "solo",
+                "visible",
+                "display_height",
+                "color",
+            )
+            if getattr(op, name) is not None
+        }
+        updated_track = existing.model_copy(update=patch)
+        ps_updated = ps.model_copy(
+            update={"tracks": {**ps.tracks, op.stem_role.value: updated_track}}
+        )
+        return markers, ws, ps_updated
+    if op.type == "set_playback_mode":
+        # Pre-validated in apply_command: stem modes require an active
+        # result set.
+        return markers, ws, ps.model_copy(update={"playback_mode": op.mode})
+    if op.type == "set_master_gain":
+        return markers, ws, ps.model_copy(update={"master_gain": op.gain})
+    if op.type == "set_monitoring_limiter":
+        return markers, ws, ps.model_copy(update={"monitoring_limiter": op.enabled})
     raise ValueError(f"unknown command op type: {op.type}")
 
 
@@ -589,6 +623,12 @@ class ProjectRepository:
                 ).fetchone()
                 if rs_row is None:
                     raise ResultSetNotFoundError(op.result_set_id)
+            if (
+                op.type == "set_playback_mode"
+                and op.mode in (PlaybackMode.BASS_PAIR, PlaybackMode.FOUR_STEMS)
+                and project.practice_state.active_result_set_id is None
+            ):
+                raise PlaybackModeRequiresResultSetError()
             markers = _markers_for(conn, project_id)
             before = _history_snapshot(markers, project.working_state, project.practice_state)
             new_markers, new_ws, new_ps = _apply_op(project, markers, op)
@@ -657,6 +697,7 @@ class ProjectRepository:
             StaleRevisionError,
             MarkerNotFoundError,
             ResultSetNotFoundError,
+            PlaybackModeRequiresResultSetError,
             ProjectNotReady,
         ):
             conn.execute("ROLLBACK")
@@ -1867,6 +1908,44 @@ class SeparationRepository:
                 (str(project_id), cache_key),
             ).fetchone()
             return SeparationResultSet.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def get_result_set_detail(
+        self, project_id: uuid.UUID, result_set_id: uuid.UUID
+    ) -> tuple[SeparationResultSet, SeparationRun, list[StemRecord]] | None:
+        """A project-owned result set with its run and stems, if any (M2.8).
+
+        One connection serves the set, its completing run, and all stems,
+        so the detail route never observes a partial state. Returns
+        ``None`` when the set is missing or belongs to another project.
+        """
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM separation_result_sets "
+                "WHERE id = ? AND project_id = ?",
+                (str(result_set_id), str(project_id)),
+            ).fetchone()
+            if row is None:
+                return None
+            result_set = SeparationResultSet.model_validate_json(row["record_json"])
+            run_row = conn.execute(
+                "SELECT record_json FROM separation_runs WHERE id = ?",
+                (str(result_set.run_id),),
+            ).fetchone()
+            if run_row is None:
+                raise DatabaseError(
+                    f"separation run {result_set.run_id} for result set "
+                    f"{result_set_id} is missing"
+                )
+            run = SeparationRun.model_validate_json(run_row["record_json"])
+            stem_rows = conn.execute(
+                "SELECT record_json FROM stems WHERE result_set_id = ? ORDER BY id",
+                (str(result_set_id),),
+            ).fetchall()
+            stems = [StemRecord.model_validate_json(r["record_json"]) for r in stem_rows]
+            return result_set, run, stems
         finally:
             conn.close()
 

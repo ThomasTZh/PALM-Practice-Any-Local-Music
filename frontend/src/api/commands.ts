@@ -18,12 +18,14 @@ const client = createApiClient()
 export type CommandOp = components['schemas']['CommandRequest']['op']
 export type Marker = components['schemas']['MarkerRecord']
 export type WorkingState = components['schemas']['WorkingState']
+export type PracticeState = components['schemas']['PracticeState']
 
 /** The resulting project state after a command (§17.4.5). */
 export interface CommandResult {
   revision: number
   markers: Marker[]
   workingState: WorkingState
+  practiceState: PracticeState | null
   canUndo: boolean
   canRedo: boolean
 }
@@ -34,6 +36,7 @@ export interface ProjectSnapshot {
   revision: number
   markers: Marker[]
   workingState: WorkingState
+  practiceState: PracticeState | null
   canUndo: boolean
   canRedo: boolean
   sampleRate: number | null
@@ -86,6 +89,7 @@ function toCommandResult(data: components['schemas']['CommandResult']): CommandR
     revision: data.revision,
     markers: data.markers ?? [],
     workingState: data.working_state ?? DEFAULT_WORKING_STATE,
+    practiceState: data.practice_state ?? null,
     canUndo: data.can_undo ?? false,
     canRedo: data.can_redo ?? false,
   }
@@ -182,6 +186,7 @@ export async function getProjectSnapshot(
     revision: data.revision ?? 0,
     markers: data.markers ?? [],
     workingState: data.working_state ?? DEFAULT_WORKING_STATE,
+    practiceState: data.practice_state ?? null,
     canUndo: data.can_undo ?? false,
     canRedo: data.can_redo ?? false,
     sampleRate: data.sample_rate ?? null,

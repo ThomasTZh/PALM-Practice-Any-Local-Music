@@ -89,6 +89,21 @@ export interface PlayheadSource {
   isPlaying: () => boolean
 }
 
+/**
+ * The shared timeline view (M2.8, spec §10.1.4): the width-free zoom/pan
+ * state plus the measured content width. One instance drives every lane.
+ */
+export interface SharedView {
+  startFrame: number
+  fpp: number
+  widthCssPx: number
+}
+
+/** Read-only getter over the editor's current shared view (null pre-ready). */
+export interface ViewSource {
+  get: () => SharedView | null
+}
+
 /** Channel display state (M1.15 §17.4): link + per-channel scales. */
 export interface ChannelDisplay {
   linked: boolean
@@ -103,6 +118,12 @@ export interface WaveformEditorProps {
   playheadSource?: PlayheadSource
   /** Seek the transport to a project frame (M1.11 click / selection). */
   onSeek?: (projectFrame: number) => void
+  /**
+   * Register a getter over the editor's shared view (M2.8, spec §10.1.4)
+   * so sibling lanes (the stem track stack) follow the same zoom/pan.
+   * Called once with a source on mount, and with null on unmount.
+   */
+  registerView?: (source: ViewSource | null) => void
   /**
    * Restored working state (M1.15 §17.6). Each is applied once, when the
    * editor first becomes ready; null → the legacy behavior (fit view, no
@@ -314,6 +335,7 @@ export function WaveformEditor({
   sourceAssetId,
   playheadSource,
   onSeek,
+  registerView,
   initialViewport,
   initialSelection,
   initialChannelDisplay,
@@ -377,6 +399,19 @@ export function WaveformEditor({
     () => (view && contentWidth > 0 ? makeViewport(view.startFrame, view.fpp, contentWidth) : null),
     [view, contentWidth],
   )
+
+  // Shared-view source for sibling lanes (M2.8, spec §10.1.4): a stable
+  // getter over the latest view, read at display rate by the track stack.
+  const sharedViewRef = useRef<SharedView | null>(null)
+  sharedViewRef.current =
+    view && contentWidth > 0
+      ? { startFrame: view.startFrame, fpp: view.fpp, widthCssPx: contentWidth }
+      : null
+  useEffect(() => {
+    if (!registerView) return
+    registerView({ get: () => sharedViewRef.current })
+    return () => registerView(null)
+  }, [registerView])
 
   const { state, manifest, levels, pcm, overview, error, rebuild } = useWaveform(
     projectId,
