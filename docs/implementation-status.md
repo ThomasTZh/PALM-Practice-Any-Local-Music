@@ -33,12 +33,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.8 (Add aligned tracks and the stem
-  mixer, spec §10) — **in progress** (Phases 1–6 done; Phase 7 next:
-  full gate + evidence + commit).
-  Plan: `projectPlans/m2.8-plan.md`. M2.7 leaves the storage-report /
-  reclaim services and the active-result-set command ready for the
-  frontend (report/cleanup routes + scheduler wiring land in M2.17).
-- **Last commit:** `ac12159` — M2.7 (analysis caching and version
+  mixer, spec §10) — **complete** (all 7 phases; gate green; evidence
+  doc written). Plan: `projectPlans/m2.8-plan.md` (committed).
+  M2.7 leaves the storage-report / reclaim services and the
+  active-result-set command ready for the frontend (report/cleanup
+  routes + scheduler wiring land in M2.17).
+- **Last commit:** `79d898e` — M2.8 (add aligned tracks and the stem
+  mixer); `ac12159` — M2.7 (analysis caching and version
   retention); `a088363` — M2.6 (validate and publish stems);
   `18ace92` — M2.5 (implement bounded Demucs
   separation); `ebd58aa` — M2.4 (prepare separation input consistently);
@@ -62,20 +63,20 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action (M2.8 Phase 7 — closeout):** full gate (unit +
-  integration py, ruff, mypy, contracts in sync, frontend test + tsc +
-  prettier), evidence doc `docs/evidence/m2.8-aligned-tracks-mixer.md`
-  (git-ignored), then the single M2.8 commit (includes
-  `projectPlans/m2.8-plan.md`) + ledger-hash follow-up, per
-  `projectPlans/m2.8-plan.md`.
-- **Resume procedure:** read this file; HEAD is `7852920` with the
-  untracked `projectPlans/m2.8-plan.md` (M2.8 Phase 1 output; committed
-  with the M2.8 work in Phase 7). Establish the baseline: `.venv/bin/python -m pytest
-  tests/unit -q` (840 passed), `.venv/bin/python -m pytest
-  tests/integration -q` (224 passed), `.venv/bin/python -m ruff check
+- **Next action (M2.9 — time-stretch / playback speed, spec §11):**
+  M2.8 is closed. Begin the M2.9 work package (playback-speed engine).
+  No M2.8 follow-ups remain; the e2e `app.spec.ts` harness bug
+  (spawns the Python server via `process.execPath`) is pre-existing and
+  out of M2.8 scope — address it if/when the e2e suite is re-run in a
+  full environment.
+- **Resume procedure:** read this file; HEAD is `79d898e` (M2.8
+  complete; nothing uncommitted except this ledger follow-up).
+  Establish the baseline: `.venv/bin/python -m pytest
+  tests/unit -q` (852 passed), `.venv/bin/python -m pytest
+  tests/integration -q` (250 passed), `.venv/bin/python -m ruff check
   src/ tests/` (clean), `.venv/bin/python -m mypy src/basseparate/`
-  (62 files clean), `.venv/bin/python scripts/check_contract.py` (OK),
-  `pnpm --dir frontend test` (307 passed).
+  (63 files clean), `.venv/bin/python scripts/check_contract.py` (OK),
+  `pnpm --dir frontend test` (379 passed).
 
 ## Completed requirements (with evidence)
 
