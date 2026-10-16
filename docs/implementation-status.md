@@ -32,13 +32,20 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.9 (Integrate the time-stretch engine,
-  spec §11) — **complete** (all 9 phases; gate green; evidence doc
-  written). Plan: `projectPlans/m2.9-plan.md` (committed). M2.8 leaves
-  the mixer + monitoring surface ready; the 1× bypass with an aligned
-  dry/wet transition and the three-time-domain transport ledger land in
-  M2.10 (§12).
-- **Last commit:** `3e12570` — M2.9 (integrate the time-stretch
+- **Current work package:** M2.10 (Latency, bypass, and transport
+  mapping, spec §12) — **complete, pending commit**. Plan:
+  `projectPlans/m2.10-plan.md` (as-built). All phases done: wrapper
+  rolling-seek surface + rebuilt artifacts, worklet rolling data path
+  + warm-up + exact-pair anchors, 1× bypass with aligned transitions,
+  transport pre-roll + `anchorRate` ledger + diagnostics, tests +
+  evidence (`docs/evidence/m2.10-latency-bypass.md`), full gate green
+  (1108 py; 438 frontend; tsc at the 32-error pre-existing baseline;
+  prettier clean). See the M2.10 section below.
+- **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
+  (34 files incl. committed WASM artifacts; backend 1108 pytest green,
+  frontend 419 Vitest green; spec §11 closed).
+- **Last commit:** `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
+  M2.9 (integrate the time-stretch
   engine); `79d898e` — M2.8 (add aligned tracks and the stem
   mixer); `ac12159` — M2.7 (analysis caching and version
   retention); `a088363` — M2.6 (validate and publish stems);
@@ -64,20 +71,22 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action (M2.9 — time-stretch / playback speed, spec §11):**
-  M2.8 is closed. Begin the M2.9 work package (playback-speed engine).
-  No M2.8 follow-ups remain; the e2e `app.spec.ts` harness bug
+- **Next action:** commit M2.10 (single `M2.10: …` commit + a
+  `Ledger: record M2.10 commit hash (<hash>)` follow-up), then start
+  M2.11 (saved practice loops) from `projectPlans/milestone2.md` §13.
+  No M2.9 follow-ups remain; the e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
-  out of M2.8 scope — address it if/when the e2e suite is re-run in a
+  out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `79d898e` (M2.8
-  complete; nothing uncommitted except this ledger follow-up).
-  Establish the baseline: `.venv/bin/python -m pytest
-  tests/unit -q` (852 passed), `.venv/bin/python -m pytest
-  tests/integration -q` (250 passed), `.venv/bin/python -m ruff check
-  src/ tests/` (clean), `.venv/bin/python -m mypy src/basseparate/`
-  (63 files clean), `.venv/bin/python scripts/check_contract.py` (OK),
-  `pnpm --dir frontend test` (379 passed).
+- **Resume procedure:** read this file; HEAD is `37e1eeb` (M2.9
+  complete + ledger hash) with the M2.10 work complete but uncommitted
+  in the working tree. Establish the baseline:
+  `.venv/bin/python -m pytest tests/ -q` (1108 passed),
+  `.venv/bin/python -m ruff check src/ tests/` (clean),
+  `.venv/bin/python -m mypy src/` (63 files clean),
+  `/home/thomas/.npm-global/bin/pnpm --dir frontend run test`
+  (438 passed), `tsc -b` (32 pre-existing errors), `prettier --check .`
+  (clean).
 
 ## Completed requirements (with evidence)
 
@@ -2708,6 +2717,80 @@ semitones), no formant. The app launches with no compiler present
   `docs/evidence/m2.9-time-stretch-engine.md` (git-ignored). Single
   M2.9 commit (includes `projectPlans/m2.9-plan.md`) + ledger-hash
   follow-up.
+
+## M2.10 — Latency, bypass, and transport mapping (spec §12)
+
+**Scope (per `projectPlans/m2.10-plan.md`):** three-time-domain
+transport ledger (§12.1–12.2), priming that starts audible output
+exactly at the requested source boundary (§12.3), a 1× bypass with an
+aligned dry/wet transition (§12.4), mixer/diagnostic guarantees
+(§12.5), EOF trim (§12.6), and UI synchronization through the ledger
+(§12.7). Monitoring-only. Loops themselves stay out (M2.11) — the
+ledger carries their hook field.
+
+**Key engine facts (authoritative; upstream source + probes):**
+
+- `seek(inputs, inputSamples, rate)` copies only the **last**
+  `blockSamples + interval` = 5760 frames (@48k) of the fed window
+  (window length 7200 = 5760 + one interval). The analysis block's
+  centre sits `inLat` before the window end; the synthesis places a
+  block's centre `outLat` *output* frames after the render position
+  where it was created.
+- **Rolling law (validated):** with audible cursor `S` at the quantum
+  start, `windowEnd = round(S + rate·outLat + inLat)`; zero-pad
+  outside `[0, frameCount)`. Impulse-train residuals +45…+75 output
+  frames (≈1 ms) at 0.25×–2×, no drift over 600 quanta. The upstream
+  live-playback reference uses the same law. `process(0, N)` with
+  `N ≤ interval` keeps every block a seek block (`timeFactor =
+  1/rate`) — the per-quantum rolling seek is required.
+- **Wet start:** `reset()` + silent warm-up (5760 output frames of the
+  rolling seek, discarded, ≤8 quanta per callback). Cold first-quantum
+  mean 0.0005; at 5760 warm-up frames 0.1000/0.1008/0.0994 at
+  1×/2×/0.5× (steady ±0.002). Warm-up is alignment-neutral; cost
+  ≈5.8 ms per warm-up (Node, scalar), steady ≈0.13 ms/quantum (≈5 %
+  realtime).
+- **EOF:** no tail flush; the window tail zero-pads past `frameCount`
+  and the natural window fade is the trim (0.1012 → 0.0010 over ~3
+  quanta); emission stops at `S ≥ frameCount`, position clamps.
+- `set_rate`/`set_rate_now`/`effective_rate` stay as probes; the
+  playback path passes its own ramped rate to every `seek`.
+
+**Phase log (all complete; pending commit):**
+
+- **Phase 1 — Plan + ledger:** `projectPlans/m2.10-plan.md` written
+  and later revised as-built; this section added.
+- **Phase 2 — Wrapper + engine probe:** `stretch_wrapper.cpp`
+  rewritten to the rolling-seek surface (`window_length`, `seek`,
+  `set_rate_now` added; `input_demand`, `flush_tail`, `seek_length`,
+  `output_seek` dropped), artifacts rebuilt (emsdk 4.0.23) and
+  committed, `BUILD.md` regenerated; probes pinned the law, warm-up
+  envelope/cost, hard-seek isolation, EOF fade.
+- **Phase 3 — Worklet data path:** rolling seek, mix ring + exact dry
+  tap, silent warm-up, EOF stop, underrun guard, exact-pair anchors
+  with `rate` (the M2.9 `lastAnchorTime` latch removed).
+- **Phase 4 — 1× bypass:** dry read bit-identical to the no-engine
+  path; crossfades (~5 ms) only at exactly 1×; dry→wet = crossfade
+  then ramp, wet→dry = ramp then crossfade; master gain post-stretch.
+- **Phase 5 — Transport:** seek `{frame: fetchFrame,
+  audibleFrame: B, generation}` with `PRE_ROLL_FRAMES = 12_288`;
+  `anchorRate` extrapolation without latency subtraction; pre-roll in
+  `load`/`rebind`; `controlResponseLatencySeconds` diagnostics.
+- **Phase 6 — Tests + evidence:** `stretch-priming.test.ts` rewritten
+  (§12.3 probe suite, 14), `stretch-host.test.ts` on the new API
+  (15), `worklet-stretch.test.ts` (12), `worklet-core.test.ts` and
+  `transport.test.ts` moved to the exact-pair/rolling model; evidence
+  `docs/evidence/m2.10-latency-bypass.md`.
+- **Phase 7 — Gate:** backend 1108/1108 pytest, ruff + mypy clean;
+  frontend 438/438 Vitest, `tsc -b` at the 32-error pre-existing
+  baseline, prettier clean.
+
+**Accepted caveats (documented in the evidence):** a wet seek's sound
+starts after the ≈16 ms silent warm-up (ledger maps the audible
+boundary exactly; wall-clock onset trails it); sharp edges near a rate
+change show transition-shape smearing (≤ ~1 ms at 1×, up to ~20 ms at
+0.25× worst step; impulse centroids ±1.5 ms); the worklet's read-ahead
+(max 8640 frames @2×) is the ≈120–180 ms §12.5 control-response
+latency shown in diagnostics.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

@@ -175,7 +175,13 @@ describe('ConsumptionState end of source', () => {
     block(core, 128 / RATE, 128)
     const last = block(core, 256 / RATE, 44)
     expect(last.res.ended).toBe(true)
-    expect(last.res.anchor).toEqual({ frame: 300, time: 256 / RATE, paused: false })
+    // Exact pair: the end frame plays 44 frames into this block (§12.7).
+    expect(last.res.anchor).toEqual({
+      frame: 300,
+      time: 256 / RATE + 44 / RATE,
+      paused: false,
+      rate: 1,
+    })
     expect(last.output[0][43]).toBeCloseTo(0.25, 5)
     expect(core.position).toBe(300)
     // No repeated end notification; pure silence afterwards.
@@ -187,13 +193,18 @@ describe('ConsumptionState end of source', () => {
 })
 
 describe('ConsumptionState anchors', () => {
-  it('emits an anchor every anchorEveryFrames with the block-start position', () => {
+  it('emits exact (frame, time) anchor pairs every anchorEveryFrames', () => {
     const core = freshCore(10_000, { anchorEvery: 480 })
     core.enqueue(makeBuffer(1_000, () => 0.5))
     const a1 = block(core, 0, 480)
-    expect(a1.res.anchor).toEqual({ frame: 0, time: 0, paused: false })
+    expect(a1.res.anchor).toEqual({ frame: 480, time: 480 / RATE, paused: false, rate: 1 })
     const a2 = block(core, 480 / RATE, 480)
-    expect(a2.res.anchor).toEqual({ frame: 480, time: 480 / RATE, paused: false })
+    expect(a2.res.anchor).toEqual({
+      frame: 960,
+      time: 960 / RATE,
+      paused: false,
+      rate: 1,
+    })
     const a3 = block(core, 960 / RATE, 40)
     expect(a3.res.anchor).toBeNull()
   })
@@ -207,10 +218,12 @@ describe('ConsumptionState anchors', () => {
       if (r.res.anchor) anchors.push(r.res.anchor)
     }
     // Second crossing: position 2432 + 2400 = 4832, reached by the block
-    // that starts at 4736 (the next 128-frame boundary).
+    // that starts at 4736 (the next 128-frame boundary). The pairs name
+    // the audible frame and the context time at which it plays (spec
+    // §12.7), so the transport maps the position without lag.
     expect(anchors).toEqual([
-      { frame: 0, time: 2_304 / RATE, paused: false },
-      { frame: 2_432, time: 4_736 / RATE, paused: false },
+      { frame: 2_432, time: 2_432 / RATE, paused: false, rate: 1 },
+      { frame: 4_864, time: 4_864 / RATE, paused: false, rate: 1 },
     ])
   })
 
@@ -850,7 +863,8 @@ describe('MixState', () => {
     mixBlock(mix, 0, 200)
     const last = mixBlock(mix, 0.2, 100)
     expect(last.res.ended).toBe(true)
-    expect(last.res.anchor).toEqual({ frame: 300, time: 0.2, paused: false })
+    // Exact pair: the end frame plays at the block's end (sampleRate R).
+    expect(last.res.anchor).toEqual({ frame: 300, time: 0.2 + 100 / R, paused: false, rate: 1 })
     expect(last.output[0][99]).toBeCloseTo(0.75 * CENTER, 5)
     expect(mix.position).toBe(300)
     const after = mixBlock(mix, 0.3, 128)

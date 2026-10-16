@@ -1,10 +1,17 @@
 /**
  * Tests for the stretch host API against the real WASM artifacts
- * (M2.9, spec §11.3.11, plan Phase 4).
+ * (M2.9, spec §11.3.11; rolling-seek playback model in M2.10 §12.3).
  *
  * The bundled artifacts (`dist/stretch-{scalar,simd}.wasm`, built by
  * `build.mjs` — see `BUILD.md`) are read with `readFileSync` and
  * instantiated directly: no compiler, no emscripten glue.
+ *
+ * The rolling recipe (one render quantum, the worklet's data path):
+ *
+ *     windowEnd = round(S + rate*outLat + inLat)
+ *     fill inL/inR with source frames [windowEnd - windowLength, windowEnd)
+ *     seek(windowLength, rate); process(0, 128)
+ *     S += rate * 128
  */
 
 import { readFileSync } from 'node:fs'
@@ -26,48 +33,65 @@ const scalarBytes = readFileSync(path.join(dist, 'stretch-scalar.wasm'))
 const simdBytes = readFileSync(path.join(dist, 'stretch-simd.wasm'))
 
 const RATE = 48000
-/** Seek length at 1x/48k: inputLatency + outputLatency = 5760. */
-const SEEK = 5760
+const QUANTUM = 128
+const OUT_LAT = 2880
+const IN_LAT = 2880
 
-function sine(ch: Float32Array, n: number, phase0: number, ph = 0): void {
-  for (let i = 0; i < n; i++) {
-    ch[i] = 0.5 * Math.sin((2 * Math.PI * 440 * (phase0 + i)) / RATE + ph)
+function sine(ch: Float32Array, from: number, count: number, ph = 0): void {
+  for (let i = 0; i < count; i++) {
+    ch[i] = 0.5 * Math.sin((2 * Math.PI * 440 * (from + i)) / RATE + ph)
   }
 }
 
-/** Prime the engine from a 440 Hz sine at `phase0`; returns the seek length. */
-function prime(e: StretchEngine, phase0 = 0): number {
-  const sl = e.seekLength()
-  sine(e.inL, sl, phase0)
-  sine(e.inR, sl, phase0, 0.5)
-  e.outputSeek(sl)
-  return sl
+function makeEngine(bytes = scalarBytes): StretchEngine {
+  const eng = instantiateStretch(bytes)
+  eng.configure(RATE)
+  return eng
 }
 
-/** Feed `quanta` render quanta of the continuing sine; report consumption. */
-function runSine(
-  e: StretchEngine,
-  quanta: number,
-  phase0: number,
-  rate?: number,
-): { consumed: number; out: number; lastRms: number } {
-  if (rate !== undefined) e.setRate(rate)
-  let phase = phase0
-  let consumed = 0
-  let lastRms = 0
-  for (let c = 0; c < quanta; c++) {
-    const d = e.inputDemand(128)
-    sine(e.inL, d, phase)
-    sine(e.inR, d, phase, 0.5)
-    phase += d
-    consumed += e.process(d, 128)
-    if (c === quanta - 1) {
-      let s = 0
-      for (let i = 0; i < 128; i++) s += e.outL[i] * e.outL[i]
-      lastRms = Math.sqrt(s / 128)
+/**
+ * Fill the context window for the quantum at audible cursor `S` and run
+ * the rolling seek. Returns the output RMS of the quantum.
+ */
+function rollQuantum(eng: StretchEngine, s: number, rate: number): number {
+  const end = Math.round(s + rate * OUT_LAT + IN_LAT)
+  const from = end - eng.windowLength()
+  sine(eng.inL, from, eng.windowLength())
+  sine(eng.inR, from, eng.windowLength(), 0.5)
+  eng.seek(eng.windowLength(), rate)
+  eng.process(0, QUANTUM)
+  let sum = 0
+  for (let i = 0; i < QUANTUM; i++) sum += eng.outL[i] * eng.outL[i]
+  return Math.sqrt(sum / QUANTUM)
+}
+
+/** Roll `quanta` quanta from `startFrame` at `rate`; return the RMS trail. */
+function roll(eng: StretchEngine, quanta: number, startFrame: number, rate = 1): number[] {
+  const trail: number[] = []
+  let s = startFrame
+  for (let q = 0; q < quanta; q++) {
+    trail.push(rollQuantum(eng, s, rate))
+    s += rate * QUANTUM
+  }
+  return trail
+}
+
+/** Zero-crossing frequency estimate over `quanta` quanta (after a warm-up). */
+function outputFrequency(eng: StretchEngine, s: number, rate: number, quanta = 64): number {
+  roll(eng, 64, s, rate) // silent pre-roll; the measurement starts warm
+  let start = s + 64 * rate * QUANTUM
+  let crossings = 0
+  let prev = 0
+  for (let q = 0; q < quanta; q++) {
+    rollQuantum(eng, start, rate)
+    for (let i = 0; i < QUANTUM; i++) {
+      const v = eng.outL[i]
+      if (prev <= 0 && v > 0) crossings++
+      prev = v
     }
+    start += rate * QUANTUM
   }
-  return { consumed, out: quanta * 128, lastRms }
+  return crossings / ((quanta * QUANTUM) / RATE)
 }
 
 describe('stretch-host (real WASM artifacts)', () => {
@@ -75,9 +99,8 @@ describe('stretch-host (real WASM artifacts)', () => {
     for (const bytes of [scalarBytes, simdBytes]) {
       const e = instantiateStretch(bytes)
       e.configure(RATE)
-      // Input regions hold a full priming buffer at 2x (> maxFrames);
-      // output regions are exactly maxFrames.
-      expect(e.inL.length).toBeGreaterThan(STRETCH_MAX_FRAMES)
+      // Input regions hold a full context window (7200 @48k).
+      expect(e.inL.length).toBe(7200)
       expect(e.inL.length).toBe(e.inR.length)
       expect(e.outL.length).toBe(STRETCH_MAX_FRAMES)
       expect(e.outL.length).toBe(e.outR.length)
@@ -95,174 +118,84 @@ describe('stretch-host (real WASM artifacts)', () => {
     expect(measureLatencies(e2, 44100)).toEqual({ inputFrames: 2646, outputFrames: 2646 })
   })
 
-  it('primes so an impulse stays near the start (no full-window delay)', () => {
-    const e = instantiateStretch(scalarBytes)
-    e.configure(RATE)
-    const sl = e.seekLength()
-    e.inL.fill(0)
-    e.inR.fill(0)
-    e.inL[0] = 1
-    e.inR[0] = 1
-    e.outputSeek(sl)
-    let peak = 0
-    let peakPos = -1
-    let n = 0
-    for (let c = 0; c < 64; c++) {
-      const d = e.inputDemand(128)
-      e.inL.fill(0, 0, d)
-      e.inR.fill(0, 0, d)
-      e.process(d, 128)
-      for (let i = 0; i < 128; i++) {
-        const v = Math.abs(e.outL[i])
-        if (v > peak) {
-          peak = v
-          peakPos = n + i
-        }
-        n++
-      }
-      if (peak > 0.1 && c > 2) break
-    }
-    expect(peak).toBeGreaterThan(0.05)
-    expect(peakPos).toBeLessThan(2 * 2880)
+  it('reports the window geometry the rolling recipe needs', () => {
+    const e = makeEngine()
+    expect(e.latencies()).toEqual({ inputFrames: IN_LAT, outputFrames: OUT_LAT })
+    expect(e.windowLength()).toBe(7200)
+    // The window covers the upstream live-playback buffer (in + out
+    // latency) plus one STFT interval.
+    expect(e.windowLength()).toBeGreaterThanOrEqual(IN_LAT + OUT_LAT)
   })
 
-  it('consumes input at the target rate (2x and 0.5x)', () => {
-    for (const target of [2.0, 0.5]) {
-      const e = instantiateStretch(scalarBytes)
-      e.configure(RATE)
-      prime(e)
-      const r = runSine(e, 48000 / 128, SEEK, target)
-      expect(Math.abs(r.consumed / r.out - target)).toBeLessThan(0.05)
-      expect(r.lastRms).toBeGreaterThan(0.15)
+  it.each([1, 2, 0.5])('produces steady output through the rolling seek at %sx', (rate) => {
+    const e = makeEngine()
+    const trail = roll(e, 200, 20_000, rate)
+    // After the silent pre-roll (5760 output frames ≈ 45 quanta), the
+    // 440 Hz sine at amplitude 0.5 is steady at RMS ≈ 0.354.
+    for (let q = 64; q < trail.length; q++) {
+      expect(trail[q]).toBeGreaterThan(0.3)
+      expect(trail[q]).toBeLessThan(0.4)
     }
   })
 
-  it('produces steady output immediately after priming', () => {
-    const e = instantiateStretch(scalarBytes)
-    e.configure(RATE)
-    prime(e)
-    let firstNZ = -1
-    let phase = SEEK
-    for (let c = 0; c < 32 && firstNZ < 0; c++) {
-      const d = e.inputDemand(128)
-      sine(e.inL, d, phase)
-      sine(e.inR, d, phase, 0.5)
-      phase += d
-      e.process(d, 128)
-      for (let i = 0; i < 128; i++) {
-        if (Math.abs(e.outL[i]) > 1e-6) {
-          firstNZ = c * 128 + i
-          break
-        }
-      }
-    }
-    expect(firstNZ).toBeGreaterThanOrEqual(0)
-    expect(firstNZ).toBeLessThan(128)
+  it.each([1, 2, 0.5])('preserves pitch at %sx', (rate) => {
+    const e = makeEngine()
+    expect(outputFrequency(e, 20_000, rate)).toBeGreaterThan(420)
+    expect(outputFrequency(e, 20_000, rate)).toBeLessThan(460)
   })
 
   it('is deterministic for the fixed seed', () => {
-    const a = instantiateStretch(scalarBytes)
-    const b = instantiateStretch(scalarBytes)
-    a.configure(RATE)
-    b.configure(RATE)
-    prime(a)
-    prime(b)
-    let phaseA = SEEK
-    let phaseB = SEEK
-    for (let c = 0; c < 64; c++) {
-      const dA = a.inputDemand(128)
-      const dB = b.inputDemand(128)
-      sine(a.inL, dA, phaseA)
-      sine(a.inR, dA, phaseA, 0.5)
-      sine(b.inL, dB, phaseB)
-      sine(b.inR, dB, phaseB, 0.5)
-      phaseA += dA
-      phaseB += dB
-      a.process(dA, 128)
-      b.process(dB, 128)
+    const a = makeEngine()
+    const b = makeEngine()
+    let sa = 20_000
+    let sb = 20_000
+    for (let q = 0; q < 64; q++) {
+      rollQuantum(a, sa, 1)
+      rollQuantum(b, sb, 1)
       expect(Array.from(a.outL)).toEqual(Array.from(b.outL))
+      sa += QUANTUM
+      sb += QUANTUM
     }
   })
 
   it('matches scalar and SIMD within tolerance', () => {
-    const a = instantiateStretch(scalarBytes)
-    const b = instantiateStretch(simdBytes)
-    a.configure(RATE)
-    b.configure(RATE)
-    prime(a)
-    prime(b)
-    let phaseA = SEEK
-    let phaseB = SEEK
+    const a = makeEngine(scalarBytes)
+    const b = makeEngine(simdBytes)
+    let sa = 20_000
+    let sb = 20_000
     let maxDiff = 0
-    for (let c = 0; c < 64; c++) {
-      const dA = a.inputDemand(128)
-      const dB = b.inputDemand(128)
-      sine(a.inL, dA, phaseA)
-      sine(a.inR, dA, phaseA, 0.5)
-      sine(b.inL, dB, phaseB)
-      sine(b.inR, dB, phaseB, 0.5)
-      phaseA += dA
-      phaseB += dB
-      a.process(dA, 128)
-      b.process(dB, 128)
-      for (let i = 0; i < 128; i++) {
-        maxDiff = Math.max(
-          maxDiff,
-          Math.abs(a.outL[i] - b.outL[i]),
-          Math.abs(a.outR[i] - b.outR[i]),
-        )
+    for (let q = 0; q < 64; q++) {
+      rollQuantum(a, sa, 1)
+      rollQuantum(b, sb, 1)
+      for (let i = 0; i < QUANTUM; i++) {
+        maxDiff = Math.max(maxDiff, Math.abs(a.outL[i] - b.outL[i]))
       }
+      sa += QUANTUM
+      sb += QUANTUM
     }
     expect(maxDiff).toBeLessThan(1e-3)
   })
 
   it('reset + re-seek resumes output at the new position', () => {
-    const e = instantiateStretch(scalarBytes)
-    e.configure(RATE)
-    prime(e)
-    runSine(e, 32, SEEK)
-    const newPhase = 100000
-    const sl = e.seekLength()
-    sine(e.inL, sl, newPhase)
-    sine(e.inR, sl, newPhase, 0.5)
-    e.outputSeek(sl)
-    const r = runSine(e, 32, newPhase + sl)
-    expect(r.lastRms).toBeGreaterThan(0.15)
+    const e = makeEngine()
+    const before = roll(e, 64, 20_000, 1)
+    expect(before[63]).toBeGreaterThan(0.3)
+    e.reset()
+    const after = roll(e, 64, 100_000, 1)
+    expect(after[63]).toBeGreaterThan(0.3)
   })
 
-  it('flushes a decaying tail, then silence', () => {
-    const e = instantiateStretch(scalarBytes)
-    e.configure(RATE)
-    prime(e)
-    let phase = SEEK
-    for (let c = 0; c < 32; c++) {
-      const d = e.inputDemand(128)
-      sine(e.inL, d, phase)
-      sine(e.inR, d, phase, 0.5)
-      phase += d
-      e.process(d, 128)
-    }
-    const n1 = e.flushTail(4096)
-    let nz1 = 0
-    for (let i = 0; i < n1; i++) {
-      if (Math.abs(e.outL[i]) > 1e-6) nz1++
-    }
-    expect(nz1).toBeGreaterThan(100)
-    const n2 = e.flushTail(4096)
-    let max2 = 0
-    for (let i = 0; i < n2; i++) {
-      max2 = Math.max(max2, Math.abs(e.outL[i]))
-    }
-    expect(max2).toBeLessThan(1e-6)
-  })
-
-  it('reports monotonic input demand', () => {
-    const e = instantiateStretch(scalarBytes)
-    e.configure(RATE)
-    prime(e)
-    for (let f = 0; f <= STRETCH_MAX_FRAMES; f += 16) {
-      expect(e.inputDemand(f) + 1).toBeGreaterThanOrEqual(e.inputDemand(f + 1))
-    }
+  it('ramps plain setRate and jumps setRateNow', () => {
+    const e = makeEngine()
+    e.setRate(2)
+    // Only the target is recorded; the effective rate ramps over ≈50 ms
+    // of rendered output, so it is still 1× before any output.
+    expect(e.effectiveRate()).toBe(1)
+    roll(e, 4, 20_000, 1)
+    expect(e.effectiveRate()).toBeGreaterThan(1)
+    expect(e.effectiveRate()).toBeLessThan(2)
+    e.setRateNow(2)
+    expect(e.effectiveRate()).toBe(2)
   })
 })
 

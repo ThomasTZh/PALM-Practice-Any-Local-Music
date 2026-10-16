@@ -516,6 +516,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
     underruns: 0,
     lastUnderrunAt: null,
     droppedChunks: 0,
+    controlResponseLatencySeconds: 0,
   })
   const transportRef = useRef<PcmTransport | null>(null)
   const assetIdRef = useRef<string | null>(null)
@@ -578,7 +579,12 @@ const PlaybackPanel = memo(function PlaybackPanel({
     setPosition(0)
     setPlayError(null)
     setSuspended(false)
-    setDiagnostics({ underruns: 0, lastUnderrunAt: null, droppedChunks: 0 })
+    setDiagnostics({
+      underruns: 0,
+      lastUnderrunAt: null,
+      droppedChunks: 0,
+      controlResponseLatencySeconds: 0,
+    })
     // The restored volume of the previous project no longer applies.
     volumeSeededRef.current = false
     volumeRef.current = 100

@@ -21,12 +21,14 @@ export interface ProcessResult {
   /** True once when the position reached the source endpoint. */
   ended: boolean
   /**
-   * Position anchor: at context time `time` the position was `frame`, so
-   * main-thread extrapolation is `frame + (now - time) * sampleRate`.
+   * Position anchor: the audible cursor was exactly `frame` at context
+   * time `time` (M2.10 §12.7 — exact pairs, so the main-thread
+   * extrapolation `frame + (now - time) * sampleRate * rate` follows the
+   * audio actually heard). `rate` is the worklet's ramped playback rate.
    * `paused` is true only for the final anchor emitted when the pause
    * ramp completes (the exact paused position).
    */
-  anchor: { frame: number; time: number; paused: boolean } | null
+  anchor: { frame: number; time: number; paused: boolean; rate: number } | null
   /** Total frames buffered on the active path after this block. */
   buffered: number
   /**
@@ -107,8 +109,6 @@ export interface MixStateOptions {
    * plain mixer path (unit tests of the mixer math).
    */
   engine?: object | null
-  /** Bounded synthesis tail after the source ends (frames). */
-  tailFrames?: number
 }
 
 /** Patch for one source's mixer parameters (spec §10.3). */
@@ -151,19 +151,32 @@ export class MixState {
   /** Set the master monitoring gain (linear); ramped over 5 ms. */
   setMasterGain(gain: number): void
   /**
-   * Set the target playback rate (0.25…2.0); the stretch engine owns
-   * the ≈50 ms ramp (spec §11.7). No-op without an engine.
+   * Set the target playback rate (0.25…2.0). The worklet owns the
+   * ≈50 ms ramp (spec §11.7/§12.5); at exactly 1× the dry bypass is
+   * bit-exact (§12.4). No-op without an engine.
    */
   setRate(rate: number): void
+  /**
+   * The rate currently being rendered (M2.10): 1 without an engine; with
+   * one it ramps toward the target and equals it in steady state.
+   */
+  readonly rateCurrent: number
+  /** Dry-tap gain of the §12.4 bypass crossfade (1 = pure dry). */
+  readonly dryGain: number
+  /** Wet-tap gain of the §12.4 bypass crossfade (1 = pure stretched). */
+  readonly wetGain: number
   /** Route a transfer-path chunk to one source. */
   enqueueChannels(index: number, channels: Float32Array[]): boolean
   /** Bind one source's shared ring. */
   attachShared(index: number, sab: SharedArrayBuffer): void
   /**
-   * Seek every source to the same frame. `generations` is per-source on
-   * the shared path; a single number applies to all.
+   * Seek every source to the same fetch frame and set the audible
+   * boundary (M2.10 §12.3). `frame` is what the transport feeds first
+   * (the pre-roll); `audibleFrame` (default `frame`) is where the
+   * listener starts hearing. `generations` is per-source on the shared
+   * path; a single number applies to all.
    */
-  seek(frame: number, generations?: number | number[]): void
+  seek(frame: number, generations?: number | number[], audibleFrame?: number): void
   /** Begin the pause ramp on the mixed output; the cursor is preserved. */
   pause(): void
   /** Resume at the preserved cursor. */

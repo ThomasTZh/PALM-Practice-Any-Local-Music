@@ -290,15 +290,20 @@ export class ConsumptionState {
       }
     }
     this.position += take
+    const endTime = time + take / this.sampleRate
     if (this.position >= this.frameCount) {
       this.ended = true
       if (!this.endedNotified) {
         this.endedNotified = true
         out.ended = true
-        out.anchor = { frame: this.position, time, paused: false }
+        // Exact pair: the end frame plays `take` frames into this block.
+        out.anchor = { frame: this.position, time: endTime, paused: false, rate: 1 }
       }
     } else if (this.position - this.lastAnchorFrame >= this.anchorEvery) {
-      out.anchor = { frame: this.lastAnchorFrame, time, paused: false }
+      // Exact pair: the frame named plays at the named context time
+      // (spec §12.7: the UI maps through the ledger, not through a
+      // lagging estimate).
+      out.anchor = { frame: this.position, time: endTime, paused: false, rate: 1 }
       this.lastAnchorFrame = this.position
     }
     out.consumed = take
@@ -409,6 +414,38 @@ export class ConsumptionState {
 const MIX_RAMP_SECONDS = 0.005
 
 /**
+ * Worklet-side playback-rate ramp time (spec §11.7): the worklet ramps
+ * the rate itself and passes the current value to every engine `seek`
+ * (the engine's own `setRate` ramp is unused by the playback path).
+ */
+const RATE_RAMP_SECONDS = 0.05
+
+/**
+ * Dry/wet crossfade time at 1× (spec §12.4). The crossfade only ever
+ * runs while both sides are at exactly 1×, so the two signals are
+ * time-aligned frame-for-frame (never mixing differently timed dry and
+ * stretched audio).
+ */
+const BYPASS_CROSSFADE_SECONDS = 0.005
+
+/**
+ * Silent pre-roll (output frames) run before a wet start after a hard
+ * re-position. The engine's overlap-add accumulator fills over roughly
+ * one block (measured: full level after 5760 output frames at every
+ * rate), so a hard seek that starts at rate ≠ 1 primes the engine with
+ * this many inaudible frames instead of fading the boundary in.
+ */
+const WARMUP_OUT_FRAMES = 5760
+
+/**
+ * Mix-ring capacity in frames. The ring holds the stem-mixed stereo
+ * (master gain stays post-engine, §11.1) spanning the engine's context
+ * window plus the rate-dependent lookahead (`r*outLat + inLat`, up to
+ * 8640 frames at 2×) with margin.
+ */
+const MIX_RING_FRAMES = 16384
+
+/**
  * Multi-source mixer state (M2.8, spec §10.3): ONE audio-thread state
  * machine consuming every active source in lockstep. Each source is a
  * plain `ConsumptionState`; the mixer advances all of them by the same
@@ -427,15 +464,28 @@ const MIX_RAMP_SECONDS = 0.005
  * solo only silences the other sources. Visibility is a UI concern and
  * never reaches the audio thread (hidden ≠ muted).
  *
- * With a stretch engine (`opts.engine`, M2.9, spec §11) the data path
- * becomes: per-stem gain/pan/mute/solo → stereo sum → stretch → master
- * gain → output (§11.1 order). The stretcher controls source
- * consumption: per quantum it demands `inputDemand` input frames, and
- * the shared cursor advances by exactly that amount (capped by
- * buffered/endpoint). Before the first output (and after every seek)
- * the engine is primed with `seekLength` frames via `outputSeek`,
- * silence-padded on underrun. After the source ends, the engine's
- * synthesis tail is drained with `flushTail` (bounded).
+ * With a stretch engine (`opts.engine`, M2.9/M2.10, spec §11–§12) the
+ * data path becomes: per-stem gain/pan/mute/solo → stereo sum → mix
+ * ring → stretch → master gain → output (§11.1 order). The ring holds
+ * the stem-mixed stereo and is filled from the sources with a
+ * rate-dependent lookahead; two output taps read it:
+ *
+ * - **dry** — the exact-speed 1× bypass: frames read straight from the
+ *   ring at the audible cursor (bit-identical to the no-engine path);
+ * - **wet** — the rolling seek (§12.3): every render quantum the
+ *   worklet writes the context window
+ *   `[S + r*outLat + inLat − windowLength, S + r*outLat + inLat)` into
+ *   the engine input regions, calls `seek(windowLength, r)` and
+ *   `process(0, frames)`; the emitted block is centred exactly on the
+ *   audible cursor `S` (advancing `r` frames per output frame).
+ *
+ * The output is `dryGain*dry + wetGain*wet`; the engine keeps rolling
+ * (inaudible) during bypass, so rate changes are always prepared: the
+ * crossfade to wet runs at exactly 1× first, then the worklet's own
+ * ≈50 ms rate ramp starts (wet→dry mirrors that order, §12.4). A hard
+ * re-position resets the engine and (when the rate is ≠ 1) primes it
+ * with an inaudible pre-roll, so the boundary starts at full level
+ * (§12.3).
  */
 export class MixState {
   /**
@@ -443,10 +493,9 @@ export class MixState {
    * @param {number} opts.sampleRate
    * @param {number} opts.frameCount project duration — all sources equal
    * @param {Array<{channelCount: number}>} opts.sources
-   * @param {object|null} [opts.engine] stretch engine (M2.9, spec §11)
-   * @param {number} [opts.tailFrames] bounded tail after the source ends
+   * @param {object|null} [opts.engine] stretch engine (M2.9/M2.10, spec §11–§12)
    */
-  constructor({ sampleRate, frameCount, sources, engine = null, tailFrames = 24000 }) {
+  constructor({ sampleRate, frameCount, sources, engine = null }) {
     if (!(sampleRate > 0)) throw new RangeError('sampleRate must be > 0')
     if (!(frameCount >= 0)) throw new RangeError('frameCount must be >= 0')
     if (!Array.isArray(sources) || sources.length === 0) {
@@ -493,19 +542,55 @@ export class MixState {
     this.pauseAnchorSent = false
     this.lastAnchorFrame = 0
     this.anchorEvery = defaultAnchorEvery(sampleRate)
+    /** Playback rate reported in anchors (1 without an engine). */
+    this.rateCurrent = 1
     /** Last mixed output sample per channel (held during the pause ramp). */
     this.lastSample = new Float32Array(2)
     /** Per-quantum peaks, reset after each report. */
     this.trackPeaks = sources.map(() => 0)
     this.masterPeak = 0
-    // Stretch engine (M2.9): null keeps the plain mixer path.
+    // Stretch engine (M2.9/M2.10): null keeps the plain mixer path.
     this.engine = engine
-    this.tailFrames = tailFrames > 0 ? tailFrames : 24000
-    this.tailRemaining = 0
-    /** The engine primes from `seekLength` frames before it outputs. */
-    this.primed = !engine
+    if (engine) {
+      const lat = engine.latencies()
+      this.inLat = lat.inputFrames
+      this.outLat = lat.outputFrames
+      this.windowFrames = engine.windowLength()
+      this.ringCap = MIX_RING_FRAMES
+      this.ringL = new Float32Array(this.ringCap)
+      this.ringR = new Float32Array(this.ringCap)
+      /** Absolute frame of ring slot 0 (monotonic). */
+      this.ringBase = 0
+      /** Oldest valid frame still in the ring. */
+      this.ringStart = 0
+      /** Frame after the newest stem-mixed frame in the ring. */
+      this.ringEnd = 0
+      /** Audible source position: content of the next output frame. */
+      this.audible = 0
+      /** Worklet-owned ≈50 ms playback-rate ramp (spec §11.7). */
+      this.rateTarget = 1
+      this.rateGoal = 1
+      this.rateFrom = 1
+      this.rateRampTotal = Math.max(1, Math.round(RATE_RAMP_SECONDS * sampleRate))
+      this.rateRampRemaining = 0
+      /** 1× bypass state (spec §12.4): 'dry' | 'wet' plus a crossfade. */
+      this.bypass = 'dry'
+      this.xfade = null // { to: 'wet' | 'dry', fromDry, fromWet, remaining }
+      this.xfadeTotal = Math.max(1, Math.round(BYPASS_CROSSFADE_SECONDS * sampleRate))
+      this.dryGain = 1
+      this.wetGain = 0
+      /** Quantum-start gains (the mix loop interpolates to the new ones). */
+      this.dryGainPrev = 1
+      this.wetGainPrev = 0
+      /** Rolling output frames since the last engine reset (warm-up). */
+      this.rolledFrames = 0
+      /** Remaining silent pre-roll (output frames, §12.3). */
+      this.warmupRemaining = 0
+    }
     // Bounded per-quantum scratch, grown only if a larger block ever
-    // arrives (audio thread: no steady-state allocation).
+    // arrives (audio thread: no steady-state allocation). The engine
+    // path mixes ring fills in bounded chunks (≤ `engineFillChunk`).
+    this.engineFillChunk = 4096
     this.blockCap = 0
     this.coeffL = []
     this.coeffR = []
@@ -513,7 +598,7 @@ export class MixState {
     this.masterCoeff = null
     this.mixL = null
     this.mixR = null
-    this.ensureBlockCapacity(128)
+    this.ensureBlockCapacity(engine ? this.engineFillChunk : 128)
   }
 
   /** Frames buffered on the weakest source (the binding budget). */
@@ -632,34 +717,76 @@ export class MixState {
   }
 
   /**
-   * Seek every source to the same frame (the shared cursor).
-   * `generations` is per-source on the shared path; a single number (or
-   * undefined) applies to all.
+   * Seek every source to the same fetch frame (the shared cursor) and
+   * set the audible boundary. `frame` is the frame the transport will
+   * feed first (it fetches the pre-roll from there); `audibleFrame`
+   * defaults to `frame` and is the position the listener starts hearing
+   * (the transport passes `frame = max(0, audible − preRoll)` for the
+   * engine path, §12.3). `generations` is per-source on the shared path;
+   * a single number (or undefined) applies to all.
    */
-  seek(frame, generations) {
+  seek(frame, generations, audibleFrame) {
     const target = Math.max(0, Math.min(Math.floor(frame), this.frameCount))
     this.sources.forEach((s, i) => {
       const gen = Array.isArray(generations) ? generations[i] : generations
       s.seek(target, gen)
     })
-    this.position = target
-    this.ended = target >= this.frameCount
+    const audible = Math.max(0, Math.min(Math.floor(audibleFrame ?? target), this.frameCount))
+    this.position = audible
+    this.ended = audible >= this.frameCount
     this.endedNotified = false
     this.underrunNotified = false
     this.paused = false
     this.rampRemaining = 0
     this.pauseAnchorSent = false
-    this.lastAnchorFrame = target
+    this.lastAnchorFrame = audible
     this.lastSample.fill(0)
-    // The engine re-primed from `seekLength` frames before it outputs
-    // (M2.9); any tail from the previous episode is dropped.
-    this.primed = !this.engine
-    this.tailRemaining = 0
+    if (this.engine) {
+      // Hard re-position: drop the engine's synthesis state (the old
+      // accumulator would bleed the previous position into the new one)
+      // and re-roll from the fetch frame. The playback rate persists;
+      // a wet start is warmed with an inaudible pre-roll below.
+      this.engine.reset()
+      this.audible = audible
+      this.ringBase = target
+      this.ringStart = target
+      this.ringEnd = target
+      this.rolledFrames = 0
+      this.rateCurrent = this.rateTarget
+      this.rateGoal = this.rateTarget
+      this.rateFrom = this.rateTarget
+      this.rateRampRemaining = 0
+      this.bypass = this.rateTarget === 1 ? 'dry' : 'wet'
+      this.xfade = null
+      this.dryGain = this.bypass === 'dry' ? 1 : 0
+      this.wetGain = 1 - this.dryGain
+      this.warmupRemaining = this.rateTarget === 1 || this.ended ? 0 : WARMUP_OUT_FRAMES
+    }
   }
 
-  /** Set the target playback rate (the engine owns the ≈50 ms ramp, §11.7). */
+  /**
+   * Set the target playback rate (spec §11.7). The worklet ramps the
+   * rate itself (≈50 ms, sampled once per quantum by the rolling seek);
+   * the engine's own `setRate` ramp is unused by the playback path.
+   *
+   * Rate changes at 1× route through the aligned dry/wet crossfade
+   * (§12.4): dry→wet crossfades at exactly 1× first, then ramps;
+   * wet→dry ramps back to 1× first, then crossfades. A wet start needs
+   * the engine's accumulator warm; when the rate is changed while the
+   * playback is paused (or before it rolls), the pre-roll is run
+   * inaudibly here (§12.3) — otherwise the dry→wet crossfade simply
+   * waits for the (silently rolling) engine to warm, ≤ 120 ms.
+   */
   setRate(rate) {
-    if (this.engine) this.engine.setRate(rate)
+    const target = Math.min(2.0, Math.max(0.25, Number.isFinite(rate) ? rate : 1))
+    this.rateTarget = target
+    if (!this.engine || this.ended) return
+    if (target !== 1 && this.rolledFrames < WARMUP_OUT_FRAMES) {
+      if (this.paused || this.rolledFrames === 0) {
+        // No audible output to interrupt: prime the engine inaudibly.
+        this.warmupRemaining = Math.max(this.warmupRemaining, WARMUP_OUT_FRAMES - this.rolledFrames)
+      }
+    }
   }
 
   /** Begin the pause ramp on the mixed output; the cursor is preserved. */
@@ -762,11 +889,18 @@ export class MixState {
       peaks: null,
     }
     if (this.ended) {
-      if (this.engine && this.tailRemaining > 0) {
-        this.processTail(outputChannels, frames, out)
-      } else {
-        this.fillOutputSilence(outputChannels, 0, frames)
-      }
+      this.fillOutputSilence(outputChannels, 0, frames)
+      out.buffered = this.buffered
+      return out
+    }
+    if (this.engine && this.warmupRemaining > 0) {
+      // Silent pre-roll for a wet start after a hard re-position (§12.3):
+      // the engine's overlap-add accumulator fills inaudibly, so the
+      // boundary starts at full level instead of fading in. Bounded per
+      // callback; a starved source pauses the pre-roll (retried next
+      // callback).
+      this.runWarmup(frames)
+      this.fillOutputSilence(outputChannels, 0, frames)
       out.buffered = this.buffered
       return out
     }
@@ -790,9 +924,9 @@ export class MixState {
       out.buffered = this.buffered
       return out
     }
-    // The engine's priming step mixes up to `seekLength` frames, so the
-    // scratch must hold the larger of the output block and the seek.
-    const cap = this.engine ? Math.max(frames, this.engine.seekLength()) : frames
+    // The engine path mixes ring fills in bounded chunks (`engineFillChunk`),
+    // so the scratch must hold the larger of the output block and the chunk.
+    const cap = this.engine ? Math.max(frames, this.engineFillChunk) : frames
     this.ensureBlockCapacity(cap)
     if (this.engine) return this.processWithEngine(time, outputChannels, frames, out)
     // Shared cursor: every source advances by the same amount, so no
@@ -849,7 +983,7 @@ export class MixState {
     for (let c = 0; c < 2; c++) {
       this.lastSample[c] = take > 0 && c < outputChannels.length ? outputChannels[c][take - 1] : 0
     }
-    this.advance(time, out)
+    this.advance(time, out, time + take / this.sampleRate)
     out.consumed = take
     out.buffered = this.buffered
     out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
@@ -860,20 +994,24 @@ export class MixState {
 
   /**
    * End-of-source / anchor bookkeeping shared by both data paths.
-   * `position` must already include this quantum's consumption.
+   * `position` must already include this quantum's advance; `endTime`
+   * is the context time at which the current position plays (the
+   * quantum's end for a full render quantum). Anchors carry the exact
+   * (frame, time) pair of the audible cursor, so the transport's ledger
+   * maps to the audio actually being heard (spec §12.7) instead of a
+   * lagging estimate.
    */
-  advance(time, out) {
+  advance(time, out, endTime) {
+    const rate = this.rateCurrent ?? 1
     if (this.position >= this.frameCount) {
       this.ended = true
       if (!this.endedNotified) {
         this.endedNotified = true
         out.ended = true
-        out.anchor = { frame: this.position, time, paused: false }
-        // The engine keeps a synthesis tail after the last input frame.
-        this.tailRemaining = this.engine ? this.tailFrames : 0
+        out.anchor = { frame: this.position, time: endTime, paused: false, rate }
       }
     } else if (this.position - this.lastAnchorFrame >= this.anchorEvery) {
-      out.anchor = { frame: this.lastAnchorFrame, time, paused: false }
+      out.anchor = { frame: this.position, time: endTime, paused: false, rate }
       this.lastAnchorFrame = this.position
     }
   }
@@ -883,72 +1021,87 @@ export class MixState {
    * nothing buffered (prebuffer after a seek) is not one.
    */
   maybeUnderrun(out) {
-    if (!this.underrunNotified && this.sources.some((s) => s.buffered > 0)) {
+    // Starvation is only an underrun when data was expected somewhere:
+    // an empty source AND an empty mix ring is a seek/prebuffer state.
+    const hadData = this.sources.some((s) => s.buffered > 0) || this.ringEnd > this.ringStart
+    if (!this.underrunNotified && hadData) {
       out.underrun = true
       this.underrunNotified = true
     }
   }
 
   /**
-   * Engine data path (M2.9, spec §11): per-stem gain/pan/mute/solo →
-   * stereo sum → stretch → master gain → output (§11.1 order). The
-   * stretcher demands its own input count per quantum; short supplies
-   * take the M2.8 underrun path (silence, no advance, no engine call)
-   * and the engine's fractional accumulator catches up.
+   * Engine data path (M2.10, spec §12.3): per-stem gain/pan/mute/solo →
+   * stereo sum → mix ring → rolling seek → master gain → output
+   * (§11.1 order). Two taps read the ring:
+   *
+   * - **dry**: the exact 1× bypass — frames read straight at the audible
+   *   cursor (bit-identical to the no-engine path, §12.4);
+   * - **wet**: the rolling seek — every render quantum the context window
+   *   `[S + r*outLat + inLat − windowLength, S + r*outLat + inLat)` goes
+   *   into the engine, `seek(windowLength, r)` + `process(0, frames)`
+   *   emit the block centred exactly on the cursor `S`.
+   *
+   * The output is `dryGain*dry + wetGain*wet`; the gains only crossfade
+   * while both taps are at exactly 1× (never mixing differently timed
+   * dry and stretched audio, §12.4.5). The engine keeps rolling
+   * inaudibly during bypass, so transitions are always prepared. A short
+   * supply takes the M2.8 underrun path (silence, no advance, no engine
+   * call).
    */
   processWithEngine(time, outputChannels, frames, out) {
     const eng = this.engine
-    if (!this.primed) {
-      // Prime from `seekLength` frames at the cursor (canonical engine
-      // usage): the first output frame aligns with the first priming
-      // frame. Silence-pad the tail on underrun.
-      const seekLen = eng.seekLength()
-      const remaining = this.frameCount - this.position
-      const need = Math.min(seekLen, remaining)
-      if (this.buffered < need) {
-        // Not enough data to prime: silence, no cursor advance. Near
-        // the endpoint the buffer is shorter than seekLen — priming
-        // proceeds with silence padding once it is fully buffered.
-        this.fillOutputSilence(outputChannels, 0, frames)
-        this.maybeUnderrun(out)
-        out.buffered = this.buffered
-        return out
-      }
-      this.mixSources(need)
-      this.fillEngineInput(need, seekLen)
-      eng.outputSeek(seekLen)
-      this.position += need
-      this.primed = true
-    }
-    const remaining = this.frameCount - this.position
-    const demand = eng.inputDemand(frames)
-    let take
-    if (remaining < demand && this.buffered >= remaining) {
-      // Source end: final chunk, silence-padded up to the demand.
-      take = remaining
-    } else if (this.buffered < demand) {
-      // Starved: silence, no advance, no engine call.
+    this.updateRateState(frames)
+    const rate = this.rateCurrent
+    const dryStart = Math.round(this.audible)
+    const dryActive = this.dryGain > 0 || this.dryGainPrev > 0
+    // Context window centred on the audible cursor (measured law, §12.3).
+    const windowEnd = Math.round(this.audible + rate * this.outLat + this.inLat)
+    const windowStart = windowEnd - this.windowFrames
+    // Ring coverage: the whole window plus the dry read, capped at EOF.
+    const windowTo = Math.min(windowEnd, this.frameCount)
+    const dryTo = Math.min(dryStart + frames, this.frameCount)
+    let needTo = windowTo
+    if (dryActive) needTo = Math.max(needTo, dryTo)
+    if (needTo > this.ringEnd) this.fillRing(needTo)
+    if (this.ringEnd < windowTo || (dryActive && this.ringEnd < dryTo)) {
+      // Starved: silence, no cursor advance, no engine call.
       this.fillOutputSilence(outputChannels, 0, frames)
       this.maybeUnderrun(out)
       out.buffered = this.buffered
       return out
-    } else {
-      take = demand
     }
-    this.mixSources(take)
-    this.fillEngineInput(take, demand)
-    eng.process(demand, frames)
     const ch0 = outputChannels[0]
     const ch1 = outputChannels.length > 1 ? outputChannels[1] : ch0
-    ch0.set(eng.outL.subarray(0, frames))
-    ch1.set(eng.outR.subarray(0, frames))
-    // The master gain sits after the stretcher (§11.1), ramped in
-    // output (audition) time.
+    // Dry tap: exact 1× frames straight from the ring.
+    if (dryActive) {
+      if (dryTo > dryStart) {
+        this.copyFromRing(this.ringL, ch0, 0, dryStart, dryTo - dryStart)
+        this.copyFromRing(this.ringR, ch1, 0, dryStart, dryTo - dryStart)
+      }
+      if (dryTo - dryStart < frames) {
+        this.fillOutputSilence(outputChannels, dryTo - dryStart, frames - (dryTo - dryStart))
+      }
+    } else {
+      ch0.fill(0, 0, frames)
+      if (ch1 !== ch0) ch1.fill(0, 0, frames)
+    }
+    // Wet tap: rolling seek (§12.3).
+    this.fillEngineWindow(windowStart, windowEnd)
+    eng.seek(this.windowFrames, rate)
+    eng.process(0, frames)
+    // Mix the taps; the master gain stays after the stretcher (§11.1/§12.5).
     this.fillMasterCoeffs(frames)
+    const d0 = this.dryGainPrev
+    const w0 = this.wetGainPrev
+    const ds = (this.dryGain - d0) / frames
+    const ws = (this.wetGain - w0) / frames
     for (let i = 0; i < frames; i++) {
-      const g = this.masterCoeff[i]
-      const l = ch0[i] * g
-      const r = ch1[i] * g
+      const dg = d0 + ds * i
+      const wg = w0 + ws * i
+      const mg = this.masterCoeff[i]
+      const l = (ch0[i] * dg + eng.outL[i] * wg) * mg
+      const r = (ch1[i] * dg + eng.outR[i] * wg) * mg
       ch0[i] = l
       ch1[i] = r
       const a = Math.abs(l)
@@ -956,11 +1109,16 @@ export class MixState {
       if (a > this.masterPeak) this.masterPeak = a
       if (b > this.masterPeak) this.masterPeak = b
     }
-    this.position += take
-    this.lastSample[0] = ch0[frames - 1]
-    this.lastSample[1] = ch1[frames - 1]
-    this.advance(time, out)
-    out.consumed = take
+    this.audible += rate * frames
+    this.rolledFrames += frames
+    // The audible cursor can overshoot the end; the reported position is
+    // clamped (the ended anchor names the endpoint, §12.6).
+    this.position = Math.min(Math.round(this.audible), this.frameCount)
+    for (let c = 0; c < 2; c++) {
+      this.lastSample[c] = c < outputChannels.length ? outputChannels[c][frames - 1] : 0
+    }
+    this.advance(time, out, time + frames / this.sampleRate)
+    out.consumed = frames
     out.buffered = this.buffered
     out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
     for (let i = 0; i < this.trackPeaks.length; i++) this.trackPeaks[i] = 0
@@ -969,89 +1127,196 @@ export class MixState {
   }
 
   /**
-   * Consume `frames` from every source (shared cursor) and mix them
-   * into `mixL`/`mixR` with the per-stem coefficients (the stretch sits
-   * after the stem mixing, §11.1). Tracks per-track peaks.
+   * Advance the playback-rate ramp and the dry/wet crossfade for one
+   * render quantum (§11.7, §12.4). Ordering: a dry→wet crossfade runs
+   * at exactly 1× and only starts once the engine is warm; a wet→dry
+   * transition ramps back to 1× first, then crossfades. The gains move
+   * sample-accurately across the quantum (`dryGainPrev` → `dryGain`).
    */
-  mixSources(frames) {
-    for (let i = 0; i < this.sources.length; i++) {
-      this.sources[i].consumeInto(this.temp[i], frames)
-    }
-    this.fillSourceCoeffs(frames)
-    const n = this.sources.length
-    const mixL = this.mixL
-    const mixR = this.mixR
-    for (let f = 0; f < frames; f++) {
-      let l = 0
-      let r = 0
-      for (let i = 0; i < n; i++) {
-        const gL = this.coeffL[i][f]
-        const gR = this.coeffR[i][f]
-        let cl
-        let cr
-        if (this.sources[i].channelCount === 1) {
-          const smp = this.temp[i][0][f]
-          cl = smp * gL
-          cr = smp * gR
-        } else {
-          cl = this.temp[i][0][f] * gL
-          cr = this.temp[i][1][f] * gR
+  updateRateState(frames) {
+    const wantWet = this.rateTarget !== 1
+    if (!this.xfade) {
+      if (wantWet && this.bypass === 'dry' && this.rolledFrames >= WARMUP_OUT_FRAMES) {
+        this.xfade = {
+          to: 'wet',
+          fromDry: this.dryGain,
+          fromWet: this.wetGain,
+          remaining: this.xfadeTotal,
         }
-        l += cl
-        r += cr
-        const a = Math.abs(cl)
-        const b = Math.abs(cr)
-        if (a > this.trackPeaks[i]) this.trackPeaks[i] = a
-        if (b > this.trackPeaks[i]) this.trackPeaks[i] = b
+      } else if (!wantWet && this.bypass === 'wet' && this.rateCurrent === 1) {
+        this.xfade = {
+          to: 'dry',
+          fromDry: this.dryGain,
+          fromWet: this.wetGain,
+          remaining: this.xfadeTotal,
+        }
       }
-      mixL[f] = l
-      mixR[f] = r
+    }
+    let goal = this.rateTarget
+    if (this.bypass === 'dry') goal = 1
+    if (this.xfade && this.xfade.to === 'wet') goal = this.rateCurrent
+    if (this.xfade && this.xfade.to === 'dry') goal = 1
+    if (goal !== this.rateGoal) {
+      this.rateGoal = goal
+      this.rateFrom = this.rateCurrent
+      this.rateRampRemaining = this.rateCurrent === goal ? 0 : this.rateRampTotal
+    }
+    if (this.rateRampRemaining > 0) {
+      this.rateRampRemaining = Math.max(0, this.rateRampRemaining - frames)
+      this.rateCurrent =
+        this.rateRampRemaining === 0
+          ? this.rateGoal
+          : this.rateFrom +
+            (this.rateGoal - this.rateFrom) * (1 - this.rateRampRemaining / this.rateRampTotal)
+    }
+    this.dryGainPrev = this.dryGain
+    this.wetGainPrev = this.wetGain
+    if (this.xfade) {
+      this.xfade.remaining = Math.max(0, this.xfade.remaining - frames)
+      const t = 1 - this.xfade.remaining / this.xfadeTotal
+      if (this.xfade.to === 'wet') {
+        this.dryGain = this.xfade.fromDry * (1 - t)
+        this.wetGain = this.xfade.fromWet + (1 - this.xfade.fromWet) * t
+      } else {
+        this.dryGain = this.xfade.fromDry + (1 - this.xfade.fromDry) * t
+        this.wetGain = this.xfade.fromWet * (1 - t)
+      }
+      if (this.xfade.remaining === 0) {
+        this.bypass = this.xfade.to
+        this.dryGain = this.bypass === 'dry' ? 1 : 0
+        this.wetGain = 1 - this.dryGain
+        this.xfade = null
+      }
     }
   }
 
   /**
-   * Copy the mixed stereo into the engine input regions; silence-pad
-   * `[frames..padTo)` (the engine reads exactly `padTo` frames).
+   * Run one callback's worth of the silent pre-roll (§12.3): rolling
+   * seeks advance the engine from `audible − remaining*rate` up to the
+   * boundary; the output is discarded (the caller emits silence). The
+   * batch is bounded so a hard seek never spikes one render callback; a
+   * starved source pauses the pre-roll (retried next callback).
    */
-  fillEngineInput(frames, padTo) {
+  runWarmup(frames) {
     const eng = this.engine
-    eng.inL.set(this.mixL.subarray(0, frames))
-    eng.inR.set(this.mixR.subarray(0, frames))
-    if (padTo > frames) {
-      eng.inL.fill(0, frames, padTo)
-      eng.inR.fill(0, frames, padTo)
+    const batch = frames * 8
+    let done = 0
+    while (this.warmupRemaining > 0 && done < batch) {
+      const n = Math.min(frames, this.warmupRemaining)
+      const rate = this.rateTarget
+      const cursor = this.audible - this.warmupRemaining * rate
+      const windowEnd = Math.round(cursor + rate * this.outLat + this.inLat)
+      const windowStart = windowEnd - this.windowFrames
+      const needTo = Math.min(windowEnd, this.frameCount)
+      if (needTo > this.ringEnd) this.fillRing(needTo)
+      if (this.ringEnd < needTo) break // starved: retry next callback
+      this.fillEngineWindow(windowStart, windowEnd)
+      eng.seek(this.windowFrames, rate)
+      eng.process(0, n)
+      this.rolledFrames += n
+      this.warmupRemaining -= n
+      done += n
     }
   }
 
   /**
-   * Drain the engine's synthesis tail after the source ended (no more
-   * input). Bounded by `tailFrames`; an all-zero flush ends it early.
+   * Stem-mix source frames into the ring until it reaches `until`.
+   * Bounded chunks keep the scratch allocation-free; a starved source
+   * stops the fill (the caller detects the shortfall). The ring is a
+   * circular buffer over absolute frames: `ringBase` anchors slot 0,
+   * `[ringStart, ringEnd)` is valid, and slots older than the capacity
+   * are dropped.
    */
-  processTail(outputChannels, frames, out) {
-    const eng = this.engine
-    const n = Math.min(frames, this.tailRemaining)
-    eng.flushTail(n)
-    const ch0 = outputChannels[0]
-    const ch1 = outputChannels.length > 1 ? outputChannels[1] : ch0
-    let max = 0
-    for (let i = 0; i < n; i++) {
-      const l = eng.outL[i]
-      const r = eng.outR[i]
-      ch0[i] = l
-      ch1[i] = r
-      const a = Math.abs(l)
-      const b = Math.abs(r)
-      if (a > max) max = a
-      if (b > max) max = b
-      if (a > this.masterPeak) this.masterPeak = a
-      if (b > this.masterPeak) this.masterPeak = b
+  fillRing(until) {
+    const cap = this.ringCap
+    while (this.ringEnd < until) {
+      if (until - this.ringStart > cap) this.ringStart = until - cap
+      let chunk = Math.min(
+        until - this.ringEnd,
+        this.engineFillChunk,
+        cap - (this.ringEnd - this.ringStart),
+      )
+      chunk = Math.min(chunk, this.frameCount - this.ringEnd)
+      if (chunk <= 0) break
+      let take = chunk
+      for (const s of this.sources) take = Math.min(take, s.buffered)
+      if (take <= 0) break
+      for (let i = 0; i < this.sources.length; i++) {
+        this.sources[i].consumeInto(this.temp[i], take)
+      }
+      this.fillSourceCoeffs(take)
+      const n = this.sources.length
+      const mixL = this.mixL
+      const mixR = this.mixR
+      for (let f = 0; f < take; f++) {
+        let l = 0
+        let r = 0
+        for (let i = 0; i < n; i++) {
+          const gL = this.coeffL[i][f]
+          const gR = this.coeffR[i][f]
+          let cl
+          let cr
+          if (this.sources[i].channelCount === 1) {
+            const smp = this.temp[i][0][f]
+            cl = smp * gL
+            cr = smp * gR
+          } else {
+            cl = this.temp[i][0][f] * gL
+            cr = this.temp[i][1][f] * gR
+          }
+          l += cl
+          r += cr
+          const a = Math.abs(cl)
+          const b = Math.abs(cr)
+          if (a > this.trackPeaks[i]) this.trackPeaks[i] = a
+          if (b > this.trackPeaks[i]) this.trackPeaks[i] = b
+        }
+        mixL[f] = l
+        mixR[f] = r
+      }
+      const off = (this.ringEnd - this.ringBase) % cap
+      const first = Math.min(take, cap - off)
+      this.ringL.set(mixL.subarray(0, first), off)
+      this.ringR.set(mixR.subarray(0, first), off)
+      if (take > first) {
+        this.ringL.set(mixL.subarray(first, take), 0)
+        this.ringR.set(mixR.subarray(first, take), 0)
+      }
+      this.ringEnd += take
     }
-    if (n < frames) this.fillOutputSilence(outputChannels, n, frames - n)
-    this.tailRemaining -= n
-    if (max < 1e-9) this.tailRemaining = 0
-    out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
-    for (let i = 0; i < this.trackPeaks.length; i++) this.trackPeaks[i] = 0
-    this.masterPeak = 0
+  }
+
+  /**
+   * Copy `count` frames starting at absolute frame `from` from a ring
+   * channel into `dst[dstOff..]`. The caller guarantees the range is
+   * valid (inside `[ringStart, ringEnd)`); the ring wraps at most once.
+   */
+  copyFromRing(src, dst, dstOff, from, count) {
+    const cap = this.ringCap
+    const off = (from - this.ringBase) % cap
+    const first = Math.min(count, cap - off)
+    dst.set(src.subarray(off, off + first), dstOff)
+    if (count > first) dst.set(src.subarray(0, count - first), dstOff + first)
+  }
+
+  /**
+   * Fill the engine's context window: real frames from the ring where
+   * available (`[max(windowStart, 0), min(windowEnd, frameCount))`),
+   * zeros elsewhere (source boundaries and the retained-ring edge).
+   */
+  fillEngineWindow(windowStart, windowEnd) {
+    const eng = this.engine
+    const W = this.windowFrames
+    eng.inL.fill(0, 0, W)
+    eng.inR.fill(0, 0, W)
+    const from = Math.max(windowStart, 0, this.ringStart)
+    const to = Math.min(windowEnd, this.frameCount, this.ringEnd)
+    if (to > from) {
+      const off = from - windowStart
+      const count = to - from
+      this.copyFromRing(this.ringL, eng.inL, off, from, count)
+      this.copyFromRing(this.ringR, eng.inR, off, from, count)
+    }
   }
 
   fillOutputSilence(outputChannels, from, count) {
@@ -1128,10 +1393,10 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         } else if (m.type === 'seek') {
           if (Array.isArray(m.generations)) {
             this.generation = m.generations.reduce((a, b) => Math.max(a, b), 0)
-            this.core.seek(m.frame, m.generations)
+            this.core.seek(m.frame, m.generations, m.audibleFrame)
           } else {
             this.generation = m.generation
-            this.core.seek(m.frame, this.generation)
+            this.core.seek(m.frame, this.generation, m.audibleFrame)
           }
           this.port.postMessage({ type: 'flushed', generation: this.generation })
         } else if (m.type === 'params') {
@@ -1167,6 +1432,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
           frame: res.anchor.frame,
           time: res.anchor.time,
           paused: res.anchor.paused,
+          rate: res.anchor.rate ?? 1,
           generation: this.generation,
         }
         // Peak metering rides the ~20 Hz anchor cadence (mixer path only).

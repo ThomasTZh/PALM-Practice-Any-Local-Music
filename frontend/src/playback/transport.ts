@@ -88,6 +88,14 @@ export interface TransportDiagnostics {
   underruns: number
   lastUnderrunAt: number | null
   droppedChunks: number
+  /**
+   * M2.10 §12.5: control-response latency (seconds) for mixer changes —
+   * the DSP lookahead the worklet reads ahead of the audible cursor
+   * (`speed × outputLatency + inputLatency` source frames at the current
+   * rate). Zero without an engine: with no stretcher, mixer changes are
+   * heard at the next render quantum.
+   */
+  controlResponseLatencySeconds: number
 }
 
 /** Snapshot returned by `sync()` (spec §15.5). */
@@ -245,6 +253,14 @@ const LIMITER_DELAY_SECONDS = 0.01
 const LIMITER_THRESHOLD_DB = -1
 /** §16.2.3: recent segments retained for time → frame mapping. */
 const MAX_SEGMENTS = 16
+/**
+ * M2.10 §12.3 pre-roll fetched before the audible boundary on every
+ * seek: a wet start's silent warm-up covers `5760 × rate` source frames
+ * plus the first context window's back-reach (the worklet's
+ * `WARMUP_OUT_FRAMES` and the rolling-window law). 12288 covers 2× with
+ * margin; at 1× the boundary itself is exact (the dry bypass).
+ */
+const PRE_ROLL_FRAMES = 12_288
 
 function defaultWorkerFactory(): WorkerLike | null {
   if (typeof Worker === 'undefined') return null
@@ -312,9 +328,10 @@ export class PcmTransport {
 
   /**
    * M2.9: engine latencies (source frames) from `stretch-ready`, or
-   * `null` before the worklet reports them. The input latency folds
-   * into the audible-time mapping; the output latency feeds the M2.10
-   * three-time-domain ledger.
+   * `null` before the worklet reports them. The worklet's rolling seek
+   * window (`speed × outputLatency + inputLatency`) is the read-ahead
+   * the transport fetches for; the anchors map the audible position
+   * directly (spec §12.3/§12.7).
    */
   get engineLatencies(): { inputLatency: number; outputLatency: number } | null {
     if (this.stretchInputLatency === 0 && this.stretchOutputLatency === 0) return null
@@ -322,6 +339,20 @@ export class PcmTransport {
       inputLatency: this.stretchInputLatency,
       outputLatency: this.stretchOutputLatency,
     }
+  }
+
+  /**
+   * §12.5 control-response latency: a mixer change (gain/pan/mute/solo)
+   * applies to the source frames entering the stretcher's context window
+   * and is heard after the worklet's read-ahead
+   * (`speed × outputLatency + inputLatency` source frames). The master
+   * gain is applied after the stretcher, so it is not part of this.
+   */
+  get controlResponseLatencySeconds(): number {
+    const target = this.primary
+    if (!target || this.stretchInputLatency === 0) return 0
+    const frames = this.speed * this.stretchOutputLatency + this.stretchInputLatency
+    return frames / target.sampleRate
   }
 
   private mode: 'shared' | 'transfer' = 'transfer'
@@ -334,10 +365,12 @@ export class PcmTransport {
   private abort: AbortController | null = null
   private genStartFrame = 0
   private fetchedFrame = 0
-  /** Last acknowledged anchor frame (playback frames). */
+  /** Last acknowledged anchor frame (audible source frames). */
   private consumedFrame = 0
   /** Context time of the last anchor. */
   private anchorTime = 0
+  /** Playback rate named by the last anchor (the worklet's ramped rate). */
+  private anchorRate = 1
   /** Recent segments for audible-time → frame mapping (spec §16.2.3). */
   private segments: TransportSegment[] = []
   /** Segment the last acknowledged anchor landed in (null before any). */
@@ -364,6 +397,7 @@ export class PcmTransport {
     underruns: 0,
     lastUnderrunAt: null,
     droppedChunks: 0,
+    controlResponseLatencySeconds: 0,
   }
 
   constructor(opts: TransportOptions) {
@@ -403,7 +437,10 @@ export class PcmTransport {
   }
 
   get diagnostics(): TransportDiagnostics {
-    return this.diagnosticsState
+    return {
+      ...this.diagnosticsState,
+      controlResponseLatencySeconds: this.controlResponseLatencySeconds,
+    }
   }
 
   /**
@@ -450,16 +487,14 @@ export class PcmTransport {
       }
       // The last acknowledged anchor in this segment is the freshest
       // measurement (it absorbs underrun stalls); otherwise map from the
-      // segment start. M2.9: the source is consumed at `rate × speed`
-      // frames/s, so extrapolation scales with the speed.
+      // segment start. M2.10: the anchor names the audible source frame
+      // and the context time it plays, so extrapolation advances at the
+      // anchor's rate (the worklet's ramped rate) × speed.
       if (this.anchorSegment === seg && t >= this.anchorTime) {
-        playbackFrame = this.consumedFrame + (t - this.anchorTime) * rate * this.speed
+        playbackFrame = this.consumedFrame + (t - this.anchorTime) * rate * this.anchorRate
       } else {
         playbackFrame = seg.startFrame + Math.max(0, t - seg.startContextTime) * rate * seg.speed
       }
-      // M2.9: the anchor reports the consumed cursor; the audible output
-      // lags it by the engine's input latency (spec §11).
-      if (this.stretchInputLatency > 0) playbackFrame -= this.stretchInputLatency
       playbackFrame = Math.max(seg.startFrame, Math.min(playbackFrame, target.frameCount))
     } else {
       // Frozen (§16.2.6): the last acknowledged anchor, no extrapolation.
@@ -546,7 +581,8 @@ export class PcmTransport {
         primary.frameCount,
       )
       this.genStartFrame = frame
-      this.fetchedFrame = frame
+      // Fetch the §12.3 pre-roll so a wet start can warm up inaudibly.
+      this.fetchedFrame = Math.max(0, frame - PRE_ROLL_FRAMES)
       this.consumedFrame = frame
       this.parkedProjectFrame = 0
       this.reportPosition()
@@ -581,13 +617,19 @@ export class PcmTransport {
       primary.frameCount,
     )
     this.genStartFrame = frame
-    this.fetchedFrame = frame
+    // Fetch the §12.3 pre-roll so a wet resume can warm up inaudibly.
+    this.fetchedFrame = Math.max(0, frame - PRE_ROLL_FRAMES)
     this.consumedFrame = frame
     this.hasData = false
     this.bufferedFrames = 0
     this.workerPaused = false
     this.lastFlushedGeneration = -1
-    this.diagnosticsState = { underruns: 0, lastUnderrunAt: null, droppedChunks: 0 }
+    this.diagnosticsState = {
+      underruns: 0,
+      lastUnderrunAt: null,
+      droppedChunks: 0,
+      controlResponseLatencySeconds: 0,
+    }
     this.setState('unloaded')
     this.reportPosition()
   }
@@ -634,7 +676,8 @@ export class PcmTransport {
         this.pushSegment(this.context?.currentTime ?? 0, this.genStartFrame)
         this.node?.port.postMessage({
           type: 'seek',
-          frame: this.genStartFrame,
+          frame: this.fetchedFrame,
+          audibleFrame: this.genStartFrame,
           generation: this.generation,
         })
         await this.alignWorklet()
@@ -678,11 +721,11 @@ export class PcmTransport {
     this.desiredPlaying = false
     if (this.context && this.primary) {
       // Freeze the playhead at the position extrapolated right now
-      // (the source is consumed at `rate × speed` frames/s, M2.9).
+      // (the audible position advances at `rate × anchorRate`).
       this.consumedFrame +=
         Math.max(0, this.context.currentTime - this.anchorTime) *
         this.primary.sampleRate *
-        this.speed
+        this.anchorRate
       this.anchorTime = this.context.currentTime
     }
     this.node?.port.postMessage({ type: 'pause' })
@@ -790,6 +833,8 @@ export class PcmTransport {
   setRate(speed: number): void {
     const clamped = Math.max(0.25, Math.min(2.0, Number.isFinite(speed) ? speed : 1))
     this.speed = clamped
+    // Optimistic: the worklet's next anchor confirms the ramped rate.
+    this.anchorRate = clamped
     const node = this.node
     if (!node) return
     const context = this.context
@@ -798,7 +843,8 @@ export class PcmTransport {
       const now = context.currentTime
       const frame = Math.min(
         Math.round(
-          this.consumedFrame + Math.max(0, now - this.anchorTime) * target.sampleRate * this.speed,
+          this.consumedFrame +
+            Math.max(0, now - this.anchorTime) * target.sampleRate * this.anchorRate,
         ),
         target.frameCount,
       )
@@ -992,8 +1038,12 @@ export class PcmTransport {
     this.abort?.abort()
     this.abort = new AbortController()
     const clamped = Math.max(0, Math.min(Math.floor(frame), target.frameCount))
+    // M2.10 §12.3: fetch a pre-roll before the audible boundary; the
+    // worklet starts hearing at `clamped` (the dry bypass is exact at
+    // 1×; a wet start runs the silent warm-up from the pre-roll).
+    const fetchFrame = Math.max(0, clamped - PRE_ROLL_FRAMES)
     this.genStartFrame = clamped
-    this.fetchedFrame = clamped
+    this.fetchedFrame = fetchFrame
     this.consumedFrame = clamped
     this.hasData = false
     this.bufferedFrames = 0
@@ -1001,7 +1051,12 @@ export class PcmTransport {
     if (this.context) this.anchorTime = this.context.currentTime
     this.pushSegment(this.context ? this.context.currentTime : 0, clamped)
     this.source?.stop()
-    this.node?.port.postMessage({ type: 'seek', frame: clamped, generation: this.generation })
+    this.node?.port.postMessage({
+      type: 'seek',
+      frame: fetchFrame,
+      audibleFrame: clamped,
+      generation: this.generation,
+    })
   }
 
   /**
@@ -1017,7 +1072,9 @@ export class PcmTransport {
       return
     }
     return this.awaitFlushedAck(this.generation).then(() =>
-      this.source!.acknowledgeFlush(this.generation, this.genStartFrame),
+      // The writer index resets to the frame the worklet reads first:
+      // the fetch frame, which leads the audible boundary by the pre-roll.
+      this.source!.acknowledgeFlush(this.generation, this.fetchedFrame),
     )
   }
 
@@ -1076,10 +1133,12 @@ export class PcmTransport {
           frame: number
           time: number
           paused?: boolean
+          rate?: number
           peaks?: MixPeaks
         }
         this.consumedFrame = m.frame
         this.anchorTime = m.time
+        if (typeof m.rate === 'number' && m.rate > 0) this.anchorRate = m.rate
         this.anchorSegment = this.segmentAt(m.time)
         // Per-quantum peak metering (spec §10.3.7), mixer path only.
         if (m.peaks) this.opts.onPeaks?.(m.peaks)
@@ -1207,12 +1266,12 @@ export class PcmTransport {
         if (s !== 'preparing' && s !== 'playing' && s !== 'buffering' && s !== 'seeking') return
         const target = this.primary
         const rate = target.sampleRate
-        // M2.9: at speed `s` the source is consumed at `rate × s`
-        // frames/s, so the fill budget scales with the speed.
+        // M2.10: the audible position advances at `rate × anchorRate`
+        // frames/s, so the fill budget scales with the anchor's rate.
         const consumedEstimate =
           this.consumedFrame +
           (this.context && !this.suspended
-            ? Math.max(0, this.context.currentTime - this.anchorTime) * rate * this.speed
+            ? Math.max(0, this.context.currentTime - this.anchorTime) * rate * this.anchorRate
             : 0)
         const targetAhead = Math.min(
           rate * this.speed * LOOKAHEAD_SECONDS,

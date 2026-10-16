@@ -1,27 +1,50 @@
 // stretch_wrapper.cpp — project-owned WASM wrapper for the Signalsmith
-// stretch core (M2.9, spec §11).
+// stretch core (M2.9, reworked in M2.10, spec §11/§12.3).
 //
 // Owns one `SignalsmithStretch<float>` instance and exposes a small C ABI
 // to the AudioWorklet (and to Node for tests):
 //
 //   stretch_configure(channels, sampleRate, maxFrames)
 //   stretch_input_latency() / stretch_output_latency()
-//   stretch_input_demand(outputFrames) -> input frames the engine wants
-//   stretch_process(inputFrames, outputFrames) -> frames consumed
-//   stretch_set_rate(rate)          — ≈50 ms linear ramp (§11.7)
+//   stretch_window_length()        — context window frames per seek
+//   stretch_seek(inFrames, rate)   — feed the context window, position it
+//   stretch_process(inputFrames, outputFrames)
+//   stretch_set_rate(rate)         — ≈50 ms linear ramp (engine-level)
+//   stretch_set_rate_now(rate)     — ramp-free jump (engine-level)
 //   stretch_effective_rate()
-//   stretch_reset()                 — fresh engine state (seek / reload)
-//   stretch_flush_tail(maxOutputFrames)
-//   stretch_seek_length()           — priming frames for the current rate
-//   stretch_output_seek(inFrames)   — prime the engine from inL/inR[0..n)
-//   stretch_pool_offset()           — byte offset of the I/O pool (JS views)
-//   stretch_pool_input_frames()     — floats per input region (≥ maxFrames)
+//   stretch_reset()                — fresh engine state (reload / reset)
+//   stretch_pool_offset()          — byte offset of the I/O pool (JS views)
+//   stretch_pool_input_frames()    — floats per input region
 //
-// The engine infers the playback rate from the input/output frame ratio
-// of each `process` call, so this wrapper is what *controls source-frame
-// consumption* (§11.1): it tracks the target rate, ramps the effective
-// rate, and keeps a fractional consumption accumulator so the per-call
-// integer rounding does not drift the timeline.
+// Playback model (M2.10 §12.3): the worklet drives the engine with a
+// *rolling seek*, exactly like the upstream web demo's live playback:
+// every render quantum it writes the context window
+//
+//   [audible + inputLatency() − windowLength(),  audible + inputLatency())
+//
+// into the inL/inR regions, calls `stretch_seek(windowLength(), rate)`,
+// then `stretch_process(0, quantumFrames)`. Because `seek()` puts the
+// analysis block centre at `inputLatency()` frames *before* the end of
+// the supplied window (the upstream "difference between the internal
+// position and the input samples you're supplying"), the next output
+// block is centred exactly on `audible`: audible output starts at the
+// requested source boundary with the requested context before it. The
+// M2.9 `outputSeek` priming path is gone — its documented alignment
+// ("the next output samples correspond to the beginning of the sample")
+// made the audible cursor lag the fed input by a rate-dependent amount
+// the demand-based bookkeeping could not express (measured 2026-10-16:
+// the replayed buffer starts at index 0 for every rate).
+//
+// `seek()` does not reset the synthesis state ("change the input
+// location without interrupting the output"), so steady playback and
+// small repositionings crossfade through the existing overlap-add; a
+// hard re-position is prepared by the worklet (see the M2.10 plan §12.3
+// for the reset/drain strategy).
+//
+// The engine's own rate ramp (`set_rate`) is not used by the playback
+// path any more: the worklet ramps the playback rate itself and passes
+// the current rate to every `stretch_seek`. The rate exports remain for
+// engine probes and for future use.
 //
 // Audio-thread constraints (spec §14.7, inherited): the I/O buffers are
 // pre-allocated once in `stretch_configure` (graph-creation context, not
@@ -30,14 +53,12 @@
 // logging, no exceptions.
 //
 // Determinism: the engine is constructed with a fixed seed so scalar and
-// SIMD builds produce comparable output for the same input (the tests in
-// Phase 4 rely on this).
+// SIMD builds produce comparable output for the same input.
 
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
 #include <emscripten.h>
 
-#include <cmath>
 #include <cstdint>
 
 namespace {
@@ -56,16 +77,16 @@ constexpr double kMaxRate = 2.0;
 Stretch stretch(kSeed);
 
 // Pre-allocated I/O pool, one contiguous allocation laid out as
-// [inL | inR | outL | outR]. The input regions hold `seekFrames` floats —
-// a full priming buffer at the fastest rate (outputSeekLength(2.0) =
-// inputLatency + 2.0*outputLatency, 8640 @48k / 7938 @44.1k) — because
-// `outputSeek` reads inL/inR[0..seekLength) in one shot. The output
-// regions only need `maxFrames`. The heap address is not known to JS, so
-// `stretch_pool_offset` reports the pool's byte offset from the start of
-// the wasm linear memory; JS computes the region views from the two sizes.
+// [inL | inR | outL | outR]. The input regions hold `windowFrames` floats
+// (the engine's plain seekLength() = blockSamples + interval, 7200 @48k /
+// 6615 @44.1k): `stretch_seek` reads the whole context window in one shot.
+// The output regions only need `maxFrames`. The heap address is not known
+// to JS, so `stretch_pool_offset` reports the pool's byte offset from the
+// start of the wasm linear memory; JS computes the region views from the
+// two sizes.
 Sample *pool = nullptr;
 int poolFrames = 0;
-int seekFrames = 0;
+int windowFrames = 0;
 Sample *bufInL = nullptr;
 Sample *bufInR = nullptr;
 Sample *bufOutL = nullptr;
@@ -81,16 +102,13 @@ struct IO {
   }
 };
 
-// Rate state: the transport sets the target; the wrapper ramps the
-// effective rate over kRateRampSeconds of rendered output.
+// Rate state: kept for engine probes and future use; the playback path
+// passes its (worklet-ramped) rate straight to `stretch_seek`.
 double targetRate = 1.0;
 double effectiveRate = 1.0;
 double rampStartRate = 1.0;
 int rampFramesTotal = 0;
 int rampFramesDone = 0;
-
-// Fractional source-consumption accumulator (§11.7.3).
-double consumedFraction = 0.0;
 
 void advanceRamp(int outputFrames) {
   if (rampFramesTotal <= 0) {
@@ -114,27 +132,24 @@ void EMSCRIPTEN_KEEPALIVE stretch_configure(int channels, double rate, int frame
   // §11.5: Signalsmith's default quality preset, 0 semitones, no formant
   // (transpose and formant defaults are already 1.0).
   stretch.presetDefault(channels, static_cast<Sample>(rate), false);
-  // Input regions must hold a full priming buffer at the fastest rate
-  // (see the pool layout comment); the engine latencies are only known
-  // after presetDefault.
-  seekFrames = stretch.inputLatency() +
-               static_cast<int>(kMaxRate * stretch.outputLatency());
-  const int poolSize = 2 * seekFrames + 2 * maxFrames;
+  // The input regions must hold the full context window (see the pool
+  // layout comment); the engine geometry is only known after presetDefault.
+  windowFrames = stretch.seekLength();
+  const int poolSize = 2 * windowFrames + 2 * maxFrames;
   if (poolFrames < poolSize) {
     delete[] pool;
     poolFrames = poolSize;
     pool = new Sample[poolSize];
   }
   bufInL = pool;
-  bufInR = pool + seekFrames;
-  bufOutL = pool + 2 * seekFrames;
-  bufOutR = pool + 2 * seekFrames + maxFrames;
+  bufInR = pool + windowFrames;
+  bufOutL = pool + 2 * windowFrames;
+  bufOutR = pool + 2 * windowFrames + maxFrames;
   targetRate = 1.0;
   effectiveRate = 1.0;
   rampStartRate = 1.0;
   rampFramesTotal = 0;
   rampFramesDone = 0;
-  consumedFraction = 0.0;
 }
 
 int EMSCRIPTEN_KEEPALIVE stretch_input_latency() {
@@ -145,20 +160,30 @@ int EMSCRIPTEN_KEEPALIVE stretch_output_latency() {
   return stretch.outputLatency();
 }
 
-// How many input frames the engine will want for `outputFrames` of output
-// at the current (ramped) effective rate. The worklet fetches this many
-// source frames before calling stretch_process.
-int EMSCRIPTEN_KEEPALIVE stretch_input_demand(int outputFrames) {
-  if (outputFrames < 0) outputFrames = 0;
-  double want = static_cast<double>(outputFrames) * effectiveRate + consumedFraction;
-  int inFrames = static_cast<int>(std::floor(want));
+// Frames in one context window: the engine's `seekLength()`
+// (blockSamples + interval; rate-independent, 7200 @48k).
+int EMSCRIPTEN_KEEPALIVE stretch_window_length() {
+  return windowFrames;
+}
+
+// Feed the context window in inL/inR[0..inFrames) as the "previous input"
+// and place the analysis at `playbackRate` (input frames per output
+// frame). The worklet calls this once per render quantum with the window
+// ending `stretch_input_latency()` frames after the desired audible
+// boundary; the next process() output starts at that boundary.
+void EMSCRIPTEN_KEEPALIVE stretch_seek(int inFrames, double playbackRate) {
   if (inFrames < 0) inFrames = 0;
-  if (inFrames > maxFrames) inFrames = maxFrames;
-  return inFrames;
+  if (inFrames > windowFrames) inFrames = windowFrames;
+  if (playbackRate < kMinRate) playbackRate = kMinRate;
+  if (playbackRate > kMaxRate) playbackRate = kMaxRate;
+  IO in{bufInL, bufInR};
+  stretch.seek(in, inFrames, playbackRate);
 }
 
 // Consume `inputFrames` (written by JS into the inL/inR regions) and write
-// `outputFrames` into the outL/outR regions. Returns the consumed count.
+// `outputFrames` into the outL/outR regions. The rolling-seek playback
+// path always passes `inputFrames = 0` (the context arrives via
+// `stretch_seek`); non-zero input remains supported for engine probes.
 int EMSCRIPTEN_KEEPALIVE stretch_process(int inputFrames, int outputFrames) {
   if (inputFrames < 0) inputFrames = 0;
   if (outputFrames < 0) outputFrames = 0;
@@ -168,10 +193,6 @@ int EMSCRIPTEN_KEEPALIVE stretch_process(int inputFrames, int outputFrames) {
   IO in{bufInL, bufInR};
   IO out{bufOutL, bufOutR};
   stretch.process(in, inputFrames, out, outputFrames);
-  // Carry the rounding remainder into the next demand (bounded to [0,1]).
-  consumedFraction = static_cast<double>(outputFrames) * effectiveRate - inputFrames;
-  if (consumedFraction < 0.0) consumedFraction = 0.0;
-  if (consumedFraction > 1.0) consumedFraction = 1.0;
   return inputFrames;
 }
 
@@ -186,48 +207,27 @@ void EMSCRIPTEN_KEEPALIVE stretch_set_rate(double rate) {
   rampFramesDone = 0;
 }
 
+// Ramp-free rate set: the worklet's speed changes are applied through
+// `stretch_seek`'s rate argument, so this is only meaningful for engine
+// probes that compare ramped vs. jumped rates.
+void EMSCRIPTEN_KEEPALIVE stretch_set_rate_now(double rate) {
+  if (rate < kMinRate) rate = kMinRate;
+  if (rate > kMaxRate) rate = kMaxRate;
+  targetRate = rate;
+  effectiveRate = rate;
+  rampStartRate = rate;
+  rampFramesTotal = 0;
+  rampFramesDone = 0;
+}
+
 double EMSCRIPTEN_KEEPALIVE stretch_effective_rate() {
   return effectiveRate;
 }
 
 // Fresh engine state: the next process call starts from silence (the
-// transport re-positions the source before calling this, e.g. on seek).
+// transport re-positions the source before relying on it, e.g. on load).
 void EMSCRIPTEN_KEEPALIVE stretch_reset() {
   stretch.reset();
-  consumedFraction = 0.0;
-}
-
-// Read the engine's remaining output (no further input). Writes at most
-// `maxOutputFrames` into the outL/outR regions and returns the count.
-int EMSCRIPTEN_KEEPALIVE stretch_flush_tail(int maxOutputFrames) {
-  if (maxOutputFrames < 0) maxOutputFrames = 0;
-  if (maxOutputFrames > maxFrames) maxOutputFrames = maxFrames;
-  IO out{bufOutL, bufOutR};
-  stretch.flush(out, maxOutputFrames, static_cast<Sample>(effectiveRate));
-  return maxOutputFrames;
-}
-
-// How many input frames the engine needs to prime at the current
-// effective rate: inputLatency + rate*outputLatency (5760 @1x/48k).
-int EMSCRIPTEN_KEEPALIVE stretch_seek_length() {
-  int n = static_cast<int>(
-      stretch.outputSeekLength(static_cast<Sample>(effectiveRate)));
-  if (n < 0) n = 0;
-  if (n > seekFrames) n = seekFrames;
-  return n;
-}
-
-// Prime the engine so the first process() output is aligned to the audio
-// at inL/inR[0]. `inFrames` frames of the input regions must be valid
-// (JS fills the tail with silence on underrun). Internally this resets
-// the engine, writes the analysis window, and pre-rolls the synthesis
-// (the canonical usage of cmd/main.cpp and the web demo).
-void EMSCRIPTEN_KEEPALIVE stretch_output_seek(int inFrames) {
-  if (inFrames < 0) inFrames = 0;
-  if (inFrames > seekFrames) inFrames = seekFrames;
-  IO in{bufInL, bufInR};
-  stretch.outputSeek(in, inFrames);
-  consumedFraction = 0.0;
 }
 
 // Byte offset of the I/O pool from the start of the wasm linear memory.
@@ -243,7 +243,7 @@ int EMSCRIPTEN_KEEPALIVE stretch_pool_offset() {
 // Floats per input region (see the pool layout comment). The host uses
 // this to size the inL/inR views; the output regions are maxFrames.
 int EMSCRIPTEN_KEEPALIVE stretch_pool_input_frames() {
-  return seekFrames;
+  return windowFrames;
 }
 
 }  // extern "C"

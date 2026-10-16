@@ -41,14 +41,13 @@ const EXPORTS = [
     '_stretch_configure',
     '_stretch_input_latency',
     '_stretch_output_latency',
-    '_stretch_input_demand',
+    '_stretch_window_length',
+    '_stretch_seek',
     '_stretch_process',
     '_stretch_set_rate',
+    '_stretch_set_rate_now',
     '_stretch_effective_rate',
     '_stretch_reset',
-    '_stretch_flush_tail',
-    '_stretch_seek_length',
-    '_stretch_output_seek',
     '_stretch_pool_offset',
     '_stretch_pool_input_frames',
 ].join(',')
@@ -156,9 +155,9 @@ em++ stretch_wrapper.cpp
 \`\`\`
 
 Memory is fixed at 2 MiB (no growth): the pre-allocated I/O pool
-(2 × seekFrames + 2 × maxFrames floats; seekFrames = 8640 @48k →
-≈100 KiB) plus the engine state must fit, so the audio callback can
-never trigger a heap grow.
+(2 × windowFrames + 2 × maxFrames floats; windowFrames = 7200 @48k,
+maxFrames = 4096 → ≈88 KiB) plus the engine state must fit, so the
+audio callback can never trigger a heap grow.
 `
 
 writeFileSync(path.join(here, 'BUILD.md'), manifest)

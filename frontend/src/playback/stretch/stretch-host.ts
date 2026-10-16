@@ -19,7 +19,7 @@
  * (`{a: {a: fd_write, b: resize_heap, c: abort}}`). Heap growth is a
  * hard error: the memory is fixed (`ALLOW_MEMORY_GROWTH=0`, spec §14.7).
  *
- * Emscripten mangles the export names (`d`–`r`); the mapping is
+ * Emscripten mangles the export names (`f`–`q`); the mapping is
  * validated at load time and `BUILD.md` records the exact artifact
  * hashes it applies to.
  */

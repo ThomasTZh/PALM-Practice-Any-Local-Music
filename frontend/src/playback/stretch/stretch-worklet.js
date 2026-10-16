@@ -1,6 +1,6 @@
 /**
  * stretch-worklet.js — the stretch WASM core as a plain script (M2.9,
- * spec §11).
+ * reworked in M2.10, spec §11/§12.3).
  *
  * No imports, no exports, on purpose: the browser loads this file into
  * the AudioWorklet by concatenation with `worklet-processor.js` into a
@@ -26,7 +26,32 @@
  * (`{a: {a: fd_write, b: resize_heap, c: abort}}`). Heap growth is a
  * hard error: the memory is fixed (`ALLOW_MEMORY_GROWTH=0`, spec §14.7).
  *
- * Emscripten mangles the export names (`d`–`r`); the mapping below is
+ * Playback model (M2.10 §12.3): the engine is driven with a *rolling
+ * seek* — the same live-playback model as the upstream web demo. Every
+ * render quantum the worklet writes the context window
+ *
+ *   [S + r*outLat + inLat − windowLength(),  S + r*outLat + inLat)
+ *
+ * into `inL`/`inR`, calls `seek(windowLength(), r)`, then
+ * `process(0, quantumFrames)`. `S` is the audible source position
+ * (advancing `r` frames per output frame) and `r` the current playback
+ * rate. The `r*outLat` term is the engine's block-placement offset:
+ * `seek()` puts each analysis block's centre `inLat` frames before the
+ * end of the supplied window, and the synthesis places that centre
+ * `outLat` output frames after the render position where the block was
+ * created (measured 2026-10-16: residual ≤ ±3 ms at 0.5×/2×, exact at
+ * 1×). The M2.9 `outputSeek` priming path is gone: its documented
+ * alignment ("the next output samples correspond to the beginning of the
+ * sample") made the audible cursor lag the fed input by a rate-dependent
+ * amount that the demand bookkeeping could not express (the replayed
+ * buffer always starts at index 0 for every rate).
+ *
+ * The engine's own rate ramp (`setRate`) is not used by the playback
+ * path: the worklet ramps the playback rate itself and passes the
+ * current rate to every `seek`. The rate exports remain for engine
+ * probes.
+ *
+ * Emscripten mangles the export names (`f`–`q`); the mapping below is
  * validated at load time and `BUILD.md` records the exact artifact
  * hashes it applies to.
  */
@@ -123,25 +148,24 @@
       this.fnConfigure = fn('f')
       this.fnInputLatency = fn('g')
       this.fnOutputLatency = fn('h')
-      this.fnInputDemand = fn('i')
-      this.fnProcess = fn('j')
-      this.fnSetRate = fn('k')
-      this.fnEffectiveRate = fn('l')
-      this.fnReset = fn('m')
-      this.fnFlushTail = fn('n')
-      this.fnSeekLength = fn('o')
-      this.fnOutputSeek = fn('p')
-      this.fnPoolOffset = fn('q')
-      this.fnPoolInputFrames = fn('r')
+      this.fnWindowLength = fn('i')
+      this.fnSeek = fn('j')
+      this.fnProcess = fn('k')
+      this.fnSetRate = fn('l')
+      this.fnSetRateNow = fn('m')
+      this.fnEffectiveRate = fn('n')
+      this.fnReset = fn('o')
+      this.fnPoolOffset = fn('p')
+      this.fnPoolInputFrames = fn('q')
       const start = exports.e
       if (typeof start !== 'function') {
         throw new Error('stretch: artifact is missing the start export')
       }
       start() // static initializers
       this.maxFrames = 0
-      this.seekFrames = 0
+      this.windowFrames = 0
       this.configured = false
-      /** In regions: `inL`/`inR`, each `seekFrames` floats (JS writes). */
+      /** In regions: `inL`/`inR`, each `windowFrames` floats (JS writes). */
       this.inL = null
       this.inR = null
       /** Out regions: `outL`/`outR`, each `maxFrames` floats. */
@@ -156,20 +180,20 @@
       const base = this.mem.buffer
       // The wrapper reports where its I/O pool actually lives in the
       // fixed heap; the layout is [inL | inR | outL | outR] with the
-      // input regions sized seekFrames (a full priming buffer at 2x) and
-      // the output regions maxFrames.
+      // input regions sized `windowLength()` (the context window fed to
+      // `seek`) and the output regions maxFrames.
       const pool = this.fnPoolOffset()
       if (pool < 4) {
         throw new Error('stretch: wrapper reported no I/O pool')
       }
-      this.seekFrames = this.fnPoolInputFrames()
-      if (this.seekFrames < maxFrames) {
-        throw new Error('stretch: input region smaller than maxFrames')
+      this.windowFrames = this.fnPoolInputFrames()
+      if (this.windowFrames <= 0) {
+        throw new Error('stretch: wrapper reported no context window')
       }
-      this.inL = new Float32Array(base, pool, this.seekFrames)
-      this.inR = new Float32Array(base, pool + this.seekFrames * 4, this.seekFrames)
-      this.outL = new Float32Array(base, pool + 2 * this.seekFrames * 4, maxFrames)
-      this.outR = new Float32Array(base, pool + (2 * this.seekFrames + maxFrames) * 4, maxFrames)
+      this.inL = new Float32Array(base, pool, this.windowFrames)
+      this.inR = new Float32Array(base, pool + this.windowFrames * 4, this.windowFrames)
+      this.outL = new Float32Array(base, pool + 2 * this.windowFrames * 4, maxFrames)
+      this.outR = new Float32Array(base, pool + (2 * this.windowFrames + maxFrames) * 4, maxFrames)
       this.configured = true
     }
 
@@ -187,17 +211,33 @@
       }
     }
 
-    /** Input frames the engine will want for `outputFrames` of output. */
-    inputDemand(outputFrames) {
+    /**
+     * Frames in one context window: the engine's `seekLength()`
+     * (blockSamples + interval; 7200 @48k). Rate-independent.
+     */
+    windowLength() {
       this.assertConfigured()
-      return this.fnInputDemand(outputFrames)
+      return this.fnWindowLength()
+    }
+
+    /**
+     * Feed the context window in `inL`/`inR[0..inFrames)` as the
+     * "previous input" and place the analysis at `rate` (input frames
+     * per output frame). The worklet calls this once per render quantum
+     * with the window ending `rate*outLat + inLat` frames after the
+     * audible position; the next `process()` output starts there.
+     */
+    seek(inFrames, rate) {
+      this.assertConfigured()
+      this.fnSeek(inFrames, rate)
     }
 
     /**
      * Consume `inputFrames` from `inL`/`inR` (JS copies the mixed stereo
      * in first) and write `outputFrames` into `outL`/`outR`. Returns the
-     * consumed count. The worklet calls this only with the exact demanded
-     * count (short supplies take the underrun path instead).
+     * consumed count. The rolling-seek playback path always passes
+     * `inputFrames = 0` (the context arrives via `seek`); non-zero input
+     * remains supported for engine probes.
      */
     process(inputFrames, outputFrames) {
       this.assertConfigured()
@@ -210,42 +250,25 @@
       this.fnSetRate(rate)
     }
 
+    /**
+     * Jump to `rate` without the ≈50 ms ramp (engine probes; the
+     * playback path passes the rate to `seek` instead).
+     */
+    setRateNow(rate) {
+      this.assertConfigured()
+      this.fnSetRateNow(rate)
+    }
+
     /** The currently ramped effective rate. */
     effectiveRate() {
       this.assertConfigured()
       return this.fnEffectiveRate()
     }
 
-    /** Fresh engine state (seek / reload); the next output starts silent. */
+    /** Fresh engine state (reload / hard re-position); the next output starts silent. */
     reset() {
       this.assertConfigured()
       this.fnReset()
-    }
-
-    /** Read the engine's remaining tail (no further input). */
-    flushTail(maxOutputFrames) {
-      this.assertConfigured()
-      return this.fnFlushTail(maxOutputFrames)
-    }
-
-    /**
-     * Input frames the engine needs to prime at the current effective
-     * rate (inputLatency + rate*outputLatency; 5760 @1x/48k).
-     */
-    seekLength() {
-      this.assertConfigured()
-      return this.fnSeekLength()
-    }
-
-    /**
-     * Prime the engine from `inL`/`inR[0..inFrames)` so the first
-     * `process()` output is aligned to `inL[0]` (canonical engine usage;
-     * the caller silence-pads the tail on underrun). Internally resets
-     * the engine, so call it at start and after every seek.
-     */
-    outputSeek(inFrames) {
-      this.assertConfigured()
-      this.fnOutputSeek(inFrames)
     }
   }
 

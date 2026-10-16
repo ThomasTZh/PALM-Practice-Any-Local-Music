@@ -384,8 +384,8 @@ describe('PcmTransport play', () => {
     expect(rig.transport.position).toBe(0)
     // The first seek is the play-time alignment of the fresh worklet.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, generation: 0 },
-      { type: 'seek', frame: 0, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 1 },
     ])
     expect(rig.fetchCalls[0].signal?.aborted).toBe(true)
   })
@@ -398,15 +398,17 @@ describe('PcmTransport play', () => {
 
     rig.transport.seek(24_000)
     expect(rig.transport.currentState).toBe('seeking')
-    // The first seek is the play-time alignment of the fresh worklet.
+    // The first seek is the play-time alignment of the fresh worklet; the
+    // second fetches the §12.3 pre-roll (12 288 frames) before the
+    // audible boundary at 24 000.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, generation: 0 },
-      { type: 'seek', frame: 24_000, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
+      { type: 'seek', frame: 11_712, audibleFrame: 24_000, generation: 1 },
     ])
     expect(rig.fetchCalls[0].signal?.aborted).toBe(true)
-    // The refill (fill loop) starts at the new position.
+    // The refill (fill loop) starts at the pre-roll.
     await settle()
-    expect(rig.fetchCalls[1]?.start).toBe(24_000 * BYTES_PER_FRAME)
+    expect(rig.fetchCalls[1]?.start).toBe(11_712 * BYTES_PER_FRAME)
 
     // Stale-generation messages must not move the playhead or end playback.
     rig.node.post({ type: 'anchor', frame: 40_000, time: 0.9, generation: 0 })
@@ -427,7 +429,8 @@ describe('PcmTransport play', () => {
     expect(rig.transport.position).toBe(12_000)
 
     await rig.transport.play()
-    expect(rig.fetchCalls[0].start).toBe(12_000 * BYTES_PER_FRAME)
+    // The fetch starts at the pre-roll (the audible boundary is 12 000).
+    expect(rig.fetchCalls[0].start).toBe(0)
   })
 
   it('ends at the endpoint, reports the final position, and restarts from zero', async () => {
@@ -441,8 +444,8 @@ describe('PcmTransport play', () => {
     await rig.transport.play()
     // The first seek is the play-time alignment of the fresh worklet.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, generation: 0 },
-      { type: 'seek', frame: 0, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 1 },
     ])
     expect(rig.transport.currentState).toBe('preparing')
   })
@@ -654,7 +657,11 @@ describe('transfer path flow control', () => {
       start: number
       generation: number
     }
-    expect(nextFetch).toMatchObject({ start: 480_000 * BYTES_PER_FRAME, generation: 1 })
+    // The refill starts at the §12.3 pre-roll, not at the audible boundary.
+    expect(nextFetch).toMatchObject({
+      start: (480_000 - 12_288) * BYTES_PER_FRAME,
+      generation: 1,
+    })
   })
 })
 
@@ -699,19 +706,19 @@ describe('shared path', () => {
     expect(rig.transport.currentState).toBe('seeking')
     // The first seek is the play-time alignment of the fresh worklet.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, generation: 0 },
-      { type: 'seek', frame: 24_000, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
+      { type: 'seek', frame: 11_712, audibleFrame: 24_000, generation: 1 },
     ])
-    core.seek(24_000, 1) // what the real worklet does on the seek message
+    core.seek(11_712, 1, 24_000) // what the real worklet does on the seek message
     rig.node.post({ type: 'flushed', generation: 1 })
     await settle()
 
     expect(Atomics.load(ring.header, 0)).toBe(1)
-    expect(Atomics.load(ring.header, 2)).toBe(24_000) // worklet reader
+    expect(Atomics.load(ring.header, 2)).toBe(11_712) // worklet reader: the pre-roll
     // The refill wrote the remainder: writer advanced past the base.
     expect(Atomics.load(ring.header, 1)).toBe(FRAMES)
     const fetches = worker.fetchJobs
-    expect(fetches.at(-1)).toMatchObject({ start: 24_000 * BYTES_PER_FRAME, generation: 1 })
+    expect(fetches.at(-1)).toMatchObject({ start: 11_712 * BYTES_PER_FRAME, generation: 1 })
   })
 
   it('shared path with the main-thread fallback (no worker)', async () => {
@@ -985,9 +992,11 @@ describe('context loss and rebind', () => {
     expect(rig.transport.position).toBe(7200)
 
     await rig.transport.play()
-    // Playback starts at the retained position.
-    expect(rig.fetchCalls.at(-1)?.start).toBe(7200 * BYTES_PER_FRAME)
-    expect(freshNode.posted('seek')).toEqual([{ type: 'seek', frame: 7200, generation: 0 }])
+    // Playback starts at the retained position; the fetch covers its pre-roll.
+    expect(rig.fetchCalls.at(-1)?.start).toBe(0)
+    expect(freshNode.posted('seek')).toEqual([
+      { type: 'seek', frame: 0, audibleFrame: 7200, generation: 0 },
+    ])
   })
 })
 
@@ -1111,16 +1120,19 @@ describe('spec §18.6 gap coverage', () => {
     rig.transport.seek(FRAMES - 1)
     await settle()
     expect(rig.transport.position).toBe(FRAMES - 1)
-    // Only the final frame was refetched.
+    // The refill covers the pre-roll up to the final frame.
     expect(rig.fetchCalls).toHaveLength(fillsAfterReady + 1)
-    expect(rig.fetchCalls[1].start).toBe((FRAMES - 1) * BYTES_PER_FRAME)
+    expect(rig.fetchCalls[1].start).toBe((FRAMES - 1 - 12_288) * BYTES_PER_FRAME)
 
     rig.transport.seek(FRAMES + 10_000)
     await settle()
     expect(rig.transport.currentState).toBe('seeking')
     expect(rig.transport.position).toBe(FRAMES)
-    // Nothing beyond the endpoint is requested.
-    expect(rig.fetchCalls).toHaveLength(fillsAfterReady + 1)
+    // Nothing beyond the endpoint is requested: the clamped refill stops
+    // at the last frame (the pre-roll of the clamped boundary).
+    const last = rig.fetchCalls.at(-1)
+    expect(last?.start).toBe((FRAMES - 12_288) * BYTES_PER_FRAME)
+    expect(last?.end).toBeLessThanOrEqual(FRAMES * BYTES_PER_FRAME - 1)
   })
 
   it('drops the partial frame of a short final chunk and refetches the rest', async () => {
@@ -1193,15 +1205,39 @@ describe('M2.9 stretch integration (spec §11)', () => {
     rig.node.post({ type: 'stretch-ready', inputLatency: 2880, outputLatency: 2880 })
     rig.node.post({ type: 'anchor', frame: 10_000, time: 0.5, generation: 0 })
     rig.context.currentTime = 1.5
-    // 1 s at 1× is 48 000 source frames; the audible output lags the
-    // consumed cursor by the engine's input latency.
-    expect(rig.transport.position).toBeCloseTo(10_000 + 48_000 - 2880, 0)
+    // 1 s at 1× is 48 000 source frames. The anchors name the audible
+    // position directly (M2.10 §12.7): the worklet's rolling window reads
+    // ahead of the cursor, so no extra latency correction applies.
+    expect(rig.transport.position).toBeCloseTo(10_000 + 48_000, 0)
 
     rig.transport.setRate(2)
     rig.node.post({ type: 'anchor', frame: 58_000, time: 1.5, generation: 0 })
     rig.context.currentTime = 2.5
     // 1 s at 2× is 96 000 source frames.
-    expect(rig.transport.position).toBeCloseTo(58_000 + 96_000 - 2880, 0)
+    expect(rig.transport.position).toBeCloseTo(58_000 + 96_000, 0)
+  })
+
+  it('extrapolates with the rate named by the anchor (§12.7)', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    // The worklet's anchor names the rate it actually rendered at (its
+    // ≈50 ms ramp), so the transport extrapolates with the heard rate —
+    // not with the requested target.
+    rig.node.post({ type: 'anchor', frame: 10_000, time: 0.5, rate: 2, generation: 0 })
+    rig.context.currentTime = 1.5
+    expect(rig.transport.position).toBeCloseTo(10_000 + 96_000, 0)
+  })
+
+  it('reports the §12.5 control-response latency', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    // Without an engine, mixer changes are heard at the next quantum.
+    expect(rig.transport.diagnostics.controlResponseLatencySeconds).toBe(0)
+    rig.node.post({ type: 'stretch-ready', inputLatency: 2880, outputLatency: 2880 })
+    // The worklet reads `speed × outLat + inLat` source frames ahead.
+    expect(rig.transport.diagnostics.controlResponseLatencySeconds).toBeCloseTo(5760 / RATE, 5)
+    rig.transport.setRate(2)
+    expect(rig.transport.diagnostics.controlResponseLatencySeconds).toBeCloseTo(8640 / RATE, 5)
   })
 
   it('clamps, posts rate, and remembers the speed for a fresh graph', async () => {

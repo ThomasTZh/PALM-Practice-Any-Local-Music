@@ -1,5 +1,6 @@
 /**
- * Type surface for `stretch-worklet.js` (plain script, M2.9, spec §11).
+ * Type surface for `stretch-worklet.js` (plain script, M2.9, spec §11;
+ * rolling-seek playback model in M2.10 §12.3).
  *
  * The runtime file has no imports and no exports: it is concatenated
  * into the AudioWorklet blob and imported on the main thread for its
@@ -17,31 +18,29 @@ export interface StretchLatencies {
 }
 
 export interface StretchEngineLike {
-  /** Input regions: JS writes the mixed stereo here (seekFrames each). */
+  /** Input regions: JS writes the context window here (windowLength each). */
   inL: Float32Array
   inR: Float32Array
-  /** Output regions: the engine writes `process`/`flushTail` results. */
+  /** Output regions: the engine writes `process` results here. */
   outL: Float32Array
   outR: Float32Array
   /** Configure for `sampleRate` (stereo). Call once, before use. */
   configure(sampleRate: number, maxFrames?: number): void
   latencies(): StretchLatencies
-  /** Input frames the engine will want for `outputFrames` of output. */
-  inputDemand(outputFrames: number): number
+  /** Frames in one context window (blockSamples + interval; 7200 @48k). */
+  windowLength(): number
+  /** Feed the context window and place the analysis at `rate`. */
+  seek(inFrames: number, rate: number): void
   /** Consume `inputFrames`, write `outputFrames`; returns consumed. */
   process(inputFrames: number, outputFrames: number): number
-  /** Target playback rate (clamped 0.25…2.0, ≈50 ms ramp). */
+  /** Target playback rate (clamped 0.25…2.0, ≈50 ms ramp; probes only). */
   setRate(rate: number): void
+  /** Ramp-free rate jump (engine probes). */
+  setRateNow(rate: number): void
   /** The currently ramped effective rate. */
   effectiveRate(): number
   /** Fresh engine state; the next output starts silent. */
   reset(): void
-  /** Read the engine's remaining tail (no further input). */
-  flushTail(maxOutputFrames: number): number
-  /** Priming frames at the current effective rate (5760 @1x/48k). */
-  seekLength(): number
-  /** Prime from `inL`/`inR[0..inFrames)` (resets the engine). */
-  outputSeek(inFrames: number): void
 }
 
 export interface StretchWasmApi {
