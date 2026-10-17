@@ -32,11 +32,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.15 (safely save portable projects,
-  spec §17) — **complete, pending commit** (all phases implemented
-  and green: 1321 backend pytest, 550 frontend vitest, contract in
-  sync; commit `M2.15: safely save portable projects (spec §17)`
-  plus the ledger-hash follow-up).
+- **M2.15:** complete — `8fc239d` + this ledger-hash follow-up
+  (safely save portable projects, spec §17; synchronous save
+  pipeline: project-only DB with exclusions, deterministic staged
+  ZIP64 archive with per-member SHA-256, verify-then-publish to
+  `data/portable/<project_id>/<revision>-<sha12>.basseparate`,
+  retain one previous, atomic publish; routes + PortableSavePanel;
+  24 new backend tests, 13 new frontend tests; backend 1321 pytest
+  green, frontend 550 Vitest green).
+- **Current work package:** M2.16 (open portable projects, spec §18)
+  — **not started** (milestone2.md line 1305).
 - **M2.14:** complete — `ec0b1eb` + this ledger-hash follow-up
   (portable project format definition, spec §16; `portable/`
   package: format constants/manifest schema, dependency closure,
@@ -60,8 +65,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `ec0b1eb` — M2.14 (portable project
-  format); this ledger-hash follow-up on top. `ff350c8` — M2.13
+- **Last commit:** `8fc239d` — M2.15 (safely save portable
+  projects); this ledger-hash follow-up on top. `ec0b1eb` — M2.14 (portable project
+  format); `744e165` (ledger: M2.14 hash) on top. `ff350c8` — M2.13
   (WAV stem export); `4cdf9fc` (ledger: M2.13 hash) on top. `0e88c7a` — M2.12 (extended buffering
   and resource limits); `1b79846` (ledger: M2.12 hash) on top;
   `f65370a` — M2.11 (saved practice loops);
@@ -94,16 +100,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** commit the complete M2.15 work package
-  (`M2.15: safely save portable projects (spec §17)`), then the
-  ledger-hash follow-up, then M2.16 (open portable projects,
-  spec §18, milestone2.md line 1305). The e2e `app.spec.ts`
+- **Next action:** M2.16 (open portable projects, spec §18,
+  milestone2.md line 1305): plan first (`projectPlans/m2.16-plan.md`).
+  The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
   if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is `744e165` (M2.14
-  ledger hash); the tree has the complete uncommitted M2.15 work
-  package (plan, backend, routes, frontend, tests, contract).
+- **Resume procedure:** read this file; HEAD is `8fc239d` (M2.15)
+  with this ledger-hash follow-up on top; the tree is clean.
   Baseline established 2026-10-17:
   `.venv/bin/python -m pytest tests/ -q` (1321 passed; the
   job-manager timing test is occasionally flaky),
