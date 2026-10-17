@@ -20,9 +20,11 @@
  *   the fetch worker is the sole writer and this processor the sole
  *   reader. `process` polls the atomic writer index — never blocks.
  *
- * The 12 s ring capacity is the §15.3 total-retention cap (8 s steady
- * lookahead + 2 s retained history, with headroom). `process` uses the
- * actual output-block length — never an assumed size (spec §14 intro).
+ * The ring capacity follows the transport's M2.12 §14.1 sizing policy
+ * (24 s duration cap, 32 MiB byte cap, group minimum) and is passed in
+ * as `capacityFrames`; M1's flat 12 s cap is only the fallback for the
+ * legacy single-source init shape. `process` uses the actual
+ * output-block length — never an assumed size (spec §14 intro).
  *
  * Audio-thread constraints (spec §14.7): no network, no filesystem, no
  * promises, no logging, no unbounded allocations, no waits.
@@ -38,10 +40,18 @@ function defaultAnchorEvery(sampleRate) {
 }
 
 /**
- * Ring capacity in seconds — the §15.3 total-retention cap per active
- * playback representation (≫ the 2 s prebuffer and 8 s lookahead).
+ * Fallback ring capacity in seconds when the caller does not pass
+ * `capacityFrames`. M2.12 §14.1: the transport owns the sizing policy
+ * (24 s duration cap, 32 MiB byte cap, group minimum) and always passes
+ * `capacityFrames`; this default only serves the legacy init shape.
  */
-const RING_SECONDS = 12
+const DEFAULT_CAPACITY_SECONDS = 12
+
+/** Millisecond clock where one exists (AudioWorklet, jsdom). */
+const nowMs =
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? () => performance.now()
+    : () => Date.now()
 
 export class ConsumptionState {
   /**
@@ -50,8 +60,9 @@ export class ConsumptionState {
    * @param {number} opts.channelCount
    * @param {number} opts.frameCount total frames of the source
    * @param {number} [opts.anchorEveryFrames]
+   * @param {number} [opts.capacityFrames] M2.12 §14.1 group ring capacity
    */
-  constructor({ sampleRate, channelCount, frameCount, anchorEveryFrames }) {
+  constructor({ sampleRate, channelCount, frameCount, anchorEveryFrames, capacityFrames }) {
     if (!(sampleRate > 0)) throw new RangeError('sampleRate must be > 0')
     if (!(channelCount >= 1)) throw new RangeError('channelCount must be >= 1')
     if (!(frameCount >= 0)) throw new RangeError('frameCount must be >= 0')
@@ -59,7 +70,10 @@ export class ConsumptionState {
     this.channelCount = channelCount
     this.frameCount = frameCount
     this.anchorEvery = anchorEveryFrames ?? defaultAnchorEvery(sampleRate)
-    this.capacity = Math.ceil(sampleRate * RING_SECONDS)
+    this.capacity =
+      Number.isFinite(capacityFrames) && capacityFrames > 0
+        ? Math.floor(capacityFrames)
+        : Math.ceil(sampleRate * DEFAULT_CAPACITY_SECONDS)
     this.rings = []
     for (let c = 0; c < channelCount; c++) {
       this.rings.push({ data: new Float32Array(this.capacity), read: 0, write: 0, count: 0 })
@@ -198,6 +212,9 @@ export class ConsumptionState {
     const data = new Float32Array(sab, 16)
     const capacity = Math.floor(data.length / this.channelCount)
     this.shared = { header, data, capacity }
+    // The SAB is authoritative on the shared path; keep the capacity
+    // reported to the transport in sync with what the writer can hold.
+    this.capacity = capacity
     this.localGen = Atomics.load(header, 0)
   }
 
@@ -516,8 +533,9 @@ export class MixState {
    * @param {number} opts.frameCount project duration — all sources equal
    * @param {Array<{channelCount: number}>} opts.sources
    * @param {object|null} [opts.engine] stretch engine (M2.9/M2.10, spec §11–§12)
+   * @param {number} [opts.capacityFrames] M2.12 §14.1 group ring capacity
    */
-  constructor({ sampleRate, frameCount, sources, engine = null }) {
+  constructor({ sampleRate, frameCount, sources, engine = null, capacityFrames = 0 }) {
     if (!(sampleRate > 0)) throw new RangeError('sampleRate must be > 0')
     if (!(frameCount >= 0)) throw new RangeError('frameCount must be >= 0')
     if (!Array.isArray(sources) || sources.length === 0) {
@@ -533,6 +551,7 @@ export class MixState {
           frameCount,
           // The mixer emits its own anchors from the shared cursor.
           anchorEveryFrames: Number.MAX_SAFE_INTEGER,
+          capacityFrames,
         }),
     )
     this.params = sources.map(() => ({
@@ -571,6 +590,8 @@ export class MixState {
     /** Per-quantum peaks, reset after each report. */
     this.trackPeaks = sources.map(() => 0)
     this.masterPeak = 0
+    /** M2.12 §14.4: duration of the last render callback (ms). */
+    this.lastProcessMs = 0
     // Stretch engine (M2.9/M2.10): null keeps the plain mixer path.
     this.engine = engine
     /** Audible source position: content of the next output frame. */
@@ -1042,6 +1063,7 @@ export class MixState {
    * @param {Float32Array[]} outputChannels one array per channel
    */
   process(time, outputChannels) {
+    const startedAt = nowMs()
     const frames = outputChannels[0].length
     const out = {
       consumed: 0,
@@ -1067,7 +1089,7 @@ export class MixState {
         }
       }
       out.buffered = this.buffered
-      return out
+      return this.finishProcess(out, startedAt)
     }
     if (this.engine && this.warmupRemaining > 0) {
       // Silent pre-roll for a wet start after a hard re-position (§12.3):
@@ -1078,7 +1100,7 @@ export class MixState {
       this.runWarmup(frames)
       this.fillOutputSilence(outputChannels, 0, frames)
       out.buffered = this.buffered
-      return out
+      return this.finishProcess(out, startedAt)
     }
     if (this.paused) {
       if (this.rampRemaining > 0) {
@@ -1098,13 +1120,18 @@ export class MixState {
         this.fillOutputSilence(outputChannels, 0, frames)
       }
       out.buffered = this.buffered
-      return out
+      return this.finishProcess(out, startedAt)
     }
     // The engine path mixes ring fills in bounded chunks (`engineFillChunk`),
     // so the scratch must hold the larger of the output block and the chunk.
     const cap = this.engine ? Math.max(frames, this.engineFillChunk) : frames
     this.ensureBlockCapacity(cap)
-    if (this.engine) return this.processWithEngine(time, outputChannels, frames, out)
+    if (this.engine) {
+      return this.finishProcess(
+        this.processWithEngine(time, outputChannels, frames, out),
+        startedAt,
+      )
+    }
     // Shared cursor: every source advances by the same amount, so no
     // drift is possible. A starving source pauses the whole group.
     // Looping streams are unbounded (M2.11): the source length does not
@@ -1183,6 +1210,12 @@ export class MixState {
     out.peaks = { tracks: this.trackPeaks.slice(), master: this.masterPeak }
     for (let i = 0; i < this.trackPeaks.length; i++) this.trackPeaks[i] = 0
     this.masterPeak = 0
+    return this.finishProcess(out, startedAt)
+  }
+
+  /** Bookkeep the render-callback duration (M2.12 §14.4) and return. */
+  finishProcess(out, startedAt) {
+    this.lastProcessMs = nowMs() - startedAt
     return out
   }
 
@@ -1624,6 +1657,9 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         frameCount: o.frameCount ?? 0,
         sources,
         engine,
+        // M2.12 §14.1: the transport owns ring sizing (byte/duration caps,
+        // group minimum); shared rings derive it from the SAB instead.
+        capacityFrames: o.capacityFrames ?? 0,
       })
       sabs.forEach((sab, i) => this.core.attachShared(i, sab))
       this.generation = 0
@@ -1685,16 +1721,39 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     }
 
     reportBuffered() {
-      this.port.postMessage({
+      const msg = {
         type: 'buffered',
         frames: this.core.buffered,
         queuedFrames: this.core.queued,
+        // M2.12 §14.2.1: per-stem buffered frames (group readiness).
+        stems: this.core.sources.map((s) => s.buffered),
+        // M2.12 §14.1: the group ring capacity in frames.
+        capacityFrames: this.core.capacity,
         generation: this.generation,
-      })
+      }
+      // M2.12 §14.4: render-callback duration and stretcher configuration.
+      if (typeof this.core.lastProcessMs === 'number') {
+        msg.callbackMs = this.core.lastProcessMs
+      }
+      if (this.core.engine) {
+        msg.stretcher = {
+          rate: this.core.rateCurrent,
+          bypass: this.core.bypass === 'dry',
+          warmup: this.core.warmupRemaining,
+        }
+      }
+      this.port.postMessage(msg)
     }
 
-    process(time, input, output) {
-      const res = this.core.process(time, output)
+    /**
+     * Web Audio callback. The AudioWorkletGlobalScope calls
+     * `process(inputs, outputs, parameters)` and exposes the block time
+     * as the global `currentTime` (§14.7). The transport has no audio
+     * inputs; the core consumes one output's channel array.
+     */
+    process(_inputs, outputs) {
+      const time = typeof globalThis.currentTime === 'number' ? globalThis.currentTime : 0
+      const res = this.core.process(time, outputs[0] ?? [])
       if (res.anchor) {
         const msg = {
           type: 'anchor',

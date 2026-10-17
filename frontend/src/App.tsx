@@ -22,6 +22,7 @@ import { bootstrapToken, getSessionToken } from './auth'
 import { fetchResultSetDetail, type ResultSetDetail } from './api/result-sets'
 import type { PracticeLoop, PracticeState } from './api/commands'
 import {
+  initialTransportDiagnostics,
   PcmTransport,
   type MixPeaks,
   type SourceSpec,
@@ -31,6 +32,7 @@ import {
   type TransportState,
 } from './playback/transport'
 import { formatTime } from './playback/pcm'
+import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import type { View as EditorView } from './waveform/viewport'
 import { useProjectCommands } from './projects/useProjectCommands'
@@ -471,6 +473,41 @@ function loopKeyOf(spec: TransportLoopSpec | null): string {
   return `${spec.startFrame}:${spec.endFrame}:${spec.repeatCount ?? 'inf'}:${spec.boundaryFade ? 1 : 0}`
 }
 
+/** MiB with one decimal (runtime diagnostics sizes). */
+function formatMiB(bytes: number | null | undefined): string {
+  if (bytes == null) return '—'
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+}
+
+/** One runtime row per available §14.4 figure (null blocks are skipped). */
+function RuntimeRows({ runtime }: { runtime: RuntimeStatus }) {
+  const worker = runtime.media_worker
+  const gpu = runtime.gpu
+  const job = runtime.job
+  return (
+    <>
+      {worker && (
+        <li>
+          Media worker: {formatMiB(worker.rss_bytes)}
+          {worker.cpu_seconds != null ? `, ${worker.cpu_seconds.toFixed(1)} s CPU` : ''}
+        </li>
+      )}
+      {gpu?.peak_used_bytes != null && <li>GPU peak: {formatMiB(gpu.peak_used_bytes)}</li>}
+      {job?.job_type && (
+        <li>
+          Job: {job.job_type}
+          {job.stage ? ` (${job.stage})` : ''}
+          {job.progress_fraction != null ? ` ${Math.round(job.progress_fraction * 100)}%` : ''}
+          {job.queued > 0 ? `, ${job.queued} queued` : ''}
+        </li>
+      )}
+      {runtime.separation_elapsed_seconds != null && (
+        <li>Separation: {runtime.separation_elapsed_seconds.toFixed(1)} s</li>
+      )}
+    </>
+  )
+}
+
 const PlaybackPanel = memo(function PlaybackPanel({
   projectId,
   createAudioContext,
@@ -541,12 +578,10 @@ const PlaybackPanel = memo(function PlaybackPanel({
   // M1.13: browser suspension and underrun diagnostics. Context loss is
   // read directly from the transport in the recovery branch.
   const [suspended, setSuspended] = useState(false)
-  const [diagnostics, setDiagnostics] = useState<TransportDiagnostics>({
-    underruns: 0,
-    lastUnderrunAt: null,
-    droppedChunks: 0,
-    controlResponseLatencySeconds: 0,
-  })
+  const [diagnostics, setDiagnostics] = useState<TransportDiagnostics>(initialTransportDiagnostics)
+  // M2.12 §14.4: the local runtime figures poll while the project panel
+  // is open (it only mounts for an open project).
+  const runtime = useSystemRuntime(true)
   const transportRef = useRef<PcmTransport | null>(null)
   const assetIdRef = useRef<string | null>(null)
   const pendingContextRef = useRef<TransportContextLike | null>(null)
@@ -633,12 +668,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
     setPosition(0)
     setPlayError(null)
     setSuspended(false)
-    setDiagnostics({
-      underruns: 0,
-      lastUnderrunAt: null,
-      droppedChunks: 0,
-      controlResponseLatencySeconds: 0,
-    })
+    setDiagnostics(initialTransportDiagnostics())
     // The restored volume of the previous project no longer applies.
     volumeSeededRef.current = false
     volumeRef.current = 100
@@ -1159,8 +1189,34 @@ const PlaybackPanel = memo(function PlaybackPanel({
             Browser suspended audio — click Play to resume
           </p>
         )}
-        {diagnostics.underruns > 0 && (
-          <p className="underrun-diagnostics muted">Underruns: {diagnostics.underruns}</p>
+        {(diagnostics.underruns > 0 ||
+          diagnostics.stemBufferedFrames.length > 0 ||
+          runtime !== null) && (
+          <section className="runtime-diagnostics muted" aria-label="Runtime diagnostics">
+            <ul>
+              <li>Underruns: {diagnostics.underruns}</li>
+              {diagnostics.stemBufferedFrames.length > 0 && (
+                <li>Stems buffered: {diagnostics.stemBufferedFrames.join(' / ')} frames</li>
+              )}
+              {diagnostics.capacityFrames > 0 && (
+                <li>
+                  Buffer: {formatMiB(diagnostics.bufferedBytes)} /{' '}
+                  {formatMiB(diagnostics.budgetBytes)}
+                  {diagnostics.pinnedBytes > 0 && `, pinned ${formatMiB(diagnostics.pinnedBytes)}`}
+                </li>
+              )}
+              {diagnostics.callbackDurationMs != null && (
+                <li>Callback: {diagnostics.callbackDurationMs.toFixed(1)} ms</li>
+              )}
+              {diagnostics.stretcher && (
+                <li>
+                  Stretcher: {diagnostics.stretcher.rate.toFixed(2)}×
+                  {diagnostics.stretcher.bypass ? ' (bypass)' : ''}
+                </li>
+              )}
+              {runtime && <RuntimeRows runtime={runtime} />}
+            </ul>
+          </section>
         )}
         {playError && (
           <p className="field-error" role="alert">

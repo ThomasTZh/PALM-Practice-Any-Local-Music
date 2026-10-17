@@ -14,6 +14,8 @@ requests occur at module import time.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import secrets
 import uuid
@@ -48,6 +50,7 @@ from basseparate.domain.project import (
 )
 from basseparate.jobs import JobManager, ParameterResolutionError, build_publishers
 from basseparate.media.downmix import MonitorSelectionError, pan_expression, resolve_downmix
+from basseparate.runtime_diagnostics import GpuPeakTracker, RuntimeDiagnostics
 from basseparate.storage import (
     ImportRepository,
     JobRepository,
@@ -334,16 +337,31 @@ def create_app(config: AppConfig) -> FastAPI:
                 cast(ProjectRepository, app.state.repository),
                 paths,
             ),
+            worker_memory_limit_mb=config.media_worker_memory_limit_mb,
+        )
+        gpu_tracker = GpuPeakTracker(
+            should_sample=lambda: app.state.job_manager.active_job_id is not None
+        )
+        app.state.gpu_peak_tracker = gpu_tracker
+        app.state.runtime_diagnostics = RuntimeDiagnostics(
+            job_manager=app.state.job_manager,
+            separation_repository=cast(SeparationRepository, app.state.separation_repository),
+            gpu_tracker=gpu_tracker,
         )
         app.state.ready = True
         log.info("basseparate service ready (api v%d)", API_VERSION)
 
         await app.state.job_manager.start()
+        gpu_task = asyncio.create_task(gpu_tracker.run(), name="gpu-peak-sampler")
 
         yield
 
         # --- Shutdown ---
         app.state.ready = False
+        gpu_tracker.stop()
+        gpu_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await gpu_task
         await app.state.job_manager.stop()
         app.state.idempotency_store.clear()
         log.info("basseparate service stopped")

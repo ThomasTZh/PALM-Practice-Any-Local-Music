@@ -268,7 +268,7 @@ describe('PcmProcessor loop protocol (worklet scope)', () => {
     }) => {
       port: { postMessage: (m: unknown) => void; onmessage: (e: { data: unknown }) => void }
       core: MixState
-      process(time: number, input: unknown, output: Float32Array[]): boolean
+      process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean
     }
     const p = new Ctor({
       processorOptions: {
@@ -281,10 +281,10 @@ describe('PcmProcessor loop protocol (worklet scope)', () => {
     let q = 0
     const run = (n: number) => {
       for (let i = 0; i < n; i++) {
-        p.process(q * (QUANTUM / RATE), null, [
-          new Float32Array(QUANTUM),
-          new Float32Array(QUANTUM),
-        ])
+        ;(globalThis as { currentTime?: number }).currentTime = q * (QUANTUM / RATE)
+        const o0 = new Float32Array(QUANTUM)
+        const o1 = new Float32Array(QUANTUM)
+        p.process([], [[o0, o1]])
         q += 1
       }
     }

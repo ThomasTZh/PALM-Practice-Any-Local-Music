@@ -281,7 +281,8 @@ export interface AssetBytes {
 /**
  * Fetch raw PCM bytes, optionally for a single inclusive byte range.
  * Delegates to the shared `fetchPcmRange` helper (also used by the
- * fetch worker, M1.13).
+ * fetch worker, M1.13). M2.12 §14.3: this is waveform work (editor
+ * decode/preview), so it takes the `'low'` fetch-priority hint.
  */
 export async function fetchAssetBytes(
   assetId: string,
@@ -289,5 +290,5 @@ export async function fetchAssetBytes(
   end?: number,
   signal?: AbortSignal,
 ): Promise<AssetBytes> {
-  return fetchPcmRange(assetId, start, end, signal)
+  return fetchPcmRange(assetId, start, end, signal, 'low')
 }

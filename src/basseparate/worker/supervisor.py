@@ -93,9 +93,17 @@ def probe_command() -> list[str]:
     return [sys.executable, "-m", "basseparate.worker.probe_worker"]
 
 
-def media_worker_command() -> list[str]:
-    """Argument array for the built-in media worker (M1.4)."""
-    return [sys.executable, "-m", "basseparate.worker.media_worker"]
+def media_worker_command(memory_limit_mb: int | None = None) -> list[str]:
+    """Argument array for the built-in media worker (M1.4).
+
+    ``memory_limit_mb`` (M2.12, spec §14.3) makes the child apply a
+    best-effort address-space limit before serving jobs.
+    """
+
+    command = [sys.executable, "-m", "basseparate.worker.media_worker"]
+    if memory_limit_mb is not None:
+        command += ["--memory-limit-mb", str(memory_limit_mb)]
+    return command
 
 
 class WorkerSupervisor:

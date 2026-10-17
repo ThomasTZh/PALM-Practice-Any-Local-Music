@@ -66,6 +66,25 @@ class TestSystem:
         resp = client.get("/api/v1/system")
         assert resp.status_code == 401
 
+    def test_system_includes_local_runtime_diagnostics(
+        self, client: TestClient, auth_headers: dict
+    ) -> None:
+        resp = client.get("/api/v1/system", headers=auth_headers)
+        assert resp.status_code == 200
+        runtime = resp.json()["runtime"]
+        assert runtime is not None
+        assert runtime["api"]["rss_bytes"] is not None
+        assert runtime["api"]["rss_bytes"] > 0
+        assert runtime["api"]["cpu_seconds"] is not None
+        # The media worker subprocess is running after startup.
+        assert runtime["media_worker"] is not None
+        assert runtime["media_worker"]["rss_bytes"] is not None
+        assert runtime["media_worker"]["rss_bytes"] > 0
+        # Nothing is queued or running, and the GPU sampler has not run.
+        assert runtime["job"] is None
+        assert runtime["gpu"] is None
+        assert runtime["separation_elapsed_seconds"] is None
+
 
 class TestProjects:
     def test_list_empty(self, client: TestClient, auth_headers: dict) -> None:
@@ -206,6 +225,12 @@ class TestSecurity:
         assert resp.headers.get("referrer-policy") == "no-referrer"
         assert resp.headers.get("cross-origin-opener-policy") == "same-origin"
         assert "content-security-policy" in resp.headers
+        # The AudioWorklet module is loaded from a Blob URL and compiles
+        # the committed WASM stretcher inside the worklet (spec §11/§14);
+        # script-src must allow blob: and wasm compilation or playback
+        # cannot start in a browser served by this app.
+        csp = resp.headers["content-security-policy"]
+        assert "script-src 'self' blob: 'wasm-unsafe-eval'" in csp
 
     def test_loopback_origin_allowed(self, client: TestClient, auth_headers: dict) -> None:
         resp = client.get(

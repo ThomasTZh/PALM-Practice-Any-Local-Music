@@ -74,6 +74,18 @@ describe('fetchPcmRange', () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect(init.signal).toBe(controller.signal)
   })
+
+  it('hints playback PCM as high priority and waveform work as low (M2.12 §14.3)', async () => {
+    // A fresh Response per call: a body can only be read once.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(pcmResponse(new ArrayBuffer(4))))
+    vi.stubGlobal('fetch', fetchMock)
+    await fetchPcmRange('asset-1', 0, 3)
+    expect((fetchMock.mock.calls[0][1] as RequestInit).priority).toBe('high')
+    await fetchPcmRange('asset-1', 0, 3, undefined, 'low')
+    expect((fetchMock.mock.calls[1][1] as RequestInit).priority).toBe('low')
+  })
 })
 
 describe('deinterleaveChannels', () => {

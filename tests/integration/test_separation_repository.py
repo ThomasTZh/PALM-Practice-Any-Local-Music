@@ -411,3 +411,38 @@ def test_publish_rejects_non_valid_result_set(db_path: Path) -> None:
     with pytest.raises(DatabaseError, match="valid"):
         separation.publish_result_set(completed, pending, [stem], assets)
     assert separation.get_result_set(result_set_id) is None
+
+
+def test_latest_run_elapsed_seconds_reflects_most_recent_run(db_path: Path) -> None:
+    """M2.12 (spec §14.4): the diagnostics surface reads the latest run time."""
+
+    projects = ProjectRepository(db_path)
+    separation = SeparationRepository(db_path)
+    project = projects.create_project("Song")
+    assert separation.latest_run_elapsed_seconds() is None
+
+    running = _queued_run(project.id)
+    separation.create_run(running)
+    # Started but not ended, and no metrics: nothing to report yet.
+    assert separation.latest_run_elapsed_seconds() is None
+
+    completed = running.model_copy(
+        update={
+            "id": uuid.uuid4(),
+            "status": SeparationRunStatus.COMPLETED,
+            "result_set_id": uuid.uuid4(),
+            "ended_at": datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC),
+        }
+    )
+    separation.create_run(completed)
+    assert separation.latest_run_elapsed_seconds() == 10.0
+
+    failed = running.model_copy(
+        update={
+            "id": uuid.uuid4(),
+            "status": SeparationRunStatus.FAILED,
+            "metrics": {"wall_seconds": 4.5},
+        }
+    )
+    separation.create_run(failed)
+    assert separation.latest_run_elapsed_seconds() == 4.5

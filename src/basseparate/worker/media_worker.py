@@ -17,13 +17,14 @@ asset to a project. The backend verifies and publishes.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import re
 import shutil
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -668,8 +669,47 @@ def run() -> int:
         return 1
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    """Entry point; ``--memory-limit-mb`` bounds the worker (M2.12 §14.3)."""
+
+    parser = argparse.ArgumentParser(prog="basseparate-media-worker")
+    parser.add_argument("--memory-limit-mb", type=int, default=None)
+    args = parser.parse_args(argv)
+    effective = apply_memory_limit(args.memory_limit_mb)
+    if effective is not None:
+        _log(f"address-space limit set to {effective // (1024 * 1024)} MiB")
     return run()
+
+
+def apply_memory_limit(limit_mb: int | None) -> int | None:
+    """Best-effort ``RLIMIT_AS`` for this process (M2.12, spec §14.3).
+
+    Returns the effective soft limit in bytes, or ``None`` when the
+    platform has no ``resource`` module, the current limit is already
+    stricter, or the change was refused. Never fatal: the guard is a
+    safety net, not a correctness requirement.
+    """
+
+    if limit_mb is None or limit_mb <= 0:
+        return None
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - non-POSIX platforms only
+        return None
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    except (OSError, ValueError):  # pragma: no cover - defensive
+        return None
+    if soft != resource.RLIM_INFINITY and soft <= limit_mb * 1024 * 1024:
+        return int(soft)
+    target = limit_mb * 1024 * 1024
+    if hard != resource.RLIM_INFINITY:
+        target = min(target, int(hard))
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (target, hard))
+    except (OSError, ValueError):  # pragma: no cover - refused by the OS
+        return None
+    return int(target)
 
 
 if __name__ == "__main__":

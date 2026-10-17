@@ -11,6 +11,8 @@ export interface ConsumptionOptions {
   frameCount: number
   /** Anchor cadence in frames; defaults to ~20 Hz (spec §16.1). */
   anchorEveryFrames?: number
+  /** M2.12 §14.1 group ring capacity in frames (12 s fallback). */
+  capacityFrames?: number
 }
 
 export interface ProcessResult {
@@ -55,7 +57,7 @@ export class ConsumptionState {
   readonly ended: boolean
   readonly sampleRate: number
   readonly channelCount: number
-  /** Ring capacity in frames (12 s at the source rate). */
+  /** Ring capacity in frames (M2.12 §14.1 group policy; 12 s fallback). */
   readonly capacity: number
   /** Frames currently in the rings (transfer path). */
   readonly available: number
@@ -123,6 +125,8 @@ export interface MixStateOptions {
    * plain mixer path (unit tests of the mixer math).
    */
   engine?: object | null
+  /** M2.12 §14.1 group ring capacity in frames (12 s fallback). */
+  capacityFrames?: number
 }
 
 /** Patch for one source's mixer parameters (spec §10.3). */
@@ -171,6 +175,8 @@ export class MixState {
   readonly queued: number
   /** Ring capacity of the weakest source. */
   readonly capacity: number
+  /** M2.12 §14.4: duration of the last render callback (ms). */
+  readonly lastProcessMs: number
   /**
    * Patch one source's mixer parameters; changes ramp linearly over
    * 5 ms. Solo eligibility: `!mute && (!anySolo || solo)`.

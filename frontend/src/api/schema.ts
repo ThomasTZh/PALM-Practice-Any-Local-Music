@@ -840,6 +840,15 @@ export interface components {
              */
             type: "duplicate_loop";
         };
+        /** GpuStatsResponse */
+        GpuStatsResponse: {
+            /** Free Bytes */
+            free_bytes?: number | null;
+            /** Peak Used Bytes */
+            peak_used_bytes?: number | null;
+            /** Total Bytes */
+            total_bytes?: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1224,6 +1233,16 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * ProcessStatsResponse
+         * @description RSS/CPU of one process (M2.12, spec §14.4).
+         */
+        ProcessStatsResponse: {
+            /** Cpu Seconds */
+            cpu_seconds?: number | null;
+            /** Rss Bytes */
+            rss_bytes?: number | null;
+        };
         /** ProjectListResponse */
         ProjectListResponse: {
             /** Projects */
@@ -1398,6 +1417,37 @@ export interface components {
             id: string;
             /** Validation Status */
             validation_status: string;
+        };
+        /**
+         * RuntimeJobResponse
+         * @description The media job in flight (or the queue depth when only queued work exists).
+         */
+        RuntimeJobResponse: {
+            /** Job Id */
+            job_id?: string | null;
+            /** Job Type */
+            job_type?: string | null;
+            /** Progress Fraction */
+            progress_fraction?: number | null;
+            /**
+             * Queued
+             * @default 0
+             */
+            queued: number;
+            /** Stage */
+            stage?: string | null;
+        };
+        /**
+         * RuntimeStatusResponse
+         * @description Local runtime diagnostics (M2.12, spec §14.4); never telemetry.
+         */
+        RuntimeStatusResponse: {
+            api: components["schemas"]["ProcessStatsResponse"];
+            gpu?: components["schemas"]["GpuStatsResponse"] | null;
+            job?: components["schemas"]["RuntimeJobResponse"] | null;
+            media_worker?: components["schemas"]["ProcessStatsResponse"] | null;
+            /** Separation Elapsed Seconds */
+            separation_elapsed_seconds?: number | null;
         };
         /** SelectStreamRequest */
         SelectStreamRequest: {
@@ -1671,6 +1721,7 @@ export interface components {
             app_version: string;
             /** Ready */
             ready: boolean;
+            runtime?: components["schemas"]["RuntimeStatusResponse"] | null;
         };
         /**
          * TrackSettings

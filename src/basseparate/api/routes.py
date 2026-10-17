@@ -44,10 +44,44 @@ class HealthResponse(BaseModel):
     api_version: int
 
 
+class ProcessStatsResponse(BaseModel):
+    """RSS/CPU of one process (M2.12, spec §14.4)."""
+
+    rss_bytes: int | None = None
+    cpu_seconds: float | None = None
+
+
+class RuntimeJobResponse(BaseModel):
+    """The media job in flight (or the queue depth when only queued work exists)."""
+
+    job_id: str | None = None
+    job_type: str | None = None
+    stage: str | None = None
+    progress_fraction: float | None = None
+    queued: int = 0
+
+
+class GpuStatsResponse(BaseModel):
+    total_bytes: int | None = None
+    free_bytes: int | None = None
+    peak_used_bytes: int | None = None
+
+
+class RuntimeStatusResponse(BaseModel):
+    """Local runtime diagnostics (M2.12, spec §14.4); never telemetry."""
+
+    api: ProcessStatsResponse
+    media_worker: ProcessStatsResponse | None = None
+    job: RuntimeJobResponse | None = None
+    gpu: GpuStatsResponse | None = None
+    separation_elapsed_seconds: float | None = None
+
+
 class SystemResponse(BaseModel):
     app_version: str
     api_version: int
     ready: bool
+    runtime: RuntimeStatusResponse | None = None
 
 
 class ProjectListResponse(BaseModel):
@@ -83,10 +117,15 @@ async def health(request: Request) -> HealthResponse:
 
 @router.get("/system", response_model=SystemResponse)
 async def system(request: Request) -> SystemResponse:
+    diagnostics = getattr(request.app.state, "runtime_diagnostics", None)
+    runtime: RuntimeStatusResponse | None = None
+    if diagnostics is not None:
+        runtime = RuntimeStatusResponse(**await diagnostics.collect())
     return SystemResponse(
         app_version=APP_VERSION,
         api_version=API_VERSION,
         ready=_is_ready(request),
+        runtime=runtime,
     )
 
 

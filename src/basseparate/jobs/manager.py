@@ -87,6 +87,19 @@ _PARAMETERIZED_JOB_TYPES = frozenset(
     }
 )
 
+#: Scheduling priority classes (M2.12, spec §14.3): playback preparation
+#: runs before import-critical work, which runs before background
+#: waveform generation. FIFO within one class via a monotonic sequence
+#: number, so equal-priority jobs keep their arrival order.
+_JOB_PRIORITY: dict[JobType, int] = {
+    JobType.MONITORING_DOWNMIX: 0,
+    JobType.PLAYBACK_RATE: 0,
+    JobType.PROBE: 1,
+    JobType.CANONICAL_DECODE: 1,
+    JobType.WAVEFORM: 2,
+}
+_UNKNOWN_JOB_PRIORITY = 3
+
 
 def _default_parameter_failure(job_type: JobType) -> tuple[str, str]:
     """Failure used when a parameter builder returns no parameters at all."""
@@ -112,17 +125,22 @@ class JobManager:
         source_path_for: Callable[[uuid.UUID], Path] | None = None,
         publisher: Callable[[MediaJob, dict[str, Any]], None] | None = None,
         parameters_for: Callable[[MediaJob], dict[str, Any]] | None = None,
+        worker_memory_limit_mb: int | None = None,
     ) -> None:
         self._repo = repository
         self._staging_root = Path(staging_root)
         self._worker_command = (
-            list(worker_command) if worker_command is not None else media_worker_command()
+            list(worker_command)
+            if worker_command is not None
+            else media_worker_command(worker_memory_limit_mb)
         )
         self._source_path_for = source_path_for
         self._publisher = publisher
         self._parameters_for = parameters_for
         self._supervisor: WorkerSupervisor | None = None
-        self._queue: asyncio.Queue[uuid.UUID] = asyncio.Queue()
+        #: (priority class, arrival sequence, job id) — M2.12 §14.3.
+        self._queue: asyncio.PriorityQueue[tuple[int, int, uuid.UUID]] = asyncio.PriorityQueue()
+        self._enqueue_sequence = 0
         self._scheduler_task: asyncio.Task[None] | None = None
         self._active_job_id: uuid.UUID | None = None
         self._known_job_ids: set[uuid.UUID] = set()
@@ -135,6 +153,22 @@ class JobManager:
     @property
     def is_started(self) -> bool:
         return self._supervisor is not None
+
+    @property
+    def queue_depth(self) -> int:
+        """Jobs waiting in the scheduler queue (diagnostics, M2.12 §14.4)."""
+        return self._queue.qsize()
+
+    @property
+    def worker_pid(self) -> int | None:
+        """PID of the media worker subprocess, if running (M2.12 §14.4)."""
+        return self._supervisor.pid if self._supervisor is not None else None
+
+    def _enqueue(self, job: MediaJob) -> None:
+        """Insert a job at its class priority, FIFO within the class."""
+        priority = _JOB_PRIORITY.get(job.job_type, _UNKNOWN_JOB_PRIORITY)
+        self._enqueue_sequence += 1
+        self._queue.put_nowait((priority, self._enqueue_sequence, job.id))
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -163,7 +197,7 @@ class JobManager:
         queued = await asyncio.to_thread(self._repo.list_jobs_by_state, JobState.QUEUED)
         for job in queued:
             self._known_job_ids.add(job.id)
-            await self._queue.put(job.id)
+            self._enqueue(job)
         self._scheduler_task = asyncio.create_task(self._scheduler_loop(), name="job-scheduler")
         log.info("job manager started (%d queued job(s) reloaded)", len(queued))
 
@@ -202,7 +236,7 @@ class JobManager:
             max_threads,
             parameters,
         )
-        await self._queue.put(job.id)
+        self._enqueue(job)
         return job
 
     async def get_job(self, job_id: uuid.UUID) -> MediaJob | None:
@@ -236,7 +270,7 @@ class JobManager:
 
     async def _scheduler_loop(self) -> None:
         while True:
-            job_id = await self._queue.get()
+            _priority, _sequence, job_id = await self._queue.get()
             self._known_job_ids.add(job_id)
             job = await asyncio.to_thread(self._repo.get_job, job_id)
             if job is None or job.state is not JobState.QUEUED:
@@ -364,7 +398,7 @@ class JobManager:
         for job in queued:
             if job.id not in self._known_job_ids:
                 self._known_job_ids.add(job.id)
-                await self._queue.put(job.id)
+                self._enqueue(job)
 
     async def _await_job_completion(
         self, supervisor: WorkerSupervisor, job_id: uuid.UUID

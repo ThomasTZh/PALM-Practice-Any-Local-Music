@@ -1983,6 +1983,32 @@ class SeparationRepository:
         finally:
             conn.close()
 
+    def latest_run_elapsed_seconds(self) -> float | None:
+        """Wall-clock seconds of the most recent separation run (M2.12 §14.4).
+
+        Prefers the recorded start/end timestamps; falls back to the run's
+        ``wall_seconds`` metric. Returns ``None`` when no run exists or the
+        duration was never recorded.
+        """
+
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM separation_runs ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        run = SeparationRun.model_validate_json(row["record_json"])
+        if run.started_at is not None and run.ended_at is not None:
+            return max(0.0, (run.ended_at - run.started_at).total_seconds())
+        if run.metrics is not None:
+            value = run.metrics.get("wall_seconds")
+            if value is not None:
+                return float(value)
+        return None
+
     def find_active_run(
         self, project_id: uuid.UUID, cache_key: str
     ) -> SeparationRun | None:

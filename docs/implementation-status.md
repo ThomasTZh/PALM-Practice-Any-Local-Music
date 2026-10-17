@@ -32,14 +32,19 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.11 (Saved practice loops, spec §13) —
-  **complete** — `f65370a`. Plan: `projectPlans/m2.11-plan.md` (as
-  built). Gate: backend 1147/1147 pytest, ruff + mypy clean (63
-  files), contract in sync; frontend 495/495 Vitest (28 files),
-  `tsc -b` unchanged (32 pre-existing), prettier clean. See the M2.11
-  section below.
-- **M2.11:** complete — `f65370a` (saved practice loops, spec §13;
-  backend 1147 pytest green, frontend 495 Vitest green).
+- **Current work package:** M2.12 (Extended buffering and resource
+  limits, spec §14) — **complete** (Phases 1–7); the final commit is
+  part of this work package. Plan: `projectPlans/m2.12-plan.md`. Gate:
+  backend 1180/1180 pytest, ruff + mypy clean (64 files), contract in
+  sync; frontend 530/530 Vitest (31 files), `tsc -b` unchanged (32
+  pre-existing), prettier clean. The local browser acceptance run
+  passed (full 6:00 playback, zero underruns, waveform +
+  playback-rate media jobs while playing) and required fixing five
+  pre-existing browser playback defects (see the M2.12 section). Hash
+  recorded in the ledger follow-up. See the M2.12 section below.
+- **M2.11:** complete — `f65370a` + ledger-hash follow-up `ce94136`
+  (saved practice loops, spec §13; backend 1147 pytest green,
+  frontend 495 Vitest green).
 - **M2.10:** complete — `f46baaf` + ledger-hash follow-up `cfa3223`
   (rolling-seek wrapper + rebuilt artifacts, worklet warm-up/exact
   anchors/1× bypass, transport pre-roll + `anchorRate` ledger +
@@ -78,24 +83,24 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** start M2.12 (Extend buffering and resource limits,
-  spec §14) from `projectPlans/milestone2.md` §14; write the M2.12
-  plan + ledger section first, as with prior packages. M2.11 is
-  committed at `f65370a`. The M2.11 ledger-hash follow-up is this
-  commit.
+- **Next action:** make the ledger-hash follow-up commit (`Ledger:
+  record M2.12 commit hash (<hash>)`) after the M2.12 commit lands,
+  updating the top section, the last-commit list, the resume
+  procedure, and the M2.12 Phase 7 entry. Then start M2.13 (WAV stem
+  export, spec §15) with its own plan + ledger section. M2.11 is
+  committed at `f65370a` (+ ledger `ce94136`).
   The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `f65370a` (M2.11
-  complete; the ledger-hash follow-up follows). Everything is
-  committed; the tree is clean. Establish the
-  baseline:
-  `.venv/bin/python -m pytest tests/ -q` (1147 passed; the
+- **Resume procedure:** read this file; HEAD is the M2.12 commit (see
+  the last-commit list; the ledger-hash follow-up follows). Everything
+  is committed; the tree is clean. Establish the baseline:
+  `.venv/bin/python -m pytest tests/ -q` (1180 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/` (63 files clean),
-  `/home/thomas/.npm-global/bin/pnpm --dir frontend run test` (495
+  `.venv/bin/python -m mypy src/` (64 files clean),
+  `/home/thomas/.npm-global/bin/pnpm --dir frontend run test` (530
   passed), `tsc -b` (32 pre-existing errors), `prettier --check .`
   (clean).
   **Recovery note:** if working-tree files appear reverted, versions
@@ -2971,6 +2976,167 @@ the component tests; the 100 ms minimum is explained locally with the
 server 409 as the backstop; count-in and musical anchors are deferred
 by spec (§13.1) and loop export is M2.13. Monitoring-only throughout —
 no source or annotation writes.
+
+## M2.12 — Extended buffering and resource limits (spec §14)
+
+**Scope (per `projectPlans/m2.12-plan.md`):** speed-scaled source
+buffering with byte + duration caps (24 s/stem, 32 MiB/stem, group-min
+frame capacity), the pinned-loop budget (64 MiB/group, pre-roll +
+complete-loop cache, streaming fallback), group readiness (per-stem
+reporting, group generation, single-stem failure policy, muted
+alignment), thread/resource separation (priority job classes,
+memory-bounded media worker, browser fetch priority), and local
+runtime diagnostics (procfs, nvidia-smi, worklet counters) surfaced
+through `/api/v1/system`. Separation job scheduling stays with M2.17
+(analysis class slot reserved).
+
+**Design decisions:**
+
+- Sizing policy computed once per group in the transport
+  (`SOURCE_BUFFER_SECONDS = 24`, `SOURCE_BUFFER_BYTES = 32 MiB`,
+  group-min of the two); `capacityFrames` passed to the worklet in
+  `processorOptions`; `targetAhead = rate × speed × 8 s` clamped to
+  `capacity − margin` (2× headroom asserted).
+- Loop pinning: eligible iff `len × ΣbytesPerFrame ≤` the remaining
+  64 MiB; filled from ordinary loop fetches (transfer arrays adopted;
+  shared payload captured alongside the SAB write); passes and the
+  pre-roll served from the immutable pin once complete; released on
+  change/disable; never counted in the streaming budget.
+- Job priority classes: playback-preparation > import-critical >
+  background (waveform); FIFO within class; one bounded media job;
+  `media_worker_memory_limit_mb` (default 4096) → child `RLIMIT_AS`.
+- Diagnostics: procfs (host + API + worker), nvidia-smi (free + peak
+  sampled), job state, last separation elapsed (null until M2.17),
+  worklet `buffered` extension (`stems`, `capacityFrames`,
+  `lastCallbackMs`, `stretcher`); no telemetry, same-origin only.
+
+**Phase log:**
+
+- **Phase 1 — Plan + ledger:** done (2026-10-17). `m2.12-plan.md`
+  written; this section added.
+- **Phase 2 — Backend scheduler + limits + diagnostics:** done
+  (2026-10-17). `JobManager` now enqueues into a priority queue
+  (playback-preparation `MONITORING_DOWNMIX`/`PLAYBACK_RATE` >
+  import-critical `PROBE`/`CANONICAL_DECODE` > background `WAVEFORM`;
+  FIFO within a class via a monotonic sequence) and exposes
+  `queue_depth`/`worker_pid`. New `media_worker_memory_limit_mb`
+  config (default 4096, min 256) flows through `media_worker_command`
+  to a best-effort `RLIMIT_AS` in the child
+  (`media_worker.apply_memory_limit`). New
+  `runtime_diagnostics.py` (procfs RSS/CPU for API and worker,
+  `nvidia-smi` free/peak via a sampler that runs only while a job is
+  active, job state/queue depth, `SeparationRepository.
+  latest_run_elapsed_seconds`) is wired in the lifespan and surfaced
+  as an optional `runtime` object on `GET /api/v1/system`. Tests:
+  priority ordering, config validation, memory-limit application,
+  proc parsing, GPU tracker, collector shape, `/system` runtime
+  block, repository elapsed query; contract + frontend schema
+  regenerated.
+- **Phase 3 — Transport sizing + worklet contract:** done (2026-10-17).
+  New `sourceBufferCapacityFrames` policy in `transport.ts`
+  (`SOURCE_BUFFER_SECONDS = 24`, `SOURCE_BUFFER_BYTES = 32 MiB`,
+  per-source min of duration/byte caps, group minimum), passed to the
+  worklet as `processorOptions.capacityFrames` and used for the shared
+  SAB sizes; `runFill`'s speed-scaled `targetAhead` clamps to
+  `capacity − margin`, and the gate/start thresholds clamp to fractions
+  of a byte-capped ring so flow control cannot deadlock. The worklet
+  accepts `capacityFrames` (12 s fallback for the legacy init shape),
+  keeps the SAB capacity authoritative on the shared path, measures the
+  render-callback duration (`lastProcessMs`), and reports `stems`,
+  `capacityFrames`, `callbackMs`, and `stretcher` on `buffered`.
+  `TransportDiagnostics` gained `capacityFrames`, `bufferedBytes`,
+  `budgetBytes`, `stemBufferedFrames`, `callbackDurationMs`,
+  `stretcher` (plus `pinnedBytes`, filled in Phase 4), and
+  `initialTransportDiagnostics()` is shared with `App.tsx`. Tests: new
+  `buffer-sizing.test.ts` (caps matrix), transport sizing/2× headroom/
+  report tests, worklet capacity + callback tests; the 12 s-pinned
+  transport tests moved to the new numbers.
+- **Phase 4 — Loop pinning:** done (2026-10-17). New
+  `loop-pin.ts` (`LoopPin`, `PINNED_BYTES_MAX = 64 MiB`): per-source
+  channel arrays for the loop range, coverage bitset, partial-pass
+  retention with duplicate/outside clipping, `ready`, `copyChannels`
+  (transfer clones), `writeShared` (wrap-aware SAB write via a reused
+  scratch, 0 when full). The transport installs one pin per effective
+  loop when `len × ΣbytesPerFrame ≤ PINNED_BYTES_MAX` (group-wide
+  first-come; `syncPin` on set/clear/disable/seek-outside/load/rebind/
+  dispose), captures loop-interior frames during ordinary fetches
+  (transfer arrays copied before relay; shared path asks the worker for
+  the payload via `retain`), and serves the fill round from the pin
+  once ready — including the periodic pre-roll (the mapped fetch cursor
+  lands inside the pinned range). `pinnedBytes` is reported and
+  preserved across seeks. Tests: `loop-pin.test.ts` (retention,
+  clipping, multi-source readiness, byte accounting, serve/ring
+  contract), transport tests (first pass fetched, later passes/pre-roll
+  served without fetches, release + refill on disable, boundary edit
+  replaces the pin, > 64 MiB streaming fallback, shared-path
+  retention); the M2.11 pass-end cycling test now asserts pin-served
+  stream order.
+- **Phase 5 — Group readiness + fetch priority:** done (2026-10-17).
+  `fetchPcmRange` takes a `priority` argument (default `'high'` for
+  playback chunks); `fetchAssetBytes` and the waveform tile/PCM fetches
+  pass `'low'`. Tests pin the hints (no-op without browser support).
+  Group readiness: new transport tests prove a leg superseded by a seek
+  aborts the entire round (the refill restarts at the seek pre-roll for
+  both legs; the stale chunk never reaches the worklet) and that a
+  permanent single-stem failure stops the group (error state, no
+  further relayed chunks for the healthy stem); a new worklet test pins
+  the group gate for a muted but unsynchronized stem (muted stems are
+  consumed and aligned, not exempt). Per-stem `stems` reporting was
+  wired in Phase 3 and is asserted from the transport side.
+- **Phase 6 — Diagnostics UI:** done (2026-10-17). New
+  `frontend/src/system/useSystemRuntime.ts` polls `GET /api/v1/system`
+  every 2 s while the playback panel is mounted (project open), keeps
+  the last good values on failure, and clears the interval on
+  unmount/disable. The panel's `.underrun-diagnostics` line becomes an
+  expanded `.runtime-diagnostics` block (aria-label "Runtime
+  diagnostics"): underruns, per-stem buffered frames, buffer/pin bytes
+  in MiB, worklet callback duration, stretcher rate/bypass, and the
+  runtime rows (media-worker RSS/CPU, GPU peak, current job phase with
+  progress and queue depth, last separation seconds). Tests: hook
+  lifecycle (`use-system-runtime.test.tsx`) and panel rendering
+  (`playback-panel.test.tsx`).
+- **Phase 7 — Evidence + gate + commit:** done (2026-10-17). Evidence:
+  `docs/evidence/m2.12-buffering.md` (git-ignored local artifact; the
+  long-form record). Gates: backend **1180/1180** pytest passed (2
+  pre-existing environment warnings), `ruff check` clean, `mypy src/`
+  clean (64 files), `check_contract.py` in sync; frontend **530/530**
+  Vitest (31 files; +32 over the pre-M2.12 495 plus 3 worklet-bridge
+  tests), `tsc -b` at the unchanged 32-error pre-existing baseline,
+  `prettier --check .` clean. Local acceptance run in a real browser
+  (production bundle served by the CLI, Playwright/Chromium, fresh
+  storage under `/tmp/opencode/m2.12-run/`): a 6:00 stereo project
+  imported and decoded through the HTTP API played to its natural end
+  with **zero underruns** while the media worker ran one
+  `playback_rate` job, four single `waveform` jobs, and a batch of
+  eight queued `waveform` jobs (9.23 s of worker time); the runtime
+  diagnostics block reported the live job phase/progress/queue depth
+  (`Job: waveform (building_waveform) 3%, 10 queued`) at a steady
+  `Buffer: 2.5 MiB / 8.8 MiB`, `Callback: 0.0 ms`, `Stretcher: 1.00×
+  (bypass)`, with `crossOriginIsolated === true` (the shared-ring
+  path). The run could not start playback at all until five
+  pre-existing browser-path defects were fixed: (1) no real-context
+  `AudioContext` bridge for the transport's `createWorkletNode` seam
+  (M1.12 era), (2) the CSP blocked the worklet Blob module and
+  WebAssembly compilation (`script-src` now allows `blob:` and
+  `'wasm-unsafe-eval'`), (3) SharedArrayBuffers were listed in
+  transfer lists (the worklet options and the fetch worker's
+  `shared-init`) — browsers throw on that; SABs now serialize by
+  sharing, only the WASM artifact is transferred, (4) the worklet
+  adapter implemented a non-standard `process(time, input, output)`
+  signature instead of the real `(inputs, outputs, parameters)`
+  contract (block time from the global `currentTime`; the node is now
+  created with `numberOfInputs: 0, numberOfOutputs: 1,
+  outputChannelCount: [2]`; the core consumes `outputs[0]`; the tests
+  were updated to drive the real contract), and (5) the fetch worker
+  had no session token (dedicated workers cannot read
+  `sessionStorage`; the token is now injected with `{kind: 'auth'}`
+  before any fetch job). Caveats in the evidence: the pre-existing UI
+  uploader chunk-hash mismatch and the missing UI `canonical_decode`
+  caller meant the acceptance imports were seeded through the HTTP
+  API, exactly as the backend tests do; the separation half of the
+  acceptance stays deferred with M2.17. Commit `M2.12: extended
+  buffering and resource limits (spec §14)`; its hash is recorded in
+  the ledger-hash follow-up.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

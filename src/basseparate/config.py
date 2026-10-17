@@ -32,6 +32,10 @@ DEFAULT_MAX_IMPORT_BYTES = 20 * 1024**3  # 20 GiB
 #: model storage is counted separately and never against this limit.
 DEFAULT_CACHE_LIMIT_BYTES = 50 * 1024**3  # 50 GiB
 MIN_CACHE_LIMIT_BYTES = 1024**3  # 1 GiB
+#: Address-space guard for the media worker subprocess (M2.12, spec
+#: §14.3: the media job is bounded, subject to memory limits).
+DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB = 4096
+MIN_MEDIA_WORKER_MEMORY_LIMIT_MB = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,7 @@ class AppConfig:
     import_chunk_bytes: int
     max_import_bytes: int
     cache_limit_bytes: int
+    media_worker_memory_limit_mb: int
     storage_root: Path | None
     config_file: Path
 
@@ -66,6 +71,7 @@ class AppConfig:
             f"import_chunk_bytes={self.import_chunk_bytes} "
             f"max_import_bytes={self.max_import_bytes} "
             f"cache_limit_bytes={self.cache_limit_bytes} "
+            f"media_worker_memory_limit_mb={self.media_worker_memory_limit_mb} "
             f"storage_root={self.storage_root}"
         )
 
@@ -98,6 +104,9 @@ _FIELDS: tuple[_FieldSpec, ...] = (
     _FieldSpec("import_chunk_bytes", int, DEFAULT_IMPORT_CHUNK_BYTES),
     _FieldSpec("max_import_bytes", int, DEFAULT_MAX_IMPORT_BYTES),
     _FieldSpec("cache_limit_bytes", int, DEFAULT_CACHE_LIMIT_BYTES),
+    _FieldSpec(
+        "media_worker_memory_limit_mb", int, DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB
+    ),
 )
 
 
@@ -193,6 +202,14 @@ def _validate(values: dict[str, object]) -> None:
         raise ConfigError(
             f"cache_limit_bytes must be at least 1 GiB ({MIN_CACHE_LIMIT_BYTES}), "
             f"got {cache_limit}"
+        )
+
+    worker_memory = values["media_worker_memory_limit_mb"]
+    assert isinstance(worker_memory, int)
+    if worker_memory < MIN_MEDIA_WORKER_MEMORY_LIMIT_MB:
+        raise ConfigError(
+            f"media_worker_memory_limit_mb must be at least "
+            f"{MIN_MEDIA_WORKER_MEMORY_LIMIT_MB}, got {worker_memory}"
         )
 
     root = values["storage_root"]

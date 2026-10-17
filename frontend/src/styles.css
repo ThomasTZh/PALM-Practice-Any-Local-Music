@@ -563,8 +563,13 @@ button:hover:not(:disabled) {
   color: var(--warning, #b8860b);
 }
 
-.underrun-diagnostics {
+.runtime-diagnostics {
   font-size: 0.8rem;
+}
+
+.runtime-diagnostics ul {
+  margin: 0.25rem 0;
+  padding-left: 1rem;
 }
 
 .playback-error {

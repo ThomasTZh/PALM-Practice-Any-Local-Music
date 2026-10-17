@@ -120,20 +120,18 @@ describe('getPeakTile', () => {
 
   it('returns the tile bytes and header values', async () => {
     const bytes = new ArrayBuffer(16)
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(bytes, {
-          status: 200,
-          headers: {
-            'X-Level': '1',
-            'X-Tile': '3',
-            'X-Bucket-Frames': '256',
-            'X-Tile-Buckets': '4096',
-          },
-        }),
-      ),
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(bytes, {
+        status: 200,
+        headers: {
+          'X-Level': '1',
+          'X-Tile': '3',
+          'X-Bucket-Frames': '256',
+          'X-Tile-Buckets': '4096',
+        },
+      }),
     )
+    vi.stubGlobal('fetch', fetchMock)
     const tile = await getPeakTile(ASSET_ID, 1, 3)
     expect(tile.bytes.byteLength).toBe(bytes.byteLength)
     expect(new Uint8Array(tile.bytes)).toStrictEqual(new Uint8Array(bytes))
@@ -141,6 +139,8 @@ describe('getPeakTile', () => {
     expect(tile.tile).toBe(3)
     expect(tile.bucketFrameCount).toBe(256)
     expect(tile.tileBuckets).toBe(4096)
+    // M2.12 §14.3: waveform tiles are background work.
+    expect((fetchMock.mock.calls[0][1] as RequestInit).priority).toBe('low')
   })
 
   it('maps 404 TILE_NOT_READY to TileNotReadyError', async () => {
@@ -174,23 +174,21 @@ describe('getAssetPcm', () => {
 
   it('returns the PCM bytes and header values', async () => {
     const bytes = new ArrayBuffer(32)
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(bytes, {
-          status: 200,
-          headers: {
-            'X-Asset-Id': ASSET_ID,
-            'X-Content-Hash': 'abc',
-            'X-Sample-Rate': '48000',
-            'X-Channel-Count': '2',
-            'X-Start-Frame': '100',
-            'X-Frame-Count': '4',
-            'X-EOF': 'false',
-          },
-        }),
-      ),
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(bytes, {
+        status: 200,
+        headers: {
+          'X-Asset-Id': ASSET_ID,
+          'X-Content-Hash': 'abc',
+          'X-Sample-Rate': '48000',
+          'X-Channel-Count': '2',
+          'X-Start-Frame': '100',
+          'X-Frame-Count': '4',
+          'X-EOF': 'false',
+        },
+      }),
     )
+    vi.stubGlobal('fetch', fetchMock)
     const pcm = await getAssetPcm(ASSET_ID, 100, 4)
     expect(pcm.bytes.byteLength).toBe(bytes.byteLength)
     expect(new Uint8Array(pcm.bytes)).toStrictEqual(new Uint8Array(bytes))
@@ -200,6 +198,8 @@ describe('getAssetPcm', () => {
     expect(pcm.sampleRate).toBe(48000)
     expect(pcm.channelCount).toBe(2)
     expect(pcm.contentHash).toBe('abc')
+    // M2.12 §14.3: waveform PCM windows are background work.
+    expect((fetchMock.mock.calls[0][1] as RequestInit).priority).toBe('low')
   })
 
   it('parses X-EOF true', async () => {

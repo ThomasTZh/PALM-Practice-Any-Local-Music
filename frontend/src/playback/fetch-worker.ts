@@ -26,6 +26,7 @@ import {
   acknowledgeSharedFlush,
   deinterleaveChannels,
   fetchPcmRange,
+  setFetchToken,
   viewSharedRing,
   writeSharedRing,
   type SharedRing,
@@ -42,7 +43,10 @@ type Job =
       end: number
       generation: number
       channelCount: number
+      /** M2.12 §14.1.4: return the payload with the shared write. */
+      retain?: boolean
     }
+  | { kind: 'auth'; token: string }
   | { kind: 'shared-init'; sabs: SharedArrayBuffer[]; channelCounts: number[] }
   | { kind: 'generation'; generation: number }
   | { kind: 'flush-ack'; generation: number; baseFrame: number }
@@ -70,6 +74,12 @@ function post(msg: Record<string, unknown>, transfers?: Transferable[]): void {
 
 async function handle(job: Job): Promise<void> {
   try {
+    if (job.kind === 'auth') {
+      // The worker cannot read sessionStorage; the main thread sends the
+      // bearer token before any fetch job.
+      setFetchToken(job.token)
+      return
+    }
     if (job.kind === 'shared-init') {
       // View the transferred SABs; never allocate a second one.
       rings = job.sabs.map((sab, i) => viewSharedRing(sab, job.channelCounts[i]))
@@ -116,7 +126,17 @@ async function handle(job: Job): Promise<void> {
       // normal flow control (the transport parks and retries), not an
       // error.
       const frames = writeSharedRing(ring, bytes)
-      post({ id: job.id, kind: 'shared-chunk', ok: true, startFrame, frames })
+      if (job.retain) {
+        // M2.12 §14.1.4: the pinned loop captures the payload alongside
+        // the SAB write; only the shared path needs this copy.
+        const channels = deinterleaveChannels(bytes, job.channelCount)
+        post(
+          { id: job.id, kind: 'shared-chunk', ok: true, startFrame, frames, channels },
+          channels.map((c) => c.buffer as ArrayBuffer),
+        )
+      } else {
+        post({ id: job.id, kind: 'shared-chunk', ok: true, startFrame, frames })
+      }
     } else {
       const channels = deinterleaveChannels(bytes, job.channelCount)
       post(

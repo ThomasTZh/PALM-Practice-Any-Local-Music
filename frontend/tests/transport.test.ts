@@ -14,6 +14,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  createTransportWorkletNode,
   PcmTransport,
   type CompressorNodeLike,
   type GainNodeLike,
@@ -135,8 +136,21 @@ class FakeFetchWorker implements WorkerLike {
     const ring = this.rings[msg.source as number]
     if (ring) {
       const written = writeSharedRing(ring, new ArrayBuffer(frames * bytesPerFrame))
+      // M2.12 §14.1.4: the pinned loop asks for the payload alongside
+      // the SAB write.
+      const payload =
+        msg.retain === true
+          ? Array.from({ length: channelCount }, () => new Float32Array(frames))
+          : undefined
       this.onmessage?.({
-        data: { id: msg.id, kind: 'shared-chunk', ok: true, startFrame, frames: written },
+        data: {
+          id: msg.id,
+          kind: 'shared-chunk',
+          ok: true,
+          startFrame,
+          frames: written,
+          ...(payload ? { channels: payload } : {}),
+        },
       })
     } else {
       const channels = Array.from({ length: channelCount }, () => new Float32Array(frames))
@@ -325,6 +339,57 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('real-context worklet bridge', () => {
+  class StubAudioWorkletNode {
+    port = { onmessage: null as ((e: unknown) => void) | null, postMessage: vi.fn() }
+    connect = vi.fn()
+    disconnect = vi.fn()
+    constructor(
+      readonly context: unknown,
+      readonly name: string,
+      readonly options: Record<string, unknown> | undefined,
+    ) {
+      created.push(this)
+    }
+  }
+  const created: StubAudioWorkletNode[] = []
+
+  it('constructs the node through the global AudioWorkletNode when the context has no factory', async () => {
+    created.length = 0
+    const rig = makeRig()
+    delete (rig.context as { createWorkletNode?: unknown }).createWorkletNode
+    vi.stubGlobal('AudioWorkletNode', StubAudioWorkletNode)
+    await load(rig)
+    await rig.transport.play()
+    await settle()
+
+    expect(created).toHaveLength(1)
+    const node = created[0]
+    expect(node.context).toBe(rig.context)
+    expect(node.name).toBe('basseparate-pcm')
+    expect(node.options?.processorOptions).toEqual(
+      expect.objectContaining({ sampleRate: RATE, frameCount: FRAMES }),
+    )
+    // The bridge hands the real node to the transport: the fill posts to it.
+    expect(node.port.postMessage).toHaveBeenCalled()
+  })
+
+  it('errors clearly when neither the context factory nor the global exists', () => {
+    const rig = makeRig()
+    delete (rig.context as { createWorkletNode?: unknown }).createWorkletNode
+    expect(() => createTransportWorkletNode(rig.context, 'basseparate-pcm', {})).toThrow(
+      'AudioWorkletNode is not available in this environment',
+    )
+  })
+
+  it('prefers the context factory when the fake provides one', () => {
+    const rig = makeRig()
+    const node = createTransportWorkletNode(rig.context, 'basseparate-pcm', { x: 1 })
+    expect(node).toBe(rig.node)
+    expect(rig.context.createWorkletNode).toHaveBeenCalledWith('basseparate-pcm', { x: 1 })
+  })
+})
+
 describe('PcmTransport play', () => {
   it('initializes the graph, prefills, and reaches playing on buffered data', async () => {
     const rig = makeRig()
@@ -341,6 +406,8 @@ describe('PcmTransport play', () => {
         processorOptions: {
           sampleRate: RATE,
           frameCount: FRAMES,
+          // M2.12 §14.1: the group ring capacity (24 s at 48 kHz).
+          capacityFrames: 1_152_000,
           sources: [{ channelCount: 2 }],
           // M2.9: the stretch artifact, transferred to the worklet.
           stretch: { wasmBytes: expect.any(ArrayBuffer) },
@@ -537,7 +604,9 @@ describe('mode selection', () => {
     expect(sabs).toHaveLength(1)
     expect(sabs[0]).toBeInstanceOf(SharedArrayBuffer)
     // M2.9: the stretch artifact is always transferred (after the SABs).
-    expect(options.transfer).toEqual([sabs[0], expect.any(ArrayBuffer)])
+    // Browsers reject SharedArrayBuffers in a transfer list, so only the
+    // WASM artifact is transferred; the rings serialize by sharing.
+    expect(options.transfer).toEqual([expect.any(ArrayBuffer)])
     expect(worker.messages.some((m) => m.kind === 'shared-init')).toBe(true)
   })
 
@@ -611,7 +680,7 @@ describe('transfer path flow control', () => {
     expect(worker.fetchJobs).toHaveLength(8)
 
     // Consumption frees space and the queued count is below
-    // budget − margin (11 s): the worker gets new work.
+    // budget − margin (23 s): the worker gets new work.
     rig.context.currentTime = 4
     rig.node.post({ type: 'anchor', frame: 4 * RATE, time: 4, generation: 0 })
     rig.node.post({ type: 'buffered', frames: 480_000, queuedFrames: 480_000, generation: 0 })
@@ -627,16 +696,16 @@ describe('transfer path flow control', () => {
     await settle()
     expect(worker.fetchJobs).toHaveLength(8)
 
-    // At the full 12 s budget: the gate blocks the next chunk.
-    rig.node.post({ type: 'buffered', frames: 576_000, queuedFrames: 576_000, generation: 0 })
+    // At the full 24 s budget: the gate blocks the next chunk.
+    rig.node.post({ type: 'buffered', frames: 1_152_000, queuedFrames: 1_152_000, generation: 0 })
     rig.context.currentTime = 4
     rig.node.post({ type: 'anchor', frame: 4 * RATE, time: 4, generation: 0 })
     rig.tick()
     await settle()
     expect(worker.fetchJobs).toHaveLength(8)
 
-    // Below budget − margin (11 s): the next chunk goes.
-    rig.node.post({ type: 'buffered', frames: 500_000, queuedFrames: 500_000, generation: 0 })
+    // Below budget − margin: the next chunk goes.
+    rig.node.post({ type: 'buffered', frames: 1_000_000, queuedFrames: 1_000_000, generation: 0 })
     rig.tick()
     await settle()
     expect(worker.fetchJobs.length).toBeGreaterThan(8)
@@ -917,6 +986,96 @@ describe('multi-source mix (M2.8, spec §10.5)', () => {
     // No limiter: no added latency.
     rig.context.currentTime = 0.25
     expect(rig.transport.getAudiblePosition()).toBe(0.25 * RATE)
+  })
+
+  const LONG_MIX_SOURCES = [
+    { assetId: 'vocals', sampleRate: RATE, channelCount: 2, frameCount: LONG_FRAMES },
+    { assetId: 'drums', sampleRate: RATE, channelCount: 1, frameCount: LONG_FRAMES },
+  ]
+
+  it('aborts the whole round when one leg is superseded by a seek (§14.2.4)', async () => {
+    const calls: Array<{ assetId: string; start: number }> = []
+    let releaseDrums: (() => void) | null = null
+    const rig = makeRig({
+      frameCount: LONG_FRAMES,
+      fetchChunk: (assetId, start, end) => {
+        calls.push({ assetId, start })
+        if (assetId === 'drums' && releaseDrums === null) {
+          // Hold the first drums leg in flight across the seek.
+          return new Promise((resolve) => {
+            releaseDrums = () => resolve(new ArrayBuffer(end - start + 1))
+          })
+        }
+        return Promise.resolve(new ArrayBuffer(end - start + 1))
+      },
+    })
+    await rig.transport.loadSource({
+      sources: LONG_MIX_SOURCES,
+      projectRate: RATE,
+      projectDurationFrames: LONG_FRAMES,
+    })
+    await rig.transport.play()
+    await settle()
+    // Round 1: vocals delivered, drums still in flight (partial round).
+    expect(rig.node.posted('channels').map((m) => m.source)).toEqual([0])
+
+    rig.transport.seek(24_000)
+    releaseDrums!()
+    await settle()
+    rig.tick()
+    await settle()
+
+    // The stale drums leg never reached the worklet…
+    const posts = rig.node.posted('channels')
+    expect(posts.filter((m) => m.generation === 0).map((m) => m.source)).toEqual([0])
+    // …and the refill restarted the group at the seek pre-roll for BOTH
+    // legs: the aborted round advanced no cursor (the first refill round
+    // starts at the pre-roll; later rounds continue the 8 s window).
+    const refill = calls.slice(2, 4)
+    expect(refill.map((c) => c.assetId)).toEqual(['vocals', 'drums'])
+    expect(refill.map((c) => c.start)).toEqual([11_712 * 8, 11_712 * 4])
+    expect(
+      posts
+        .filter((m) => m.generation === 1)
+        .slice(0, 2)
+        .map((m) => m.source),
+    ).toEqual([0, 1])
+  })
+
+  it('a permanent single-stem failure stops the group (§14.2.5)', async () => {
+    let failDrums = false
+    const rig = makeRig({
+      frameCount: LONG_FRAMES,
+      fetchChunk: (assetId, start, end) => {
+        if (assetId === 'drums' && failDrums) {
+          return Promise.reject(new Error('drums unreadable'))
+        }
+        return Promise.resolve(new ArrayBuffer(end - start + 1))
+      },
+    })
+    await rig.transport.loadSource({
+      sources: LONG_MIX_SOURCES,
+      projectRate: RATE,
+      projectDurationFrames: LONG_FRAMES,
+    })
+    await rig.transport.play()
+    await settle()
+    expect(rig.node.posted('channels')).toHaveLength(16)
+
+    failDrums = true
+    // Advance the consumption estimate so the fill loop fetches again.
+    rig.node.post({ type: 'anchor', frame: 20_000, time: 1, generation: 0 })
+    rig.context.currentTime = 1
+    rig.tick()
+    await settle()
+
+    expect(rig.transport.currentState).toBe('error')
+    expect(rig.transport.currentError).toBe('drums unreadable')
+    // The healthy stem froze with the group: no further relayed chunks.
+    const posts = rig.node.posted('channels').length
+    rig.tick()
+    await settle()
+    expect(rig.node.posted('channels')).toHaveLength(posts)
   })
 })
 
@@ -1530,10 +1689,15 @@ describe('M2.11 practice loops (spec §13)', () => {
     expect(rig.node.posted('seek')).toEqual([
       { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: wireLoop(0, 100_000) },
     ])
-    // 1 s chunks cycle: 48 000, 48 000, then the pass-end remainder
-    // 4 000 (clamped — no byte range crosses a wrap), then the start.
+    // 1 s chunks cycle at the pass end; the remainder is clamped so no
+    // byte range crosses a wrap. M2.12 §14.1.4: the first pass is
+    // fetched, later passes are served from the pin, so the network
+    // sequence stops after the first pass while the channel posts keep
+    // cycling in stream order.
     const starts = worker.fetchJobs.map((job) => job.start / BYTES_PER_FRAME)
-    expect(starts.slice(0, 8)).toEqual([0, 48_000, 96_000, 0, 48_000, 96_000, 0, 48_000])
+    expect(starts).toEqual([0, 48_000, 96_000])
+    const posts = rig.node.posted('channels').map((m) => m.startFrame)
+    expect(posts.slice(0, 8)).toEqual([0, 48_000, 96_000, 0, 48_000, 96_000, 0, 48_000])
     const passEnd = worker.fetchJobs[2]
     expect((passEnd.end - passEnd.start + 1) / BYTES_PER_FRAME).toBe(4_000)
   })
@@ -1579,5 +1743,174 @@ describe('M2.11 practice loops (spec §13)', () => {
       generation: 2,
       loop: wireLoop(10_000, 20_000),
     })
+  })
+})
+
+describe('M2.12 buffer sizing (§14.1)', () => {
+  it('sizes the group ring from the duration and byte caps', async () => {
+    const rig = makeRig()
+    await load(rig)
+    await rig.transport.play()
+    const diagnostics = rig.transport.diagnostics
+    expect(diagnostics.capacityFrames).toBe(1_152_000)
+    expect(diagnostics.budgetBytes).toBe(1_152_000 * 2 * 4)
+  })
+
+  it('lets the speed-scaled lookahead exceed the old 12 s flat cap', async () => {
+    const { rig, worker } = makeLongRig()
+    await load(rig)
+    rig.transport.setRate(2)
+    await rig.transport.play()
+    await settle()
+    // 8 s × 2 = 16 s of source: more than M1's flat 12 s retention cap.
+    expect(worker.fetchJobs).toHaveLength(16)
+  })
+
+  it('reports per-stem buffered frames and worklet diagnostics', async () => {
+    const rig = makeRig()
+    await load(rig)
+    await rig.transport.play()
+    rig.node.post({
+      type: 'buffered',
+      frames: 1000,
+      queuedFrames: 1000,
+      stems: [1000],
+      capacityFrames: 1_152_000,
+      callbackMs: 0.4,
+      stretcher: { rate: 1, bypass: true, warmup: 0 },
+      generation: 0,
+    })
+    const diagnostics = rig.transport.diagnostics
+    expect(diagnostics.stemBufferedFrames).toEqual([1000])
+    expect(diagnostics.bufferedBytes).toBe(1000 * 2 * 4)
+    expect(diagnostics.callbackDurationMs).toBe(0.4)
+    expect(diagnostics.stretcher).toEqual({ rate: 1, bypass: true, warmup: 0 })
+    expect(diagnostics.capacityFrames).toBe(1_152_000)
+  })
+})
+
+describe('M2.12 pinned loops (§14.1.4)', () => {
+  const loopSpec = (startFrame: number, endFrame: number): TransportLoopSpec => ({
+    startFrame,
+    endFrame,
+    repeatCount: null,
+    boundaryFade: true,
+  })
+
+  it('fills the pin on the first pass and serves later passes without fetches', async () => {
+    const { rig, worker } = makeLongRig()
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    rig.transport.setLoopEnabled(true)
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(100_000 * 2 * 4)
+    await rig.transport.play()
+    await settle()
+    // The first pass covers the loop in three network chunks (0, 48 000,
+    // 96 000→100 000); the remaining passes in the 8 s fill window are
+    // served from the pin.
+    expect(worker.fetchJobs.map((job) => job.start / BYTES_PER_FRAME)).toEqual([0, 48_000, 96_000])
+    const posted = rig.node.posted('channels')
+    expect(posted).toHaveLength(11)
+    expect(posted[3]).toMatchObject({ source: 0, startFrame: 0, frames: 48_000 })
+    expect(posted[5]).toMatchObject({ source: 0, startFrame: 96_000, frames: 4_000 })
+  })
+
+  it('serves the periodic pre-roll from the pin after a seek', async () => {
+    const { rig, worker } = makeLongRig()
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    rig.transport.setLoopEnabled(true)
+    await rig.transport.play()
+    await settle()
+    const fetches = worker.fetchJobs.length
+    expect(fetches).toBe(3)
+    // A seek inside the loop: the pre-roll (50 000 − 12 288) is already
+    // pinned, so no new network job is issued.
+    rig.transport.seek(50_000)
+    await settle()
+    expect(worker.fetchJobs).toHaveLength(fetches)
+    expect(rig.node.posted('channels').some((m) => m.startFrame === 37_712)).toBe(true)
+  })
+
+  it('releases the pin on disable; re-enabling refills from the network', async () => {
+    const { rig, worker } = makeLongRig()
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    rig.transport.setLoopEnabled(true)
+    await rig.transport.play()
+    await settle()
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(100_000 * 2 * 4)
+
+    rig.transport.setLoopEnabled(false)
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(0)
+    // Enabling again reserves a fresh (empty) pin: the first seek inside
+    // the range has to fetch from the network.
+    rig.transport.setLoopEnabled(true)
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(100_000 * 2 * 4)
+    const before = worker.fetchJobs.length
+    rig.transport.seek(20_000)
+    await settle()
+    expect(worker.fetchJobs.length).toBeGreaterThan(before)
+  })
+
+  it('a boundary edit replaces the pin and restarts the fill', async () => {
+    const { rig, worker } = makeLongRig()
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    rig.transport.setLoopEnabled(true)
+    await rig.transport.play()
+    await settle()
+    expect(worker.fetchJobs).toHaveLength(3)
+
+    rig.transport.setLoop(loopSpec(10_000, 60_000))
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(50_000 * 2 * 4)
+    await settle()
+    // The new range has to be fetched at least once.
+    expect(worker.fetchJobs.length).toBeGreaterThan(3)
+  })
+
+  it('streams when the loop exceeds the 64 MiB pin budget', async () => {
+    const bigFrames = 9_000_000 // 72 MB stereo > 64 MiB
+    const worker = new FakeFetchWorker()
+    const rig = makeRig({
+      frameCount: bigFrames,
+      mode: 'transfer',
+      workerFactory: () => worker,
+    })
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, bigFrames))
+    rig.transport.setLoopEnabled(true)
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(0)
+    await rig.transport.play()
+    await settle()
+    // Normal streaming fill (8 chunks of 1 s), no pin serve.
+    expect(worker.fetchJobs).toHaveLength(8)
+    const before = worker.fetchJobs.length
+    rig.transport.seek(1_000_000)
+    await settle()
+    expect(worker.fetchJobs.length).toBeGreaterThan(before)
+  })
+
+  it('serves the shared path from the pin into the SAB ring', async () => {
+    const worker = new FakeFetchWorker()
+    const rig = makeRig({
+      frameCount: LONG_FRAMES,
+      mode: 'shared',
+      workerFactory: () => worker,
+    })
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    rig.transport.setLoopEnabled(true)
+    const playing = rig.transport.play()
+    // Let the graph initialize, then acknowledge the flush (shared path).
+    await settle()
+    rig.node.post({ type: 'flushed', generation: 0 })
+    await playing
+    await settle()
+    expect(worker.fetchJobs).toHaveLength(3)
+    // The pin is ready and the SAB writes continue without fetch jobs.
+    expect(rig.transport.diagnostics.pinnedBytes).toBe(100_000 * 2 * 4)
+    const writes = worker.messages.filter((m) => m.kind === 'fetch' && m.retain === true)
+    expect(writes).toHaveLength(3)
   })
 })

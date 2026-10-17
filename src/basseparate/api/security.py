@@ -139,8 +139,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     def _add_security_headers(self, response: Response) -> None:
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; connect-src 'self'",
+            "default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
         )
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "no-referrer")

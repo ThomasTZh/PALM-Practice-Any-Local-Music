@@ -40,6 +40,12 @@ export interface PcmChunk {
 export interface PcmWriteResult {
   startFrame: number
   frames: number
+  /**
+   * M2.12 §14.1.4: deinterleaved payload of the written chunk, present
+   * only when the job asked to retain it (`retain: true`); the pinned
+   * loop captures these frames before they leave memory.
+   */
+  channels?: Float32Array[]
 }
 
 export interface FetchSource {
@@ -61,6 +67,7 @@ export interface FetchSource {
     start: number,
     end: number,
     generation: number,
+    retain?: boolean,
   ): Promise<PcmWriteResult>
   /** Transfer path: adopt a new generation; older in-flight work is dropped. */
   setGeneration(generation: number): void
@@ -106,7 +113,10 @@ export class WorkerFetchSource implements FetchSource {
   attachShared(sabs: SharedArrayBuffer[], channelCounts: number[]): Promise<void> {
     return new Promise((resolve, reject) => {
       this.readyAck = { resolve, reject }
-      this.worker.postMessage({ kind: 'shared-init', sabs, channelCounts }, sabs)
+      // `SharedArrayBuffer`s serialize by sharing and are not
+      // transferable: a browser throws "Shared memory objects must not
+      // be in the transfer list" when they are listed.
+      this.worker.postMessage({ kind: 'shared-init', sabs, channelCounts })
     })
   }
 
@@ -153,6 +163,7 @@ export class WorkerFetchSource implements FetchSource {
     start: number,
     end: number,
     generation: number,
+    retain?: boolean,
   ): Promise<PcmWriteResult> {
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
@@ -169,6 +180,7 @@ export class WorkerFetchSource implements FetchSource {
         end,
         generation,
         channelCount: this.channelCounts[source],
+        ...(retain ? { retain: true } : {}),
       })
     })
   }
@@ -204,7 +216,7 @@ export class WorkerFetchSource implements FetchSource {
     p.resolve({
       startFrame: m.startFrame as number,
       frames: m.frames as number,
-      ...(m.kind === 'chunk' ? { channels: m.channels as Float32Array[] } : {}),
+      ...(m.channels !== undefined ? { channels: m.channels as Float32Array[] } : {}),
     })
   }
 
@@ -286,13 +298,20 @@ export class DirectFetchSource implements FetchSource {
     start: number,
     end: number,
     generation: number,
+    retain?: boolean,
   ): Promise<PcmWriteResult> {
     if (generation !== this.gen) return Promise.reject(new StaleGenerationError())
     const channelCount = this.channelCounts[source]
     return this.fetcher(assetId, start, end).then((bytes) => {
       if (generation !== this.gen) throw new StaleGenerationError()
       const frames = this.rings[source] ? writeSharedRing(this.rings[source], bytes) : 0
-      return { startFrame: Math.floor(start / (4 * channelCount)), frames }
+      return {
+        startFrame: Math.floor(start / (4 * channelCount)),
+        frames,
+        // M2.12 §14.1.4: the pinned loop needs the payload on the shared
+        // path too; deinterleave only when asked.
+        ...(retain ? { channels: deinterleaveChannels(bytes, channelCount) } : {}),
+      }
     })
   }
 

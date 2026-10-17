@@ -330,7 +330,7 @@ describe('PcmProcessor adapter (worklet scope)', () => {
     }) => {
       port: { postMessage: (m: unknown) => void; onmessage: (e: { data: unknown }) => void }
       core: MixState
-      process(time: number, input: unknown, output: Float32Array[]): boolean
+      process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean
     }
     const p = new Ctor({
       processorOptions: {
@@ -351,7 +351,8 @@ describe('PcmProcessor adapter (worklet scope)', () => {
     for (let q = 0; q < 80; q++) {
       const o0 = new Float32Array(QUANTUM)
       const o1 = new Float32Array(QUANTUM)
-      p.process(q, null, [o0, o1])
+      ;(globalThis as { currentTime?: number }).currentTime = q
+      p.process([], [[o0, o1]])
       if (rms(o0) > 0.1) sawAudio = true
     }
     expect(sawAudio).toBe(true)

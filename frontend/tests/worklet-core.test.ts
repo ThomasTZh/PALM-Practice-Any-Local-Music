@@ -928,4 +928,81 @@ describe('MixState', () => {
     expect(go.res.consumed).toBe(100)
     expect(go.output[0][0]).toBeCloseTo(1, 5)
   })
+
+  it('does not exempt muted stems from the group gate (§14.2.2)', () => {
+    // Mixing keeps every stem consumed in lockstep; muting only zeroes
+    // the contribution, so a muted stem that is not synchronized still
+    // holds the group (alignment is a group property).
+    const mix = freshMix(48_000, [2, 2])
+    const ring0 = createSharedRing(16 + 2_000 * 2 * 4, 2)
+    const ring1 = createSharedRing(16 + 2_000 * 2 * 4, 2)
+    mix.attachShared(0, ring0.sab)
+    mix.attachShared(1, ring1.sab)
+    mix.seek(0, [1, 1])
+    acknowledgeSharedFlush(ring0, 1, 0)
+    acknowledgeSharedFlush(ring1, 1, 0)
+    mix.setSourceParams(1, { mute: true })
+    expect(
+      writeSharedRing(
+        ring0,
+        makeBuffer(1_000, () => 0.5, 2),
+      ),
+    ).toBe(1_000)
+    const blocked = mixBlock(mix, 0, 100)
+    expect(blocked.res.consumed).toBe(0)
+    expect(blocked.res.underrun).toBe(true)
+
+    // Once the muted stem is synchronized the group advances; its
+    // contribution stays silent.
+    expect(
+      writeSharedRing(
+        ring1,
+        makeBuffer(1_000, () => 0.9, 2),
+      ),
+    ).toBe(1_000)
+    const go = mixBlock(mix, 0.1, 100)
+    expect(go.res.consumed).toBe(100)
+    expect(go.output[0][0]).toBeCloseTo(0.5, 5)
+    expect(go.output[1][0]).toBeCloseTo(0.5, 5)
+    expect(mix.sources[1].position).toBe(100)
+  })
+})
+
+describe('M2.12 capacity and callback diagnostics', () => {
+  it('uses the injected capacityFrames instead of the 12 s default', () => {
+    const core = new ConsumptionState({
+      sampleRate: RATE,
+      channelCount: CH,
+      frameCount: 48_000,
+      capacityFrames: 1000,
+    })
+    expect(core.capacity).toBe(1000)
+  })
+
+  it('keeps the 12 s fallback for the legacy init shape', () => {
+    expect(freshCore().capacity).toBe(RATE * 12)
+  })
+
+  it('propagates capacityFrames to every source of the mixer', () => {
+    const core = new MixState({
+      sampleRate: RATE,
+      frameCount: 48_000,
+      capacityFrames: 777,
+      sources: [{ channelCount: 2 }, { channelCount: 1 }],
+    })
+    expect(core.capacity).toBe(777)
+    expect(core.sources.map((s) => s.capacity)).toEqual([777, 777])
+  })
+
+  it('reports the render-callback duration after process', () => {
+    const core = new MixState({
+      sampleRate: RATE,
+      frameCount: 48_000,
+      sources: [{ channelCount: 2 }],
+    })
+    const output = [new Float32Array(128), new Float32Array(128)]
+    core.process(0, output)
+    expect(typeof core.lastProcessMs).toBe('number')
+    expect(core.lastProcessMs).toBeGreaterThanOrEqual(0)
+  })
 })

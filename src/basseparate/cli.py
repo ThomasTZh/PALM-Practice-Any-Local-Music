@@ -56,6 +56,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="explicit storage root (all categories placed beneath it)",
     )
+    serve.add_argument(
+        "--media-worker-memory-limit-mb",
+        type=int,
+        default=None,
+        help="address-space limit for the media worker subprocess (default 4096)",
+    )
     return parser
 
 
@@ -121,6 +127,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
                 "port": args.port,
                 "storage_root": args.storage_root,
                 "open_browser": not args.no_browser,
+                "media_worker_memory_limit_mb": args.media_worker_memory_limit_mb,
             }
         )
     except ConfigError as exc:

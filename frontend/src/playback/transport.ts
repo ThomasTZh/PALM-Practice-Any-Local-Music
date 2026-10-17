@@ -5,11 +5,13 @@
  * worklet (`worklet-processor.js`) consumes bounded PCM on the audio
  * thread; this class owns everything on the main thread — the eight
  * transport states plus `desiredPlaying`, chunked prefetch (~1 s
- * network chunks, 2 s prebuffer, 8 s steady lookahead, 12 s
- * total-retention budget), seek generations, anchor-based position
- * extrapolation, underrun diagnostics, browser-suspend tracking, and
- * the monitoring gain/limiter stages that sit after the worklet
- * (canonical samples are never modified).
+ * network chunks, 2 s prebuffer, 8 s steady lookahead scaled by
+ * playback speed, and the M2.12 §14.1 group buffer budget: 24 s
+ * duration cap and 32 MiB byte cap per stem, minimised over the
+ * group), seek generations, anchor-based position extrapolation,
+ * local diagnostics, browser-suspend tracking, and the monitoring
+ * gain/limiter stages that sit after the worklet (canonical samples
+ * are never modified).
  *
  * Multi-source mixing (M2.8, spec §10.5): the transport binds N
  * `SourceSpec`s that all match the project rate and duration (hard
@@ -34,7 +36,9 @@
 
 import { clampToDuration, playbackPosition, projectPosition } from './pcm'
 import type { PlaybackTarget } from '../api/playback'
+import { getSessionToken } from '../auth'
 import { createSharedRing, type SharedRing } from './pcm-fetch'
+import { LoopPin, PINNED_BYTES_MAX } from './loop-pin'
 import {
   DirectFetchSource,
   StaleGenerationError,
@@ -110,6 +114,20 @@ export interface TransportDiagnostics {
    * heard at the next render quantum.
    */
   controlResponseLatencySeconds: number
+  /** M2.12 §14.4: group ring capacity in frames (source domain). */
+  capacityFrames: number
+  /** M2.12 §14.1: bytes buffered across the active group. */
+  bufferedBytes: number
+  /** M2.12 §14.1: ring capacity in bytes across the active group. */
+  budgetBytes: number
+  /** M2.12 §14.1.4: bytes pinned for loop playback across the group. */
+  pinnedBytes: number
+  /** M2.12 §14.2.1: buffered source frames per stem (worklet report). */
+  stemBufferedFrames: number[]
+  /** M2.12 §14.4: last worklet render-callback duration (ms). */
+  callbackDurationMs: number | null
+  /** M2.12 §14.4: stretcher state as reported by the worklet. */
+  stretcher: { rate: number; bypass: boolean; warmup: number } | null
 }
 
 /** Snapshot returned by `sync()` (spec §15.5). */
@@ -158,7 +176,13 @@ export interface TransportContextLike {
   onstatechange: ((event: { type: string }) => void) | null
   destination: unknown
   audioWorklet: { addModule(url: string): Promise<void> }
-  createWorkletNode(name: string, options?: Record<string, unknown>): WorkletNodeLike
+  /**
+   * Test seam: the context fakes provide a node factory. Real
+   * `AudioContext` objects do not have this method, so the transport
+   * bridges them through the global `AudioWorkletNode` constructor
+   * (`createTransportWorkletNode`).
+   */
+  createWorkletNode?(name: string, options?: Record<string, unknown>): WorkletNodeLike
   createGain(): GainNodeLike
   /** Absent in minimal test fakes; the limiter is then skipped. */
   createDynamicsCompressor?(): CompressorNodeLike
@@ -166,6 +190,34 @@ export interface TransportContextLike {
   close(): Promise<void>
   /** Output-device timestamp (spec §16.2); absent in test fakes. */
   getOutputTimestamp?(): { contextTime: number; performanceTime: number } | null
+}
+
+type WorkletNodeConstructor = new (
+  context: unknown,
+  name: string,
+  options?: Record<string, unknown>,
+) => WorkletNodeLike
+
+/**
+ * Create the transport's AudioWorklet node.
+ *
+ * Browsers do not expose a `createWorkletNode` factory on `AudioContext`
+ * (that method is a test seam for the context fakes), so a real context
+ * is bridged through the global `AudioWorkletNode` constructor.
+ */
+export function createTransportWorkletNode(
+  context: TransportContextLike,
+  name: string,
+  options: Record<string, unknown>,
+): WorkletNodeLike {
+  if (typeof context.createWorkletNode === 'function') {
+    return context.createWorkletNode(name, options)
+  }
+  const ctor = (globalThis as { AudioWorkletNode?: WorkletNodeConstructor }).AudioWorkletNode
+  if (ctor === undefined) {
+    throw new Error('AudioWorkletNode is not available in this environment')
+  }
+  return new ctor(context, name, options)
 }
 
 export interface TransportOptions {
@@ -266,15 +318,59 @@ function sameWorkletLoop(a: WorkletLoopSpec | null, b: WorkletLoopSpec | null): 
   )
 }
 
-/** §15.3 buffer budget: one 12 s retention cap per representation. */
-const RING_SECONDS = 12
+/**
+ * §14.1 (M2.12) buffer sizing, replacing M1's flat 12 s cap: how much
+ * source audio a stem may retain (duration cap), how many bytes the
+ * ring may occupy (byte cap), and the steady lookahead the scaled
+ * target is allowed to reach. The group gets one frame capacity — the
+ * tighter of the two caps, minimised over the active sources.
+ */
+const SOURCE_BUFFER_SECONDS = 24
+const SOURCE_BUFFER_BYTES = 32 * 1024 * 1024
+const BYTES_PER_SAMPLE = 4
 /** Initial prebuffer and post-underrun start threshold. */
 const PREBUFFER_SECONDS = 2
-/** Steady-state lookahead target. */
+/** Steady-state lookahead target (multiplied by playback speed). */
 const LOOKAHEAD_SECONDS = 8
 /** One network chunk. */
 const CHUNK_SECONDS = 1
 const FILL_CHECK_MS = 50
+
+/**
+ * §14.1 (M2.12) group ring capacity in frames: every stem of the active
+ * group gets the same capacity, the minimum over the sources of the
+ * tighter of the duration cap (24 s) and the byte cap (32 MiB). The
+ * transport passes the result to the worklet, which never sizes rings
+ * itself; the shared path derives it from the SAB (same value).
+ */
+export function sourceBufferCapacityFrames(
+  sources: ReadonlyArray<{ sampleRate: number; channelCount: number }>,
+): number {
+  let capacity = Number.POSITIVE_INFINITY
+  for (const source of sources) {
+    const byDuration = Math.ceil(source.sampleRate * SOURCE_BUFFER_SECONDS)
+    const byBytes = Math.floor(SOURCE_BUFFER_BYTES / (source.channelCount * BYTES_PER_SAMPLE))
+    capacity = Math.min(capacity, Math.max(1, Math.min(byDuration, byBytes)))
+  }
+  return Number.isFinite(capacity) ? capacity : 0
+}
+
+/** M2.12 §14.4: fresh diagnostics state (also the per-load baseline). */
+export function initialTransportDiagnostics(): TransportDiagnostics {
+  return {
+    underruns: 0,
+    lastUnderrunAt: null,
+    droppedChunks: 0,
+    controlResponseLatencySeconds: 0,
+    capacityFrames: 0,
+    bufferedBytes: 0,
+    budgetBytes: 0,
+    pinnedBytes: 0,
+    stemBufferedFrames: [],
+    callbackDurationMs: null,
+    stretcher: null,
+  }
+}
 const MAX_GAIN = 4
 const GAIN_RAMP_TIME_CONSTANT = 0.01
 /**
@@ -305,9 +401,14 @@ function defaultWorkerFactory(): WorkerLike | null {
   if (typeof Worker === 'undefined') return null
   // The DOM `Worker` matches the structural `WorkerLike` at runtime; the
   // `onmessage` signature differs only in the event type.
-  return new Worker(new URL('./fetch-worker.ts', import.meta.url), {
+  const worker = new Worker(new URL('./fetch-worker.ts', import.meta.url), {
     type: 'module',
   }) as unknown as WorkerLike
+  // Dedicated workers cannot read `sessionStorage`; hand the fetch token
+  // over before any fetch job (message order is preserved).
+  const token = getSessionToken()
+  if (token) worker.postMessage({ kind: 'auth', token })
+  return worker
 }
 
 function resolveMode(requested: TransportMode): 'shared' | 'transfer' {
@@ -439,6 +540,14 @@ export class PcmTransport {
   private hasData = false
   /** Worklet-reported buffered frames (ring + queue, or writer−reader). */
   private bufferedFrames = 0
+  /** M2.12 §14.1: group ring capacity in frames (M2 sizing policy). */
+  private bufferCapacity = 0
+  /**
+   * M2.12 §14.1.4: the pinned-loop cache of the enabled loop, or null
+   * while the loop streams (ineligible or no loop). Released on loop
+   * change/disable/dispose; keeps serving seeks inside the range.
+   */
+  private pin: LoopPin | null = null
   /** Flow control: the worker is paused while the budget is full. */
   private workerPaused = false
   /** The context is suspended (browser/tab suspension, spec §15.5). */
@@ -453,12 +562,7 @@ export class PcmTransport {
   private fillLoopRunning = false
   private disposed = false
   private lastError: string | null = null
-  private diagnosticsState: TransportDiagnostics = {
-    underruns: 0,
-    lastUnderrunAt: null,
-    droppedChunks: 0,
-    controlResponseLatencySeconds: 0,
-  }
+  private diagnosticsState: TransportDiagnostics = initialTransportDiagnostics()
 
   constructor(opts: TransportOptions) {
     this.opts = opts
@@ -714,19 +818,27 @@ export class PcmTransport {
     }
   }
 
-  /** §15.3 budget: the 12 s ring capacity in frames. */
+  /** §14.1 (M2.12) budget: the group ring capacity in frames. */
   private get budgetFrames(): number {
-    return this.primary ? Math.ceil(this.primary.sampleRate * RING_SECONDS) : 0
+    return this.bufferCapacity
   }
 
-  /** §15.3 gate margin: one 1 s chunk. */
+  /** §15.3 gate margin: one 1 s chunk, at most a quarter of the ring. */
   private get marginFrames(): number {
-    return this.primary ? Math.ceil(this.primary.sampleRate * CHUNK_SECONDS) : 0
+    if (!this.primary || this.bufferCapacity <= 0) return 0
+    return Math.min(
+      Math.ceil(this.primary.sampleRate * CHUNK_SECONDS),
+      Math.floor(this.bufferCapacity / 4),
+    )
   }
 
-  /** §15.4 post-underrun start threshold: 2 s. */
+  /** §15.4 post-underrun start threshold: 2 s, at most half the ring. */
   private get startThresholdFrames(): number {
-    return this.primary ? Math.ceil(this.primary.sampleRate * PREBUFFER_SECONDS) : 0
+    if (!this.primary || this.bufferCapacity <= 0) return 0
+    return Math.min(
+      Math.ceil(this.primary.sampleRate * PREBUFFER_SECONDS),
+      Math.floor(this.bufferCapacity / 2),
+    )
   }
 
   private isActiveState(s: TransportState): boolean {
@@ -776,6 +888,8 @@ export class PcmTransport {
     })
     this.projectRate = projectRate
     this.projectDurationFrames = projectDurationFrames
+    // A new source set has new channel counts: rebuild the pin (M2.12).
+    this.syncPin()
     // A pre-target park (M1.15 §17.6.4): first play starts from there.
     if (this.parkedProjectFrame > 0) {
       const primary = this.primary
@@ -810,6 +924,8 @@ export class PcmTransport {
     this.projectRate = projectRate
     this.projectDurationFrames = projectDurationFrames
     this.contextLost = false
+    // New source set (new channel counts): rebuild the pin (M2.12).
+    this.syncPin()
     this.lastError = null
     this.suspended = false
     this.generation = 0
@@ -827,12 +943,16 @@ export class PcmTransport {
     this.bufferedFrames = 0
     this.workerPaused = false
     this.lastFlushedGeneration = -1
-    this.diagnosticsState = {
-      underruns: 0,
-      lastUnderrunAt: null,
-      droppedChunks: 0,
-      controlResponseLatencySeconds: 0,
-    }
+    // Underrun/byte counters restart per load, but the ring capacity and
+    // the pin are fixed properties of the group graph (M2.12 §14.1):
+    // keep reporting them so diagnostics do not flicker between seeks.
+    this.diagnosticsState = initialTransportDiagnostics()
+    this.diagnosticsState.capacityFrames = this.bufferCapacity
+    this.diagnosticsState.budgetBytes = this.sources.reduce(
+      (bytes, s) => bytes + this.bufferCapacity * s.channelCount * BYTES_PER_SAMPLE,
+      0,
+    )
+    this.diagnosticsState.pinnedBytes = this.pin ? this.pin.bytes : 0
     this.setState('unloaded')
     this.reportPosition()
   }
@@ -1009,6 +1129,7 @@ export class PcmTransport {
     if (this.isLooping() && loop && (frame < loop.startFrame || frame >= loop.endFrame)) {
       this.loopEnabled = false
       this.loopStoppedSource = null
+      this.syncPin()
       this.opts.onLoopDisabled?.()
     }
     const wasPlaying = this.desiredPlaying
@@ -1051,6 +1172,7 @@ export class PcmTransport {
     const previous = this.loop
     const held = this.workletLoop
     this.loop = spec
+    this.syncPin()
     if (!this.isPlayingLive()) return
     if (!spec || !this.loopEnabled) {
       // No loop in effect any more: continue linearly from the current
@@ -1089,6 +1211,7 @@ export class PcmTransport {
     if (!enabled) {
       const safe = this.midStreamInstallSafe()
       this.loopEnabled = false
+      this.syncPin()
       // A completion stop position is a source frame — keep it so the
       // frozen playhead and the later linear restart stay put (§13.4.7);
       // the next flush clears it.
@@ -1106,6 +1229,7 @@ export class PcmTransport {
     if (!this.loop) return
     this.loopEnabled = true
     this.loopStoppedSource = null
+    this.syncPin()
     if (!this.isPlayingLive()) return
     const loop = this.loop
     if (currentSource < loop.startFrame || currentSource >= loop.endFrame) {
@@ -1120,6 +1244,42 @@ export class PcmTransport {
     } else {
       this.transitionTo(currentSource)
     }
+  }
+
+  /**
+   * M2.12 §14.1.4: (re)install the pinned-loop cache. A pin exists while
+   * an enabled loop fits the remaining group pin budget
+   * (`PINNED_BYTES_MAX`, one pin at a time across the group); a changed
+   * or disabled loop releases the old pin and streaming continues
+   * unchanged. Seeks inside the range keep the pin: every pass and every
+   * seek is served from the same immutable arrays.
+   */
+  private syncPin(): void {
+    const loop = this.loopEnabled ? this.loop : null
+    const current = this.pin
+    const matches =
+      current !== null &&
+      loop !== null &&
+      current.startFrame === loop.startFrame &&
+      current.endFrame === loop.endFrame
+    if (!matches) {
+      if (loop && loop.endFrame > loop.startFrame && this.sources.length > 0) {
+        const bytes =
+          (loop.endFrame - loop.startFrame) *
+          this.sources.reduce((sum, s) => sum + 4 * s.channelCount, 0)
+        this.pin =
+          bytes <= PINNED_BYTES_MAX
+            ? new LoopPin({
+                startFrame: loop.startFrame,
+                endFrame: loop.endFrame,
+                channelCounts: this.sources.map((s) => s.channelCount),
+              })
+            : null
+      } else {
+        this.pin = null
+      }
+    }
+    this.diagnosticsState.pinnedBytes = this.pin ? this.pin.bytes : 0
   }
 
   /**
@@ -1234,6 +1394,8 @@ export class PcmTransport {
     if (this.disposed) return
     this.disposed = true
     this.desiredPlaying = false
+    // M2.12 §14.1.4: drop the pinned-loop cache with the transport.
+    this.pin = null
     const context = this.context
     this.teardownGraph()
     if (context && context.state !== 'closed') {
@@ -1253,9 +1415,21 @@ export class PcmTransport {
     this.context = context
     context.onstatechange = () => this.onContextStateChange()
     this.mode = resolveMode(this.opts.mode ?? 'auto')
+    // M2.12 §14.1: one sizing policy for the whole group — the byte and
+    // duration caps minimised over the active sources. The worklet gets
+    // the same number (shared rings derive it from the SAB, transfer
+    // rings from `processorOptions`), so both paths agree by
+    // construction.
+    const capacity = sourceBufferCapacityFrames(this.sources)
+    this.bufferCapacity = capacity
+    this.diagnosticsState.capacityFrames = capacity
+    this.diagnosticsState.budgetBytes = this.sources.reduce(
+      (bytes, s) => bytes + capacity * s.channelCount * BYTES_PER_SAMPLE,
+      0,
+    )
     if (this.mode === 'shared') {
-      const capacity = Math.ceil(target.sampleRate * RING_SECONDS)
-      // One ring per source; each holds the §15.3 12 s retention budget.
+      // One ring per source; every ring gets the group capacity so the
+      // stems stay one synchronized set (spec §14.2).
       this.rings = this.sources.map((s) =>
         createSharedRing(16 + capacity * s.channelCount * 4, s.channelCount),
       )
@@ -1275,9 +1449,18 @@ export class PcmTransport {
     await context.audioWorklet.addModule(this.blobUrl)
     const sabs = this.rings.map((r) => r.sab)
     const options: Record<string, unknown> = {
+      // The transport has no audio inputs (it feeds the rings) and the
+      // worklet mixer always renders stereo (spec §10.5); without an
+      // explicit output channel count a real browser gives the output
+      // zero channels.
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
       processorOptions: {
         sampleRate: target.sampleRate,
         frameCount: target.frameCount,
+        // M2.12 §14.1: the group ring capacity the worklet must use.
+        capacityFrames: capacity,
         // Mixer path (M2.8): the worklet mixes all sources on one cursor.
         sources: this.sources.map((s) => ({ channelCount: s.channelCount })),
         ...(sabs.length > 0 ? { sabs } : {}),
@@ -1285,8 +1468,13 @@ export class PcmTransport {
         stretch: { wasmBytes: stretchBytes },
       },
     }
-    options.transfer = [...sabs, stretchBytes]
-    const node = context.createWorkletNode('basseparate-pcm', options)
+    // The WASM artifact is a real ArrayBuffer and is transferred; the
+    // rings are `SharedArrayBuffer`s, which serialize by sharing into
+    // `processorOptions.sabs` and must stay out of the transfer list
+    // (a browser throws "Shared memory objects must not be in the
+    // transfer list" otherwise).
+    options.transfer = [stretchBytes]
+    const node = createTransportWorkletNode(context, 'basseparate-pcm', options)
     node.port.onmessage = (e) => this.handleWorkletMessage(e.data)
     const gainNode = context.createGain()
     gainNode.gain.value = this.pendingGain
@@ -1433,6 +1621,37 @@ export class PcmTransport {
     })
   }
 
+  /** Fold one worklet buffer report into the diagnostics ledger (M2.12). */
+  private recordBufferReport(m: {
+    stems?: number[]
+    capacityFrames?: number
+    callbackMs?: number
+    stretcher?: { rate: number; bypass: boolean; warmup?: number }
+  }): void {
+    if (Array.isArray(m.stems)) {
+      const stems = m.stems
+      this.diagnosticsState.stemBufferedFrames = [...stems]
+      let bytes = 0
+      this.sources.forEach((s, i) => {
+        bytes += Math.max(0, stems[i] ?? 0) * s.channelCount * BYTES_PER_SAMPLE
+      })
+      this.diagnosticsState.bufferedBytes = bytes
+    }
+    if (typeof m.capacityFrames === 'number' && m.capacityFrames > 0) {
+      this.diagnosticsState.capacityFrames = m.capacityFrames
+    }
+    if (typeof m.callbackMs === 'number' && Number.isFinite(m.callbackMs)) {
+      this.diagnosticsState.callbackDurationMs = m.callbackMs
+    }
+    if (m.stretcher !== undefined) {
+      this.diagnosticsState.stretcher = {
+        rate: m.stretcher.rate,
+        bypass: m.stretcher.bypass,
+        warmup: m.stretcher.warmup ?? 0,
+      }
+    }
+  }
+
   private handleWorkletMessage(data: unknown): void {
     if (this.disposed) return
     if (typeof data !== 'object' || data === null) return
@@ -1440,9 +1659,17 @@ export class PcmTransport {
     if (typeof msg.generation === 'number' && msg.generation !== this.generation) return
     switch (msg.type) {
       case 'buffered': {
-        const m = msg as unknown as { frames: number; queuedFrames: number }
+        const m = msg as unknown as {
+          frames: number
+          queuedFrames: number
+          stems?: number[]
+          capacityFrames?: number
+          callbackMs?: number
+          stretcher?: { rate: number; bypass: boolean; warmup?: number }
+        }
         this.bufferedFrames = m.frames
         if (m.frames > 0) this.hasData = true
+        this.recordBufferReport(m)
         // Flow control: resume the worker below budget − margin.
         if (this.workerPaused && m.queuedFrames < this.budgetFrames - this.marginFrames) {
           this.workerPaused = false
@@ -1614,8 +1841,8 @@ export class PcmTransport {
   }
 
   /**
-   * Prefetch loop: keep the worklet fed to the §15.3 target ahead of the
-   * estimated consumed position, gated by the 12 s retention budget. A
+   * Prefetch loop: keep the worklet fed to the §14.1 target ahead of the
+   * estimated consumed position, gated by the group ring budget. A
    * single loop outlives generation bumps: a seek/stop aborts in-flight
    * fetches and the parking delay, the loop wakes, and refetches from the
    * new bookkeeping. Runs while `desiredPlaying` and the state is active.
@@ -1640,15 +1867,23 @@ export class PcmTransport {
           (this.context && !this.suspended
             ? Math.max(0, this.context.currentTime - this.anchorTime) * rate * this.anchorRate
             : 0)
-        const targetAhead = loop
-          ? rate * this.speed * LOOKAHEAD_SECONDS
-          : Math.min(
-              rate * this.speed * LOOKAHEAD_SECONDS,
-              Math.max(
-                rate * this.speed * PREBUFFER_SECONDS,
-                target.frameCount - this.genStartFrame,
+        // M2.12 §14.1: the speed-scaled target (M2.10's `rate × speed ×
+        // 8 s`) is clamped to what the ring can hold, so the flow-control
+        // gate can never deadlock against a byte-capped capacity.
+        const speedTarget = rate * this.speed * LOOKAHEAD_SECONDS
+        const ringLimit = Math.max(0, this.budgetFrames - this.marginFrames)
+        const targetAhead = Math.min(
+          loop
+            ? speedTarget
+            : Math.min(
+                speedTarget,
+                Math.max(
+                  rate * this.speed * PREBUFFER_SECONDS,
+                  target.frameCount - this.genStartFrame,
+                ),
               ),
-            )
+          ringLimit,
+        )
         let fetched = false
         while (
           (loop !== null || this.fetchedFrame < target.frameCount) &&
@@ -1670,16 +1905,43 @@ export class PcmTransport {
           let roundFailed = false
           let written = Infinity
           this.fillRoundInFlight = true
+          const pin = this.pin
           for (let i = 0; i < this.sources.length; i++) {
             const src = this.sources[i]
             const bytesPerFrame = 4 * src.channelCount
             const start = Math.floor(sourceCursor * bytesPerFrame)
             const end = start + frames * bytesPerFrame - 1
             let w = 0
-            if (this.mode === 'shared') {
+            // M2.12 §14.1.4: a ready pin serves the whole range with no
+            // network round trip — every pass and every seek inside the
+            // loop (the pre-roll is mapped into the loop tail and hits
+            // the pin the same way).
+            if (pin && pin.ready && pin.covers(sourceCursor, frames)) {
+              if (this.mode === 'shared') {
+                w = pin.writeShared(this.rings[i], i, sourceCursor, frames)
+              } else {
+                const channels = pin.copyChannels(i, sourceCursor, frames)
+                this.node.port.postMessage(
+                  {
+                    type: 'channels',
+                    source: i,
+                    channels,
+                    startFrame: sourceCursor,
+                    frames,
+                    generation: gen,
+                  },
+                  channels.map((c) => c.buffer as ArrayBuffer),
+                )
+                w = frames
+              }
+            } else if (this.mode === 'shared') {
+              // M2.12 §14.1.4: while the pin fills, the shared path asks
+              // the worker for the payload so the frames can be retained
+              // alongside the SAB write.
+              const retain = pin !== null && pin.wantsChunk(i, sourceCursor, frames)
               let result: PcmWriteResult
               try {
-                result = await this.source.writeChunk(i, src.assetId, start, end, gen)
+                result = await this.source.writeChunk(i, src.assetId, start, end, gen, retain)
               } catch (err) {
                 if (this.isStale(err, gen)) {
                   roundFailed = true
@@ -1691,6 +1953,9 @@ export class PcmTransport {
               if (gen !== this.generation) {
                 roundFailed = true
                 break
+              }
+              if (retain && result.channels) {
+                pin.retain(i, result.startFrame, result.channels)
               }
               w = result.frames
             } else {
@@ -1709,6 +1974,9 @@ export class PcmTransport {
                 roundFailed = true
                 break
               }
+              // Retain before relaying: the posted buffers are detached
+              // by the transfer (M2.12 §14.1.4).
+              if (pin) pin.retain(i, chunk.startFrame, chunk.channels)
               this.node.port.postMessage(
                 {
                   type: 'channels',

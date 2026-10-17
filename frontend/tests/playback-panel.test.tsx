@@ -231,6 +231,8 @@ interface ReadyMockOverrides {
   imports?: Array<Record<string, unknown>>
   /** Mutate state when the job is polled (e.g. flip source info). */
   onJobPoll?: () => void
+  /** M2.12 §14.4: the optional runtime block on GET /api/v1/system. */
+  runtime?: Record<string, unknown> | null
 }
 
 /** Wire mockClient.GET to serve a ready project with the given overrides. */
@@ -252,7 +254,14 @@ function mockReadyProject(overrides: ReadyMockOverrides = {}) {
   mockClient.GET.mockImplementation((path: string) => {
     switch (path) {
       case '/api/v1/system':
-        return Promise.resolve(ok({ app_version: '0.1.0-dev', api_version: 1, ready: true }))
+        return Promise.resolve(
+          ok({
+            app_version: '0.1.0-dev',
+            api_version: 1,
+            ready: true,
+            runtime: overrides.runtime ?? null,
+          }),
+        )
       case '/api/v1/projects':
         return Promise.resolve(ok({ projects: [READY_PROJECT] }))
       case '/api/v1/projects/{project_id}':
@@ -521,6 +530,35 @@ describe('playback panel: transport', () => {
 
     TestAudioContext.instances[0].nodes[0].postUnderrun()
     expect(await screen.findByText('Underruns: 1')).toBeInTheDocument()
+  })
+
+  it('shows the polled runtime diagnostics from /system (M2.12 §14.4)', async () => {
+    mockReadyProject({
+      runtime: {
+        api: { rss_bytes: 32 * 1024 * 1024, cpu_seconds: 1.5 },
+        media_worker: { rss_bytes: 64 * 1024 * 1024, cpu_seconds: 2.5 },
+        gpu: {
+          total_bytes: 8 * 1024 * 1024 * 1024,
+          free_bytes: 4 * 1024 * 1024 * 1024,
+          peak_used_bytes: 1024 * 1024 * 1024,
+        },
+        job: {
+          job_id: JOB_ID,
+          job_type: 'waveform',
+          stage: 'peaks',
+          progress_fraction: 0.5,
+          queued: 2,
+        },
+        separation_elapsed_seconds: 12.5,
+      },
+    })
+    await openReadyProject()
+    expect(await screen.findByText('Media worker: 64.0 MiB, 2.5 s CPU')).toBeInTheDocument()
+    expect(screen.getByText('GPU peak: 1024.0 MiB')).toBeInTheDocument()
+    expect(screen.getByText('Job: waveform (peaks) 50%, 2 queued')).toBeInTheDocument()
+    expect(screen.getByText('Separation: 12.5 s')).toBeInTheDocument()
+    // The transport rows share the expanded block (no underrun yet).
+    expect(screen.getByText('Underruns: 0')).toBeInTheDocument()
   })
 
   it('redraws the position from sync() on tab visibility return', async () => {

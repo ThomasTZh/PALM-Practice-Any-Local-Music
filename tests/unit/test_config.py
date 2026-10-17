@@ -122,3 +122,26 @@ def test_log_describes_effective_config_without_secrets() -> None:
     assert "8765" not in text
     assert "9999" in text
     assert "token" not in text.lower()
+
+
+def test_media_worker_memory_limit_default_env_and_validation(tmp_path) -> None:
+    from basseparate.config import (
+        DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB,
+        MIN_MEDIA_WORKER_MEMORY_LIMIT_MB,
+    )
+
+    assert DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB == 4096
+    assert MIN_MEDIA_WORKER_MEMORY_LIMIT_MB == 256
+    config = resolve_config(env={}, config_file=tmp_path / "absent.toml")
+    assert config.media_worker_memory_limit_mb == DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB
+    from_env = resolve_config(
+        env={"BASSEPARATE_MEDIA_WORKER_MEMORY_LIMIT_MB": "2048"},
+        config_file=tmp_path / "absent.toml",
+    )
+    assert from_env.media_worker_memory_limit_mb == 2048
+    assert "media_worker_memory_limit_mb=2048" in from_env.describe_for_log()
+    with pytest.raises(ConfigError, match="media_worker_memory_limit_mb"):
+        resolve_config(
+            env={"BASSEPARATE_MEDIA_WORKER_MEMORY_LIMIT_MB": "64"},
+            config_file=tmp_path / "absent.toml",
+        )

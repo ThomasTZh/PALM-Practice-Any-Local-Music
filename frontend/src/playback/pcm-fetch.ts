@@ -5,8 +5,9 @@
  * (`fetch-worker.ts`) and the main-thread fallback (jsdom has no
  * `Worker`), so the byte-fetch and deinterleave logic lives here
  * instead of being duplicated. The Authorization header mirrors the
- * shared client (`api/client.ts`): the token comes from
- * `sessionStorage`, which same-origin dedicated workers can read.
+ * shared client (`api/client.ts`): on the main thread the token comes
+ * from `sessionStorage`; a dedicated worker has no Web Storage, so the
+ * transport hands the token over by message (`setFetchToken`).
  */
 
 import { getSessionToken } from '../auth'
@@ -22,20 +23,36 @@ export interface PcmRange {
  * Uses plain `fetch` because openapi-fetch does not handle binary
  * responses. A 416 response means the range is outside the asset and
  * surfaces as a `RangeError`; other failures throw a plain `Error`.
+ *
+ * M2.12 §14.3: playback PCM chunk fetches take the `priority: 'high'`
+ * hint by default; waveform callers pass `'low'`. Browsers without
+ * support ignore the hint.
  */
+/**
+ * Worker-safe token override. Dedicated workers cannot read
+ * `sessionStorage`, so the main thread hands the token over once
+ * (`{kind: 'auth'}` in the fetch worker).
+ */
+let injectedToken: string | null = null
+
+export function setFetchToken(token: string | null): void {
+  injectedToken = token
+}
+
 export async function fetchPcmRange(
   assetId: string,
   start?: number,
   end?: number,
   signal?: AbortSignal,
+  priority: RequestPriority = 'high',
 ): Promise<PcmRange> {
   const headers: Record<string, string> = {}
-  const token = getSessionToken()
+  const token = injectedToken ?? getSessionToken()
   if (token) headers.Authorization = `Bearer ${token}`
   if (start !== undefined && end !== undefined) {
     headers.Range = `bytes=${start}-${end}`
   }
-  const res = await fetch(`/api/v1/assets/${assetId}/bytes`, { headers, signal })
+  const res = await fetch(`/api/v1/assets/${assetId}/bytes`, { headers, signal, priority })
   if (res.status === 416) {
     throw new RangeError('The requested byte range is not satisfiable')
   }
@@ -108,19 +125,23 @@ export function viewSharedRing(sab: SharedArrayBuffer, channelCount: number): Sh
 
 /**
  * Copy interleaved f32le bytes into the ring at the current writer
- * position (wrap-aware). Returns the number of frames written, or 0 when
- * the ring cannot hold them (the caller drops the chunk). Indices are
- * absolute stream frames and may be negative (M2.11 loop pre-roll), so
- * the slot modulo is normalized.
+ * position (wrap-aware). `bytes` may be an `ArrayBuffer` or a typed view
+ * over one (the pinned-loop serve path passes a scratch view). Returns
+ * the number of frames written, or 0 when the ring cannot hold them (the
+ * caller drops the chunk). Indices are absolute stream frames and may be
+ * negative (M2.11 loop pre-roll), so the slot modulo is normalized.
  */
-export function writeSharedRing(ring: SharedRing, bytes: ArrayBuffer): number {
+export function writeSharedRing(ring: SharedRing, bytes: ArrayBuffer | ArrayBufferView): number {
   const writer = Atomics.load(ring.header, 1)
   const reader = Atomics.load(ring.header, 2)
   const bytesPerFrame = 4 * ring.channelCount
   const frames = Math.floor(bytes.byteLength / bytesPerFrame)
   if (frames <= 0) return 0
   if (writer - reader + frames > ring.frameCapacity) return 0
-  const src = new Uint8Array(bytes)
+  const src =
+    bytes instanceof ArrayBuffer
+      ? new Uint8Array(bytes)
+      : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   for (let f = 0; f < frames; f++) {
     const slot = (((writer + f) % ring.frameCapacity) + ring.frameCapacity) % ring.frameCapacity
     const dest = slot * bytesPerFrame

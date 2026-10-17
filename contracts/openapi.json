@@ -733,6 +733,45 @@
         "title": "DuplicateLoopOp",
         "type": "object"
       },
+      "GpuStatsResponse": {
+        "properties": {
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "peak_used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Used Bytes"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          }
+        },
+        "title": "GpuStatsResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1603,6 +1642,35 @@
         "title": "ProbeResult",
         "type": "object"
       },
+      "ProcessStatsResponse": {
+        "description": "RSS/CPU of one process (M2.12, spec \u00a714.4).",
+        "properties": {
+          "cpu_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Seconds"
+          },
+          "rss_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rss Bytes"
+          }
+        },
+        "title": "ProcessStatsResponse",
+        "type": "object"
+      },
       "ProjectListResponse": {
         "properties": {
           "projects": {
@@ -1998,6 +2066,116 @@
           "available_stem_roles"
         ],
         "title": "ResultSetSummary",
+        "type": "object"
+      },
+      "RuntimeJobResponse": {
+        "description": "The media job in flight (or the queue depth when only queued work exists).",
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "job_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Type"
+          },
+          "progress_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Fraction"
+          },
+          "queued": {
+            "default": 0,
+            "title": "Queued",
+            "type": "integer"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          }
+        },
+        "title": "RuntimeJobResponse",
+        "type": "object"
+      },
+      "RuntimeStatusResponse": {
+        "description": "Local runtime diagnostics (M2.12, spec \u00a714.4); never telemetry.",
+        "properties": {
+          "api": {
+            "$ref": "#/components/schemas/ProcessStatsResponse"
+          },
+          "gpu": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GpuStatsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeJobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "media_worker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessStatsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "separation_elapsed_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Separation Elapsed Seconds"
+          }
+        },
+        "required": [
+          "api"
+        ],
+        "title": "RuntimeStatusResponse",
         "type": "object"
       },
       "SelectStreamRequest": {
@@ -2534,6 +2712,16 @@
           "ready": {
             "title": "Ready",
             "type": "boolean"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeStatusResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

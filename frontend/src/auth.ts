@@ -22,6 +22,9 @@ export function bootstrapToken(): string | null {
 }
 
 export function getSessionToken(): string | null {
+  // Web Workers have no Web Storage; the fetch worker receives the token
+  // by message instead (`setFetchToken` in `playback/pcm-fetch`).
+  if (typeof sessionStorage === 'undefined') return null
   return sessionStorage.getItem(TOKEN_KEY)
 }
 

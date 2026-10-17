@@ -220,7 +220,8 @@ export async function getPeakTile(
   signal?: AbortSignal,
 ): Promise<PeakTileBytes> {
   const url = `/api/v1/assets/${assetId}/peaks?level=${level}&tile=${tile}`
-  const res = await fetch(url, { headers: authHeaders(), signal })
+  // M2.12 §14.3: waveform tiles are background work (priority 'low').
+  const res = await fetch(url, { headers: authHeaders(), signal, priority: 'low' })
   if (res.status === 404) {
     const code = await errorCodeOf(res)
     if (code === 'TILE_NOT_READY') throw new TileNotReadyError(level, tile)
@@ -253,7 +254,8 @@ export async function getAssetPcm(
   signal?: AbortSignal,
 ): Promise<PcmWindow> {
   const url = `/api/v1/assets/${assetId}/pcm?start_frame=${startFrame}&frame_count=${frameCount}`
-  const res = await fetch(url, { headers: authHeaders(), signal })
+  // M2.12 §14.3: waveform PCM windows are background work (priority 'low').
+  const res = await fetch(url, { headers: authHeaders(), signal, priority: 'low' })
   if (res.status === 422) {
     const code = await errorCodeOf(res)
     if (code === 'PCM_RANGE_OUT_OF_BOUNDS') {

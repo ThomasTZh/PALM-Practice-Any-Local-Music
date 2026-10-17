@@ -1140,3 +1140,36 @@ class TestDecodeAutoQueuesWaveform:
                 await mgr.stop()
 
         asyncio.run(scenario())
+
+
+class TestSchedulingPriority:
+    """M2.12 (spec §14.3): playback preparation runs before background work."""
+
+    def test_priority_classes_and_fifo_order(self, env: dict) -> None:
+        async def scenario() -> None:
+            mgr = _make_manager(env)
+            # create_job only needs the supervisor marker to exist; draining
+            # the queue directly inspects the order without a worker.
+            mgr._supervisor = object()  # type: ignore[assignment]
+            waveform_a = await mgr.create_job(
+                env["project"].id, JobType.WAVEFORM, import_id=env["import"].id
+            )
+            rate = await mgr.create_job(
+                env["project"].id, JobType.PLAYBACK_RATE, import_id=env["import"].id
+            )
+            probe = await mgr.create_job(
+                env["project"].id, JobType.PROBE, import_id=env["import"].id
+            )
+            waveform_b = await mgr.create_job(
+                env["project"].id, JobType.WAVEFORM, import_id=env["import"].id
+            )
+            assert mgr.queue_depth == 4
+            order = []
+            while mgr.queue_depth:
+                _priority, _sequence, job_id = mgr._queue.get_nowait()
+                order.append(job_id)
+            # Playback preparation first, then import-critical work, then
+            # background waveforms; FIFO within one class.
+            assert order == [rate.id, probe.id, waveform_a.id, waveform_b.id]
+
+        asyncio.run(scenario())
