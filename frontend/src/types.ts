@@ -12,6 +12,8 @@ export interface ProjectSummary {
   updated_at: string
   /** Canonical PCM asset id; waveform caches are keyed to it (M1.10). */
   canonical_asset_id?: string | null
+  /** Project sample rate in Hz (M2.11: loop seconds display); null unknown. */
+  sample_rate?: number | null
 }
 
 export type AppView =

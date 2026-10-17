@@ -1016,3 +1016,106 @@ describe('WaveformEditor markers (M1.15 §17.2)', () => {
     expect(onRedo).toHaveBeenCalledTimes(1)
   })
 })
+
+// --- M2.11 practice loops (spec §13.2) --------------------------------------
+
+/** Pointer event with modifier keys (jsdom has no PointerEvent). */
+function pointerW(type: string, el: Element, clientX: number, init: MouseEventInit = {}): void {
+  act(() => {
+    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, ...init }))
+  })
+}
+
+/** The [6400, 12800) loop: x 100..200 at the fit view (64 frames/px). */
+function loopRange(start = 6400, end = 12_800) {
+  return { start, end, color: '#f59e0b' }
+}
+
+describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
+  it('draws the overlay with a handle at each boundary', async () => {
+    mockReady()
+    await renderReadyEditor({ loop: loopRange() })
+    const sel = ctxOf(canvasById('lane:0:selection'))
+    // Tint fill, top border, then the two boundary handles.
+    expect(sel.rects[0]).toEqual([100, 0, 100, 48])
+    expect(sel.rects[1]).toEqual([98.5, 0, 103, 1])
+    expect(sel.rects[2]).toEqual([98.5, 0, 3, 48])
+    expect(sel.rects[3]).toEqual([198.5, 0, 3, 48])
+  })
+
+  it('drags the end handle: local preview, one commit on release', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 200) // the end handle (within HANDLE_HIT_PX)
+    pointer('pointermove', hit, 264) // frame 16896
+    expect(onLoopRangeChange).not.toHaveBeenCalled()
+    expect(ctxOf(canvasById('lane:0:selection')).rects[0]).toEqual([100, 0, 164, 48])
+    pointer('pointerup', hit, 264)
+    expect(onLoopRangeChange).toHaveBeenCalledTimes(1)
+    expect(onLoopRangeChange).toHaveBeenCalledWith(6400, 16_896)
+  })
+
+  it('resizes the start handle without crossing the end', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 100)
+    pointer('pointermove', hit, 400)
+    pointer('pointerup', hit, 400)
+    // Clamped one frame short of the end boundary (exact frames, §13.3.6).
+    expect(onLoopRangeChange).toHaveBeenCalledWith(12_799, 12_800)
+  })
+
+  it('moves the whole interval on a body drag, preserving the length', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 150) // body
+    pointer('pointermove', hit, 160) // +10 px = +640 frames
+    pointer('pointerup', hit, 160)
+    expect(onLoopRangeChange).toHaveBeenCalledTimes(1)
+    expect(onLoopRangeChange).toHaveBeenCalledWith(7040, 13_440)
+  })
+
+  it('clamps a body move to the source bounds', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 150)
+    pointer('pointermove', hit, 0) // far left: start clamps to 0
+    pointer('pointerup', hit, 0)
+    expect(onLoopRangeChange).toHaveBeenCalledWith(0, 6400)
+  })
+
+  it('a click inside the loop body seeks; a handle click does not', async () => {
+    const onSeek = vi.fn()
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onSeek, onLoopRangeChange })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 150)
+    pointer('pointerup', hit, 150)
+    expect(onSeek).toHaveBeenCalledWith(9600)
+    pointer('pointerdown', hit, 200) // the end handle
+    pointer('pointerup', hit, 200)
+    expect(onSeek).toHaveBeenCalledTimes(1)
+    expect(onLoopRangeChange).not.toHaveBeenCalled()
+  })
+
+  it('Shift+drag inside the body keeps the selection gesture', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointerW('pointerdown', hit, 120, { shiftKey: true })
+    pointerW('pointermove', hit, 180, { shiftKey: true })
+    pointerW('pointerup', hit, 180, { shiftKey: true })
+    expect(onLoopRangeChange).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.160 – 0:00.240 · 0:00.080')
+  })
+})

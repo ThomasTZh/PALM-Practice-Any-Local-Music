@@ -1,6 +1,80 @@
 {
   "components": {
     "schemas": {
+      "AddLoopOp": {
+        "description": "Create a saved practice loop (M2.11, spec \u00a713.2.1).\n\nThe name defaults to \"Loop N\" and the color to the default loop\ncolor server-side. The repository validates\n``0 \u2264 start < end \u2264 duration_frames`` (422 ``LOOP_RANGE_INVALID``).\n``repeat_count`` is the total number of passes; ``None`` = infinite.",
+        "properties": {
+          "boundary_fade": {
+            "default": true,
+            "title": "Boundary Fade",
+            "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "end_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "End Frames",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "repeat_count": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat Count"
+          },
+          "start_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Start Frames",
+            "type": "integer"
+          },
+          "type": {
+            "const": "add_loop",
+            "default": "add_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_frames",
+          "end_frames"
+        ],
+        "title": "AddLoopOp",
+        "type": "object"
+      },
       "AddMarkerOp": {
         "properties": {
           "color": {
@@ -298,11 +372,16 @@
           "op": {
             "discriminator": {
               "mapping": {
+                "add_loop": "#/components/schemas/AddLoopOp",
                 "add_marker": "#/components/schemas/AddMarkerOp",
+                "delete_loop": "#/components/schemas/DeleteLoopOp",
                 "delete_marker": "#/components/schemas/DeleteMarkerOp",
+                "duplicate_loop": "#/components/schemas/DuplicateLoopOp",
+                "set_active_loop": "#/components/schemas/SetActiveLoopOp",
                 "set_active_result_set": "#/components/schemas/SetActiveResultSetOp",
                 "set_display": "#/components/schemas/SetDisplayOp",
                 "set_follow_playhead": "#/components/schemas/SetFollowPlayheadOp",
+                "set_loop_enabled": "#/components/schemas/SetLoopEnabledOp",
                 "set_master_gain": "#/components/schemas/SetMasterGainOp",
                 "set_monitoring_limiter": "#/components/schemas/SetMonitoringLimiterOp",
                 "set_monitoring_volume": "#/components/schemas/SetMonitoringVolumeOp",
@@ -312,6 +391,7 @@
                 "set_selection": "#/components/schemas/SetSelectionOp",
                 "set_track_settings": "#/components/schemas/SetTrackSettingsOp",
                 "set_viewport": "#/components/schemas/SetViewportOp",
+                "update_loop": "#/components/schemas/UpdateLoopOp",
                 "update_marker": "#/components/schemas/UpdateMarkerOp"
               },
               "propertyName": "type"
@@ -361,6 +441,24 @@
               },
               {
                 "$ref": "#/components/schemas/SetPlaybackSpeedOp"
+              },
+              {
+                "$ref": "#/components/schemas/AddLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/DeleteLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/DuplicateLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetActiveLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetLoopEnabledOp"
               }
             ],
             "title": "Op"
@@ -570,6 +668,28 @@
         "title": "CreateProjectRequest",
         "type": "object"
       },
+      "DeleteLoopOp": {
+        "description": "Delete a saved loop (M2.11, spec \u00a713.2.8).\n\nWhen the deleted loop was active, the selection is cleared and\nlooping disabled; other loops are untouched.",
+        "properties": {
+          "loop_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "delete_loop",
+            "default": "delete_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loop_id"
+        ],
+        "title": "DeleteLoopOp",
+        "type": "object"
+      },
       "DeleteMarkerOp": {
         "properties": {
           "marker_id": {
@@ -589,6 +709,28 @@
           "marker_id"
         ],
         "title": "DeleteMarkerOp",
+        "type": "object"
+      },
+      "DuplicateLoopOp": {
+        "description": "Duplicate a saved loop as \"<name> copy\" (M2.11, spec \u00a713.2.7).",
+        "properties": {
+          "loop_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "duplicate_loop",
+            "default": "duplicate_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loop_id"
+        ],
+        "title": "DuplicateLoopOp",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1233,8 +1375,19 @@
         "type": "object"
       },
       "PracticeLoop": {
-        "description": "A saved practice loop with integer source-frame boundaries (spec \u00a73.5).",
+        "description": "A saved practice loop with integer source-frame boundaries (spec \u00a713.1).\n\n``repeat_count`` is the total number of passes (not \"extra repeats\");\n``None`` means infinite. ``boundary_fade`` enables the short output\nfades at the join (\u00a713.6); disabling them gives exact boundary\naudition. The boundaries are exact source frames and are never\nexpanded (\u00a713.3.5\u20136).",
         "properties": {
+          "boundary_fade": {
+            "default": true,
+            "title": "Boundary Fade",
+            "type": "boolean"
+          },
+          "color": {
+            "default": "#f59e0b",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
           "created_at": {
             "description": "UTC timestamp in ISO 8601 form",
             "title": "Created At",
@@ -1257,6 +1410,19 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "repeat_count": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat Count"
           },
           "start_frames": {
             "description": "Integer source sample position (never milliseconds)",
@@ -1873,6 +2039,32 @@
         "title": "SelectionRange",
         "type": "object"
       },
+      "SetActiveLoopOp": {
+        "description": "Select the active loop; ``null`` clears the selection (M2.11 \u00a713.2.9).\n\nClearing also disables looping (the ``loop_enabled requires an\nactive loop`` invariant). Selecting a different loop keeps looping\nenabled.",
+        "properties": {
+          "loop_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loop Id"
+          },
+          "type": {
+            "const": "set_active_loop",
+            "default": "set_active_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SetActiveLoopOp",
+        "type": "object"
+      },
       "SetActiveResultSetOp": {
         "description": "Select the project's active separation result set (M2.7, \u00a79.4.3).\n\n``null`` clears the selection. The target must be a result set of\nthe same project (validated by the repository, not here \u2014 this op\nis data, not a query). Undoable: it is part of the history.",
         "properties": {
@@ -1934,6 +2126,26 @@
           "follow_playhead"
         ],
         "title": "SetFollowPlayheadOp",
+        "type": "object"
+      },
+      "SetLoopEnabledOp": {
+        "description": "Enable or disable repeated practice playback (M2.11 \u00a713.2.10, \u00a713.4).\n\nEnabling requires an active loop of at least\n:data:`MIN_REPEATABLE_LOOP_SECONDS` (spec \u00a713.3.3): the repository\npre-validates and raises ``NoActiveLoopError`` (409) or\n``LoopTooShortError`` (409, message names the 100 ms minimum).",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "set_loop_enabled",
+            "default": "set_loop_enabled",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SetLoopEnabledOp",
         "type": "object"
       },
       "SetMasterGainOp": {
@@ -2391,6 +2603,105 @@
         ],
         "title": "TransferState",
         "type": "string"
+      },
+      "UpdateLoopOp": {
+        "description": "Partial loop edit; absent fields stay unchanged (M2.11, spec \u00a713.2).\n\n``repeat_count`` distinguishes absent (unchanged) from an explicit\n``null`` (infinite) via ``model_fields_set``. The repository\nre-validates the resulting range against the duration.",
+        "properties": {
+          "boundary_fade": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boundary Fade"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "end_frames": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frames"
+          },
+          "loop_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "repeat_count": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat Count"
+          },
+          "start_frames": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Frames"
+          },
+          "type": {
+            "const": "update_loop",
+            "default": "update_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loop_id"
+        ],
+        "title": "UpdateLoopOp",
+        "type": "object"
       },
       "UpdateMarkerOp": {
         "description": "Partial marker edit; absent fields stay unchanged.",

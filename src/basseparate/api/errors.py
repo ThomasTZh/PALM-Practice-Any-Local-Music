@@ -111,6 +111,51 @@ class PlaybackModeRequiresResultSetError(ApiError):
         )
 
 
+class LoopNotFoundError(ApiError):
+    def __init__(self, loop_id: str) -> None:
+        super().__init__(
+            code="LOOP_NOT_FOUND",
+            message=f"The requested practice loop does not exist: {loop_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class LoopRangeInvalidError(ApiError):
+    def __init__(self, start: int, end: int, duration: int) -> None:
+        super().__init__(
+            code="LOOP_RANGE_INVALID",
+            message="A loop must satisfy 0 <= start < end <= source length "
+            f"(got start={start}, end={end}, length={duration}); "
+            "the interval is never expanded automatically",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"start_frames": start, "end_frames": end, "duration_frames": duration},
+        )
+
+
+class NoActiveLoopError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="NO_ACTIVE_LOOP",
+            message="Enabling looping requires an active practice loop; "
+            "select or create a loop first",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class LoopTooShortError(ApiError):
+    def __init__(self, frames: int, sample_rate: int) -> None:
+        milliseconds = round(frames / sample_rate * 1000) if sample_rate > 0 else 0
+        super().__init__(
+            code="LOOP_TOO_SHORT",
+            message=f"This loop is {milliseconds} ms long; repeated practice "
+            "playback requires at least 100 ms. Shorten or extend it to at "
+            "least 100 ms to enable looping (it can still be saved and "
+            "auditioned without looping)",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"frames": frames, "sample_rate": sample_rate, "minimum_ms": 100},
+        )
+
+
 class InvalidCommandError(ApiError):
     def __init__(self, detail: str) -> None:
         super().__init__(

@@ -46,6 +46,8 @@ export interface ProjectCommands {
   workingState: WorkingState
   /** The project's mixer/practice state (M2.8); null before first load. */
   practiceState: PracticeState | null
+  /** Sid length in frames from the snapshot (M2.11 loop bounds); null unknown. */
+  durationFrames: number | null
   canUndo: boolean
   canRedo: boolean
   /** Commands currently in flight. */
@@ -78,6 +80,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
   const [markers, setMarkers] = useState<Marker[]>([])
   const [workingState, setWorkingState] = useState<WorkingState>(DEFAULT_WORKING_STATE)
   const [practiceState, setPracticeState] = useState<PracticeState | null>(null)
+  const [durationFrames, setDurationFrames] = useState<number | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
@@ -123,6 +126,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
       setMarkers(snap.markers)
       setWorkingState(snap.workingState)
       setPracticeState(snap.practiceState)
+      setDurationFrames(snap.durationFrames)
       setCanUndo(snap.canUndo)
       setCanRedo(snap.canRedo)
       setStaleNotice('Project changed elsewhere — reloaded.')
@@ -258,6 +262,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
       setMarkers([])
       setWorkingState(DEFAULT_WORKING_STATE)
       setPracticeState(null)
+      setDurationFrames(null)
       setCanUndo(false)
       setCanRedo(false)
       return
@@ -272,6 +277,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
         setMarkers(snap.markers)
         setWorkingState(snap.workingState)
         setPracticeState(snap.practiceState)
+        setDurationFrames(snap.durationFrames)
         setCanUndo(snap.canUndo)
         setCanRedo(snap.canRedo)
         setLoaded(true)
@@ -325,6 +331,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
     markers,
     workingState,
     practiceState,
+    durationFrames,
     canUndo,
     canRedo,
     pendingCount,

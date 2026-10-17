@@ -9,7 +9,9 @@ import pytest
 from pydantic import ValidationError
 
 from basseparate.domain import (
+    DEFAULT_LOOP_COLOR,
     MAX_GAIN,
+    MAX_LOOP_REPEAT,
     MAX_PLAYBACK_SPEED,
     MIN_PLAYBACK_SPEED,
     PlaybackMode,
@@ -99,6 +101,25 @@ class TestPracticeLoop:
         with pytest.raises(ValidationError, match="name"):
             _loop(name="   ")
 
+    def test_m211_defaults(self) -> None:
+        loop = _loop()
+        assert loop.color == DEFAULT_LOOP_COLOR
+        assert loop.repeat_count is None
+        assert loop.boundary_fade is True
+
+    def test_color_validated(self) -> None:
+        assert _loop(color="#00ff00").color == "#00ff00"
+        with pytest.raises(ValidationError, match="color"):
+            _loop(color="green")
+
+    def test_repeat_count_bounds(self) -> None:
+        assert _loop(repeat_count=1).repeat_count == 1
+        assert _loop(repeat_count=MAX_LOOP_REPEAT).repeat_count == MAX_LOOP_REPEAT
+        with pytest.raises(ValidationError, match="repeat_count"):
+            _loop(repeat_count=0)
+        with pytest.raises(ValidationError, match="repeat_count"):
+            _loop(repeat_count=MAX_LOOP_REPEAT + 1)
+
 
 class TestPracticeState:
     def test_defaults(self) -> None:
@@ -149,6 +170,14 @@ class TestPracticeState:
         s = PracticeState(loops=[loop], active_loop_id=loop.id, loop_enabled=True)
         assert s.active_loop_id == loop.id
         assert s.loop_enabled is True
+
+    def test_loop_enabled_requires_active_loop(self) -> None:
+        # M2.11 invariant: looping without a selected loop is impossible.
+        with pytest.raises(ValidationError, match="loop_enabled"):
+            PracticeState(loop_enabled=True)
+        loop = _loop()
+        with pytest.raises(ValidationError, match="loop_enabled"):
+            PracticeState(loops=[loop], loop_enabled=True)
 
     def test_playback_speed_bounds(self) -> None:
         with pytest.raises(ValidationError):

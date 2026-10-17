@@ -47,6 +47,7 @@ import { formatTime } from '../playback/pcm'
 import {
   drawLaneGrid,
   drawLaneWaveform,
+  drawLoop,
   drawMarkerFlag,
   drawMarkerTick,
   drawOverview,
@@ -110,6 +111,16 @@ export interface ChannelDisplay {
   scales: number[]
 }
 
+/** The practice loop drawn on the lanes (M2.11 §13.2.3–4), source frames. */
+export interface LoopRange {
+  /** Start source frame (inclusive). */
+  start: number
+  /** End source frame (exclusive). */
+  end: number
+  /** Loop color (hex). */
+  color: string
+}
+
 export interface WaveformEditorProps {
   projectId: string
   /** Canonical source asset; null when no source has been imported. */
@@ -141,6 +152,14 @@ export interface WaveformEditorProps {
   onSelectionChange?: (selection: { start: number; end: number } | null) => void
   onChannelDisplayChange?: (display: ChannelDisplay) => void
   onFollowChange?: (follow: boolean) => void
+  /**
+   * The active practice loop to draw and drag (M2.11 §13.2.3–4); null →
+   * no overlay. The boundary handles resize and a body drag moves the
+   * interval; Shift+drag inside the loop keeps the selection gesture.
+   */
+  loop?: LoopRange | null
+  /** Commit a loop range edit on drag end (exactly one per gesture). */
+  onLoopRangeChange?: (start: number, end: number) => void
   /**
    * Marker state (M1.15 §17.2). All optional: absent → the marker row
    * renders its empty state (no flags, no list, no add/prev/next).
@@ -328,7 +347,8 @@ function CanvasLayer({
   return <canvas ref={ref} className={className} data-id={id} style={{ width, height }} />
 }
 
-type DragMode = 'maybe' | 'drag' | 'resize-start' | 'resize-end'
+type DragMode =
+  'maybe' | 'drag' | 'resize-start' | 'resize-end' | 'loop-start' | 'loop-end' | 'loop-move'
 
 export function WaveformEditor({
   projectId,
@@ -344,6 +364,8 @@ export function WaveformEditor({
   onSelectionChange,
   onChannelDisplayChange,
   onFollowChange,
+  loop,
+  onLoopRangeChange,
   markers,
   selectedMarkerId,
   onAddMarker,
@@ -372,11 +394,22 @@ export function WaveformEditor({
   const [scrollTop, setScrollTop] = useState(0)
   /** Marker being dragged: local preview until pointer-up commits (§17.2.4). */
   const [markerDrag, setMarkerDrag] = useState<{ id: string; frame: number } | null>(null)
+  /** Loop being dragged: local preview until pointer-up commits (§13.2.3–4). */
+  const [loopDrag, setLoopDrag] = useState<{ start: number; end: number } | null>(null)
 
   const contentRef = useRef<HTMLDivElement | null>(null)
   const hitRef = useRef<HTMLDivElement | null>(null)
   const ctxRef = useRef(new Map<string, WaveformContext>())
-  const laneDragRef = useRef<{ mode: DragMode; downX: number; downFrame: number } | null>(null)
+  const laneDragRef = useRef<{
+    mode: DragMode
+    downX: number
+    downFrame: number
+    /** The loop bounds the gesture started from (loop drags only). */
+    loopStart?: number
+    loopEnd?: number
+  } | null>(null)
+  /** Latest loop drag preview (read on pointer-up to commit once). */
+  const loopDraftRef = useRef<{ start: number; end: number } | null>(null)
   const scrollDragRef = useRef<{ lastX: number } | null>(null)
   const overviewDragRef = useRef<{ lastX: number } | null>(null)
   const markerHitRef = useRef<HTMLDivElement | null>(null)
@@ -468,6 +501,8 @@ export function WaveformEditor({
     setFollowPlayhead(readFollowPref())
     setPlayheadOutside(false)
     setPointerFrame(null)
+    setLoopDrag(null)
+    loopDraftRef.current = null
     restoreAppliedRef.current = false
     skipReportRef.current = { view: false, selection: true, display: false }
   }, [projectId, sourceAssetId])
@@ -713,20 +748,34 @@ export function WaveformEditor({
       e.preventDefault()
       const x = laneX(e.clientX)
       let mode: DragMode = 'maybe'
-      if (selection) {
+      let loopStart: number | undefined
+      let loopEnd: number | undefined
+      // The loop overlay owns the pointer inside its range (§13.2.3–4):
+      // boundary handles resize, the body moves. Shift+drag bypasses it
+      // so a selection can still start inside the loop.
+      if (loop && !e.shiftKey) {
+        const x0 = frameToX(viewport, loop.start)
+        const x1 = frameToX(viewport, loop.end)
+        loopStart = loop.start
+        loopEnd = loop.end
+        if (Math.abs(x - x0) <= HANDLE_HIT_PX) mode = 'loop-start'
+        else if (Math.abs(x - x1) <= HANDLE_HIT_PX) mode = 'loop-end'
+        else if (x > x0 && x < x1) mode = 'loop-move'
+      }
+      if (mode === 'maybe' && selection) {
         const x0 = frameToX(viewport, selection.start)
         const x1 = frameToX(viewport, selection.end)
         if (Math.abs(x - x0) <= HANDLE_HIT_PX) mode = 'resize-start'
         else if (Math.abs(x - x1) <= HANDLE_HIT_PX) mode = 'resize-end'
       }
-      laneDragRef.current = { mode, downX: x, downFrame: xToFrame(viewport, x) }
+      laneDragRef.current = { mode, downX: x, downFrame: xToFrame(viewport, x), loopStart, loopEnd }
       try {
         e.currentTarget.setPointerCapture(e.pointerId)
       } catch {
         // No pointer capture (jsdom): the drag still works.
       }
     },
-    [viewport, manifest, selection, laneX],
+    [viewport, manifest, selection, laneX, loop],
   )
 
   const onLanePointerMove = useCallback(
@@ -737,6 +786,34 @@ export function WaveformEditor({
       const drag = laneDragRef.current
       if (!drag) return
       const d = manifest.frame_count
+      if (drag.mode === 'loop-start' || drag.mode === 'loop-end' || drag.mode === 'loop-move') {
+        const lstart = drag.loopStart ?? 0
+        const lend = drag.loopEnd ?? d
+        // Body moves need the drag threshold; boundary handles do not
+        // (they mirror the selection resizes above).
+        if (
+          drag.mode === 'loop-move' &&
+          !loopDraftRef.current &&
+          Math.abs(x - drag.downX) <= DRAG_THRESHOLD_PX
+        ) {
+          return
+        }
+        const frame = Math.round(xToFrame(viewport, x))
+        let next: { start: number; end: number }
+        if (drag.mode === 'loop-start') {
+          next = { start: Math.max(0, Math.min(frame, lend - 1)), end: lend }
+        } else if (drag.mode === 'loop-end') {
+          next = { start: lstart, end: Math.min(d, Math.max(frame, lstart + 1)) }
+        } else {
+          // Move preserves the exact length (§13.3.5–6): never expand.
+          const len = lend - lstart
+          const start = Math.max(0, Math.min(lstart + (frame - drag.downFrame), d - len))
+          next = { start, end: start + len }
+        }
+        loopDraftRef.current = next
+        setLoopDrag(next)
+        return
+      }
       if (drag.mode === 'maybe' || drag.mode === 'drag') {
         if (drag.mode === 'maybe' && Math.abs(x - drag.downX) <= DRAG_THRESHOLD_PX) return
         drag.mode = 'drag'
@@ -770,12 +847,31 @@ export function WaveformEditor({
       } catch {
         // No pointer capture: nothing to release.
       }
+      if (!drag || !viewport || !manifest) return
+      if (drag.mode === 'loop-start' || drag.mode === 'loop-end' || drag.mode === 'loop-move') {
+        const draft = loopDraftRef.current
+        loopDraftRef.current = null
+        setLoopDrag(null)
+        const changed =
+          draft !== null && (draft.start !== drag.loopStart || draft.end !== drag.loopEnd)
+        if (changed && draft) {
+          // One commit per gesture (§13.8): the drag end is the edit.
+          onLoopRangeChange?.(draft.start, draft.end)
+          return
+        }
+        if (drag.mode === 'loop-move') {
+          // A sub-threshold body press is a click: seek, as elsewhere.
+          const frame = Math.round(xToFrame(viewport, laneX(e.clientX)))
+          onSeek?.(Math.max(0, Math.min(manifest.frame_count, frame)))
+        }
+        return
+      }
       // A down/up pair below the drag threshold is a click: seek (§13.4.2).
-      if (!drag || drag.mode !== 'maybe' || !viewport || !manifest) return
+      if (drag.mode !== 'maybe') return
       const frame = Math.round(xToFrame(viewport, laneX(e.clientX)))
       onSeek?.(Math.max(0, Math.min(manifest.frame_count, frame)))
     },
-    [viewport, manifest, laneX, onSeek],
+    [viewport, manifest, laneX, onSeek, onLoopRangeChange],
   )
 
   const onLanePointerLeave = useCallback(() => {
@@ -1192,13 +1288,25 @@ export function WaveformEditor({
     labels,
   ])
 
-  // Selection layer: the range plus a handle at each boundary (§13.4.7).
+  // Selection layer: the loop overlay under the selection range, each
+  // boundary with a handle (§13.4.7, §13.2.3–4). A loop drag previews
+  // locally until pointer-up commits it.
   useEffect(() => {
     if (state !== 'ready' || !viewport || contentWidth <= 0) return
+    const loopRange = loopDrag ?? loop ?? null
     for (const ch of shownLanes) {
       const sctx = ctxRef.current.get(`lane:${ch}:selection`)
       if (!sctx) continue
       sctx.clearRect(0, 0, contentWidth, LANE_HEIGHT)
+      if (loopRange) {
+        const x0 = frameToX(viewport, loopRange.start)
+        const x1 = frameToX(viewport, loopRange.end)
+        if (x1 > 0 && x0 < contentWidth) {
+          drawLoop(sctx, Math.max(0, x0), Math.min(contentWidth, x1), LANE_HEIGHT, {
+            color: loop?.color,
+          })
+        }
+      }
       if (selection) {
         const x0 = frameToX(viewport, selection.start)
         const x1 = frameToX(viewport, selection.end)
@@ -1207,7 +1315,7 @@ export function WaveformEditor({
         }
       }
     }
-  }, [state, viewport, selection, contentWidth, shownLanes, drawnKey])
+  }, [state, viewport, selection, contentWidth, shownLanes, drawnKey, loop, loopDrag])
 
   // Marker layers (M1.15 §17.2): row flags plus one 1 px tick per lane,
   // the dragged marker drawn at its preview position.

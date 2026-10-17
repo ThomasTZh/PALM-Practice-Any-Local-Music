@@ -83,6 +83,20 @@ export interface MixPeaks {
   master: number
 }
 
+/**
+ * M2.11 (spec §13): the active practice loop, in source frames.
+ * `repeatCount` is the total number of passes (a partial first pass
+ * counts as pass 1); `null` repeats forever. `boundaryFade` enables the
+ * 5 ms join fades at the pass crossings (§13.6). The range is validated
+ * by the domain (`0 ≤ start < end ≤ duration`); the transport trusts it.
+ */
+export interface TransportLoopSpec {
+  startFrame: number
+  endFrame: number
+  repeatCount: number | null
+  boundaryFade: boolean
+}
+
 /** Underrun accounting surfaced to the panel (spec §15.4). */
 export interface TransportDiagnostics {
   underruns: number
@@ -200,6 +214,12 @@ export interface TransportOptions {
   onSuspend?: (suspended: boolean) => void
   /** Per-quantum peak metering from the worklet mixer (~20 Hz). */
   onPeaks?: (peaks: MixPeaks) => void
+  /**
+   * M2.11 §13.4.5: a seek landed outside the enabled loop, so looping
+   * was disabled (the saved loop is retained). The App persists
+   * `loop_enabled = false` through the command pipeline.
+   */
+  onLoopDisabled?: () => void
 }
 
 export interface LoadSourceOptions {
@@ -225,6 +245,25 @@ interface TransportSegment {
   startFrame: number
   generation: number
   speed: number
+}
+
+/**
+ * The loop shape sent to the worklet (M2.11 §13.7): stream coordinates
+ * are source-aligned at each seek boundary, so `start`/`end` are plain
+ * source frames and the worklet reads the ring linearly.
+ */
+interface WorkletLoopSpec {
+  start: number
+  end: number
+  repeatCount: number | null
+  fade: boolean
+}
+
+function sameWorkletLoop(a: WorkletLoopSpec | null, b: WorkletLoopSpec | null): boolean {
+  if (a === null || b === null) return a === b
+  return (
+    a.start === b.start && a.end === b.end && a.repeatCount === b.repeatCount && a.fade === b.fade
+  )
 }
 
 /** §15.3 buffer budget: one 12 s retention cap per representation. */
@@ -359,6 +398,27 @@ export class PcmTransport {
   private source: FetchSource | null = null
   /** Shared rings (shared path only, one per source); SABs worklet-owned. */
   private rings: SharedRing[] = []
+
+  /** M2.11 §13: the active practice loop (source frames) or null. */
+  private loop: TransportLoopSpec | null = null
+  /** Whether looping is enabled (enabling ≠ starting, §13.4.1). */
+  private loopEnabled = false
+  /**
+   * Source frame where a finite repeat sequence stopped (§13.4.6), or
+   * null. Set by `loop-complete`; cleared by the next flush/seek. The
+   * frozen playhead reports it exactly (the loop end, not the wrapped
+   * start).
+   */
+  private loopStoppedSource: number | null = null
+  /** The loop shape the worklet currently holds (idempotent sync). */
+  private workletLoop: WorkletLoopSpec | null = null
+  private workletLoopKnown = false
+  /**
+   * True while a fetch round is between its awaits: a mid-stream loop
+   * install must then take the rebuffering transition path, because the
+   * round's range was computed under the previous loop state.
+   */
+  private fillRoundInFlight = false
 
   /** Bumped on every seek/stop so stale fetches and port messages drop. */
   private generation = 0
@@ -495,13 +555,27 @@ export class PcmTransport {
       } else {
         playbackFrame = seg.startFrame + Math.max(0, t - seg.startContextTime) * rate * seg.speed
       }
-      playbackFrame = Math.max(seg.startFrame, Math.min(playbackFrame, target.frameCount))
+      // M2.11 §13: a looped stream is unbounded in stream coordinates
+      // (the source length does not cap it); the mod mapping below folds
+      // it back into the source.
+      playbackFrame =
+        this.workletLoop !== null
+          ? Math.max(seg.startFrame, playbackFrame)
+          : Math.max(seg.startFrame, Math.min(playbackFrame, target.frameCount))
     } else {
       // Frozen (§16.2.6): the last acknowledged anchor, no extrapolation.
       playbackFrame = this.state === 'ended' ? target.frameCount : this.consumedFrame
     }
+    // M2.11 §13: stream coordinates are mapped to source frames through
+    // the loop (a completed sequence reports its exact stop position).
+    const sourceFrame =
+      this.loopStoppedSource !== null
+        ? this.loopStoppedSource
+        : this.state === 'ended'
+          ? playbackFrame
+          : this.sourceFromStream(playbackFrame)
     return clampToDuration(
-      projectPosition(playbackFrame, this.projectRate, rate),
+      projectPosition(sourceFrame, this.projectRate, rate),
       this.projectDurationFrames,
     )
   }
@@ -509,6 +583,135 @@ export class PcmTransport {
   /** Current playhead position in project frames (audible estimate). */
   get position(): number {
     return this.getAudiblePosition()
+  }
+
+  /** M2.11 §13: looping is enabled on an active loop. */
+  private isLooping(): boolean {
+    return this.loopEnabled && this.loop !== null
+  }
+
+  /** The loop shape sent to the worklet (§13.7), or null when disabled. */
+  private workletLoopSpec(): WorkletLoopSpec | null {
+    const loop = this.loop
+    if (!this.loopEnabled || !loop) return null
+    return {
+      start: loop.startFrame,
+      end: loop.endFrame,
+      repeatCount: loop.repeatCount,
+      fade: loop.boundaryFade,
+    }
+  }
+
+  /**
+   * M2.11 §13: the source frame carried by stream coordinate `c` —
+   * `start + ((c − start) mod len)` — or `c` unchanged for a linear
+   * stream. The mapping follows the loop the WORKLET holds (the stream
+   * content was fed to match it): a loop enabled while paused takes
+   * effect on the next seek, not on the frozen position.
+   */
+  private sourceFromStream(c: number): number {
+    const loop = this.loop
+    if (!loop || this.workletLoop === null) return c
+    const len = loop.endFrame - loop.startFrame
+    if (len <= 0) return c
+    return loop.startFrame + ((((c - loop.startFrame) % len) + len) % len)
+  }
+
+  /** The live audible estimate in stream coordinates (no mod mapping). */
+  private currentStreamFrame(): number {
+    const target = this.primary
+    if (!target) return this.consumedFrame
+    if (this.context && !this.suspended && this.isActiveState(this.state)) {
+      return (
+        this.consumedFrame +
+        Math.max(0, this.context.currentTime - this.anchorTime) *
+          target.sampleRate *
+          this.anchorRate
+      )
+    }
+    return this.consumedFrame
+  }
+
+  /** The current audible position as a source frame. */
+  private currentSourceFrame(): number {
+    return this.sourceFromStream(this.currentStreamFrame())
+  }
+
+  /**
+   * §13.4.2/§13.4.7: when the loop is enabled and the current source
+   * position is outside `[start, end)` — including the completion
+   * position `== end` and the ended state — playback starts with a
+   * synchronized seek to the loop start. Returns that source frame, or
+   * null when the position is inside (or no loop is enabled).
+   */
+  private loopStartIfOutside(): number | null {
+    const loop = this.loop
+    if (!this.isLooping() || !loop) return null
+    const source =
+      this.state === 'ended'
+        ? loop.endFrame
+        : this.loopStoppedSource !== null
+          ? this.loopStoppedSource
+          : this.currentSourceFrame()
+    if (source < loop.startFrame || source >= loop.endFrame) return loop.startFrame
+    return null
+  }
+
+  /** A live graph is running and the user intends playback. */
+  private isPlayingLive(): boolean {
+    return this.desiredPlaying && this.node !== null && this.isActiveState(this.state)
+  }
+
+  /** The worklet's loop shape differs from the transport's desired one. */
+  private loopStateChanged(): boolean {
+    return !this.workletLoopKnown || !sameWorkletLoop(this.workletLoop, this.workletLoopSpec())
+  }
+
+  /**
+   * The stream content fed so far is entirely inside the loop:
+   * `fetchedFrame` is the next frame to fetch and the worklet cannot
+   * have played past it, so the buffered content is the loop's first
+   * pass (which is the plain source). Installing — or removing — the
+   * loop mid-stream then keeps that content correct with no flush
+   * (§13.4.3). False once the fetch cursor crossed the loop end: the
+   * content past it is the linear source and must be refetched as the
+   * periodic stream.
+   */
+  private midStreamInstallSafe(): boolean {
+    const loop = this.loop
+    return loop !== null && !this.fillRoundInFlight && this.fetchedFrame <= loop.endFrame
+  }
+
+  /** Push the worklet loop shape mid-stream (no re-seek, §13.4.3). */
+  private installLoopMidStream(spec: WorkletLoopSpec | null): void {
+    this.node?.port.postMessage({ type: 'loop', loop: spec })
+    this.workletLoop = spec
+    this.workletLoopKnown = true
+  }
+
+  /**
+   * Controlled transition (§13.8): a synchronized re-seek to
+   * `sourceFrame` with the loop state the transport now holds (an
+   * enable/disable, a boundary edit, or a completion restart). The
+   * flush drops buffered content — the periodic stream is refetched —
+   * so the audible position continues exactly where it was.
+   */
+  private transitionTo(sourceFrame: number): void {
+    const wasPlaying = this.desiredPlaying
+    const wasActive = this.isActiveState(this.state)
+    this.flushBookkeeping(sourceFrame)
+    // Mid-playback transitions surface as `seeking` (the refill completes
+    // the start); from stopped states the `play` flow decides the state
+    // (`preparing`, or the preserved `buffering`).
+    if (wasPlaying && wasActive) this.setState('seeking')
+    const align = this.alignWorklet()
+    if (align === undefined) {
+      void this.runFill()
+    } else {
+      void align.then(() => {
+        if (this.desiredPlaying && this.state === 'seeking') void this.runFill()
+      })
+    }
   }
 
   /** §15.3 budget: the 12 s ring capacity in frames. */
@@ -652,7 +855,33 @@ export class PcmTransport {
     }
     this.desiredPlaying = true
     this.lastError = null
-    if (this.state === 'unloaded' || this.state === 'error') {
+    const wasEnded = this.state === 'ended'
+    const wasUnloaded = this.state === 'unloaded' || this.state === 'error'
+    // §13.4.2/§13.4.7: with the loop enabled and the position outside
+    // `[start, end)` — including the completion position `== end` and
+    // the ended state — playback starts with a synchronized seek to the
+    // loop start. A finite sequence that stopped with looping since
+    // disabled restarts linearly from its stop position (the fresh seek
+    // also clears the worklet's completion freeze).
+    const startFrame = this.loopStartIfOutside()
+    if (wasEnded) {
+      this.transitionTo(startFrame ?? 0)
+    } else if (startFrame !== null) {
+      this.transitionTo(startFrame)
+    } else if (this.loopStoppedSource !== null) {
+      this.transitionTo(this.loopStoppedSource)
+    } else if (!wasUnloaded && this.node !== null && this.loopStateChanged()) {
+      // §13.4.1: the loop was enabled/disabled while not playing, so the
+      // worklet does not have it yet. Install it mid-stream when the
+      // buffered content is still the loop's first pass; otherwise
+      // rebuffer the periodic stream from the current position.
+      if (this.midStreamInstallSafe()) {
+        this.installLoopMidStream(this.workletLoopSpec())
+      } else {
+        this.transitionTo(this.currentSourceFrame())
+      }
+    }
+    if (wasUnloaded) {
       this.setState('preparing')
       try {
         await this.initGraph()
@@ -672,6 +901,8 @@ export class PcmTransport {
       }
       // The fresh worklet starts at frame 0, generation 0; align it with
       // the transport bookkeeping (a pre-playback seek may have moved it).
+      // M2.11: the seek carries the loop shape, so a fresh graph starts
+      // with the practice loop already in effect.
       try {
         this.pushSegment(this.context?.currentTime ?? 0, this.genStartFrame)
         this.node?.port.postMessage({
@@ -679,15 +910,17 @@ export class PcmTransport {
           frame: this.fetchedFrame,
           audibleFrame: this.genStartFrame,
           generation: this.generation,
+          loop: this.workletLoopSpec(),
         })
+        this.workletLoop = this.workletLoopSpec()
+        this.workletLoopKnown = true
         await this.alignWorklet()
       } catch (err) {
         this.fail(err)
         return
       }
     }
-    if (this.state === 'ended') {
-      this.flushBookkeeping(0)
+    if (wasEnded) {
       try {
         await this.alignWorklet()
       } catch (err) {
@@ -696,12 +929,15 @@ export class PcmTransport {
       }
     }
     this.node?.port.postMessage({ type: 'resume' })
-    if (this.state === 'buffering') {
+    const stateNow = this.state as TransportState
+    if (stateNow === 'buffering') {
       // Keep buffering: the 2 s start threshold decides on the next
       // `buffered` acknowledgment (spec §15.4).
     } else if (this.hasData) {
       this.setState('playing')
-    } else {
+    } else if (stateNow !== 'seeking') {
+      // A loop transition already put the transport in `seeking`; its
+      // refill completes the start.
       this.setState('preparing')
     }
     void this.runFill()
@@ -767,6 +1003,14 @@ export class PcmTransport {
       playbackPosition(projectFrame, this.projectRate, target.sampleRate),
       target.frameCount,
     )
+    // §13.4.5: a seek outside the enabled loop disables looping but keeps
+    // the saved loop (the App persists `loop_enabled = false`).
+    const loop = this.loop
+    if (this.isLooping() && loop && (frame < loop.startFrame || frame >= loop.endFrame)) {
+      this.loopEnabled = false
+      this.loopStoppedSource = null
+      this.opts.onLoopDisabled?.()
+    }
     const wasPlaying = this.desiredPlaying
     this.flushBookkeeping(frame)
     if (wasPlaying && this.state !== 'unloaded') {
@@ -788,6 +1032,93 @@ export class PcmTransport {
           if (this.desiredPlaying && this.state === 'seeking') void this.runFill()
         })
       }
+    }
+  }
+
+  /**
+   * Install (or clear) the practice loop (M2.11 §13). The spec is in
+   * source frames (validated by the domain). While playing this is a
+   * controlled transition (§13.8): the stream re-seeks to the current
+   * source position when it is inside the new range, else to the new
+   * start. Boundary edits are committed by the UI on drag end, so one
+   * drag is one transition. While not playing it only sets state
+   * (§13.4.1); the next play/seek applies it.
+   */
+  setLoop(spec: TransportLoopSpec | null): void {
+    if (this.disposed) return
+    // The current source position under the loop that is in effect now.
+    const currentSource = this.currentSourceFrame()
+    const previous = this.loop
+    const held = this.workletLoop
+    this.loop = spec
+    if (!this.isPlayingLive()) return
+    if (!spec || !this.loopEnabled) {
+      // No loop in effect any more: continue linearly from the current
+      // source position (a saved loop is retained, §13.4.5). While the
+      // worklet holds no loop, storing the spec alone changes nothing —
+      // no rebuffer needed.
+      if (held === null) return
+      if (previous && !this.fillRoundInFlight && this.fetchedFrame <= previous.endFrame) {
+        // The buffered content is still the old loop's first pass — the
+        // plain source — so dropping the loop mid-stream is exact.
+        this.installLoopMidStream(null)
+      } else {
+        this.transitionTo(currentSource)
+      }
+      return
+    }
+    const inside = currentSource >= spec.startFrame && currentSource < spec.endFrame
+    this.transitionTo(inside ? currentSource : spec.startFrame)
+  }
+
+  /**
+   * Enable or disable the practice loop (M2.11 §13.4). While not playing
+   * this only sets state (§13.4.1). While playing: enabling inside the
+   * range continues from the current position — mid-stream with no
+   * re-seek while the buffered content is still the loop's first pass,
+   * else a synchronized rebuffered transition (§13.4.3); enabling
+   * outside seeks to the loop start (§13.4.4); disabling returns to the
+   * linear stream at the current source position (the loop stays saved,
+   * §13.4.5).
+   */
+  setLoopEnabled(enabled: boolean): void {
+    if (this.disposed) return
+    if (this.loopEnabled === enabled) return
+    // The current source position under the loop state in effect now.
+    const currentSource = this.currentSourceFrame()
+    if (!enabled) {
+      const safe = this.midStreamInstallSafe()
+      this.loopEnabled = false
+      // A completion stop position is a source frame — keep it so the
+      // frozen playhead and the later linear restart stay put (§13.4.7);
+      // the next flush clears it.
+      if (!this.isPlayingLive()) return
+      if (safe) {
+        // The buffered content is still the loop's first pass, which is
+        // the plain source: dropping the loop mid-stream continues
+        // linearly from the same position.
+        this.installLoopMidStream(null)
+      } else {
+        this.transitionTo(currentSource)
+      }
+      return
+    }
+    if (!this.loop) return
+    this.loopEnabled = true
+    this.loopStoppedSource = null
+    if (!this.isPlayingLive()) return
+    const loop = this.loop
+    if (currentSource < loop.startFrame || currentSource >= loop.endFrame) {
+      // §13.4.4: enabling while playing outside → synchronized seek.
+      this.transitionTo(loop.startFrame)
+    } else if (this.midStreamInstallSafe()) {
+      // §13.4.3: the buffered content is still inside the loop — it is
+      // exactly the first pass — so playback continues from the current
+      // position with no re-seek (the first pass is partial and counts
+      // as pass 1).
+      this.installLoopMidStream(this.workletLoopSpec())
+    } else {
+      this.transitionTo(currentSource)
     }
   }
 
@@ -1038,16 +1369,27 @@ export class PcmTransport {
     this.abort?.abort()
     this.abort = new AbortController()
     const clamped = Math.max(0, Math.min(Math.floor(frame), target.frameCount))
-    // M2.10 §12.3: fetch a pre-roll before the audible boundary; the
-    // worklet starts hearing at `clamped` (the dry bypass is exact at
-    // 1×; a wet start runs the silent warm-up from the pre-roll).
-    const fetchFrame = Math.max(0, clamped - PRE_ROLL_FRAMES)
+    // M2.11 §13: the seek carries the loop shape; a looped stream is
+    // rebased to `clamped` (source-aligned) and the worklet then reads
+    // the ring linearly while the fetch cursor cycles.
+    const loop = this.workletLoopSpec()
+    // M2.10 §12.3 / M2.11 §13.7.4: fetch a pre-roll before the audible
+    // boundary; the worklet starts hearing at `clamped` (the dry bypass
+    // is exact at 1×; a wet start runs the silent warm-up from the
+    // pre-roll). With a loop the pre-roll may reach before frame 0: a
+    // negative stream coordinate maps (via the mod) to the loop's tail,
+    // which is the periodic pre-roll §13.7.2 asks for.
+    const fetchFrame =
+      loop !== null ? clamped - PRE_ROLL_FRAMES : Math.max(0, clamped - PRE_ROLL_FRAMES)
     this.genStartFrame = clamped
     this.fetchedFrame = fetchFrame
     this.consumedFrame = clamped
     this.hasData = false
     this.bufferedFrames = 0
     this.workerPaused = false
+    this.loopStoppedSource = null
+    this.workletLoop = loop
+    this.workletLoopKnown = true
     if (this.context) this.anchorTime = this.context.currentTime
     this.pushSegment(this.context ? this.context.currentTime : 0, clamped)
     this.source?.stop()
@@ -1056,6 +1398,7 @@ export class PcmTransport {
       frame: fetchFrame,
       audibleFrame: clamped,
       generation: this.generation,
+      loop,
     })
   }
 
@@ -1165,6 +1508,22 @@ export class PcmTransport {
         this.setState('ended')
         this.reportPosition()
         break
+      case 'loop-complete': {
+        // M2.11 §13.4.6: a finite repeat sequence finished. The worklet
+        // froze exactly at the final pass end (silence after it); park
+        // the transport there — the loop end, not the wrapped start.
+        const m = msg as unknown as { frame: number; time: number }
+        this.consumedFrame = m.frame
+        this.anchorTime = m.time
+        this.anchorSegment = this.segmentAt(m.time)
+        this.loopStoppedSource = this.loop ? this.loop.endFrame : null
+        this.desiredPlaying = false
+        this.source?.stop()
+        this.abort?.abort()
+        this.setState('paused')
+        this.reportPosition()
+        break
+      }
       default:
         break
     }
@@ -1231,6 +1590,10 @@ export class PcmTransport {
     this.gainNode = null
     this.limiterNode = null
     this.rings = []
+    // A fresh graph starts with no loop installed (M2.11): the next
+    // seek carries the shape again.
+    this.workletLoop = null
+    this.workletLoopKnown = false
     if (this.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(this.blobUrl)
     this.blobUrl = null
     this.context = null
@@ -1266,6 +1629,10 @@ export class PcmTransport {
         if (s !== 'preparing' && s !== 'playing' && s !== 'buffering' && s !== 'seeking') return
         const target = this.primary
         const rate = target.sampleRate
+        // M2.11 §13: a looped stream is unbounded (the fetch cursor
+        // cycles through the pass); otherwise the source length caps the
+        // fill. The loop in effect is the one the worklet holds.
+        const loop = this.workletLoop !== null ? this.loop : null
         // M2.10: the audible position advances at `rate × anchorRate`
         // frames/s, so the fill budget scales with the anchor's rate.
         const consumedEstimate =
@@ -1273,18 +1640,28 @@ export class PcmTransport {
           (this.context && !this.suspended
             ? Math.max(0, this.context.currentTime - this.anchorTime) * rate * this.anchorRate
             : 0)
-        const targetAhead = Math.min(
-          rate * this.speed * LOOKAHEAD_SECONDS,
-          Math.max(rate * this.speed * PREBUFFER_SECONDS, target.frameCount - this.genStartFrame),
-        )
+        const targetAhead = loop
+          ? rate * this.speed * LOOKAHEAD_SECONDS
+          : Math.min(
+              rate * this.speed * LOOKAHEAD_SECONDS,
+              Math.max(
+                rate * this.speed * PREBUFFER_SECONDS,
+                target.frameCount - this.genStartFrame,
+              ),
+            )
         let fetched = false
         while (
-          this.fetchedFrame < target.frameCount &&
+          (loop !== null || this.fetchedFrame < target.frameCount) &&
           this.fetchedFrame - consumedEstimate < targetAhead &&
           !this.workerPaused &&
           this.bufferedFrames < this.budgetFrames - this.marginFrames
         ) {
-          const frames = Math.min(rate * CHUNK_SECONDS, target.frameCount - this.fetchedFrame)
+          // M2.11 §13.7.1: with a loop the source frame of the fetch
+          // cursor comes from the mod mapping and the chunk is clamped
+          // to the pass end, so the byte range never crosses a wrap.
+          const sourceCursor = loop ? this.sourceFromStream(this.fetchedFrame) : this.fetchedFrame
+          const passEnd = loop ? loop.endFrame : target.frameCount
+          const frames = Math.min(rate * CHUNK_SECONDS, passEnd - sourceCursor)
           if (frames <= 0) break
           const gen = this.generation
           // One round fetches the same frame range for every source
@@ -1292,10 +1669,11 @@ export class PcmTransport {
           // written, so the sources can never drift apart.
           let roundFailed = false
           let written = Infinity
+          this.fillRoundInFlight = true
           for (let i = 0; i < this.sources.length; i++) {
             const src = this.sources[i]
             const bytesPerFrame = 4 * src.channelCount
-            const start = Math.floor(this.fetchedFrame * bytesPerFrame)
+            const start = Math.floor(sourceCursor * bytesPerFrame)
             const end = start + frames * bytesPerFrame - 1
             let w = 0
             if (this.mode === 'shared') {
@@ -1357,12 +1735,14 @@ export class PcmTransport {
           this.fetchedFrame += written
           fetched = true
         }
-        if (this.fetchedFrame >= target.frameCount) return // 'ended' will arrive
+        this.fillRoundInFlight = false
+        if (loop === null && this.fetchedFrame >= target.frameCount) return // 'ended' will arrive
         if (!fetched) await this.delay(FILL_CHECK_MS, this.abort?.signal)
         if (this.disposed) return
       }
     } finally {
       this.fillLoopRunning = false
+      this.fillRoundInFlight = false
     }
   }
 

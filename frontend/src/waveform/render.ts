@@ -355,6 +355,57 @@ export function drawSelection(
   ctx.fillRect(x1 - handle / 2, 0, handle, height)
 }
 
+/** Practice-loop palette (M2.11, spec §13.1): amber first (server default). */
+export const LOOP_DEFAULT_COLOR = '#f59e0b'
+export const LOOP_COLORS = [
+  '#f59e0b',
+  '#10b981',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+  '#e11d48',
+] as const
+
+/** `#rrggbb` → `rgba(r, g, b, a)`; malformed input uses the loop default. */
+export function loopFillColor(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex)
+  if (!m) return `rgba(245, 158, 11, ${alpha})`
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 0xff}, ${(n >> 8) & 0xff}, ${n & 0xff}, ${alpha})`
+}
+
+export interface LoopDrawOptions {
+  /** Loop color (default `LOOP_DEFAULT_COLOR`). */
+  color?: string
+  /** Tint alpha (default 0.15). */
+  fillAlpha?: number
+  /** Boundary handle width in CSS px, the hit target (default 3). */
+  handleWidth?: number
+}
+
+/**
+ * Practice-loop overlay on one lane (M2.11, spec §13.2.3–4): a tinted
+ * fill of `[x0, x1]`, a handle at each boundary, and a 1 px top border
+ * so the range stays readable over the selection tint.
+ */
+export function drawLoop(
+  ctx: WaveformContext,
+  x0: number,
+  x1: number,
+  height: number,
+  opts: LoopDrawOptions = {},
+): void {
+  if (!(x1 > x0)) return
+  const handle = opts.handleWidth ?? 3
+  const color = opts.color ?? LOOP_DEFAULT_COLOR
+  ctx.fillStyle = loopFillColor(color, opts.fillAlpha ?? 0.15)
+  ctx.fillRect(x0, 0, x1 - x0, height)
+  ctx.fillStyle = color
+  ctx.fillRect(x0 - handle / 2, 0, x1 - x0 + handle, 1)
+  ctx.fillRect(x0 - handle / 2, 0, handle, height)
+  ctx.fillRect(x1 - handle / 2, 0, handle, height)
+}
+
 export interface OverviewWindowOptions {
   /** Window fill (default `OVERVIEW_WINDOW_COLOR`). */
   color?: string

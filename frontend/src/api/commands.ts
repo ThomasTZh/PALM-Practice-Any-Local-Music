@@ -19,6 +19,7 @@ export type CommandOp = components['schemas']['CommandRequest']['op']
 export type Marker = components['schemas']['MarkerRecord']
 export type WorkingState = components['schemas']['WorkingState']
 export type PracticeState = components['schemas']['PracticeState']
+export type PracticeLoop = components['schemas']['PracticeLoop']
 
 /** The resulting project state after a command (§17.4.5). */
 export interface CommandResult {

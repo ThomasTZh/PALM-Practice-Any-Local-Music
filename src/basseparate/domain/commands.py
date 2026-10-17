@@ -18,6 +18,8 @@ from basseparate.domain.marker import MAX_MARKER_LABEL_LENGTH, MarkerRecord
 from basseparate.domain.practice import (
     MAX_DISPLAY_HEIGHT,
     MAX_GAIN,
+    MAX_LOOP_NAME_LENGTH,
+    MAX_LOOP_REPEAT,
     MAX_PLAYBACK_SPEED,
     MIN_DISPLAY_HEIGHT,
     MIN_PLAYBACK_SPEED,
@@ -201,6 +203,113 @@ class SetPlaybackSpeedOp(BaseModel):
     speed: float = Field(ge=MIN_PLAYBACK_SPEED, le=MAX_PLAYBACK_SPEED)
 
 
+class AddLoopOp(BaseModel):
+    """Create a saved practice loop (M2.11, spec §13.2.1).
+
+    The name defaults to "Loop N" and the color to the default loop
+    color server-side. The repository validates
+    ``0 ≤ start < end ≤ duration_frames`` (422 ``LOOP_RANGE_INVALID``).
+    ``repeat_count`` is the total number of passes; ``None`` = infinite.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["add_loop"] = "add_loop"
+    start_frames: SamplePosition
+    end_frames: SamplePosition
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    repeat_count: int | None = Field(default=None, ge=1, le=MAX_LOOP_REPEAT)
+    boundary_fade: bool = True
+
+    def model_post_init(self, __context: object) -> None:
+        if self.end_frames <= self.start_frames:
+            raise ValueError("loop end_frames must be strictly greater than start_frames")
+
+
+class UpdateLoopOp(BaseModel):
+    """Partial loop edit; absent fields stay unchanged (M2.11, spec §13.2).
+
+    ``repeat_count`` distinguishes absent (unchanged) from an explicit
+    ``null`` (infinite) via ``model_fields_set``. The repository
+    re-validates the resulting range against the duration.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["update_loop"] = "update_loop"
+    loop_id: Uuid
+    start_frames: SamplePosition | None = None
+    end_frames: SamplePosition | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    repeat_count: int | None = Field(default=None, ge=1, le=MAX_LOOP_REPEAT)
+    boundary_fade: bool | None = None
+
+    def model_post_init(self, __context: object) -> None:
+        patch = (
+            self.start_frames,
+            self.end_frames,
+            self.name,
+            self.color,
+            self.repeat_count,
+            self.boundary_fade,
+        )
+        if all(value is None for value in patch) and "repeat_count" not in self.model_fields_set:
+            raise ValueError("update_loop requires at least one field to change")
+
+
+class DeleteLoopOp(BaseModel):
+    """Delete a saved loop (M2.11, spec §13.2.8).
+
+    When the deleted loop was active, the selection is cleared and
+    looping disabled; other loops are untouched.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["delete_loop"] = "delete_loop"
+    loop_id: Uuid
+
+
+class DuplicateLoopOp(BaseModel):
+    """Duplicate a saved loop as "<name> copy" (M2.11, spec §13.2.7)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["duplicate_loop"] = "duplicate_loop"
+    loop_id: Uuid
+
+
+class SetActiveLoopOp(BaseModel):
+    """Select the active loop; ``null`` clears the selection (M2.11 §13.2.9).
+
+    Clearing also disables looping (the ``loop_enabled requires an
+    active loop`` invariant). Selecting a different loop keeps looping
+    enabled.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_active_loop"] = "set_active_loop"
+    loop_id: Uuid | None = None
+
+
+class SetLoopEnabledOp(BaseModel):
+    """Enable or disable repeated practice playback (M2.11 §13.2.10, §13.4).
+
+    Enabling requires an active loop of at least
+    :data:`MIN_REPEATABLE_LOOP_SECONDS` (spec §13.3.3): the repository
+    pre-validates and raises ``NoActiveLoopError`` (409) or
+    ``LoopTooShortError`` (409, message names the 100 ms minimum).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_loop_enabled"] = "set_loop_enabled"
+    enabled: bool
+
+
 ProjectCommandOp = Annotated[
     (
         AddMarkerOp
@@ -218,6 +327,12 @@ ProjectCommandOp = Annotated[
         | SetMasterGainOp
         | SetMonitoringLimiterOp
         | SetPlaybackSpeedOp
+        | AddLoopOp
+        | UpdateLoopOp
+        | DeleteLoopOp
+        | DuplicateLoopOp
+        | SetActiveLoopOp
+        | SetLoopEnabledOp
     ),
     Field(discriminator="type"),
 ]

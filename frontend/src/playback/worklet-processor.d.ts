@@ -21,14 +21,22 @@ export interface ProcessResult {
   /** True once when the position reached the source endpoint. */
   ended: boolean
   /**
+   * True once when a finite practice-loop repeat sequence finished
+   * (M2.11 §13.4.6): the cursor stops exactly at the loop end and the
+   * `anchor` names that pass-end boundary.
+   */
+  loopComplete: boolean
+  /**
    * Position anchor: the audible cursor was exactly `frame` at context
    * time `time` (M2.10 §12.7 — exact pairs, so the main-thread
    * extrapolation `frame + (now - time) * sampleRate * rate` follows the
    * audio actually heard). `rate` is the worklet's ramped playback rate.
    * `paused` is true only for the final anchor emitted when the pause
-   * ramp completes (the exact paused position).
+   * ramp completes (the exact paused position). While looping (M2.11)
+   * frames are stream coordinates; `wrap` marks the pass-crossing
+   * anchors emitted at each boundary (spec §13.7.5).
    */
-  anchor: { frame: number; time: number; paused: boolean; rate: number } | null
+  anchor: { frame: number; time: number; paused: boolean; rate: number; wrap?: boolean } | null
   /** Total frames buffered on the active path after this block. */
   buffered: number
   /**
@@ -77,6 +85,12 @@ export class ConsumptionState {
    */
   attachShared(sab: SharedArrayBuffer): void
   /**
+   * Enter/leave the periodic-loop stream (M2.11 §13.7.4): the source
+   * length no longer bounds the position and the pre-roll may start
+   * below frame 0.
+   */
+  setLooping(looping: boolean): void
+  /**
    * Drop all buffered data and move to `frame` (the stale-audio
    * barrier). On the shared path this also stores the reader index and
    * adopts `generation`; the writer index resets only on the worker's
@@ -119,6 +133,20 @@ export interface SourceParamPatch {
   balance?: number
   mute?: boolean
   solo?: boolean
+}
+
+/**
+ * Practice-loop geometry (M2.11, spec §13.1) in source frames. The
+ * transport feeds the periodic stream; the worklet counts passes, fades
+ * the joins, and stops at the end of a finite repeat sequence.
+ * `repeatCount` is the total number of passes (`null` = infinite); a
+ * partial first pass (enabling inside the loop) counts as pass 1.
+ */
+export interface LoopSpec {
+  start: number
+  end: number
+  repeatCount: number | null
+  fade: boolean
 }
 
 /**
@@ -170,13 +198,33 @@ export class MixState {
   /** Bind one source's shared ring. */
   attachShared(index: number, sab: SharedArrayBuffer): void
   /**
+   * Install or clear the practice loop (M2.11, spec §13). `null` clears;
+   * called with the seek (atomic) or mid-stream when enabling inside
+   * the loop. Resets the pass counter (a new repeat sequence).
+   */
+  setLoop(spec: LoopSpec | null): void
+  /** Completed loop passes since the last seek/spec change. */
+  readonly loopPasses: number
+  /** True once a finite repeat sequence has finished. */
+  readonly loopComplete: boolean
+  /** Join-fade length in output frames for the current spec/rate. */
+  loopFadeFrames(rate: number): number
+  /**
    * Seek every source to the same fetch frame and set the audible
    * boundary (M2.10 §12.3). `frame` is what the transport feeds first
    * (the pre-roll); `audibleFrame` (default `frame`) is where the
    * listener starts hearing. `generations` is per-source on the shared
-   * path; a single number applies to all.
+   * path; a single number applies to all. `loop` installs the practice
+   * loop atomically (M2.11): `undefined` keeps the current one, `null`
+   * clears it, and a loop left installed by an outside seek is dropped
+   * (spec §13.4.5).
    */
-  seek(frame: number, generations?: number | number[], audibleFrame?: number): void
+  seek(
+    frame: number,
+    generations?: number | number[],
+    audibleFrame?: number,
+    loop?: LoopSpec | null,
+  ): void
   /** Begin the pause ramp on the mixed output; the cursor is preserved. */
   pause(): void
   /** Resume at the preserved cursor. */

@@ -19,6 +19,7 @@ import {
   type GainNodeLike,
   type MixPeaks,
   type TransportContextLike,
+  type TransportLoopSpec,
   type TransportMode,
   type TransportState,
   type WorkletNodeLike,
@@ -163,6 +164,8 @@ interface RigOptions {
   onPeaks?: (peaks: MixPeaks) => void
   /** M2.9: stretch artifact bytes for the worklet (jsdom cannot fetch). */
   fetchStretchBytes?: () => Promise<ArrayBuffer>
+  /** M2.11 §13.4.5: a seek outside the enabled loop disabled looping. */
+  onLoopDisabled?: () => void
 }
 
 interface Rig {
@@ -251,6 +254,7 @@ function makeRig(opts: RigOptions = {}): Rig {
     onState: (s) => states.push(s),
     onPosition: (f) => positions.push(f),
     onPeaks: opts.onPeaks,
+    onLoopDisabled: opts.onLoopDisabled,
   })
   return {
     transport,
@@ -384,8 +388,8 @@ describe('PcmTransport play', () => {
     expect(rig.transport.position).toBe(0)
     // The first seek is the play-time alignment of the fresh worklet.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
-      { type: 'seek', frame: 0, audibleFrame: 0, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: null },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 1, loop: null },
     ])
     expect(rig.fetchCalls[0].signal?.aborted).toBe(true)
   })
@@ -402,8 +406,8 @@ describe('PcmTransport play', () => {
     // second fetches the §12.3 pre-roll (12 288 frames) before the
     // audible boundary at 24 000.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
-      { type: 'seek', frame: 11_712, audibleFrame: 24_000, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: null },
+      { type: 'seek', frame: 11_712, audibleFrame: 24_000, generation: 1, loop: null },
     ])
     expect(rig.fetchCalls[0].signal?.aborted).toBe(true)
     // The refill (fill loop) starts at the pre-roll.
@@ -444,8 +448,8 @@ describe('PcmTransport play', () => {
     await rig.transport.play()
     // The first seek is the play-time alignment of the fresh worklet.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
-      { type: 'seek', frame: 0, audibleFrame: 0, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: null },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 1, loop: null },
     ])
     expect(rig.transport.currentState).toBe('preparing')
   })
@@ -706,8 +710,8 @@ describe('shared path', () => {
     expect(rig.transport.currentState).toBe('seeking')
     // The first seek is the play-time alignment of the fresh worklet.
     expect(rig.node.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0 },
-      { type: 'seek', frame: 11_712, audibleFrame: 24_000, generation: 1 },
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: null },
+      { type: 'seek', frame: 11_712, audibleFrame: 24_000, generation: 1, loop: null },
     ])
     core.seek(11_712, 1, 24_000) // what the real worklet does on the seek message
     rig.node.post({ type: 'flushed', generation: 1 })
@@ -995,7 +999,7 @@ describe('context loss and rebind', () => {
     // Playback starts at the retained position; the fetch covers its pre-roll.
     expect(rig.fetchCalls.at(-1)?.start).toBe(0)
     expect(freshNode.posted('seek')).toEqual([
-      { type: 'seek', frame: 0, audibleFrame: 7200, generation: 0 },
+      { type: 'seek', frame: 0, audibleFrame: 7200, generation: 0, loop: null },
     ])
   })
 })
@@ -1267,5 +1271,313 @@ describe('M2.9 stretch integration (spec §11)', () => {
     })
     await rig.transport.play()
     expect(freshNode.posted('rate')).toEqual([{ type: 'rate', value: 2 }])
+  })
+})
+
+describe('M2.11 practice loops (spec §13)', () => {
+  /** A transport loop spec with the common defaults. */
+  const loopSpec = (
+    startFrame: number,
+    endFrame: number,
+    extra: Partial<TransportLoopSpec> = {},
+  ): TransportLoopSpec => ({
+    startFrame,
+    endFrame,
+    repeatCount: null,
+    boundaryFade: true,
+    ...extra,
+  })
+
+  /** The wire shape the worklet receives (source frames). */
+  const wireLoop = (start: number, end: number, repeatCount: number | null = null) => ({
+    start,
+    end,
+    repeatCount,
+    fade: true,
+  })
+
+  it('enabling while paused does not start or seek; play starts at the loop start (§13.4.1/§13.4.2)', async () => {
+    const rig = makeRig()
+    await load(rig)
+    rig.transport.setLoop(loopSpec(10_000, 20_000))
+    rig.transport.setLoopEnabled(true)
+    // Enabling is not starting: state-only while no graph exists.
+    expect(rig.transport.currentState).toBe('unloaded')
+    expect(rig.transport.position).toBe(0)
+    expect(rig.node.posted('seek')).toEqual([])
+    expect(rig.node.posted('loop')).toEqual([])
+
+    await rig.transport.play()
+    await settle()
+    // The position (0) is outside `[start, end)`: the start seeks to the
+    // loop start and carries the loop shape in the seek message.
+    expect(rig.node.posted('seek')).toEqual([
+      {
+        type: 'seek',
+        frame: 10_000 - 12_288,
+        audibleFrame: 10_000,
+        generation: 1,
+        loop: wireLoop(10_000, 20_000),
+      },
+    ])
+    // The pre-roll reaches before the loop start: stream −12 288 maps to
+    // the loop tail (source 17 712), the periodic pre-roll (§13.7.2).
+    expect(rig.fetchCalls[0]).toMatchObject({
+      start: 17_712 * BYTES_PER_FRAME,
+      end: 20_000 * BYTES_PER_FRAME - 1,
+    })
+  })
+
+  it('play continues from the current position when it is inside the loop (§13.4.2)', async () => {
+    const rig = makeRig()
+    await load(rig)
+    rig.transport.seek(15_000) // before the loop exists: a plain seek
+    rig.transport.setLoop(loopSpec(10_000, 20_000))
+    rig.transport.setLoopEnabled(true)
+    await rig.transport.play()
+    // Inside: no start seek; the fresh graph seeks to the linear pre-roll
+    // before 15 000 and carries the loop.
+    expect(rig.node.posted('seek')).toEqual([
+      {
+        type: 'seek',
+        frame: 15_000 - 12_288,
+        audibleFrame: 15_000,
+        generation: 1,
+        loop: wireLoop(10_000, 20_000),
+      },
+    ])
+  })
+
+  it('enabling while playing inside installs the loop mid-stream with no re-seek (§13.4.3)', async () => {
+    const { rig } = makeLongRig()
+    await ready(rig)
+    await settle()
+    // Linear stream: one alignment seek, no loop messages.
+    expect(rig.node.posted('seek')).toEqual([
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: null },
+    ])
+    expect(rig.node.posted('loop')).toEqual([])
+
+    rig.transport.setLoop(loopSpec(0, 12 * RATE))
+    expect(rig.node.posted('loop')).toEqual([]) // stored, not in effect
+    rig.transport.setLoopEnabled(true)
+    // The buffered content (8 s fetched) is still inside the loop: the
+    // worklet gets the loop with no flush and playback continues from
+    // the current position.
+    expect(rig.node.posted('loop')).toEqual([{ type: 'loop', loop: wireLoop(0, 12 * RATE) }])
+    expect(rig.node.posted('seek')).toHaveLength(1)
+    expect(rig.transport.currentState).toBe('playing')
+  })
+
+  it('enabling while playing outside seeks to the loop start with the periodic pre-roll (§13.4.4/§13.7.2)', async () => {
+    const { rig, worker } = makeLongRig()
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    // The audible position moved outside the loop.
+    rig.node.post({ type: 'anchor', frame: 200_000, time: 2, generation: 0 })
+    rig.context.currentTime = 2
+    rig.transport.setLoopEnabled(true)
+    // A synchronized controlled transition to the loop start.
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: -12_288,
+      audibleFrame: 0,
+      generation: 1,
+      loop: wireLoop(0, 100_000),
+    })
+    await settle()
+    // The first chunk after the transition covers the loop tail: stream
+    // −12 288 maps to source 87 712, clamped at the pass end.
+    const refill = worker.fetchJobs.filter((job) => job.generation === 1)
+    expect(refill[0].start / BYTES_PER_FRAME).toBe(87_712)
+    expect((refill[0].end - refill[0].start + 1) / BYTES_PER_FRAME).toBe(12_288)
+  })
+
+  it('disabling while playing returns to the linear stream with no re-seek when safe (§13.4.5)', async () => {
+    const { rig } = makeLongRig()
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(0, 12 * RATE))
+    rig.transport.setLoopEnabled(true)
+    expect(rig.node.posted('loop')).toHaveLength(1)
+
+    rig.transport.setLoopEnabled(false)
+    // The buffered content is still the loop's first pass — the plain
+    // source — so the loop is dropped mid-stream; the saved loop stays.
+    expect(rig.node.posted('loop')).toEqual([
+      { type: 'loop', loop: wireLoop(0, 12 * RATE) },
+      { type: 'loop', loop: null },
+    ])
+    expect(rig.node.posted('seek')).toHaveLength(1)
+    // The position maps linearly again.
+    rig.node.post({ type: 'anchor', frame: 100_000, time: 1, generation: 0 })
+    rig.context.currentTime = 1
+    expect(rig.transport.position).toBe(100_000)
+  })
+
+  it('a seek outside the enabled loop disables looping but keeps the loop (§13.4.5)', async () => {
+    const onLoopDisabled = vi.fn()
+    const rig = makeRig({ frameCount: LONG_FRAMES, onLoopDisabled })
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(10_000, 20_000))
+    rig.transport.setLoopEnabled(true) // outside at 0: transition to 10 000
+    expect(rig.node.posted('seek')).toHaveLength(2)
+
+    rig.transport.seek(30_000)
+    expect(onLoopDisabled).toHaveBeenCalledTimes(1)
+    expect(rig.transport.currentState).toBe('seeking')
+    // The seek is linear again (loop: null); the loop stays saved.
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: 30_000 - 12_288,
+      audibleFrame: 30_000,
+      generation: 2,
+      loop: null,
+    })
+    // Re-enabling uses the retained loop (30 000 is outside → start).
+    rig.transport.setLoopEnabled(true)
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: 10_000 - 12_288,
+      audibleFrame: 10_000,
+      generation: 3,
+      loop: wireLoop(10_000, 20_000),
+    })
+  })
+
+  it('a finite sequence stops at the loop end; play starts a new sequence (§13.4.6/§13.4.7)', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(10_000, 20_000, { repeatCount: 2 }))
+    rig.transport.setLoopEnabled(true) // outside at 0: transition to 10 000
+    expect(rig.transport.currentState).toBe('seeking')
+
+    // The worklet plays the passes: the final pass ends at stream 30 000
+    // (start + 2 × len) and it reports the completion there.
+    rig.context.currentTime = 2.5
+    rig.node.post({ type: 'anchor', frame: 30_000, time: 2.5, generation: 1 })
+    rig.node.post({ type: 'loop-complete', frame: 30_000, time: 2.5, generation: 1 })
+    expect(rig.transport.currentState).toBe('paused')
+    // The playhead parks at the loop end (source), not the wrapped start.
+    expect(rig.transport.position).toBe(20_000)
+
+    // Play after a completion is a new repeat sequence from the start.
+    await rig.transport.play()
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: 10_000 - 12_288,
+      audibleFrame: 10_000,
+      generation: 2,
+      loop: wireLoop(10_000, 20_000, 2),
+    })
+  })
+
+  it('disabling after a completion keeps the stop position; play restarts linearly there (§13.4.7)', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(10_000, 20_000, { repeatCount: 1 }))
+    rig.transport.setLoopEnabled(true) // outside at 0: transition to 10 000
+    rig.context.currentTime = 1
+    rig.node.post({ type: 'loop-complete', frame: 20_000, time: 1, generation: 1 })
+    expect(rig.transport.position).toBe(20_000)
+
+    rig.transport.setLoopEnabled(false)
+    // The stop position survives the disable (no jump to the wrapped
+    // start) and the saved loop is retained.
+    expect(rig.transport.position).toBe(20_000)
+    await rig.transport.play()
+    // Looping is off: playback restarts linearly from the stop position.
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: 20_000 - 12_288,
+      audibleFrame: 20_000,
+      generation: 2,
+      loop: null,
+    })
+  })
+
+  it('maps the audible stream position through the loop (mod) (§13.4)', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(10_000, 20_000))
+    rig.transport.setLoopEnabled(true) // outside at 0: transition to 10 000
+    // Stream 20 500 is the second pass, 500 frames in: source 10 500.
+    rig.node.post({ type: 'anchor', frame: 20_500, time: 1, generation: 1 })
+    rig.context.currentTime = 1
+    expect(rig.transport.position).toBe(10_500)
+    // The estimate advances in stream coordinates and maps through the
+    // mod: 44 500 − 10 000 = 34 500 → 14 500.
+    rig.context.currentTime = 1.5
+    expect(rig.transport.position).toBe(14_500)
+    // The frozen playhead maps the same way.
+    rig.transport.pause()
+    expect(rig.transport.position).toBe(14_500)
+  })
+
+  it('cycles fetch chunks at the pass end while a loop is in effect (§13.7.1)', async () => {
+    const { rig, worker } = makeLongRig()
+    await load(rig)
+    rig.transport.setLoop(loopSpec(0, 100_000))
+    rig.transport.setLoopEnabled(true)
+    await rig.transport.play()
+    await settle()
+    // The fresh seek starts source-aligned at the loop start.
+    expect(rig.node.posted('seek')).toEqual([
+      { type: 'seek', frame: 0, audibleFrame: 0, generation: 0, loop: wireLoop(0, 100_000) },
+    ])
+    // 1 s chunks cycle: 48 000, 48 000, then the pass-end remainder
+    // 4 000 (clamped — no byte range crosses a wrap), then the start.
+    const starts = worker.fetchJobs.map((job) => job.start / BYTES_PER_FRAME)
+    expect(starts.slice(0, 8)).toEqual([0, 48_000, 96_000, 0, 48_000, 96_000, 0, 48_000])
+    const passEnd = worker.fetchJobs[2]
+    expect((passEnd.end - passEnd.start + 1) / BYTES_PER_FRAME).toBe(4_000)
+  })
+
+  it('a boundary edit while playing commits one controlled transition (§13.8)', async () => {
+    const rig = makeRig({ frameCount: LONG_FRAMES })
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(10_000, 20_000))
+    rig.transport.setLoopEnabled(true) // outside at 0: transition to 10 000
+    rig.context.currentTime = 1
+    rig.node.post({ type: 'anchor', frame: 15_000, time: 1, generation: 1 })
+    expect(rig.transport.position).toBe(15_000)
+
+    rig.transport.setLoop(loopSpec(12_000, 22_000))
+    // Inside the new range: one synchronized re-seek at the current
+    // position with the new loop shape (one rebuffer per edit).
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: 15_000 - 12_288,
+      audibleFrame: 15_000,
+      generation: 2,
+      loop: wireLoop(12_000, 22_000),
+    })
+  })
+
+  it('play after the source ended starts a new sequence at the loop start (§13.4.2)', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    await settle()
+    rig.transport.setLoop(loopSpec(10_000, 20_000))
+    rig.transport.setLoopEnabled(true) // outside at 0: transition to 10 000
+    rig.node.post({ type: 'ended', generation: 1 })
+    expect(rig.transport.currentState).toBe('ended')
+    expect(rig.transport.position).toBe(FRAMES)
+
+    await rig.transport.play()
+    // The loop end counts as outside: a new sequence starts at the start.
+    expect(rig.node.posted('seek').at(-1)).toEqual({
+      type: 'seek',
+      frame: 10_000 - 12_288,
+      audibleFrame: 10_000,
+      generation: 2,
+      loop: wireLoop(10_000, 20_000),
+    })
   })
 })

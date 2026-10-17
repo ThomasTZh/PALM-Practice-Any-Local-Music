@@ -357,3 +357,111 @@ class TestUndoRedo:
         data = undone.json()
         assert data["markers"] == []
         assert data["working_state"]["last_position_frames"] == 55_000
+
+
+class TestLoopCommands:
+    """M2.11 loop ops through the command endpoint (spec §13)."""
+
+    def _add_loop(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        project_id: str,
+        base_revision: int,
+        *,
+        start: int = 1_000,
+        end: int = 5_800,
+    ) -> Response:
+        return _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body(
+                {"type": "add_loop", "start_frames": start, "end_frames": end},
+                base_revision,
+            ),
+        )
+
+    def test_add_loop_returns_resulting_state(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        resp = self._add_loop(client, auth_headers, project_id, 0)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["revision"] == 1
+        assert len(data["practice_state"]["loops"]) == 1
+        loop = data["practice_state"]["loops"][0]
+        assert loop["name"] == "Loop 1"
+        assert loop["start_frames"] == 1_000
+        assert loop["end_frames"] == 5_800
+        assert loop["repeat_count"] is None
+        assert loop["boundary_fade"] is True
+
+    def test_update_missing_loop_404(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        resp = _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body(
+                {"type": "update_loop", "loop_id": str(uuid.uuid4()), "name": "X"}, 0
+            ),
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "LOOP_NOT_FOUND"
+
+    def test_loop_beyond_duration_422(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        resp = self._add_loop(client, auth_headers, project_id, 0, start=0, end=DURATION + 1)
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["error"]["code"] == "LOOP_RANGE_INVALID"
+        assert body["error"]["details"]["duration_frames"] == DURATION
+
+    def test_enable_without_active_loop_409(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        resp = _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body({"type": "set_loop_enabled", "enabled": True}, 0),
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "NO_ACTIVE_LOOP"
+
+    def test_short_loop_enable_409_explains_minimum(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        added = self._add_loop(
+            client, auth_headers, project_id, 0, start=1_000, end=1_000 + 4_799
+        )
+        assert added.status_code == 200
+        loop_id = added.json()["practice_state"]["loops"][0]["id"]
+        active = _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body({"type": "set_active_loop", "loop_id": loop_id}, 1),
+        )
+        assert active.status_code == 200
+        resp = _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body({"type": "set_loop_enabled", "enabled": True}, 2),
+        )
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["error"]["code"] == "LOOP_TOO_SHORT"
+        assert "100 ms" in body["error"]["message"]
+        assert body["error"]["details"]["minimum_ms"] == 100
+        # The loop is retained and still selectable (§13.3.2).
+        assert body["error"]["details"]["frames"] == 4_799

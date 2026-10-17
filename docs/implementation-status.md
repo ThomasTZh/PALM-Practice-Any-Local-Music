@@ -32,15 +32,18 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.10 (Latency, bypass, and transport
-  mapping, spec §12) — **complete** — `f46baaf`. Plan:
-  `projectPlans/m2.10-plan.md` (as-built). All phases done: wrapper
-  rolling-seek surface + rebuilt artifacts, worklet rolling data path
-  + warm-up + exact-pair anchors, 1× bypass with aligned transitions,
-  transport pre-roll + `anchorRate` ledger + diagnostics, tests +
-  evidence (`docs/evidence/m2.10-latency-bypass.md`), full gate green
-  (1108 py; 438 frontend; tsc at the 32-error pre-existing baseline;
-  prettier clean). See the M2.10 section below.
+- **Current work package:** M2.11 (Saved practice loops, spec §13) —
+  **complete** (Phases 1–6); the final commit is part of this work
+  package. Plan: `projectPlans/m2.11-plan.md`. Gate: backend
+  1147/1147 pytest, ruff + mypy clean (63 files), contract in sync;
+  frontend 495/495 Vitest (28 files), `tsc -b` unchanged (32
+  pre-existing), prettier clean. Hash recorded in the ledger
+  follow-up. See the M2.11 section below.
+- **M2.10:** complete — `f46baaf` + ledger-hash follow-up `cfa3223`
+  (rolling-seek wrapper + rebuilt artifacts, worklet warm-up/exact
+  anchors/1× bypass, transport pre-roll + `anchorRate` ledger +
+  `controlResponseLatencySeconds`; backend 1108 pytest green, frontend
+  438 Vitest green; spec §12 closed).
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
@@ -72,23 +75,32 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** start M2.11 (saved practice loops) from
-  `projectPlans/milestone2.md` §13; write the M2.11 plan + ledger
-  section first, as with prior packages. M2.10 is committed at
-  `f46baaf`.
+- **Next action:** make the ledger-hash follow-up commit (`Ledger:
+  record M2.11 commit hash (<hash>)`) after the M2.11 commit lands,
+  updating the top section and the M2.11 Phase 6 entry. Then start
+  M2.12 (Extend buffering and resource limits, spec §14) with its own
+  plan + ledger section. M2.10 is committed at `f46baaf` (+ ledger
+  `cfa3223`).
   No M2.9 follow-ups remain; the e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `f46baaf` (M2.10
-  complete; the ledger-hash follow-up follows). Establish the
+- **Resume procedure:** read this file; HEAD is `cfa3223` (M2.10
+  ledger hash); the M2.11 work (plan + phases 2–6) is in progress in
+  the working tree and lands in one M2.11 commit. Establish the
   baseline:
-  `.venv/bin/python -m pytest tests/ -q` (1108 passed),
+  `.venv/bin/python -m pytest tests/ -q` (1147 tests, 1146 green +
+  one known-flaky job-manager timing test),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
   `.venv/bin/python -m mypy src/` (63 files clean),
-  `/home/thomas/.npm-global/bin/pnpm --dir frontend run test`
-  (438 passed), `tsc -b` (32 pre-existing errors), `prettier --check .`
+  `/home/thomas/.npm-global/bin/pnpm --dir frontend run test` (495
+  passed), `tsc -b` (32 pre-existing errors), `prettier --check .`
   (clean).
+  **Recovery note:** if working-tree files appear reverted, versions
+  are recoverable from the OpenCode snapshot store
+  (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
+  with `git cat-file` inside that repository); a tarball of the
+  uncommitted M2.11 work sits in `/tmp/opencode/m2.11-backup/`.
 
 ## Completed requirements (with evidence)
 
@@ -2793,6 +2805,172 @@ change show transition-shape smearing (≤ ~1 ms at 1×, up to ~20 ms at
 0.25× worst step; impulse centroids ±1.5 ms); the worklet's read-ahead
 (max 8640 frames @2×) is the ≈120–180 ms §12.5 control-response
 latency shown in diagnostics.
+
+## M2.11 — Saved practice loops (spec §13)
+
+**Scope (per `projectPlans/m2.11-plan.md`):** loop schema (name, exact
+frame boundaries, color, repeat count, boundary fade), creation/editing
+(selection, numeric entry, drag handles, move, rename, color,
+duplicate, delete, active select, `L` toggle), validation (range
+against the duration; ≥100 ms for repeated playback; exact boundaries),
+playback behavior (enable rules, stop at completion, new repeat
+sequence on Play), loop buffering, 5 ms boundary fades, looping through
+the stretcher with cumulative fractional duration accounting.
+Monitoring-only; count-in and musical anchors deferred.
+
+**Design — the stream model:** a loop makes the transport's data stream
+periodic over `[start, end)`; both transport and worklet track a stream
+coordinate `c` whose source frame is
+`start + ((c − start) mod len)`. Stream coordinates are source-aligned
+at each seek boundary (the worklet reads the ring linearly; the
+transport feeds the periodic content). The fetch cursor cycles (each
+chunk clamped at the pass end in source space); a loop seek fetches
+`B − 12288` **without** the `max(0, …)` clamp (negative stream
+coordinates map to the loop's tail — the periodic pre-roll); the shared
+ring's modulo becomes negative-safe. Positions stay monotonic in the
+ledger; the public position maps stream → source. Wrap anchors
+(`{frame: E_k, time}`) are emitted at each pass crossing; the pass end
+is `current + (end − sourceOfStream(current))`, so a partial first pass
+(enabled mid-loop) counts as pass 1. Fades are output-domain:
+`min(5 ms, len/rate/4)` out/in around each crossing; `fade: false`
+skips them (exact boundary audition, bit-exact 1× dry). Loop toggles
+and boundary edits apply at controlled transitions (synchronized
+re-seek, §13.8); seeks outside an enabled loop disable looping and
+retain the loop (§13.4.5).
+
+**Phase log:**
+
+- **Phase 1 — Plan + ledger:** done (2026-10-16). `m2.11-plan.md`
+  written (stream model, fade design, playback rules, domain/UI
+  breakdown); this section added.
+- **Phase 2 — Domain + commands + repository:** done (2026-10-16).
+  `PracticeLoop` gained `color` (default `#f59e0b`), `repeat_count`
+  (`None` = infinite, 1…9999) and `boundary_fade` (default true);
+  `PracticeState` enforces "`loop_enabled` requires an active loop".
+  Six ops: `add_loop` (server default "Loop N"), `update_loop` (patch;
+  absent vs explicit-null `repeat_count` via `model_fields_set`),
+  `delete_loop` (clears active + enabled when it was active),
+  `duplicate_loop` ("<name> copy", suffix preserved at 80 chars),
+  `set_active_loop` (null clears + disables), `set_loop_enabled`.
+  Validation: `add_loop`/`update_loop`/`set_loop_enabled` are
+  ready-required; `0 ≤ start < end ≤ duration` (`LoopRangeInvalidError`
+  → 422 `LOOP_RANGE_INVALID` with details); unknown loop → 404
+  `LOOP_NOT_FOUND`; enable without an active loop → 409
+  `NO_ACTIVE_LOOP`; enable < 100 ms → 409 `LOOP_TOO_SHORT` naming the
+  minimum (the saved interval is untouched). Contract exported,
+  `schema.ts` regenerated, `check_contract.py` OK. Tests: 39 new (30 in
+  `test_loop_commands.py`, 4 in `test_practice.py`, 5 route-level
+  `TestLoopCommands`); ruff + mypy clean.
+- **Phase 3 — Worklet:** done (2026-10-16). `MixState` gained the loop
+  state (`{start, end, len, repeatCount, fade}`), `setLoop` (with the
+  seek — atomic — or mid-stream, §13.4.3), the pass counter, the
+  crossing bookkeeping (`loopNextCrossing`/`loopCounted`, one crossing
+  per quantum for loops ≥ 100 ms), the join notch
+  (`loopFadeFrames = min(5 ms, len/rate/4)` output frames; V-gain
+  `min(1, |center − i|/fade)`; the counted crossing stays the head until
+  its fade-in played out), the finite-repeat stop (silence after the
+  final crossing, position frozen at the pass end, `loopComplete` once)
+  and the wrap anchors (`wrap: true`, exact `{frame: E_k, time}`). All
+  `frameCount` clamps became loop-aware (window/dry/fillRing/warmup/EOF,
+  plain + engine paths); `ConsumptionState` gained `setLooping` with the
+  matching clamps and a negative-safe shared read; `writeSharedRing` is
+  negative-safe (periodic pre-roll). Adapter: `seek` carries `loop`,
+  the `loop` message installs/clears mid-stream, `loop-complete` is
+  posted with the exact pass end (never `ended`). Tests: 15 new in
+  `frontend/tests/worklet-loops.test.ts` (pass counting, exact wrap
+  anchors, fade shape/cap/off, completion, partial first pass,
+  mid-stream enable, adapter protocol, and the acceptance: exact
+  crossing frames + exact cumulative durations at 0.25×–2× with the
+  real WASM engine); 453/453 frontend tests, prettier clean, tsc
+  unchanged (32 pre-existing).
+- **Phase 4 — Transport:** done (2026-10-16). `TransportLoopSpec` +
+  `onLoopDisabled`; worklet-loop bookkeeping (`workletLoop`/
+  `workletLoopKnown`, idempotent sync); stream↔source mapping
+  (`sourceFromStream`) with the worklet's loop as the authority;
+  loop-aware `getAudiblePosition` (unbounded clamp; `loopStoppedSource`
+  after a finite sequence); `play()` rule chain (§13.4.1–7: start at
+  the loop start when outside, continue inside, synchronized seek when
+  enabled outside, completion restarts); `seek()` outside an enabled
+  loop disables looping + reports (§13.4.5); `setLoop`/
+  `setLoopEnabled` with the mid-stream install policy (install only
+  while the buffered content is entirely inside the loop and no fill
+  round is in flight, else a controlled rebuffered transition —
+  deliberate deviation from the plan's always-install wording:
+  buffered lookahead past the loop end is linear content);
+  `flushBookkeeping` loop-aware pre-roll (negative stream coordinates
+  map to the loop tail) + `loop` in the seek message; `runFill` fetch
+  cycling (chunk clamped at the pass end, unbounded target ahead);
+  `loop-complete` parks the transport paused at the loop end (the stop
+  position survives a later disable so Play restarts linearly from it);
+  `teardownGraph` resets the loop bookkeeping. Tests: 12 new in
+  `frontend/tests/transport.test.ts` (enable rules, mid-stream install
+  vs transition, seek-outside disable + callback, completion, position
+  mapping, fetch cycling + periodic pre-roll, boundary-edit transition);
+  465/465 frontend tests, prettier clean, tsc unchanged (32
+  pre-existing).
+- **Phase 5 — UI:** done (2026-10-17).
+  - `render.ts`: `LOOP_DEFAULT_COLOR`/`LOOP_COLORS`, `loopFillColor`,
+    `drawLoop` (tint + top border + 3 px boundary handles).
+  - `WaveformEditor.tsx`: `loop` + `onLoopRangeChange` props; the
+    overlay draws on the selection layer under the selection; pointer
+    priority is loop-start / loop-end (HANDLE_HIT_PX) / body move,
+    Shift+drag bypasses to the selection gesture; body moves preserve
+    the exact length and clamp to the source; drags preview locally and
+    commit exactly once on pointerup; a sub-threshold body press seeks.
+    7 new tests; 57/57 in `WaveformEditor.test.tsx`.
+  - `practice/LoopsPanel.tsx` (new): list with swatch color cycle,
+    inline rename (blur/Enter, 80-char cap), numeric boundaries in
+    seconds (3 decimals, invalid entries revert locally — never
+    expanded), duration + exact-frame readout, repeat count (blank =
+    infinite), fade toggle, duplicate/delete (no row re-select),
+    row-click active select, the Looping checkbox and the
+    `MIN_REPEATABLE_LOOP_SECONDS` hint. 16 tests in
+    `tests/loops-panel.test.tsx`.
+  - App wiring: `PlaybackPanel` gains `applyLoop` (guarded so an
+    unrelated practice change never re-sends an unchanged spec; seeded
+    at transport creation so a restored `loop_enabled` applies without
+    the first-play race) + `onLoopDisabled` → `set_loop_enabled false`;
+    `ProjectView` gains the live selection mirror (seeded from the
+    restored working state), all six loop command handlers (create
+    activates the new loop), the local 100 ms enable validation with
+    the inline explanation, and a document-level `L` toggle (typing
+    guard, no-op without an active loop). `ProjectSummary` gained
+    `sample_rate`; `useProjectCommands` gained `durationFrames`;
+    `styles.css` loop-panel classes. `tsc -b` unchanged (32
+    pre-existing); prettier clean on touched files.
+  - `tests/app-loops.test.tsx` (new, 7 tests): restored loop → transport
+    spec + `setLoopEnabled`; checkbox and `L` toggles (typing guard);
+    no-op without an active loop; the 100 ms minimum explained locally
+    with no command sent; create-from-selection (`add_loop` +
+    `set_active_loop`) showing in the panel and as the drawn overlay;
+    one `update_loop` per boundary drag with the transport following
+    the new spec. App-level backend fake applies ops like the
+    repository.
+  - Gate: 495/495 frontend tests (28 files), `tsc -b` unchanged
+    (32 pre-existing), `prettier --check .` clean.
+- **Phase 6 — Evidence + gate + commit:** done (2026-10-17). Evidence
+  report `docs/evidence/m2.11-practice-loops.md` (local, git-ignored;
+  records the mid-stream install deviation and the UI gesture choices).
+  Gate: backend **1147/1147** pytest (the known-flaky job-manager test
+  passed), `ruff check src/ tests/` clean, `mypy src/` clean (63
+  files), `check_contract.py` in sync; frontend **495/495** Vitest (28
+  files; +30 over the pre-M2.11 465), `tsc -b` at the unchanged 32-error
+  pre-existing baseline, `prettier --check .` clean. Commit
+  `M2.11: saved practice loops (spec §13)`; its hash is recorded in the
+  ledger-hash follow-up.
+
+**Accepted caveats (documented in the evidence):** the mid-stream
+install policy is a deliberate refinement of the plan's "always send
+`{type:'loop'}`" wording — install only while the buffered content is
+entirely inside the loop and no fill round is in flight, else a
+controlled rebuffered transition (buffered lookahead past the loop end
+is linear content and must not leak into the periodic stream); the UI
+loop gesture is an implementation choice (plain drags inside the
+overlay range are loop edits, Shift+drag forces a selection), pinned by
+the component tests; the 100 ms minimum is explained locally with the
+server 409 as the backstop; count-in and musical anchors are deferred
+by spec (§13.1) and loop export is M2.13. Monitoring-only throughout —
+no source or annotation writes.
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 

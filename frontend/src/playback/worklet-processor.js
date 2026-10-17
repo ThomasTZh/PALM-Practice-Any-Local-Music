@@ -71,8 +71,11 @@ export class ConsumptionState {
     this.shared = null
     /** Shared path: the generation this processor is aligned to. */
     this.localGen = 0
-    /** Next frame to consume (playback frames). */
+    /** Next frame to consume (playback frames; stream frames when looping). */
     this.position = 0
+    /** M2.11: the source is fed the periodic loop stream, so the source
+     * length no longer bounds the position (stream coordinates). */
+    this.looping = false
     /** No data expected yet: silence without an underrun flag. */
     this.flushing = true
     this.paused = false
@@ -143,9 +146,15 @@ export class ConsumptionState {
     if (frames <= 0) return false
     // Never accept data beyond the valid endpoint (defensive; the
     // transport already clamps chunk ranges). The valid remainder
-    // excludes everything already buffered (ring + queue).
-    frames = Math.min(frames, this.frameCount - this.position - this.available - this.queuedFrames)
-    if (frames <= 0) return false
+    // excludes everything already buffered (ring + queue). Looping
+    // streams are unbounded (M2.11) — only the ring budget applies.
+    if (!this.looping) {
+      frames = Math.min(
+        frames,
+        this.frameCount - this.position - this.available - this.queuedFrames,
+      )
+      if (frames <= 0) return false
+    }
     if (this.available + this.queuedFrames + frames > this.capacity) return false
     const trimmed = channels.map((ch) => (ch.length === frames ? ch : ch.subarray(0, frames)))
     this.queue.push({ channels: trimmed, frames })
@@ -192,6 +201,11 @@ export class ConsumptionState {
     this.localGen = Atomics.load(header, 0)
   }
 
+  /** M2.11: enter/leave the periodic-loop stream (spec §13.7.4). */
+  setLooping(looping) {
+    this.looping = looping === true
+  }
+
   /**
    * Drop all buffered data and move to `frame`. This is the stale-audio
    * barrier: nothing enqueued before the seek can be output after it.
@@ -200,7 +214,9 @@ export class ConsumptionState {
    * worker receives the flush acknowledgment (spec §15.1.6).
    */
   seek(frame, generation) {
-    const target = Math.max(0, Math.min(Math.floor(frame), this.frameCount))
+    const target = this.looping
+      ? Math.floor(frame) // stream coordinates may be negative (loop pre-roll)
+      : Math.max(0, Math.min(Math.floor(frame), this.frameCount))
     for (const ring of this.rings) {
       ring.read = 0
       ring.write = 0
@@ -217,7 +233,7 @@ export class ConsumptionState {
     this.paused = false
     this.rampRemaining = 0
     this.rampTotal = 0
-    this.ended = target >= this.frameCount
+    this.ended = !this.looping && target >= this.frameCount
     this.endedNotified = false
     this.underrunNotified = false
     this.lastAnchorFrame = target
@@ -346,12 +362,15 @@ export class ConsumptionState {
     const reader = Atomics.load(header, 2)
     const writer = Atomics.load(header, 1)
     const avail = Math.max(0, writer - reader)
-    const take = Math.min(frames, avail, this.frameCount - this.position)
+    let take = Math.min(frames, avail)
+    if (!this.looping) take = Math.min(take, this.frameCount - this.position)
     if (take <= 0) return 0
     for (let i = 0; i < take; i++) {
-      const src = ((reader + i) % capacity) * this.channelCount
+      // Negative-safe: loop streams may start below 0 (periodic pre-roll).
+      const src = (((reader + i) % capacity) + capacity) % capacity
+      const base = src * this.channelCount
       for (let c = 0; c < this.channelCount; c++) {
-        outputChannels[c][i] = data[src + c]
+        outputChannels[c][i] = data[base + c]
       }
     }
     Atomics.store(header, 2, reader + take)
@@ -383,11 +402,13 @@ export class ConsumptionState {
       const reader = Atomics.load(header, 2)
       const writer = Atomics.load(header, 1)
       const avail = Math.max(0, writer - reader)
-      const take = Math.min(frames, avail, this.frameCount - this.position)
+      let take = Math.min(frames, avail)
+      if (!this.looping) take = Math.min(take, this.frameCount - this.position)
       if (take <= 0) return 0
       for (let i = 0; i < take; i++) {
-        const src = ((reader + i) % capacity) * this.channelCount
-        for (let c = 0; c < this.channelCount; c++) outChannels[c][i] = data[src + c]
+        const src = (((reader + i) % capacity) + capacity) % capacity
+        const base = src * this.channelCount
+        for (let c = 0; c < this.channelCount; c++) outChannels[c][i] = data[base + c]
       }
       Atomics.store(header, 2, reader + take)
       this.position += take
@@ -395,7 +416,8 @@ export class ConsumptionState {
       return take
     }
     this.drainQueue()
-    const take = Math.min(frames, this.available, this.frameCount - this.position)
+    let take = Math.min(frames, this.available)
+    if (!this.looping) take = Math.min(take, this.frameCount - this.position)
     if (take <= 0) return 0
     for (let c = 0; c < this.channelCount; c++) {
       const ring = this.rings[c]
@@ -551,6 +573,8 @@ export class MixState {
     this.masterPeak = 0
     // Stretch engine (M2.9/M2.10): null keeps the plain mixer path.
     this.engine = engine
+    /** Audible source position: content of the next output frame. */
+    this.audible = 0
     if (engine) {
       const lat = engine.latencies()
       this.inLat = lat.inputFrames
@@ -565,8 +589,6 @@ export class MixState {
       this.ringStart = 0
       /** Frame after the newest stem-mixed frame in the ring. */
       this.ringEnd = 0
-      /** Audible source position: content of the next output frame. */
-      this.audible = 0
       /** Worklet-owned ≈50 ms playback-rate ramp (spec §11.7). */
       this.rateTarget = 1
       this.rateGoal = 1
@@ -587,6 +609,18 @@ export class MixState {
       /** Remaining silent pre-roll (output frames, §12.3). */
       this.warmupRemaining = 0
     }
+    // Practice-loop rendering (M2.11, spec §13). The loop makes the data
+    // stream periodic over [start, end): stream coordinates are
+    // source-aligned at the seek boundary, `loopNextCrossing` is the
+    // stream frame of the next pass end (the content discontinuity), and
+    // the pass counter drives the finite-repeat stop (§13.4.6).
+    this.loop = null // { start, end, len, repeatCount, fade }
+    this.loopPasses = 0
+    this.loopComplete = false
+    this.loopNextCrossing = null
+    this.loopCounted = false
+    this.loopAnchor = null
+    this.loopCompletion = null // { frame, time } of the final crossing
     // Bounded per-quantum scratch, grown only if a larger block ever
     // arrives (audio thread: no steady-state allocation). The engine
     // path mixes ring fills in bounded chunks (≤ `engineFillChunk`).
@@ -717,23 +751,148 @@ export class MixState {
   }
 
   /**
+   * Install or clear the practice loop (M2.11, spec §13).
+   *
+   * The transport owns the periodic data stream; the worklet only needs
+   * the geometry to count passes, fade the joins, and stop at the end of
+   * a finite repeat sequence. `spec` is `{start, end, repeatCount,
+   * fade}` in source frames (the stream is source-aligned at the seek
+   * boundary) or `null` to clear. Called with the seek (atomic) or
+   * mid-stream when looping is enabled inside the loop (§13.4.3); any
+   * other spec change goes through a controlled re-seek (§13.8).
+   */
+  setLoop(spec) {
+    this.loop = spec
+      ? {
+          start: Math.floor(spec.start),
+          end: Math.floor(spec.end),
+          len: Math.max(1, Math.floor(spec.end) - Math.floor(spec.start)),
+          repeatCount: spec.repeatCount ?? null,
+          fade: spec.fade !== false,
+        }
+      : null
+    this.loopPasses = 0
+    this.loopComplete = false
+    this.loopAnchor = null
+    this.loopCompletion = null
+    this.loopCounted = false
+    this.loopNextCrossing = this.loop ? this.nextCrossingFrom(this.loopCursor()) : null
+    this.sources.forEach((s) => s.setLooping(this.loop !== null))
+  }
+
+  /** The audible cursor: fractional on the engine path, integer otherwise. */
+  loopCursor() {
+    return this.engine ? this.audible : this.position
+  }
+
+  /** Source frame carried by stream coordinate `c` (spec §13.7.4). */
+  loopSourceOf(c) {
+    const loop = this.loop
+    const rel = (c - loop.start) % loop.len
+    return loop.start + (rel < 0 ? rel + loop.len : rel)
+  }
+
+  /** Stream coordinate of the next pass end at or after `c`. */
+  nextCrossingFrom(c) {
+    return c + (this.loop.end - this.loopSourceOf(c))
+  }
+
+  /**
+   * Join-fade length in output frames (spec §13.6): 5 ms, limited to a
+   * fraction (¼) of the pass so short loops keep their duration.
+   */
+  loopFadeFrames(rate) {
+    const loop = this.loop
+    if (!loop.fade) return 0
+    const byTime = Math.round(0.005 * this.sampleRate)
+    const byLoop = Math.max(1, Math.round(loop.len / Math.max(rate, 0.01) / 4))
+    return Math.min(byTime, byLoop)
+  }
+
+  /**
+   * Loop bookkeeping for one quantum: locate the pass crossing whose
+   * fade notch overlaps `[S, S + rate*frames)`, count the completed
+   * pass, schedule the wrap anchor, and flag the finite-repeat stop.
+   * Returns `{center, fade, final}` (`center` in output frames, possibly
+   * fractional or ≥ frames) or null. At most one crossing overlaps a
+   * quantum for loops ≥ 100 ms; the pass ends are exactly `len` stream
+   * frames apart, so no per-iteration duration rounding accumulates
+   * (spec §13.7.5).
+   */
+  loopQuantum(time, rate, frames) {
+    const loop = this.loop
+    if (!loop) return null
+    // The audible cursor: the engine path tracks a fractional cursor,
+    // the plain path advances the integer position by one frame per
+    // output frame.
+    const S = this.loopCursor()
+    const advance = rate * frames
+    const fade = this.loopFadeFrames(rate)
+    let c = this.loopNextCrossing
+    // Advance past crossings whose notch (fade-in) has fully passed; the
+    // head crossing is then uncounted again.
+    while (c !== null && c + fade * rate <= S) {
+      c += loop.len
+      this.loopCounted = false
+    }
+    if (c === null || c - fade * rate >= S + advance) {
+      this.loopNextCrossing = c
+      return null
+    }
+    const center = (c - S) / rate
+    let final = false
+    if (center <= frames && !this.loopCounted) {
+      // Count the pass once; the crossing stays the head until its
+      // fade-in has played out (so the notch completes across quanta).
+      this.loopCounted = true
+      this.loopPasses += 1
+      final = loop.repeatCount !== null && this.loopPasses >= loop.repeatCount
+      if (final) {
+        // Stop exactly at the pass end (spec §13.4.6): the rest of this
+        // quantum is silent and the cursor freezes at the boundary.
+        this.loopComplete = true
+        this.loopCompletion = { frame: c, time: time + center / this.sampleRate }
+        this.position = c
+      } else {
+        this.loopAnchor = { frame: c, time: time + center / this.sampleRate }
+      }
+    }
+    return { center, fade, final }
+  }
+
+  /**
    * Seek every source to the same fetch frame (the shared cursor) and
    * set the audible boundary. `frame` is the frame the transport will
    * feed first (it fetches the pre-roll from there); `audibleFrame`
    * defaults to `frame` and is the position the listener starts hearing
    * (the transport passes `frame = max(0, audible − preRoll)` for the
    * engine path, §12.3). `generations` is per-source on the shared path;
-   * a single number (or undefined) applies to all.
+   * a single number (or undefined) applies to all. `loopSpec` installs
+   * the practice loop atomically (M2.11): `undefined` keeps the current
+   * one, `null` clears it; a loop left installed by an outside seek is
+   * dropped (the transport disables looping on those, §13.4.5).
    */
-  seek(frame, generations, audibleFrame) {
-    const target = Math.max(0, Math.min(Math.floor(frame), this.frameCount))
+  seek(frame, generations, audibleFrame, loopSpec) {
+    if (loopSpec !== undefined) this.setLoop(loopSpec)
+    const looping = this.loop !== null
+    const target = looping
+      ? Math.floor(frame)
+      : Math.max(0, Math.min(Math.floor(frame), this.frameCount))
+    const audible = looping
+      ? Math.floor(audibleFrame ?? target)
+      : Math.max(0, Math.min(Math.floor(audibleFrame ?? target), this.frameCount))
+    if (looping && (audible < this.loop.start || audible >= this.loop.end)) {
+      // A seek outside an active loop disables looping (§13.4.5).
+      this.setLoop(null)
+    }
+    const active = this.loop !== null
     this.sources.forEach((s, i) => {
       const gen = Array.isArray(generations) ? generations[i] : generations
+      s.setLooping(active)
       s.seek(target, gen)
     })
-    const audible = Math.max(0, Math.min(Math.floor(audibleFrame ?? target), this.frameCount))
     this.position = audible
-    this.ended = audible >= this.frameCount
+    this.ended = !active && audible >= this.frameCount
     this.endedNotified = false
     this.underrunNotified = false
     this.paused = false
@@ -741,6 +900,10 @@ export class MixState {
     this.pauseAnchorSent = false
     this.lastAnchorFrame = audible
     this.lastSample.fill(0)
+    if (active) {
+      this.loopNextCrossing = this.nextCrossingFrom(audible)
+      this.loopCounted = false
+    }
     if (this.engine) {
       // Hard re-position: drop the engine's synthesis state (the old
       // accumulator would bleed the previous position into the new one)
@@ -884,12 +1047,25 @@ export class MixState {
       consumed: 0,
       underrun: false,
       ended: false,
+      loopComplete: false,
       anchor: null,
       buffered: 0,
       peaks: null,
     }
-    if (this.ended) {
+    if (this.ended || this.loopComplete) {
       this.fillOutputSilence(outputChannels, 0, frames)
+      if (this.loopComplete && !this.endedNotified) {
+        // Finite repeat sequence finished (M2.11 §13.4.6): the transport
+        // parks the playhead at the loop end.
+        this.endedNotified = true
+        out.loopComplete = true
+        out.anchor = {
+          frame: this.loopCompletion ? this.loopCompletion.frame : this.position,
+          time: this.loopCompletion ? this.loopCompletion.time : time,
+          paused: false,
+          rate: this.rateCurrent ?? 1,
+        }
+      }
       out.buffered = this.buffered
       return out
     }
@@ -931,14 +1107,17 @@ export class MixState {
     if (this.engine) return this.processWithEngine(time, outputChannels, frames, out)
     // Shared cursor: every source advances by the same amount, so no
     // drift is possible. A starving source pauses the whole group.
+    // Looping streams are unbounded (M2.11): the source length does not
+    // cap the position.
     let take = frames
     for (const s of this.sources) take = Math.min(take, s.buffered)
-    take = Math.min(take, this.frameCount - this.position)
+    if (!this.loop) take = Math.min(take, this.frameCount - this.position)
     for (let i = 0; i < this.sources.length; i++) {
       this.sources[i].consumeInto(this.temp[i], take)
     }
     this.fillSourceCoeffs(frames)
     this.fillMasterCoeffs(frames)
+    const notch = this.loopQuantum(time, 1, frames)
     const n = this.sources.length
     const ch0 = outputChannels[0]
     const ch1 = outputChannels.length > 1 ? outputChannels[1] : ch0
@@ -965,6 +1144,16 @@ export class MixState {
         if (a > this.trackPeaks[i]) this.trackPeaks[i] = a
         if (b > this.trackPeaks[i]) this.trackPeaks[i] = b
       }
+      if (notch) {
+        // Join fade (spec §13.6) and the finite-repeat stop (§13.4.6).
+        const g = notch.fade > 0 ? Math.min(1, Math.abs(notch.center - f) / notch.fade) : 1
+        l *= g
+        r *= g
+        if (notch.final && f >= notch.center) {
+          l = 0
+          r = 0
+        }
+      }
       const mg = this.masterCoeff[f]
       l *= mg
       r *= mg
@@ -979,7 +1168,12 @@ export class MixState {
       this.fillOutputSilence(outputChannels, take, frames - take)
       this.maybeUnderrun(out)
     }
-    this.position += take
+    if (this.loopComplete) {
+      // Frozen exactly at the pass end (spec §13.4.6).
+      this.position = this.loopCompletion ? this.loopCompletion.frame : this.position
+    } else {
+      this.position += take
+    }
     for (let c = 0; c < 2; c++) {
       this.lastSample[c] = take > 0 && c < outputChannels.length ? outputChannels[c][take - 1] : 0
     }
@@ -1003,6 +1197,43 @@ export class MixState {
    */
   advance(time, out, endTime) {
     const rate = this.rateCurrent ?? 1
+    if (this.loop) {
+      if (this.loopComplete) {
+        if (!this.endedNotified) {
+          // Finite repeat sequence finished (spec §13.4.6): park the
+          // playhead exactly at the loop end.
+          this.endedNotified = true
+          out.loopComplete = true
+          out.anchor = {
+            frame: this.loopCompletion ? this.loopCompletion.frame : this.position,
+            time: this.loopCompletion ? this.loopCompletion.time : endTime,
+            paused: false,
+            rate,
+          }
+        }
+        return
+      }
+      if (this.loopAnchor) {
+        // Wrap anchor: the exact (frame, time) of the pass crossing
+        // (spec §13.7.5). Stream coordinates stay monotonic, so the
+        // transport's ledger extrapolation never crosses a wrap. The
+        // `wrap` marker distinguishes it from the cadence anchors.
+        out.anchor = {
+          frame: this.loopAnchor.frame,
+          time: this.loopAnchor.time,
+          paused: false,
+          rate,
+          wrap: true,
+        }
+        this.loopAnchor = null
+        return
+      }
+      if (this.position - this.lastAnchorFrame >= this.anchorEvery) {
+        out.anchor = { frame: this.position, time: endTime, paused: false, rate }
+        this.lastAnchorFrame = this.position
+      }
+      return
+    }
     if (this.position >= this.frameCount) {
       this.ended = true
       if (!this.endedNotified) {
@@ -1058,9 +1289,10 @@ export class MixState {
     // Context window centred on the audible cursor (measured law, §12.3).
     const windowEnd = Math.round(this.audible + rate * this.outLat + this.inLat)
     const windowStart = windowEnd - this.windowFrames
-    // Ring coverage: the whole window plus the dry read, capped at EOF.
-    const windowTo = Math.min(windowEnd, this.frameCount)
-    const dryTo = Math.min(dryStart + frames, this.frameCount)
+    // Ring coverage: the whole window plus the dry read, capped at EOF
+    // (unbounded for a loop stream, M2.11).
+    const windowTo = this.loop ? windowEnd : Math.min(windowEnd, this.frameCount)
+    const dryTo = this.loop ? dryStart + frames : Math.min(dryStart + frames, this.frameCount)
     let needTo = windowTo
     if (dryActive) needTo = Math.max(needTo, dryTo)
     if (needTo > this.ringEnd) this.fillRing(needTo)
@@ -1090,6 +1322,9 @@ export class MixState {
     this.fillEngineWindow(windowStart, windowEnd)
     eng.seek(this.windowFrames, rate)
     eng.process(0, frames)
+    // Loop bookkeeping (M2.11): the join notch + pass counting for the
+    // stream range this quantum renders.
+    const notch = this.loopQuantum(time, rate, frames)
     // Mix the taps; the master gain stays after the stretcher (§11.1/§12.5).
     this.fillMasterCoeffs(frames)
     const d0 = this.dryGainPrev
@@ -1099,9 +1334,21 @@ export class MixState {
     for (let i = 0; i < frames; i++) {
       const dg = d0 + ds * i
       const wg = w0 + ws * i
+      let l = ch0[i] * dg + eng.outL[i] * wg
+      let r = ch1[i] * dg + eng.outR[i] * wg
+      if (notch) {
+        // Join fade (spec §13.6) and the finite-repeat stop (§13.4.6).
+        const g = notch.fade > 0 ? Math.min(1, Math.abs(notch.center - i) / notch.fade) : 1
+        l *= g
+        r *= g
+        if (notch.final && i >= notch.center) {
+          l = 0
+          r = 0
+        }
+      }
       const mg = this.masterCoeff[i]
-      const l = (ch0[i] * dg + eng.outL[i] * wg) * mg
-      const r = (ch1[i] * dg + eng.outR[i] * wg) * mg
+      l *= mg
+      r *= mg
       ch0[i] = l
       ch1[i] = r
       const a = Math.abs(l)
@@ -1109,11 +1356,21 @@ export class MixState {
       if (a > this.masterPeak) this.masterPeak = a
       if (b > this.masterPeak) this.masterPeak = b
     }
-    this.audible += rate * frames
+    if (this.loopComplete) {
+      // Frozen exactly at the pass end (spec §13.4.6): the cursor stops
+      // at the boundary and the remaining output is silent.
+      this.audible = this.loopCompletion ? this.loopCompletion.frame : this.position
+      this.position = this.audible
+    } else {
+      this.audible += rate * frames
+      // The audible cursor can overshoot the end; the reported position
+      // is clamped (the ended anchor names the endpoint, §12.6). A loop
+      // stream is unbounded, so no clamp applies.
+      this.position = this.loop
+        ? Math.round(this.audible)
+        : Math.min(Math.round(this.audible), this.frameCount)
+    }
     this.rolledFrames += frames
-    // The audible cursor can overshoot the end; the reported position is
-    // clamped (the ended anchor names the endpoint, §12.6).
-    this.position = Math.min(Math.round(this.audible), this.frameCount)
     for (let c = 0; c < 2; c++) {
       this.lastSample[c] = c < outputChannels.length ? outputChannels[c][frames - 1] : 0
     }
@@ -1207,7 +1464,7 @@ export class MixState {
       const cursor = this.audible - this.warmupRemaining * rate
       const windowEnd = Math.round(cursor + rate * this.outLat + this.inLat)
       const windowStart = windowEnd - this.windowFrames
-      const needTo = Math.min(windowEnd, this.frameCount)
+      const needTo = this.loop ? windowEnd : Math.min(windowEnd, this.frameCount)
       if (needTo > this.ringEnd) this.fillRing(needTo)
       if (this.ringEnd < needTo) break // starved: retry next callback
       this.fillEngineWindow(windowStart, windowEnd)
@@ -1236,7 +1493,9 @@ export class MixState {
         this.engineFillChunk,
         cap - (this.ringEnd - this.ringStart),
       )
-      chunk = Math.min(chunk, this.frameCount - this.ringEnd)
+      chunk = this.loop
+        ? chunk // a loop stream is unbounded (M2.11)
+        : Math.min(chunk, this.frameCount - this.ringEnd)
       if (chunk <= 0) break
       let take = chunk
       for (const s of this.sources) take = Math.min(take, s.buffered)
@@ -1302,15 +1561,21 @@ export class MixState {
   /**
    * Fill the engine's context window: real frames from the ring where
    * available (`[max(windowStart, 0), min(windowEnd, frameCount))`),
-   * zeros elsewhere (source boundaries and the retained-ring edge).
+   * zeros elsewhere (source boundaries and the retained-ring edge). A
+   * loop stream (M2.11) has no source-length bound and may start below
+   * 0 (the periodic pre-roll), so the ring alone bounds it.
    */
   fillEngineWindow(windowStart, windowEnd) {
     const eng = this.engine
     const W = this.windowFrames
     eng.inL.fill(0, 0, W)
     eng.inR.fill(0, 0, W)
-    const from = Math.max(windowStart, 0, this.ringStart)
-    const to = Math.min(windowEnd, this.frameCount, this.ringEnd)
+    const from = this.loop
+      ? Math.max(windowStart, this.ringStart)
+      : Math.max(windowStart, 0, this.ringStart)
+    const to = this.loop
+      ? Math.min(windowEnd, this.ringEnd)
+      : Math.min(windowEnd, this.frameCount, this.ringEnd)
     if (to > from) {
       const off = from - windowStart
       const count = to - from
@@ -1393,10 +1658,10 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         } else if (m.type === 'seek') {
           if (Array.isArray(m.generations)) {
             this.generation = m.generations.reduce((a, b) => Math.max(a, b), 0)
-            this.core.seek(m.frame, m.generations, m.audibleFrame)
+            this.core.seek(m.frame, m.generations, m.audibleFrame, m.loop)
           } else {
             this.generation = m.generation
-            this.core.seek(m.frame, this.generation, m.audibleFrame)
+            this.core.seek(m.frame, this.generation, m.audibleFrame, m.loop)
           }
           this.port.postMessage({ type: 'flushed', generation: this.generation })
         } else if (m.type === 'params') {
@@ -1406,6 +1671,10 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         } else if (m.type === 'rate') {
           // The wrapper owns the ≈50 ms rate ramp (spec §11.7).
           this.core.setRate(m.value)
+        } else if (m.type === 'loop') {
+          // Install/clear the practice loop mid-stream (M2.11 §13.4.3):
+          // enabling inside the loop continues without a re-seek.
+          this.core.setLoop(m.loop)
         } else if (m.type === 'pause') {
           this.core.pause()
         } else if (m.type === 'resume') {
@@ -1435,6 +1704,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
           rate: res.anchor.rate ?? 1,
           generation: this.generation,
         }
+        // Pass-crossing anchors carry the wrap marker (M2.11 §13.7.5).
+        if (res.anchor.wrap === true) msg.wrap = true
         // Peak metering rides the ~20 Hz anchor cadence (mixer path only).
         if (res.peaks) msg.peaks = res.peaks
         this.port.postMessage(msg)
@@ -1445,6 +1716,17 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       }
       if (res.ended) {
         this.port.postMessage({ type: 'ended', generation: this.generation })
+      }
+      if (res.loopComplete) {
+        // Finite repeat sequence finished (M2.11 §13.4.6); the anchor
+        // carries the exact pass-end (frame, time).
+        const a = res.anchor
+        this.port.postMessage({
+          type: 'loop-complete',
+          frame: a ? a.frame : this.core.position,
+          time: a ? a.time : 0,
+          generation: this.generation,
+        })
       }
       return true
     }

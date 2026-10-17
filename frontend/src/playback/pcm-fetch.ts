@@ -109,7 +109,9 @@ export function viewSharedRing(sab: SharedArrayBuffer, channelCount: number): Sh
 /**
  * Copy interleaved f32le bytes into the ring at the current writer
  * position (wrap-aware). Returns the number of frames written, or 0 when
- * the ring cannot hold them (the caller drops the chunk).
+ * the ring cannot hold them (the caller drops the chunk). Indices are
+ * absolute stream frames and may be negative (M2.11 loop pre-roll), so
+ * the slot modulo is normalized.
  */
 export function writeSharedRing(ring: SharedRing, bytes: ArrayBuffer): number {
   const writer = Atomics.load(ring.header, 1)
@@ -120,7 +122,8 @@ export function writeSharedRing(ring: SharedRing, bytes: ArrayBuffer): number {
   if (writer - reader + frames > ring.frameCapacity) return 0
   const src = new Uint8Array(bytes)
   for (let f = 0; f < frames; f++) {
-    const dest = ((writer + f) % ring.frameCapacity) * bytesPerFrame
+    const slot = (((writer + f) % ring.frameCapacity) + ring.frameCapacity) % ring.frameCapacity
+    const dest = slot * bytesPerFrame
     ring.data.set(src.subarray(f * bytesPerFrame, (f + 1) * bytesPerFrame), dest)
   }
   Atomics.store(ring.header, 1, writer + frames)

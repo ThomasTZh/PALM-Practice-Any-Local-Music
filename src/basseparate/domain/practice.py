@@ -21,6 +21,18 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 MAX_LOOP_NAME_LENGTH = 80
 
+#: Default loop color (M2.11, spec §13.1): amber, distinct from the
+#: marker default (rose).
+DEFAULT_LOOP_COLOR = "#f59e0b"
+
+#: Repeat-count bounds (spec §13.1): ``None`` means infinite; a finite
+#: count is the total number of passes.
+MAX_LOOP_REPEAT = 9999
+
+#: Shortest interval that may be *repeated* for practice (spec §13.3.3).
+#: Shorter loops can be saved (and auditioned) but not enabled.
+MIN_REPEATABLE_LOOP_SECONDS = 0.1
+
 #: Playback speed bounds (spec §2, §11.6): 0.25x to 2.0x, pitch preserved.
 MIN_PLAYBACK_SPEED = 0.25
 MAX_PLAYBACK_SPEED = 2.0
@@ -76,7 +88,14 @@ class TrackSettings(BaseModel):
 
 
 class PracticeLoop(BaseModel):
-    """A saved practice loop with integer source-frame boundaries (spec §3.5)."""
+    """A saved practice loop with integer source-frame boundaries (spec §13.1).
+
+    ``repeat_count`` is the total number of passes (not "extra repeats");
+    ``None`` means infinite. ``boundary_fade`` enables the short output
+    fades at the join (§13.6); disabling them gives exact boundary
+    audition. The boundaries are exact source frames and are never
+    expanded (§13.3.5–6).
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -84,6 +103,9 @@ class PracticeLoop(BaseModel):
     name: str = Field(min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
     start_frames: SamplePosition
     end_frames: SamplePosition
+    color: str = Field(default=DEFAULT_LOOP_COLOR, pattern=r"^#[0-9a-fA-F]{6}$")
+    repeat_count: int | None = Field(default=None, ge=1, le=MAX_LOOP_REPEAT)
+    boundary_fade: bool = True
     created_at: UtcTimestamp
     updated_at: UtcTimestamp
 
@@ -140,4 +162,6 @@ class PracticeState(BaseModel):
             loop.id == self.active_loop_id for loop in self.loops
         ):
             raise ValueError("active_loop_id must reference an existing loop")
+        if self.loop_enabled and self.active_loop_id is None:
+            raise ValueError("loop_enabled requires an active loop")
         return self

@@ -20,19 +20,21 @@ import {
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
 import { fetchResultSetDetail, type ResultSetDetail } from './api/result-sets'
-import type { PracticeState } from './api/commands'
+import type { PracticeLoop, PracticeState } from './api/commands'
 import {
   PcmTransport,
   type MixPeaks,
   type SourceSpec,
   type TransportContextLike,
   type TransportDiagnostics,
+  type TransportLoopSpec,
   type TransportState,
 } from './playback/transport'
 import { formatTime } from './playback/pcm'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import type { View as EditorView } from './waveform/viewport'
 import { useProjectCommands } from './projects/useProjectCommands'
+import { LoopsPanel, MIN_REPEATABLE_LOOP_SECONDS, type LoopPatch } from './practice/LoopsPanel'
 import type { ConnectionState, ProjectSummary } from './types'
 import {
   BASS_PAIR_ROLES,
@@ -63,6 +65,7 @@ function toSummary(p: {
   created_at: string
   updated_at: string
   canonical_asset_id?: string | null
+  sample_rate?: number | null
 }): ProjectSummary {
   return {
     id: p.id,
@@ -71,6 +74,7 @@ function toSummary(p: {
     created_at: p.created_at,
     updated_at: p.updated_at,
     canonical_asset_id: p.canonical_asset_id ?? null,
+    sample_rate: p.sample_rate ?? null,
   }
 }
 
@@ -448,6 +452,25 @@ function defaultCreateAudioContext(sampleRate?: number): TransportContextLike {
   return context as unknown as TransportContextLike
 }
 
+/** The transport loop spec for the practice state's active loop (M2.11 §13). */
+function loopSpecOf(practice: PracticeState | null | undefined): TransportLoopSpec | null {
+  if (!practice) return null
+  const loop = (practice.loops ?? []).find((l) => l.id === practice.active_loop_id)
+  if (!loop) return null
+  return {
+    startFrame: loop.start_frames,
+    endFrame: loop.end_frames,
+    repeatCount: loop.repeat_count ?? null,
+    boundaryFade: loop.boundary_fade,
+  }
+}
+
+/** Change key for the loop spec: `setLoop` is not idempotent while playing. */
+function loopKeyOf(spec: TransportLoopSpec | null): string {
+  if (!spec) return 'none'
+  return `${spec.startFrame}:${spec.endFrame}:${spec.repeatCount ?? 'inf'}:${spec.boundaryFade ? 1 : 0}`
+}
+
 const PlaybackPanel = memo(function PlaybackPanel({
   projectId,
   createAudioContext,
@@ -460,6 +483,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
   practiceState,
   stemSources,
   onPeaks,
+  onLoopDisabled,
 }: {
   projectId: string
   createAudioContext?: (sampleRate?: number) => TransportContextLike
@@ -495,6 +519,11 @@ const PlaybackPanel = memo(function PlaybackPanel({
   stemSources?: StemSource[] | null
   /** Per-quantum peak meters from the transport (spec §10.3.7). */
   onPeaks?: (peaks: MixPeaks) => void
+  /**
+   * The transport disabled looping because a seek left the active loop
+   * (M2.11 §13.4.5): the caller persists `loop_enabled = false`.
+   */
+  onLoopDisabled?: () => void
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -538,6 +567,31 @@ const PlaybackPanel = memo(function PlaybackPanel({
   onPositionReportRef.current = onPositionReport
   const onPeaksRef = useRef(onPeaks)
   onPeaksRef.current = onPeaks
+  const onLoopDisabledRef = useRef(onLoopDisabled)
+  onLoopDisabledRef.current = onLoopDisabled
+  // M2.11 §13: the loop state last applied to the transport. `setLoop`
+  // while playing is a controlled transition, so an unrelated practice
+  // change must not re-send an unchanged spec.
+  const loopKeyRef = useRef('none')
+  const loopEnabledRef = useRef(false)
+
+  /** Apply the practice state's active loop to the transport (M2.11 §13). */
+  const applyLoop = useCallback(() => {
+    const transport = transportRef.current
+    const ps = practiceStateRef.current
+    if (!transport || !ps) return
+    const spec = loopSpecOf(ps)
+    const key = loopKeyOf(spec)
+    const enabled = ps.loop_enabled && spec !== null
+    if (key !== loopKeyRef.current) {
+      loopKeyRef.current = key
+      transport.setLoop(spec)
+    }
+    if (enabled !== loopEnabledRef.current) {
+      loopEnabledRef.current = enabled
+      transport.setLoopEnabled(enabled)
+    }
+  }, [])
 
   const loadInfo = useCallback(async () => {
     try {
@@ -660,6 +714,9 @@ const PlaybackPanel = memo(function PlaybackPanel({
       },
       onPosition: reportPosition,
       onSuspend: setSuspended,
+      // M2.11 §13.4.5: a seek outside the active loop disables looping;
+      // the caller persists `loop_enabled = false`.
+      onLoopDisabled: () => onLoopDisabledRef.current?.(),
       // M2.8 monitoring (spec §10.6): limiter default-on; the live toggle
       // arrives through `setLimiter` once the practice state is known.
       limiter: practiceStateRef.current?.monitoring_limiter ?? true,
@@ -667,7 +724,21 @@ const PlaybackPanel = memo(function PlaybackPanel({
     })
     transport.setOutputGain(volumeRef.current / 100)
     transportRef.current = transport
-  }, [createAudioContext, info, reportPosition])
+    // M2.11: seed the restored loop state now that the transport exists
+    // (`applyLoop` is a no-op while `transportRef` is still empty, so an
+    // enable-on-load is applied here instead). Enabling while stopped is
+    // state-only (§13.4.1); the next play applies it.
+    loopKeyRef.current = 'none'
+    loopEnabledRef.current = false
+    applyLoop()
+  }, [createAudioContext, info, reportPosition, applyLoop])
+
+  // Re-apply the loop when the practice state changes (M2.11 §13):
+  // enable/disable plus spec edits, guarded so an unrelated practice
+  // change never triggers a needless loop transition.
+  useEffect(() => {
+    applyLoop()
+  }, [applyLoop, practiceState])
 
   // M2.8 mixer state → live transport (spec §10.3): master gain, limiter,
   // and one `setSourceParams` per stem in mix order. M2.9 adds the
@@ -1148,6 +1219,34 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const redoRef = useRef(commands.redo)
   redoRef.current = commands.redo
 
+  // M2.11 practice loops (spec §13.2): the active loop, the live
+  // waveform selection (seeded from the restored working state, then kept
+  // up to date by the editor — the source for "Create from selection"),
+  // and one-shot notices (the 100 ms minimum explanation, failed edits).
+  const [liveSelection, setLiveSelection] = useState<{ start: number; end: number } | null>(null)
+  const [loopNotice, setLoopNotice] = useState<string | null>(null)
+  const selectionSeededRef = useRef(false)
+  const practiceLiveRef = useRef(commands.practiceState)
+  practiceLiveRef.current = commands.practiceState
+  const selectionRef = useRef(liveSelection)
+  selectionRef.current = liveSelection
+  const sampleRateRef = useRef(project.sample_rate ?? 0)
+  sampleRateRef.current = project.sample_rate ?? 0
+  const activeLoop = useMemo(() => {
+    const ps = commands.practiceState
+    if (!ps) return null
+    return (ps.loops ?? []).find((l) => l.id === ps.active_loop_id) ?? null
+  }, [commands.practiceState])
+  const activeLoopRef = useRef<PracticeLoop | null>(activeLoop)
+  activeLoopRef.current = activeLoop
+  const loopRange = useMemo(
+    () =>
+      activeLoop
+        ? { start: activeLoop.start_frames, end: activeLoop.end_frames, color: activeLoop.color }
+        : null,
+    [activeLoop],
+  )
+
   const handleViewportChange = useCallback((view: EditorView) => {
     scheduleViewRef.current({
       type: 'set_viewport',
@@ -1155,7 +1254,9 @@ function ProjectView({ project }: { project: ProjectSummary }) {
     })
   }, [])
   const handleSelectionChange = useCallback((selection: { start: number; end: number } | null) => {
-    // Both null clears the selection; present together otherwise.
+    // Mirror the live selection for the loop panel (M2.11 §13.2.1) ...
+    setLiveSelection(selection)
+    // ... and autosave it as the view-state selection.
     scheduleViewRef.current({
       type: 'set_selection',
       start_frames: selection?.start ?? null,
@@ -1254,12 +1355,24 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   // Reset the selection when the project changes or the marker disappears.
   useEffect(() => {
     setSelectedMarkerId(null)
+    setLoopNotice(null)
+    setLiveSelection(null)
+    selectionSeededRef.current = false
   }, [project.id])
   useEffect(() => {
     if (selectedMarkerId && !commands.markers.some((m) => m.id === selectedMarkerId)) {
       setSelectedMarkerId(null)
     }
   }, [selectedMarkerId, commands.markers])
+
+  // Seed the live selection from the restored working state once (M1.15
+  // §17.6); the editor's autosave callback keeps it current afterwards
+  // (it does not echo the restored value back).
+  useEffect(() => {
+    if (!commands.loaded || selectionSeededRef.current) return
+    selectionSeededRef.current = true
+    setLiveSelection(commands.workingState.selection ?? null)
+  }, [commands.loaded, commands.workingState.selection])
 
   const handleAddMarker = useCallback((frame: number) => {
     void sendRef.current({
@@ -1303,6 +1416,132 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const handleRedo = useCallback(() => {
     void redoRef.current()
   }, [])
+
+  // --- M2.11 loop commands (spec §13.2) ------------------------------------
+
+  const handleCreateLoopFromSelection = useCallback(() => {
+    const sel = selectionRef.current
+    if (!sel) return
+    // Snapshot the known loop ids before the send: the response's state
+    // arrives with the created loop already in it.
+    const known = new Set((practiceLiveRef.current?.loops ?? []).map((l) => l.id))
+    void (async () => {
+      const res = await sendRef.current({
+        type: 'add_loop',
+        start_frames: sel.start,
+        end_frames: sel.end,
+        boundary_fade: true,
+      })
+      if (!res) {
+        setLoopNotice('Could not create the loop.')
+        return
+      }
+      setLoopNotice(null)
+      // Make the new loop active so its overlay shows immediately.
+      const created = (res.practiceState?.loops ?? []).find((l) => !known.has(l.id))
+      if (created) void sendRef.current({ type: 'set_active_loop', loop_id: created.id })
+    })()
+  }, [])
+
+  const handleLoopUpdate = useCallback((id: string, patch: LoopPatch) => {
+    const op: {
+      type: 'update_loop'
+      loop_id: string
+      name?: string
+      color?: string
+      start_frames?: number
+      end_frames?: number
+      repeat_count?: number | null
+      boundary_fade?: boolean
+    } = { type: 'update_loop', loop_id: id }
+    if (patch.name !== undefined) op.name = patch.name
+    if (patch.color !== undefined) op.color = patch.color
+    if (patch.start_frames !== undefined) op.start_frames = patch.start_frames
+    if (patch.end_frames !== undefined) op.end_frames = patch.end_frames
+    if (patch.boundary_fade !== undefined) op.boundary_fade = patch.boundary_fade
+    // Present key (even null) = set; absent = unchanged (§13.1).
+    if ('repeat_count' in patch) op.repeat_count = patch.repeat_count ?? null
+    void sendRef.current(op)
+  }, [])
+
+  const handleLoopDuplicate = useCallback((id: string) => {
+    void sendRef.current({ type: 'duplicate_loop', loop_id: id })
+  }, [])
+
+  const handleLoopDelete = useCallback((id: string) => {
+    void sendRef.current({ type: 'delete_loop', loop_id: id })
+  }, [])
+
+  const handleLoopSelectActive = useCallback((id: string) => {
+    if (practiceLiveRef.current?.active_loop_id === id) return
+    void sendRef.current({ type: 'set_active_loop', loop_id: id })
+  }, [])
+
+  /** Waveform overlay drag committed (M2.11 §13.2.3–4, §13.8). */
+  const handleLoopRangeChange = useCallback((start: number, end: number) => {
+    const loop = activeLoopRef.current
+    if (!loop || (loop.start_frames === start && loop.end_frames === end)) return
+    void sendRef.current({
+      type: 'update_loop',
+      loop_id: loop.id,
+      start_frames: start,
+      end_frames: end,
+    })
+  }, [])
+
+  /**
+   * Enable/disable looping (the checkbox and `L` share this path). The
+   * 100 ms minimum is validated here so the explanation shows without a
+   * server round trip (spec §13.3.3–4); the server re-validates.
+   */
+  const handleSetLoopEnabled = useCallback((enabled: boolean) => {
+    const ps = practiceLiveRef.current
+    if (!ps) return
+    if (enabled) {
+      const loop = (ps.loops ?? []).find((l) => l.id === ps.active_loop_id) ?? null
+      if (!loop) {
+        setLoopNotice('Select a loop before enabling looping.')
+        return
+      }
+      const sr = sampleRateRef.current
+      if (sr > 0 && loop.end_frames - loop.start_frames < MIN_REPEATABLE_LOOP_SECONDS * sr) {
+        setLoopNotice(
+          'Loops shorter than 100 ms can be saved, but not repeated for practice. Lengthen the loop to enable it.',
+        )
+        return
+      }
+    }
+    setLoopNotice(null)
+    if (ps.loop_enabled === enabled) return
+    void sendRef.current({ type: 'set_loop_enabled', enabled })
+  }, [])
+
+  /** Transport-side loop disable after a seek outside (§13.4.5): persist. */
+  const handleLoopDisabled = useCallback(() => {
+    void sendRef.current({ type: 'set_loop_enabled', enabled: false })
+  }, [])
+
+  // `L` toggles looping (spec §13.2.10): ignored while typing in an input
+  // or with modifiers; a no-op without an active loop.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key !== 'l' && e.key !== 'L') return
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return
+        }
+      }
+      const ps = practiceLiveRef.current
+      if (!ps || !ps.active_loop_id) return
+      e.preventDefault()
+      handleSetLoopEnabled(!ps.loop_enabled)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [handleSetLoopEnabled])
 
   // Flush pending view ops on unmount (M1.15 §17.5.5). Project switches
   // are flushed inside the hook (armed ops go to the previous project).
@@ -1358,6 +1597,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         practiceState={practiceState}
         stemSources={stemSources}
         onPeaks={handlePeaks}
+        onLoopDisabled={handleLoopDisabled}
       />
       <TrackStack
         projectId={project.id}
@@ -1372,6 +1612,21 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onMode={handleMode}
         onSelectSet={handleSelectSet}
         onPlaybackSpeed={handlePlaybackSpeed}
+      />
+      <LoopsPanel
+        loops={commands.practiceState?.loops ?? []}
+        activeLoopId={commands.practiceState?.active_loop_id ?? null}
+        loopEnabled={commands.practiceState?.loop_enabled ?? false}
+        selection={liveSelection}
+        sampleRate={project.sample_rate ?? 0}
+        durationFrames={commands.durationFrames ?? 0}
+        notice={loopNotice}
+        onCreateFromSelection={handleCreateLoopFromSelection}
+        onUpdate={handleLoopUpdate}
+        onDuplicate={handleLoopDuplicate}
+        onDelete={handleLoopDelete}
+        onSelectActive={handleLoopSelectActive}
+        onSetEnabled={handleSetLoopEnabled}
       />
       <div className="original-track-label">
         <span className="track-name">Original</span>
@@ -1389,6 +1644,8 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onSelectionChange={handleSelectionChange}
         onChannelDisplayChange={handleChannelDisplayChange}
         onFollowChange={handleFollowChange}
+        loop={loopRange}
+        onLoopRangeChange={handleLoopRangeChange}
         markers={commands.markers}
         selectedMarkerId={selectedMarkerId}
         onAddMarker={handleAddMarker}

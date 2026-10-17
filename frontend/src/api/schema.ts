@@ -539,6 +539,43 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AddLoopOp
+         * @description Create a saved practice loop (M2.11, spec §13.2.1).
+         *
+         *     The name defaults to "Loop N" and the color to the default loop
+         *     color server-side. The repository validates
+         *     ``0 ≤ start < end ≤ duration_frames`` (422 ``LOOP_RANGE_INVALID``).
+         *     ``repeat_count`` is the total number of passes; ``None`` = infinite.
+         */
+        AddLoopOp: {
+            /**
+             * Boundary Fade
+             * @default true
+             */
+            boundary_fade: boolean;
+            /** Color */
+            color?: string | null;
+            /**
+             * End Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            end_frames: number;
+            /** Name */
+            name?: string | null;
+            /** Repeat Count */
+            repeat_count?: number | null;
+            /**
+             * Start Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            start_frames: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_loop";
+        };
         /** AddMarkerOp */
         AddMarkerOp: {
             /**
@@ -669,7 +706,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
         };
         /**
          * CommandResult
@@ -752,6 +789,26 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * DeleteLoopOp
+         * @description Delete a saved loop (M2.11, spec §13.2.8).
+         *
+         *     When the deleted loop was active, the selection is cleared and
+         *     looping disabled; other loops are untouched.
+         */
+        DeleteLoopOp: {
+            /**
+             * Loop Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            loop_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_loop";
+        };
         /** DeleteMarkerOp */
         DeleteMarkerOp: {
             /**
@@ -765,6 +822,23 @@ export interface components {
              * @enum {string}
              */
             type: "delete_marker";
+        };
+        /**
+         * DuplicateLoopOp
+         * @description Duplicate a saved loop as "<name> copy" (M2.11, spec §13.2.7).
+         */
+        DuplicateLoopOp: {
+            /**
+             * Loop Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            loop_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "duplicate_loop";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1034,9 +1108,25 @@ export interface components {
         };
         /**
          * PracticeLoop
-         * @description A saved practice loop with integer source-frame boundaries (spec §3.5).
+         * @description A saved practice loop with integer source-frame boundaries (spec §13.1).
+         *
+         *     ``repeat_count`` is the total number of passes (not "extra repeats");
+         *     ``None`` means infinite. ``boundary_fade`` enables the short output
+         *     fades at the join (§13.6); disabling them gives exact boundary
+         *     audition. The boundaries are exact source frames and are never
+         *     expanded (§13.3.5–6).
          */
         PracticeLoop: {
+            /**
+             * Boundary Fade
+             * @default true
+             */
+            boundary_fade: boolean;
+            /**
+             * Color
+             * @default #f59e0b
+             */
+            color: string;
             /**
              * Created At
              * @description UTC timestamp in ISO 8601 form
@@ -1054,6 +1144,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Repeat Count */
+            repeat_count?: number | null;
             /**
              * Start Frames
              * @description Integer source sample position (never milliseconds)
@@ -1329,6 +1421,23 @@ export interface components {
             start: number;
         };
         /**
+         * SetActiveLoopOp
+         * @description Select the active loop; ``null`` clears the selection (M2.11 §13.2.9).
+         *
+         *     Clearing also disables looping (the ``loop_enabled requires an
+         *     active loop`` invariant). Selecting a different loop keeps looping
+         *     enabled.
+         */
+        SetActiveLoopOp: {
+            /** Loop Id */
+            loop_id?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_active_loop";
+        };
+        /**
          * SetActiveResultSetOp
          * @description Select the project's active separation result set (M2.7, §9.4.3).
          *
@@ -1363,6 +1472,24 @@ export interface components {
              * @enum {string}
              */
             type: "set_follow_playhead";
+        };
+        /**
+         * SetLoopEnabledOp
+         * @description Enable or disable repeated practice playback (M2.11 §13.2.10, §13.4).
+         *
+         *     Enabling requires an active loop of at least
+         *     :data:`MIN_REPEATABLE_LOOP_SECONDS` (spec §13.3.3): the repository
+         *     pre-validates and raises ``NoActiveLoopError`` (409) or
+         *     ``LoopTooShortError`` (409, message names the 100 ms minimum).
+         */
+        SetLoopEnabledOp: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_loop_enabled";
         };
         /**
          * SetMasterGainOp
@@ -1591,6 +1718,39 @@ export interface components {
          * @enum {string}
          */
         TransferState: "created" | "uploading" | "complete" | "cancelled" | "failed";
+        /**
+         * UpdateLoopOp
+         * @description Partial loop edit; absent fields stay unchanged (M2.11, spec §13.2).
+         *
+         *     ``repeat_count`` distinguishes absent (unchanged) from an explicit
+         *     ``null`` (infinite) via ``model_fields_set``. The repository
+         *     re-validates the resulting range against the duration.
+         */
+        UpdateLoopOp: {
+            /** Boundary Fade */
+            boundary_fade?: boolean | null;
+            /** Color */
+            color?: string | null;
+            /** End Frames */
+            end_frames?: number | null;
+            /**
+             * Loop Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            loop_id: string;
+            /** Name */
+            name?: string | null;
+            /** Repeat Count */
+            repeat_count?: number | null;
+            /** Start Frames */
+            start_frames?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update_loop";
+        };
         /**
          * UpdateMarkerOp
          * @description Partial marker edit; absent fields stay unchanged.

@@ -21,7 +21,11 @@ from pydantic import BaseModel, Field, ValidationError
 from basseparate.api.errors import (
     IdempotencyConflictError,
     InvalidCommandError,
+    LoopNotFoundError,
+    LoopRangeInvalidError,
+    LoopTooShortError,
     MarkerNotFoundError,
+    NoActiveLoopError,
     NothingToRedoError,
     NothingToUndoError,
     PlaybackModeRequiresResultSetError,
@@ -34,7 +38,19 @@ from basseparate.api.idempotency import IdempotencyStore
 from basseparate.domain.commands import CommandRequest, CommandResult
 from basseparate.storage import ProjectRepository
 from basseparate.storage.repository import (
+    LoopNotFoundError as RepoLoopNotFoundError,
+)
+from basseparate.storage.repository import (
+    LoopRangeInvalidError as RepoLoopRangeInvalidError,
+)
+from basseparate.storage.repository import (
+    LoopTooShortError as RepoLoopTooShortError,
+)
+from basseparate.storage.repository import (
     MarkerNotFoundError as RepoMarkerNotFoundError,
+)
+from basseparate.storage.repository import (
+    NoActiveLoopError as RepoNoActiveLoopError,
 )
 from basseparate.storage.repository import (
     NothingToRedoError as RepoNothingToRedoError,
@@ -87,6 +103,14 @@ def _raise_mapped(exc: Exception) -> NoReturn:
         raise ResultSetNotFoundError(str(exc.result_set_id)) from exc
     if isinstance(exc, RepoPlaybackModeRequiresResultSetError):
         raise PlaybackModeRequiresResultSetError() from exc
+    if isinstance(exc, RepoLoopNotFoundError):
+        raise LoopNotFoundError(str(exc.loop_id)) from exc
+    if isinstance(exc, RepoLoopRangeInvalidError):
+        raise LoopRangeInvalidError(exc.start, exc.end, exc.duration) from exc
+    if isinstance(exc, RepoNoActiveLoopError):
+        raise NoActiveLoopError() from exc
+    if isinstance(exc, RepoLoopTooShortError):
+        raise LoopTooShortError(exc.frames, exc.sample_rate) from exc
     if isinstance(exc, ProjectNotReady):
         raise ProjectNotReadyError() from exc
     if isinstance(exc, ValidationError):

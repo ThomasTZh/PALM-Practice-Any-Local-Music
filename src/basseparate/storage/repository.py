@@ -35,7 +35,15 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
-from basseparate.domain.practice import PlaybackMode, PracticeState, TrackSettings
+from basseparate.domain.practice import (
+    DEFAULT_LOOP_COLOR,
+    MAX_LOOP_NAME_LENGTH,
+    MIN_REPEATABLE_LOOP_SECONDS,
+    PlaybackMode,
+    PracticeLoop,
+    PracticeState,
+    TrackSettings,
+)
 from basseparate.domain.project import (
     ProjectRecord,
     ProjectStatus,
@@ -250,6 +258,43 @@ class ResultSetNotFoundError(Exception):
 
 class PlaybackModeRequiresResultSetError(Exception):
     """A stem playback mode requires an active separation result set."""
+
+
+class LoopNotFoundError(Exception):
+    """The referenced practice loop does not exist in the project."""
+
+    def __init__(self, loop_id: uuid.UUID) -> None:
+        super().__init__(f"loop {loop_id} not found")
+        self.loop_id = loop_id
+
+
+class LoopRangeInvalidError(Exception):
+    """A loop's boundaries must satisfy ``0 ≤ start < end ≤ duration``."""
+
+    def __init__(self, start: int, end: int, duration: int) -> None:
+        super().__init__(
+            f"loop range [{start}, {end}) is outside the source length {duration}"
+        )
+        self.start = start
+        self.end = end
+        self.duration = duration
+
+
+class NoActiveLoopError(Exception):
+    """Enabling looping requires an active loop."""
+
+
+class LoopTooShortError(Exception):
+    """Repeated playback requires an interval of at least 100 ms (§13.3.3)."""
+
+    def __init__(self, frames: int, sample_rate: int) -> None:
+        seconds = frames / sample_rate if sample_rate > 0 else 0.0
+        super().__init__(
+            f"loop of {seconds * 1000:.0f} ms is too short for repeated playback; "
+            f"at least {MIN_REPEATABLE_LOOP_SECONDS * 1000:.0f} ms is required"
+        )
+        self.frames = frames
+        self.sample_rate = sample_rate
 
 
 class ProjectNotReady(Exception):
@@ -514,13 +559,96 @@ def _apply_op(
         return markers, ws, ps.model_copy(update={"monitoring_limiter": op.enabled})
     if op.type == "set_playback_speed":
         return markers, ws, ps.model_copy(update={"playback_speed": op.speed})
+    if op.type == "add_loop":
+        loop = PracticeLoop(
+            id=uuid.uuid4(),
+            name=op.name or f"Loop {len(ps.loops) + 1}",
+            start_frames=op.start_frames,
+            end_frames=op.end_frames,
+            color=op.color or DEFAULT_LOOP_COLOR,
+            repeat_count=op.repeat_count,
+            boundary_fade=op.boundary_fade,
+            created_at=now,
+            updated_at=now,
+        )
+        return markers, ws, ps.model_copy(update={"loops": [*ps.loops, loop]})
+    if op.type == "update_loop":
+        current_loop = next((loop for loop in ps.loops if loop.id == op.loop_id), None)
+        if current_loop is None:
+            raise LoopNotFoundError(op.loop_id)
+        loop_patch: dict[str, object] = {
+            name: getattr(op, name)
+            for name in ("start_frames", "end_frames", "name", "color", "boundary_fade")
+            if getattr(op, name) is not None
+        }
+        if "repeat_count" in op.model_fields_set:
+            # Absent = unchanged; explicit null = infinite (§13.1).
+            loop_patch["repeat_count"] = op.repeat_count
+        updated_loop = current_loop.model_copy(update={**loop_patch, "updated_at": now})
+        return markers, ws, ps.model_copy(
+            update={
+                "loops": [
+                    updated_loop if loop.id == op.loop_id else loop for loop in ps.loops
+                ]
+            }
+        )
+    if op.type == "delete_loop":
+        if not any(loop.id == op.loop_id for loop in ps.loops):
+            raise LoopNotFoundError(op.loop_id)
+        ps_updated = ps.model_copy(
+            update={"loops": [loop for loop in ps.loops if loop.id != op.loop_id]}
+        )
+        if ps.active_loop_id == op.loop_id:
+            ps_updated = ps_updated.model_copy(
+                update={"active_loop_id": None, "loop_enabled": False}
+            )
+        return markers, ws, ps_updated
+    if op.type == "duplicate_loop":
+        source = next((loop for loop in ps.loops if loop.id == op.loop_id), None)
+        if source is None:
+            raise LoopNotFoundError(op.loop_id)
+        suffix = " copy"
+        base_name = source.name[: MAX_LOOP_NAME_LENGTH - len(suffix)]
+        copy = source.model_copy(
+            update={
+                "id": uuid.uuid4(),
+                "name": f"{base_name}{suffix}",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        return markers, ws, ps.model_copy(update={"loops": [*ps.loops, copy]})
+    if op.type == "set_active_loop":
+        ps_updated = ps.model_copy(update={"active_loop_id": op.loop_id})
+        if op.loop_id is None:
+            ps_updated = ps_updated.model_copy(update={"loop_enabled": False})
+        return markers, ws, ps_updated
+    if op.type == "set_loop_enabled":
+        # Pre-validated in apply_command (active loop + ≥ 100 ms, §13.3.3).
+        return markers, ws, ps.model_copy(update={"loop_enabled": op.enabled})
     raise ValueError(f"unknown command op type: {op.type}")
 
 
 #: Ops that require a ready project (position-valued against a duration).
 _READY_REQUIRED_TYPES: frozenset[str] = frozenset(
-    {"add_marker", "set_position", "set_selection", "set_viewport"}
+    {
+        "add_marker",
+        "set_position",
+        "set_selection",
+        "set_viewport",
+        # M2.11: loop ranges are validated against the source duration and
+        # the repeatable minimum (spec §13.3).
+        "add_loop",
+        "update_loop",
+        "set_loop_enabled",
+    }
 )
+
+
+def _validate_loop_range(start: int, end: int, duration: int) -> None:
+    """``0 ≤ start < end ≤ duration`` (spec §13.3.1, §13.3.6)."""
+    if start < 0 or end <= start or end > duration:
+        raise LoopRangeInvalidError(start, end, duration)
 
 
 class ProjectRepository:
@@ -631,6 +759,42 @@ class ProjectRepository:
                 and project.practice_state.active_result_set_id is None
             ):
                 raise PlaybackModeRequiresResultSetError()
+            if op.type in ("add_loop", "update_loop"):
+                # The ready check above guarantees a duration (M2.11 §13.3).
+                assert project.duration_frames is not None
+                if op.type == "add_loop":
+                    _validate_loop_range(op.start_frames, op.end_frames, project.duration_frames)
+                else:
+                    current = next(
+                        (
+                            loop
+                            for loop in project.practice_state.loops
+                            if loop.id == op.loop_id
+                        ),
+                        None,
+                    )
+                    if current is None:
+                        raise LoopNotFoundError(op.loop_id)
+                    _validate_loop_range(
+                        op.start_frames if op.start_frames is not None else current.start_frames,
+                        op.end_frames if op.end_frames is not None else current.end_frames,
+                        project.duration_frames,
+                    )
+            if op.type == "set_active_loop" and op.loop_id is not None and not any(
+                loop.id == op.loop_id for loop in project.practice_state.loops
+            ):
+                raise LoopNotFoundError(op.loop_id)
+            if op.type == "set_loop_enabled" and op.enabled:
+                ps = project.practice_state
+                active = next(
+                    (loop for loop in ps.loops if loop.id == ps.active_loop_id), None
+                )
+                if active is None:
+                    raise NoActiveLoopError()
+                sample_rate = project.sample_rate or 0
+                frames = active.end_frames - active.start_frames
+                if frames < MIN_REPEATABLE_LOOP_SECONDS * sample_rate:
+                    raise LoopTooShortError(frames, sample_rate)
             markers = _markers_for(conn, project_id)
             before = _history_snapshot(markers, project.working_state, project.practice_state)
             new_markers, new_ws, new_ps = _apply_op(project, markers, op)
@@ -700,6 +864,10 @@ class ProjectRepository:
             MarkerNotFoundError,
             ResultSetNotFoundError,
             PlaybackModeRequiresResultSetError,
+            LoopNotFoundError,
+            LoopRangeInvalidError,
+            NoActiveLoopError,
+            LoopTooShortError,
             ProjectNotReady,
         ):
             conn.execute("ROLLBACK")
