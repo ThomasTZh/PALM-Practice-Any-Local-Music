@@ -101,6 +101,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/downloads/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Artifact
+         * @description Authenticated download of one verified export (§19.2).
+         *
+         *     The response carries ``Content-Disposition: attachment`` with the
+         *     artifact's safe download filename, its exact byte length, and the
+         *     content hash for verification.
+         */
+        get: operations["download_artifact_api_v1_downloads__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -334,6 +358,30 @@ export interface paths {
         put?: never;
         /** Apply Command */
         post: operations["apply_command_api_v1_projects__project_id__commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Exports
+         * @description Delivered export artifacts for a project, newest first.
+         */
+        get: operations["list_exports_api_v1_projects__project_id__exports_get"];
+        put?: never;
+        /**
+         * Create Export
+         * @description Start a WAV export job for the selected stems (spec §15.3.1–3).
+         */
+        post: operations["create_export_api_v1_projects__project_id__exports_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -742,6 +790,37 @@ export interface components {
             /** State */
             state: string;
         };
+        /**
+         * CreateExportRequest
+         * @description Export selection and options (spec §15.1–15.2).
+         */
+        CreateExportRequest: {
+            /**
+             * Asset Ids
+             * @description Stem audio asset ids to export; defaults to every stem of the result set
+             */
+            asset_ids?: string[] | null;
+            /**
+             * @description Output encoding (24-bit WAV by default)
+             * @default wav24
+             */
+            format: components["schemas"]["ExportFormat"];
+            /**
+             * @description Linked peak normalization to -1 dBFS across the selection; off by default
+             * @default off
+             */
+            normalize: components["schemas"]["ExportNormalization"];
+            /**
+             * Result Set Id
+             * @description Immutable result set to export; defaults to the project's active result set
+             */
+            result_set_id?: string | null;
+            /**
+             * Sample Rate
+             * @description Output sample rate; null keeps the source rate
+             */
+            sample_rate?: (44100 | 48000) | null;
+        };
         /** CreateImportRequest */
         CreateImportRequest: {
             /** Declared Byte Count */
@@ -840,6 +919,79 @@ export interface components {
              */
             type: "duplicate_loop";
         };
+        /**
+         * ExportArtifactResponse
+         * @description One delivered export file with its job state.
+         */
+        ExportArtifactResponse: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            artifact_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Byte Size */
+            byte_size: number;
+            /** Channel Count */
+            channel_count: number;
+            /** Created At */
+            created_at: string;
+            /** Dither */
+            dither: string | null;
+            /** Download Filename */
+            download_filename: string;
+            /** Download Url */
+            download_url: string;
+            format: components["schemas"]["ExportFormat"];
+            /** Frame Count */
+            frame_count: number;
+            /** Gain Db */
+            gain_db: number | null;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            job_state: components["schemas"]["JobState"];
+            /** Normalized */
+            normalized: boolean;
+            /**
+             * Result Set Id
+             * Format: uuid
+             */
+            result_set_id: string;
+            role: components["schemas"]["StemRole"];
+            /** Sample Rate */
+            sample_rate: number;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Stem Id
+             * Format: uuid
+             */
+            stem_id: string;
+        };
+        /**
+         * ExportFormat
+         * @description Output encodings (spec §15.2). ``wav24`` is the default.
+         * @enum {string}
+         */
+        ExportFormat: "wav16" | "wav24" | "wav32f";
+        /** ExportListingResponse */
+        ExportListingResponse: {
+            /** Artifacts */
+            artifacts: components["schemas"]["ExportArtifactResponse"][];
+        };
+        /**
+         * ExportNormalization
+         * @description Normalization policy (spec §15.2). ``off`` is the default.
+         * @enum {string}
+         */
+        ExportNormalization: "off" | "linked_peak";
         /** GpuStatsResponse */
         GpuStatsResponse: {
             /** Free Bytes */
@@ -930,7 +1082,7 @@ export interface components {
          * @description Progress stages reported by workers (milestone1.md §6.6).
          * @enum {string}
          */
-        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "building_waveform" | "ready";
+        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "building_waveform" | "verifying_stems" | "encoding" | "verifying_export" | "ready";
         /**
          * JobState
          * @enum {string}
@@ -940,7 +1092,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform";
+        JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform" | "export";
         /**
          * MarkerRecord
          * @description A single marker annotation in a project (§17.1).
@@ -2151,6 +2303,37 @@ export interface operations {
             };
         };
     };
+    download_artifact_api_v1_downloads__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -2573,6 +2756,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_exports_api_v1_projects__project_id__exports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_export_api_v1_projects__project_id__exports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaJob"];
                 };
             };
             /** @description Validation Error */

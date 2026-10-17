@@ -1055,6 +1055,108 @@ button:hover:not(:disabled) {
   color: #c8d4e0;
 }
 
+/* Stem export panel (M2.13, spec §15) */
+.export-panel {
+  font-size: 0.82rem;
+  color: #c8d4e0;
+}
+
+.export-summary {
+  cursor: pointer;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #3a4a5c;
+  border-radius: 4px;
+  background: #1e2833;
+  user-select: none;
+  list-style: none;
+}
+
+.export-summary::-webkit-details-marker {
+  display: none;
+}
+
+.export-body {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  background: #10151c;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 280px;
+}
+
+.export-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #9aa7b4;
+}
+
+.export-stems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+}
+
+.export-stem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.export-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.export-progress {
+  font-size: 0.8rem;
+  color: #9aa7b4;
+}
+
+.export-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #f87171;
+}
+
+.export-artifacts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.export-artifact {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.export-artifact-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-artifact-meta {
+  font-size: 0.72rem;
+  color: #9aa7b4;
+  white-space: nowrap;
+}
+
 /* Playback speed control (M2.9, spec §11.6) */
 .speed-control {
   display: flex;

@@ -31,6 +31,7 @@ from basseparate import API_VERSION
 from basseparate.api.asset_routes import router as asset_router
 from basseparate.api.command_routes import router as command_router
 from basseparate.api.errors import ApiError, create_error_response
+from basseparate.api.export_routes import router as export_router
 from basseparate.api.idempotency import IdempotencyStore
 from basseparate.api.import_routes import router as import_router
 from basseparate.api.job_routes import router as job_router
@@ -41,6 +42,12 @@ from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
 from basseparate.domain.asset import AssetRecord
+from basseparate.domain.export import (
+    ALTERNATE_EXPORT_SAMPLE_RATES,
+    ExportFormat,
+    ExportNormalization,
+    export_download_filenames,
+)
 from basseparate.domain.import_record import TransferState
 from basseparate.domain.media_job import JobType, MediaJob
 from basseparate.domain.project import (
@@ -48,10 +55,12 @@ from basseparate.domain.project import (
     MIN_SAMPLE_RATE,
     ProjectRecord,
 )
+from basseparate.domain.separation import StemRecord, ValidationStatus
 from basseparate.jobs import JobManager, ParameterResolutionError, build_publishers
 from basseparate.media.downmix import MonitorSelectionError, pan_expression, resolve_downmix
 from basseparate.runtime_diagnostics import GpuPeakTracker, RuntimeDiagnostics
 from basseparate.storage import (
+    ExportArtifactRepository,
     ImportRepository,
     JobRepository,
     ProjectRepository,
@@ -256,6 +265,7 @@ def _job_parameters_for(
     job: MediaJob,
     imports: ImportRepository,
     projects: ProjectRepository,
+    separations: SeparationRepository,
     paths: StoragePaths,
 ) -> dict[str, Any]:
     """Worker parameters for any job type (M1.4 decode, M1.7/M1.8 derived)."""
@@ -267,7 +277,141 @@ def _job_parameters_for(
         return _playback_parameters_for(job, projects, paths)
     if job.job_type is JobType.WAVEFORM:
         return _waveform_parameters_for(job, projects, paths)
+    if job.job_type is JobType.EXPORT:
+        return _export_parameters_for(job, projects, separations, paths)
     return {}
+
+
+def _export_parameters_for(
+    job: MediaJob,
+    projects: ProjectRepository,
+    separations: SeparationRepository,
+    paths: StoragePaths,
+) -> dict[str, Any]:
+    """Worker parameters for a WAV stem export (M2.13 §15.1–15.3).
+
+    The machine-readable selection is the job's stored parameters
+    (``result_set_id``, optional ``asset_ids``, ``format``,
+    ``target_sample_rate``, ``normalize``). Resolution verifies that the
+    set belongs to the project, that the selected stems are part of it,
+    that their sample rates and frame counts agree (§15.4 common origin),
+    and that every source PCM file is present before the worker is
+    involved.
+    """
+    if job.job_type is not JobType.EXPORT:
+        return {}
+    raw_set_id = job.parameters.get("result_set_id")
+    try:
+        result_set_id = uuid.UUID(str(raw_set_id))
+    except (TypeError, ValueError) as exc:
+        raise ParameterResolutionError(
+            "EXPORT_RESULT_SET", "the export job has no valid result_set_id"
+        ) from exc
+    detail = separations.get_result_set_detail(job.project_id, result_set_id)
+    if detail is None:
+        raise ParameterResolutionError(
+            "EXPORT_RESULT_SET",
+            f"result set {result_set_id} does not belong to this project",
+        )
+    result_set, _run, stems = detail
+    if result_set.validation_status is not ValidationStatus.VALID:
+        raise ParameterResolutionError(
+            "EXPORT_RESULT_SET", "only a valid result set can be exported"
+        )
+    requested = job.parameters.get("asset_ids")
+    if isinstance(requested, list) and requested:
+        by_asset = {str(stem.audio_asset_id): stem for stem in stems}
+        selected: list[StemRecord] = []
+        for value in requested:
+            stem = by_asset.get(str(value))
+            if stem is None:
+                raise ParameterResolutionError(
+                    "EXPORT_SELECTION",
+                    f"asset {value} is not a stem of result set {result_set_id}",
+                )
+            selected.append(stem)
+    else:
+        selected = list(stems)
+    if not selected:
+        raise ParameterResolutionError("NO_STEMS", "the export selection is empty")
+    sample_rates = {stem.sample_rate for stem in selected}
+    frame_counts = {stem.frame_count for stem in selected}
+    if len(sample_rates) != 1 or len(frame_counts) != 1:
+        raise ParameterResolutionError(
+            "EXPORT_ALIGNMENT",
+            "the selected stems do not share one sample rate and frame count; "
+            "refusing to export misaligned audio",
+        )
+    format_raw = job.parameters.get("format", ExportFormat.WAV24.value)
+    try:
+        export_format = ExportFormat(str(format_raw))
+    except ValueError as exc:
+        raise ParameterResolutionError(
+            "EXPORT_OPTIONS", f"unsupported export format: {format_raw}"
+        ) from exc
+    target = job.parameters.get("target_sample_rate")
+    if target is not None and target not in ALTERNATE_EXPORT_SAMPLE_RATES:
+        raise ParameterResolutionError(
+            "EXPORT_OPTIONS",
+            f"unsupported export sample rate: {target} Hz",
+        )
+    normalize_raw = job.parameters.get("normalize", ExportNormalization.OFF.value)
+    try:
+        normalize = ExportNormalization(str(normalize_raw))
+    except ValueError as exc:
+        raise ParameterResolutionError(
+            "EXPORT_OPTIONS", f"unsupported normalization: {normalize_raw}"
+        ) from exc
+    source_rate = selected[0].sample_rate
+    output_rate = target if target is not None else source_rate
+    names = export_download_filenames(
+        [(stem.id, stem.display_name, stem.role) for stem in selected],
+        result_set_id=result_set.id,
+        sample_rate=output_rate,
+        format=export_format,
+    )
+    stem_payloads: list[dict[str, Any]] = []
+    for stem in selected:
+        asset = projects.get_asset(stem.audio_asset_id)
+        if asset is None or asset.audio is None:
+            raise ParameterResolutionError(
+                "EXPORT_STEM_MISSING",
+                f"the stem asset for role {stem.role.value} is unavailable",
+            )
+        audio = asset.audio
+        if audio.sample_format != "f32le" or audio.channel_count != stem.channel_count:
+            raise ParameterResolutionError(
+                "EXPORT_STEM_MISSING",
+                f"the stem asset for role {stem.role.value} is not canonical PCM",
+            )
+        source_path = paths.resolve_asset_path(asset.relative_path)
+        if not source_path.is_file():
+            raise ParameterResolutionError(
+                "EXPORT_STEM_MISSING",
+                f"the stem file for role {stem.role.value} is missing from storage",
+            )
+        stem_payloads.append(
+            {
+                "stem_id": str(stem.id),
+                "asset_id": str(asset.id),
+                "role": stem.role.value,
+                "display_name": stem.display_name,
+                "source_path": str(source_path),
+                "source_hash": asset.content_hash,
+                "sample_rate": audio.sample_rate,
+                "channel_count": audio.channel_count,
+                "frame_count": audio.frame_count,
+                "download_filename": names[stem.id],
+            }
+        )
+    return {
+        "result_set_id": str(result_set.id),
+        "format": export_format.value,
+        "target_sample_rate": target,
+        "normalize": normalize.value,
+        "source_sample_rate": source_rate,
+        "stems": stem_payloads,
+    }
 
 
 def _static_dir() -> Path | None:
@@ -318,6 +462,8 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.representation_repository = representation_repository
         cache_repository = WaveformCacheRepository(paths.database_path, paths.cache)
         app.state.waveform_cache_repository = cache_repository
+        export_repository = ExportArtifactRepository(paths.database_path)
+        app.state.export_repository = export_repository
         import_repository = cast(ImportRepository, app.state.import_repository)
         app.state.job_manager = JobManager(
             repository=cast(JobRepository, app.state.job_repository),
@@ -330,11 +476,13 @@ def create_app(config: AppConfig) -> FastAPI:
                 paths,
                 cast(JobRepository, app.state.job_repository),
                 cache_repository,
+                export_repository,
             ),
             parameters_for=lambda job: _job_parameters_for(
                 job,
                 import_repository,
                 cast(ProjectRepository, app.state.repository),
+                cast(SeparationRepository, app.state.separation_repository),
                 paths,
             ),
             worker_memory_limit_mb=config.media_worker_memory_limit_mb,
@@ -393,6 +541,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(asset_router)
     app.include_router(command_router)
     app.include_router(result_set_router)
+    app.include_router(export_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

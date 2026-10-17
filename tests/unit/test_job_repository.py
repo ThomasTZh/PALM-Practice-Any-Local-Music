@@ -248,3 +248,62 @@ class TestForeignKeys:
         reloaded = jobs.get_job(job.id)
         assert reloaded is not None
         assert reloaded.import_id is None
+
+
+class TestInFlightExportAssetIds:
+    """M2.13 §9.5.6: the reclaim pin hook reads in-flight export jobs."""
+
+    def _export_job(
+        self,
+        projects: ProjectRepository,
+        jobs: JobRepository,
+        asset_ids: list[str],
+    ):
+        project = projects.create_project("pin")
+        return jobs.create_job(
+            project.id,
+            JobType.EXPORT,
+            parameters={"result_set_id": str(uuid.uuid4()), "asset_ids": asset_ids},
+        )
+
+    def test_pins_assets_of_non_terminal_export_jobs(
+        self,
+        projects: ProjectRepository,
+        jobs: JobRepository,
+    ) -> None:
+        a, b, c, d = (str(uuid.uuid4()) for _ in range(4))
+        self._export_job(projects, jobs, [a, b])  # stays queued
+        running = self._export_job(projects, jobs, [b])
+        jobs.set_state(running.id, JobState.RUNNING)
+        completed = self._export_job(projects, jobs, [c])
+        jobs.set_state(completed.id, JobState.RUNNING)
+        jobs.set_state(completed.id, JobState.COMPLETED)
+        failed = self._export_job(projects, jobs, [d])
+        jobs.fail_job(failed.id, "TEST", "done")
+
+        assert jobs.in_flight_export_asset_ids() == {uuid.UUID(a), uuid.UUID(b)}
+
+    def test_ignores_other_job_types_and_malformed_parameters(
+        self,
+        projects: ProjectRepository,
+        jobs: JobRepository,
+    ) -> None:
+        a = str(uuid.uuid4())
+        jobs.create_job(
+            projects.create_project("wf").id,
+            JobType.WAVEFORM,
+            parameters={"asset_ids": [a], "source_path": "/x"},
+        )
+        # A malformed parameters blob must not break the scan.
+        job = self._export_job(projects, jobs, ["not-a-uuid"])
+        import sqlite3
+
+        conn = sqlite3.connect(str(jobs._db_path))  # noqa: SLF001
+        conn.execute(
+            "UPDATE media_jobs SET parameters = 'not json' WHERE id = ?",
+            (str(job.id),),
+        )
+        conn.commit()
+        conn.close()
+
+        assert jobs.in_flight_export_asset_ids() == set()

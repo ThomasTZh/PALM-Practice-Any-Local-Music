@@ -21,6 +21,7 @@ from basseparate.domain.commands import (
     CommandResult,
     ProjectCommandOp,
 )
+from basseparate.domain.export import ExportArtifact
 from basseparate.domain.import_record import (
     AudioStreamInfo,
     ImportRecord,
@@ -1608,6 +1609,42 @@ class JobRepository:
         finally:
             conn.close()
 
+    def in_flight_export_asset_ids(self) -> set[uuid.UUID]:
+        """Stem assets referenced by non-terminal export jobs (M2.13 §9.5.6).
+
+        The §9.5 pin hook: callers pass the result as ``pinned_asset_ids``
+        so explicit reclaim never deletes bytes an export is still reading.
+        Interrupted jobs stay pinned because they can resume. Requested
+        asset ids live in the job's stored ``parameters`` (written when
+        the export job is created).
+        """
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT parameters FROM media_jobs
+                WHERE job_type = 'export'
+                  AND state IN ('queued', 'running', 'cancelling', 'interrupted')
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        pinned: set[uuid.UUID] = set()
+        for row in rows:
+            try:
+                parameters = json.loads(row["parameters"])
+            except (TypeError, ValueError):
+                continue
+            asset_ids = parameters.get("asset_ids")
+            if not isinstance(asset_ids, list):
+                continue
+            for value in asset_ids:
+                try:
+                    pinned.add(uuid.UUID(str(value)))
+                except ValueError:
+                    continue
+        return pinned
+
     def _current_state(self, job_id: uuid.UUID, conn: sqlite3.Connection) -> JobState:
         row = conn.execute("SELECT state FROM media_jobs WHERE id = ?", (str(job_id),)).fetchone()
         if row is None:
@@ -2312,3 +2349,113 @@ class SeparationRepository:
         finally:
             conn.close()
         return result_set
+
+
+class ExportArtifactRepository:
+    """Synchronous repository for delivered export artifacts (M2.13 §15.5).
+
+    One row per delivered WAV file. The published file itself lives in the
+    managed export store (``data/exports/<sha256>.wav``); rows record the
+    report required by §15.5 (source result set, stem, settings, gain,
+    dither, hash, path) and survive cache reclaim because a delivered copy
+    is user data, not a rebuildable cache entry.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    def publish_artifacts(
+        self, job_id: uuid.UUID, artifacts: list[ExportArtifact]
+    ) -> list[ExportArtifact]:
+        """Register the artifacts of one completed export job atomically.
+
+        Any previous rows for the job are replaced in the same
+        transaction, so a republish after an interruption cannot duplicate
+        a job's artifacts. The files themselves were moved into managed
+        storage beforehand; a retry reuses them.
+        """
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM export_artifacts WHERE job_id = ?", (str(job_id),))
+            for artifact in artifacts:
+                if artifact.job_id != job_id:
+                    raise DatabaseError("export artifact job_id mismatch")
+                conn.execute(
+                    """
+                    INSERT INTO export_artifacts (
+                        id, job_id, project_id, result_set_id, stem_id,
+                        audio_asset_id, sha256, relative_path, download_filename,
+                        created_at, record_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(artifact.id),
+                        str(artifact.job_id),
+                        str(artifact.project_id),
+                        str(artifact.result_set_id),
+                        str(artifact.stem_id),
+                        str(artifact.audio_asset_id),
+                        artifact.sha256,
+                        artifact.relative_path,
+                        artifact.download_filename,
+                        artifact.created_at.isoformat().replace("+00:00", "Z"),
+                        artifact.model_dump_json(),
+                    ),
+                )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot publish export artifacts: {exc}") from exc
+        finally:
+            conn.close()
+        return artifacts
+
+    def get_artifact(self, artifact_id: uuid.UUID) -> ExportArtifact | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM export_artifacts WHERE id = ?",
+                (str(artifact_id),),
+            ).fetchone()
+            return ExportArtifact.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_artifacts_for_project(self, project_id: uuid.UUID) -> list[ExportArtifact]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT record_json FROM export_artifacts WHERE project_id = ? "
+                "ORDER BY created_at DESC, id DESC",
+                (str(project_id),),
+            ).fetchall()
+            return [ExportArtifact.model_validate_json(r["record_json"]) for r in rows]
+        finally:
+            conn.close()
+
+    def list_artifacts_with_job_state(
+        self, project_id: uuid.UUID
+    ) -> list[tuple[ExportArtifact, JobState]]:
+        """Artifacts with their job's current state (listing route)."""
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT a.record_json AS record_json, j.state AS job_state
+                FROM export_artifacts a
+                JOIN media_jobs j ON j.id = a.job_id
+                WHERE a.project_id = ?
+                ORDER BY a.created_at DESC, a.id DESC
+                """,
+                (str(project_id),),
+            ).fetchall()
+            return [
+                (
+                    ExportArtifact.model_validate_json(r["record_json"]),
+                    JobState(r["job_state"]),
+                )
+                for r in rows
+            ]
+        finally:
+            conn.close()

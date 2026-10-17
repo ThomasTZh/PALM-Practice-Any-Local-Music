@@ -25,10 +25,12 @@ from basseparate.domain.import_record import TransferState
 from basseparate.domain.media_job import JobState, JobType, MediaJob
 from basseparate.jobs import JobManager, build_import_publisher, build_publishers
 from basseparate.storage import (
+    ExportArtifactRepository,
     ImportRepository,
     JobRepository,
     ProjectRepository,
     RepresentationRepository,
+    SeparationRepository,
     StoragePaths,
     WaveformCacheRepository,
 )
@@ -177,6 +179,8 @@ def env(tmp_path: Path):
         "source": source,
         "source_path_for": source_path_for,
         "waveform_caches": WaveformCacheRepository(db, paths.cache),
+        "separations": SeparationRepository(db),
+        "export_artifacts": ExportArtifactRepository(db),
     }
 
 
@@ -638,7 +642,7 @@ class TestParameterResolvers:
 
     def _resolvers(self, env: dict):
         return lambda job: _job_parameters_for(
-            job, env["imports"], env["projects"], env["paths"]
+            job, env["imports"], env["projects"], env["separations"], env["paths"]
         )
 
     def test_downmix_standard_51(self, env: dict) -> None:
@@ -738,6 +742,7 @@ class TestParameterResolvers:
             env["paths"],
             env["jobs"],
             env["waveform_caches"],
+            env["export_artifacts"],
         )(
             downmix_job,
             {
@@ -806,6 +811,7 @@ class TestDecodeCompletion:
                 env["paths"],
                 env["jobs"],
                 env["waveform_caches"],
+                env["export_artifacts"],
             ),
             parameters_for=lambda job: _decode_parameters_for(job, env["imports"]),
         )
@@ -999,6 +1005,7 @@ class TestDecodeCompletion:
                     env["paths"],
                     env["jobs"],
                     env["waveform_caches"],
+                    env["export_artifacts"],
                 ),
                 parameters_for=lambda job: {},
             )
@@ -1072,9 +1079,10 @@ class TestDecodeAutoQueuesWaveform:
                 env["paths"],
                 env["jobs"],
                 env["waveform_caches"],
+                env["export_artifacts"],
             ),
             parameters_for=lambda job: _job_parameters_for(
-                job, env["imports"], env["projects"], env["paths"]
+                job, env["imports"], env["projects"], env["separations"], env["paths"]
             ),
         )
 
@@ -1160,16 +1168,99 @@ class TestSchedulingPriority:
             probe = await mgr.create_job(
                 env["project"].id, JobType.PROBE, import_id=env["import"].id
             )
+            export = await mgr.create_job(
+                env["project"].id,
+                JobType.EXPORT,
+                parameters={"result_set_id": str(uuid.uuid4()), "asset_ids": []},
+            )
             waveform_b = await mgr.create_job(
                 env["project"].id, JobType.WAVEFORM, import_id=env["import"].id
             )
-            assert mgr.queue_depth == 4
+            assert mgr.queue_depth == 5
             order = []
             while mgr.queue_depth:
                 _priority, _sequence, job_id = mgr._queue.get_nowait()
                 order.append(job_id)
             # Playback preparation first, then import-critical work, then
-            # background waveforms; FIFO within one class.
-            assert order == [rate.id, probe.id, waveform_a.id, waveform_b.id]
+            # user-requested exports, then background waveforms; FIFO within
+            # one class (M2.13 §15: the export priority class is 2).
+            assert order == [rate.id, probe.id, export.id, waveform_a.id, waveform_b.id]
+
+        asyncio.run(scenario())
+
+
+class TestImportlessSourceResolution:
+    """M2.13: asset-sourced jobs (no import) resolve their run source from
+    the resolved parameters, fixing the latent M2.7 stem-waveform defect."""
+
+    def test_stem_waveform_reaches_worker_without_import(self, env: dict) -> None:
+        async def scenario() -> None:
+            # The real worker rejects the bogus asset id after source
+            # resolution, which proves the job passed the import-less source
+            # lookup (pre-M2.13 it failed with NO_SOURCE before the worker
+            # was involved).
+            mgr = _make_manager(
+                env,
+                parameters_for=lambda job: {
+                    "asset_id": "not-an-asset",
+                    "source_path": str(env["source"]),
+                },
+            )
+            await mgr.start()
+            try:
+                job = await mgr.create_job(env["project"].id, JobType.WAVEFORM)
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "WAVEFORM_PARAMETERS"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_stem_waveform_with_missing_file_fails_no_source(self, env: dict) -> None:
+        async def scenario() -> None:
+            missing = env["root"] / "nowhere.pcm"
+            mgr = _make_manager(
+                env,
+                parameters_for=lambda job: {
+                    "asset_id": "seed",
+                    "source_path": str(missing),
+                },
+            )
+            await mgr.start()
+            try:
+                job = await mgr.create_job(env["project"].id, JobType.WAVEFORM)
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_SOURCE"
+            finally:
+                await mgr.stop()
+
+        asyncio.run(scenario())
+
+    def test_export_with_unresolvable_parameters_fails_before_worker(
+        self, env: dict
+    ) -> None:
+        async def scenario() -> None:
+            from basseparate.jobs import ParameterResolutionError
+
+            def parameters_for(job: MediaJob) -> dict:
+                raise ParameterResolutionError(
+                    "NO_STEMS", "the export selection resolved no stems"
+                )
+
+            mgr = _make_manager(env, parameters_for=parameters_for)
+            await mgr.start()
+            try:
+                job = await mgr.create_job(
+                    env["project"].id,
+                    JobType.EXPORT,
+                    parameters={"result_set_id": str(uuid.uuid4())},
+                )
+                final = await _wait_terminal(mgr, job.id)
+                assert final.state is JobState.FAILED
+                assert final.error_code == "NO_STEMS"
+            finally:
+                await mgr.stop()
 
         asyncio.run(scenario())

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
+from basseparate.domain.export import ExportArtifact, ExportResult
 from basseparate.domain.import_record import (
     ImportRecord,
     ProbeResult,
@@ -54,8 +55,10 @@ from basseparate.media.downmix import (
     manual_matrix,
     standard_51_matrix,
 )
+from basseparate.media.preparation import sha256_file
 from basseparate.media.waveform import validate_tile_bytes
 from basseparate.storage import (
+    ExportArtifactRepository,
     ImportRepository,
     JobRepository,
     ProjectRepository,
@@ -566,6 +569,74 @@ def _queue_waveform_if_needed(
     )
 
 
+def _publish_export(
+    job: MediaJob,
+    result: dict[str, Any],
+    projects: ProjectRepository,
+    exports: ExportArtifactRepository,
+    paths: StoragePaths,
+) -> None:
+    """Move verified WAV exports into managed storage and record them (M2.13).
+
+    The worker wrote one staged WAV per selected stem. Every file is
+    re-verified (exists, byte size, SHA-256) before it is moved to
+    ``data/exports/<sha256>.wav``. Identical bytes are reused by hash, so
+    a delivered file is never silently overwritten with different
+    content (spec §15.3.13–15). Artifact rows replace any previous rows
+    for the job, which makes a republish after an interruption safe.
+    """
+    export = ExportResult(**result)
+    if projects.get_project(job.project_id) is None:
+        raise PublishError(f"project {job.project_id} no longer exists")
+    export_dir = paths.data / "exports"
+    now = datetime.now(UTC)
+    artifacts: list[ExportArtifact] = []
+    for stem in export.artifacts:
+        staged = Path(stem.staging_path)
+        if not staged.is_file():
+            raise PublishError(f"staged export file is missing: {stem.staging_path}")
+        size = staged.stat().st_size
+        if size != stem.byte_size:
+            raise PublishError(
+                f"staged export file size mismatch: {stem.staging_path} "
+                f"({size} bytes, expected {stem.byte_size})"
+            )
+        digest = sha256_file(staged)
+        if digest != stem.sha256:
+            raise PublishError(f"staged export file hash mismatch: {stem.staging_path}")
+        destination = export_dir / f"{stem.sha256}.wav"
+        if destination.exists():
+            # Content-addressed reuse: the bytes are already delivered.
+            _remove_quietly(staged)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(staged), str(destination))
+        artifacts.append(
+            ExportArtifact(
+                id=uuid.uuid4(),
+                job_id=job.id,
+                project_id=job.project_id,
+                result_set_id=export.result_set_id,
+                stem_id=stem.stem_id,
+                audio_asset_id=stem.audio_asset_id,
+                role=stem.role,
+                format=stem.format,
+                sample_rate=stem.sample_rate,
+                channel_count=stem.channel_count,
+                frame_count=stem.frame_count,
+                normalized=stem.normalized,
+                gain_db=stem.gain_db,
+                dither=stem.dither,
+                sha256=stem.sha256,
+                byte_size=stem.byte_size,
+                relative_path=f"data/exports/{stem.sha256}.wav",
+                download_filename=stem.download_filename,
+                created_at=now,
+            )
+        )
+    exports.publish_artifacts(job.id, artifacts)
+
+
 def build_publishers(
     import_repository: ImportRepository,
     project_repository: ProjectRepository,
@@ -573,8 +644,9 @@ def build_publishers(
     paths: StoragePaths,
     job_repository: JobRepository,
     cache_repository: WaveformCacheRepository,
+    export_repository: ExportArtifactRepository,
 ) -> Publisher:
-    """Dispatch verified job results to their publisher (M1.4-M1.8)."""
+    """Dispatch verified job results to their publisher (M1.4-M1.8, M2.13)."""
 
     def publish(job: MediaJob, result: dict[str, Any]) -> None:
         if job.job_type is JobType.PROBE:
@@ -611,6 +683,14 @@ def build_publishers(
                 result,
                 project_repository,
                 cache_repository,
+            )
+        elif job.job_type is JobType.EXPORT:
+            _publish_export(
+                job,
+                result,
+                project_repository,
+                export_repository,
+                paths,
             )
 
     return publish

@@ -184,6 +184,8 @@ export interface WaitForJobOptions {
   timeoutMs?: number
   pollMs?: number
   signal?: AbortSignal
+  /** Called with the latest job state after each poll (M2.13). */
+  onProgress?: (job: JobState) => void
 }
 
 /** Poll a job until it reaches a terminal state. Throws on failure/timeout. */
@@ -194,6 +196,7 @@ export async function waitForJob(jobId: string, opts: WaitForJobOptions = {}): P
   for (;;) {
     if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const job = await getJob(jobId, opts.signal)
+    opts.onProgress?.(job)
     if (job.state === 'completed') return job
     if (job.state === 'failed' || job.state === 'cancelled' || job.state === 'interrupted') {
       const code = job.errorCode ?? job.state.toUpperCase()

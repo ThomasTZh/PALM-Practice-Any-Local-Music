@@ -441,6 +441,38 @@ class NoWaveformCacheError(ApiError):
         )
 
 
+class NoExportResultSetError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="NO_RESULT_SET",
+            message="The project has no separation result set to export; "
+            "run a separation first",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class ExportSelectionError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            code="EXPORT_SELECTION",
+            message=detail,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
+class ExportArtifactNotFoundError(ApiError):
+    def __init__(self, artifact_id: str, missing_file: bool = False) -> None:
+        if missing_file:
+            message = f"The export's file is missing from storage: {artifact_id}"
+        else:
+            message = f"The requested export artifact does not exist: {artifact_id}"
+        super().__init__(
+            code="EXPORT_ARTIFACT_NOT_FOUND",
+            message=message,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
 class TileNotReadyError(ApiError):
     def __init__(self, level: int, tile: int) -> None:
         super().__init__(

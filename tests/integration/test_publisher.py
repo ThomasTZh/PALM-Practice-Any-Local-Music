@@ -28,6 +28,7 @@ from basseparate.domain.waveform import BASE_BUCKET_FRAMES, WaveformResult
 from basseparate.jobs import PublishError, build_publishers
 from basseparate.media.waveform import build_waveform_cache
 from basseparate.storage import (
+    ExportArtifactRepository,
     ImportRepository,
     JobRepository,
     ProjectRepository,
@@ -65,6 +66,7 @@ def env(tmp_path: Path) -> dict:
         "jobs": JobRepository(db),
         "representations": RepresentationRepository(db),
         "waveform_caches": WaveformCacheRepository(db, paths.cache),
+        "export_artifacts": ExportArtifactRepository(db),
     }
 
 
@@ -237,6 +239,7 @@ def _publisher(env: dict):
         env["paths"],
         env["jobs"],
         env["waveform_caches"],
+        env["export_artifacts"],
     )
 
 

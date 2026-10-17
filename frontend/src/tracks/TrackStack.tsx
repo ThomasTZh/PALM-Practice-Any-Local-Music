@@ -5,8 +5,9 @@
  * track (the waveform editor). One shared view (the editor's zoom/pan,
  * read through `viewSource`) drives every lane (§10.1.4); each lane
  * keeps its own height and amplitude (§10.1.5). The mode bar holds the
- * playback-mode selector (with the result-set choice) and the
- * monitoring panel. The original track is a reference: it has no
+ * playback-mode selector (with the result-set choice), the export
+ * panel (M2.13), and the monitoring panel. The original track is a
+ * reference: it has no
  * per-track mixer (the groups are mutually exclusive, §10.4.5).
  */
 import { useEffect, useMemo, useState } from 'react'
@@ -16,6 +17,7 @@ import { fetchResultSets, type ResultSetDetail, type ResultSetSummary } from '..
 import { effectiveTracks } from '../projects/trackSettings'
 import type { MixPeaks } from '../playback/transport'
 import type { PlayheadSource, ViewSource } from '../waveform/WaveformEditor'
+import { ExportPanel } from './ExportPanel'
 import { MixerStrip, type TrackSettingsPatch } from './MixerStrip'
 import { MonitoringPanel } from './MonitoringPanel'
 import { ModeSelector, type PlaybackMode } from './ModeSelector'
@@ -127,6 +129,7 @@ export function TrackStack({
           notice={modeNotice}
         />
         <SpeedControl speed={practiceState?.playback_speed ?? 1} onCommit={onPlaybackSpeed} />
+        <ExportPanel projectId={projectId} detail={detail} />
         <MonitoringPanel
           masterPeak={peaks?.master ?? null}
           masterGain={practiceState?.master_gain ?? 1}

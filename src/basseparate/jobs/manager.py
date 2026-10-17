@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from basseparate.domain.export import ExportResult
 from basseparate.domain.import_record import ProbeResult
 from basseparate.domain.media_job import JobState, JobType, MediaJob
 from basseparate.domain.representation import (
@@ -84,11 +85,13 @@ _PARAMETERIZED_JOB_TYPES = frozenset(
         JobType.MONITORING_DOWNMIX,
         JobType.PLAYBACK_RATE,
         JobType.WAVEFORM,
+        JobType.EXPORT,
     }
 )
 
-#: Scheduling priority classes (M2.12, spec §14.3): playback preparation
-#: runs before import-critical work, which runs before background
+#: Scheduling priority classes (M2.12, spec §14.3; the export class is
+#: M2.13, spec §15): playback preparation runs first, then
+#: import-critical work, then user-requested exports, then background
 #: waveform generation. FIFO within one class via a monotonic sequence
 #: number, so equal-priority jobs keep their arrival order.
 _JOB_PRIORITY: dict[JobType, int] = {
@@ -96,9 +99,10 @@ _JOB_PRIORITY: dict[JobType, int] = {
     JobType.PLAYBACK_RATE: 0,
     JobType.PROBE: 1,
     JobType.CANONICAL_DECODE: 1,
-    JobType.WAVEFORM: 2,
+    JobType.EXPORT: 2,
+    JobType.WAVEFORM: 3,
 }
-_UNKNOWN_JOB_PRIORITY = 3
+_UNKNOWN_JOB_PRIORITY = 4
 
 
 def _default_parameter_failure(job_type: JobType) -> tuple[str, str]:
@@ -107,6 +111,11 @@ def _default_parameter_failure(job_type: JobType) -> tuple[str, str]:
         return (
             "NO_STREAM_SELECTION",
             "no audio stream is selected for this import; select a stream before decoding",
+        )
+    if job_type is JobType.EXPORT:
+        return (
+            "NO_STEMS",
+            "the export selection resolved no stems; refusing to export",
         )
     return (
         "NO_CANONICAL",
@@ -294,6 +303,26 @@ class JobManager:
         path = self._source_path_for(job.import_id)
         return path if path.is_file() else None
 
+    @staticmethod
+    def _parameter_source_path(job_type: JobType, parameters: dict[str, Any]) -> Path | None:
+        """The run-source file of an import-less (asset-sourced) job (M2.13).
+
+        M2.7's per-stem waveform jobs and M2.13's export jobs read their
+        real inputs from the parameter payload; the run message still
+        carries one representative existing source file.
+        """
+        raw: Any = None
+        if job_type is JobType.WAVEFORM:
+            raw = parameters.get("source_path")
+        elif job_type is JobType.EXPORT:
+            stems = parameters.get("stems")
+            if isinstance(stems, list) and stems and isinstance(stems[0], dict):
+                raw = stems[0].get("source_path")
+        if not isinstance(raw, str) or not raw:
+            return None
+        path = Path(raw)
+        return path if path.is_file() else None
+
     async def _run_job(self, job: MediaJob) -> None:
         supervisor = self._supervisor
         if supervisor is None:
@@ -303,14 +332,6 @@ class JobManager:
         cleaned = False
         try:
             source_path = self._resolve_source(job)
-            if source_path is None:
-                await asyncio.to_thread(
-                    self._repo.fail_job,
-                    job_id,
-                    "NO_SOURCE",
-                    "the job has no import to read a source file from",
-                )
-                return
             parameters: dict[str, Any] = {}
             if job.job_type in _PARAMETERIZED_JOB_TYPES:
                 if self._parameters_for is not None:
@@ -325,6 +346,18 @@ class JobManager:
                     code, message = _default_parameter_failure(job.job_type)
                     await asyncio.to_thread(self._repo.fail_job, job_id, code, message)
                     return
+                if source_path is None:
+                    # Asset-sourced jobs have no import; the resolved
+                    # parameters name the real inputs (M2.13).
+                    source_path = self._parameter_source_path(job.job_type, parameters)
+            if source_path is None:
+                await asyncio.to_thread(
+                    self._repo.fail_job,
+                    job_id,
+                    "NO_SOURCE",
+                    "the job has no source file to read audio from",
+                )
+                return
 
             try:
                 staging_dir.mkdir(parents=True)
@@ -455,6 +488,8 @@ class JobManager:
                 PlaybackRateResult(**result)
             elif job.job_type is JobType.WAVEFORM:
                 WaveformResult(**result)
+            elif job.job_type is JobType.EXPORT:
+                ExportResult(**result)
         except (ValueError, TypeError) as exc:
             log.warning("job %s result failed verification: %s", job_id, exc)
             with contextlib.suppress(Exception):

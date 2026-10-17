@@ -42,6 +42,7 @@ class TestEnums:
             "monitoring_downmix",
             "playback_rate",
             "waveform",
+            "export",
         }
 
     def test_job_states(self) -> None:
@@ -63,6 +64,9 @@ class TestEnums:
             "decoding",
             "preparing_playback",
             "building_waveform",
+            "verifying_stems",
+            "encoding",
+            "verifying_export",
             "ready",
         }
 

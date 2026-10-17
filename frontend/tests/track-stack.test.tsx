@@ -403,11 +403,12 @@ describe('TrackStack', () => {
 
   it('renders stem lanes in canonical order for four_stems mode', () => {
     render(<TrackStack {...baseProps} />)
-    // All four stems should be present
-    expect(screen.getByText('Vocals')).toBeInTheDocument()
-    expect(screen.getByText('Drums')).toBeInTheDocument()
-    expect(screen.getByText('Bass')).toBeInTheDocument()
-    expect(screen.getByText('Other')).toBeInTheDocument()
+    // All four stems should be present (lane labels only; the export
+    // panel also lists the stem names as checkbox labels).
+    expect(screen.getByText('Vocals', { selector: '.track-name' })).toBeInTheDocument()
+    expect(screen.getByText('Drums', { selector: '.track-name' })).toBeInTheDocument()
+    expect(screen.getByText('Bass', { selector: '.track-name' })).toBeInTheDocument()
+    expect(screen.getByText('Other', { selector: '.track-name' })).toBeInTheDocument()
   })
 
   it('renders only bass + others for bass_pair mode', () => {
@@ -430,10 +431,10 @@ describe('TrackStack', () => {
       ],
     }
     render(<TrackStack {...baseProps} practiceState={bassPairState} detail={bassPairDetail} />)
-    expect(screen.getByText('Bass')).toBeInTheDocument()
-    expect(screen.getByText('Others')).toBeInTheDocument()
-    expect(screen.queryByText('Vocals')).not.toBeInTheDocument()
-    expect(screen.queryByText('Drums')).not.toBeInTheDocument()
+    expect(screen.getByText('Bass', { selector: '.track-name' })).toBeInTheDocument()
+    expect(screen.getByText('Others', { selector: '.track-name' })).toBeInTheDocument()
+    expect(screen.queryByText('Vocals', { selector: '.track-name' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Drums', { selector: '.track-name' })).not.toBeInTheDocument()
   })
 
   it('renders no lanes in original mode', () => {
@@ -442,8 +443,8 @@ describe('TrackStack', () => {
       playback_mode: 'original',
     }
     render(<TrackStack {...baseProps} practiceState={originalState} />)
-    expect(screen.queryByText('Vocals')).not.toBeInTheDocument()
-    expect(screen.queryByText('Drums')).not.toBeInTheDocument()
+    expect(screen.queryByText('Vocals', { selector: '.track-name' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Drums', { selector: '.track-name' })).not.toBeInTheDocument()
   })
 
   it('shows provenance line with engine version and model hash', () => {
@@ -455,7 +456,7 @@ describe('TrackStack', () => {
 
   it('applies track color to the label', () => {
     render(<TrackStack {...baseProps} />)
-    const vocalsLabel = screen.getByText('Vocals')
+    const vocalsLabel = screen.getByText('Vocals', { selector: '.track-name' })
     expect(vocalsLabel).toHaveStyle({ color: '#e11d48' })
   })
 

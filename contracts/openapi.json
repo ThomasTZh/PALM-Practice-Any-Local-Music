@@ -560,6 +560,70 @@
         "title": "CompleteImportResponse",
         "type": "object"
       },
+      "CreateExportRequest": {
+        "description": "Export selection and options (spec \u00a715.1\u201315.2).",
+        "properties": {
+          "asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stem audio asset ids to export; defaults to every stem of the result set",
+            "title": "Asset Ids"
+          },
+          "format": {
+            "$ref": "#/components/schemas/ExportFormat",
+            "default": "wav24",
+            "description": "Output encoding (24-bit WAV by default)"
+          },
+          "normalize": {
+            "$ref": "#/components/schemas/ExportNormalization",
+            "default": "off",
+            "description": "Linked peak normalization to -1 dBFS across the selection; off by default"
+          },
+          "result_set_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Immutable result set to export; defaults to the project's active result set",
+            "title": "Result Set Id"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "enum": [
+                  44100,
+                  48000
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Output sample rate; null keeps the source rate",
+            "title": "Sample Rate"
+          }
+        },
+        "title": "CreateExportRequest",
+        "type": "object"
+      },
       "CreateImportRequest": {
         "properties": {
           "declared_byte_count": {
@@ -732,6 +796,161 @@
         ],
         "title": "DuplicateLoopOp",
         "type": "object"
+      },
+      "ExportArtifactResponse": {
+        "description": "One delivered export file with its job state.",
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dither": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dither"
+          },
+          "download_filename": {
+            "title": "Download Filename",
+            "type": "string"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/ExportFormat"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "gain_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain Db"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_state": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "normalized": {
+            "title": "Normalized",
+            "type": "boolean"
+          },
+          "result_set_id": {
+            "format": "uuid",
+            "title": "Result Set Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/StemRole"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "stem_id": {
+            "format": "uuid",
+            "title": "Stem Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "job_id",
+          "job_state",
+          "result_set_id",
+          "stem_id",
+          "asset_id",
+          "role",
+          "format",
+          "sample_rate",
+          "channel_count",
+          "frame_count",
+          "normalized",
+          "gain_db",
+          "dither",
+          "sha256",
+          "byte_size",
+          "download_filename",
+          "created_at",
+          "download_url"
+        ],
+        "title": "ExportArtifactResponse",
+        "type": "object"
+      },
+      "ExportFormat": {
+        "description": "Output encodings (spec \u00a715.2). ``wav24`` is the default.",
+        "enum": [
+          "wav16",
+          "wav24",
+          "wav32f"
+        ],
+        "title": "ExportFormat",
+        "type": "string"
+      },
+      "ExportListingResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ExportArtifactResponse"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifacts"
+        ],
+        "title": "ExportListingResponse",
+        "type": "object"
+      },
+      "ExportNormalization": {
+        "description": "Normalization policy (spec \u00a715.2). ``off`` is the default.",
+        "enum": [
+          "off",
+          "linked_peak"
+        ],
+        "title": "ExportNormalization",
+        "type": "string"
       },
       "GpuStatsResponse": {
         "properties": {
@@ -970,6 +1189,9 @@
           "decoding",
           "preparing_playback",
           "building_waveform",
+          "verifying_stems",
+          "encoding",
+          "verifying_export",
           "ready"
         ],
         "title": "JobStage",
@@ -994,7 +1216,8 @@
           "canonical_decode",
           "monitoring_downmix",
           "playback_rate",
-          "waveform"
+          "waveform",
+          "export"
         ],
         "title": "JobType",
         "type": "string"
@@ -3500,6 +3723,45 @@
         "summary": "Get Peaks Manifest"
       }
     },
+    "/api/v1/downloads/{artifact_id}": {
+      "get": {
+        "description": "Authenticated download of one verified export (\u00a719.2).\n\nThe response carries ``Content-Disposition: attachment`` with the\nartifact's safe download filename, its exact byte length, and the\ncontent hash for verification.",
+        "operationId": "download_artifact_api_v1_downloads__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Artifact"
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -4033,6 +4295,96 @@
           }
         },
         "summary": "Apply Command"
+      }
+    },
+    "/api/v1/projects/{project_id}/exports": {
+      "get": {
+        "description": "Delivered export artifacts for a project, newest first.",
+        "operationId": "list_exports_api_v1_projects__project_id__exports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportListingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Exports"
+      },
+      "post": {
+        "description": "Start a WAV export job for the selected stems (spec \u00a715.3.1\u20133).",
+        "operationId": "create_export_api_v1_projects__project_id__exports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Export"
       }
     },
     "/api/v1/projects/{project_id}/imports": {

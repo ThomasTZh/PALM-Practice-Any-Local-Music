@@ -200,6 +200,7 @@ def _seed_playback_representation(
         paths,
         app.state.job_repository,
         app.state.waveform_cache_repository,
+        app.state.export_repository,
     )(job, result.model_dump(mode="json"))
     rep = cast_repr(app).find_playback(canonical.id, target_rate)
     assert rep is not None

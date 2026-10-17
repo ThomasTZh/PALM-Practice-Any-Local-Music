@@ -32,19 +32,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.12 (Extended buffering and resource
-  limits, spec §14) — **complete** — `0e88c7a` + this ledger-hash
-  follow-up. Plan: `projectPlans/m2.12-plan.md` (as built). Gate:
-  backend 1180/1180 pytest, ruff + mypy clean (64 files), contract in
-  sync; frontend 530/530 Vitest (31 files), `tsc -b` unchanged (32
-  pre-existing), prettier clean. The local browser acceptance run
-  passed (full 6:00 playback, zero underruns, waveform +
-  playback-rate media jobs while playing) and required fixing five
-  pre-existing browser playback defects (see the M2.12 section). See
-  the M2.12 section below.
-- **M2.12:** complete — `0e88c7a` (extended buffering and resource
-  limits, spec §14; backend 1180 pytest green, frontend 530 Vitest
-  green; the local acceptance run added the browser-path fixes).
+- **Current work package:** M2.13 (WAV stem export, spec §15) — **in
+  progress; Phases 1–4 done** (plan + ledger; backend plumbing +
+  export storage + delivery; worker export DSP; frontend export
+  panel), Phase 5 pending (evidence + gates + commit). Plan:
+  `projectPlans/m2.13-plan.md`. See the M2.13 section below.
+- **M2.12:** complete — `0e88c7a` + ledger-hash follow-up `1b79846`
+  (extended buffering and resource limits, spec §14; backend 1180
+  pytest green, frontend 530 Vitest green; the local acceptance run
+  added the browser-path fixes).
 - **M2.11:** complete — `f65370a` + ledger-hash follow-up `ce94136`
   (saved practice loops, spec §13; backend 1147 pytest green,
   frontend 495 Vitest green).
@@ -88,21 +84,25 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** start M2.13 (WAV stem export, spec §15): write
-  `projectPlans/m2.13-plan.md` + ledger section first, as with prior
-  packages. M2.12 is committed at `0e88c7a`; the M2.12 ledger-hash
-  follow-up is this commit.
+- **Next action:** M2.13 Phase 5 (close-out): write
+  `docs/evidence/m2.13-wav-export.md`, re-run all gates (backend
+  pytest/ruff/mypy + `check_contract.py`; frontend vitest/tsc/prettier/
+  vite build), then the single M2.13 commit
+  `M2.13: WAV stem export (spec §15)` and the
+  `Ledger: record M2.13 commit hash (<hash>)` follow-up.
+  Everything is committed at `1b79846` (M2.12 complete); the M2.13
+  work is in the working tree.
   The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `0e88c7a` (M2.12
-  complete; this ledger-hash follow-up is on top). Everything is
-  committed; the tree is clean. Establish the baseline:
-  `.venv/bin/python -m pytest tests/ -q` (1180 passed; the
+- **Resume procedure:** read this file; HEAD is `1b79846` (M2.12
+  complete + ledger hash); the M2.13 work is in the working tree,
+  uncommitted. Establish the baseline:
+  `.venv/bin/python -m pytest tests/ -q` (1254 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/` (64 files clean),
+  `.venv/bin/python -m mypy src/` (67 files clean),
   `/home/thomas/.npm-global/bin/pnpm --dir frontend run test` (530
   passed), `tsc -b` (32 pre-existing errors), `prettier --check .`
   (clean).
@@ -3140,7 +3140,115 @@ through `/api/v1/system`. Separation job scheduling stays with M2.17
   acceptance stays deferred with M2.17. Commit `0e88c7a` (`M2.12:
   extended buffering and resource limits (spec §14)`).
 
-## Environment facts (re-verified 2026-09-29, not from old inventory)
+## M2.13 — WAV stem export (spec §15)
+
+**Scope (per `projectPlans/m2.13-plan.md`):** export the published
+stems of an immutable separation result set (bass, others residual,
+four-stem outputs, or any selected subset) as WAV files — 16-bit,
+24-bit (default), or float32, at the source rate (default) or 44.1/48
+kHz, with optional linked peak normalization to −1 dBFS (off by
+default; never per-stem), triangular dither when reducing to integer
+PCM, and FFmpeg encoding with `-rf64 auto`. Full source duration at
+original speed only; mixer/limiter/speed state never affects raw
+exports. New §19.2-reserved interfaces: `POST
+/api/v1/projects/{id}/exports`, `GET /api/v1/downloads/{artifact_id}`
+(plus a project export listing). Separation scheduling stays with
+M2.17; export is a media-worker job.
+
+**Design decisions (Phase 1):**
+
+- **Job shape:** `JobType.EXPORT` created by `POST
+  /projects/{id}/exports` (Idempotency-Key honored via the existing
+  store) with `result_set_id` (default: active set), `asset_ids`
+  (default: all stems), `format`, `sample_rate`, `normalize`.
+  Validation resolves the set via `get_result_set_detail`, checks stem
+  files (`frames × channels × 4`), errors `EXPORT_RESULT_SET` /
+  `EXPORT_STEM_MISSING` / `EXPORT_ALIGNMENT` / `NO_STEMS`.
+- **Pre-existing defect fix:** `manager._run_job` requires an
+  import-backed source for every job, so M2.7's stem waveform jobs
+  (`parameters={"asset_id": …}`, no import) fail `NO_SOURCE` at
+  execution. Import-less jobs now compute parameters first and resolve
+  the run source from them (waveform: `parameters["source_path"]`;
+  export: the first stem's path), with a stem-waveform regression test.
+- **DSP (worker):** one streaming pass per stem for size/hash/joint
+  peak; disk pre-flight (`DISK_HEADROOM_FACTOR` + minimum free);
+  integer outputs refuse when the joint peak exceeds the integer
+  full-scale bound (`EXPORT_CLIPPING`, remedies float32 or linked
+  normalization); linked normalization applies one −1 dBFS gain across
+  the set and records it; ffmpeg chain `volume=<gain>dB` (normalized
+  only) → `aresample=<target>:dither_method=triangular` for integer
+  outputs (resample-only for float32); `-rf64 auto`; ffprobe
+  verification from the stream duration (decoded frames =
+  `round(duration × rate)`; equal-rate exact, resampled within
+  `ENDPOINT_TOLERANCE_FRAMES`; FFmpeg 8.x reports no meaningful
+  `nb_frames` for PCM streams); output SHA-256.
+- **Storage/report:** migration 9 adds `export_artifacts` (per-stem
+  row: settings, gain, dither, hash, byte size, relative path, safe
+  download filename) and extends the `media_jobs` job-type CHECK.
+  Publisher verifies staged files and hash-dedup moves them to
+  `data/exports/<sha256>.wav` (inside the protected `data` category,
+  no `StoragePaths` change). `GET /downloads/{artifact_id}` streams
+  with `Content-Type: audio/wav` + `Content-Disposition: attachment`.
+  §9.5.6 protection: reclaim skips assets referenced by non-terminal
+  export jobs.
+- **Priority:** new export class between import-critical and waveform:
+  playback preparation (0) > import-critical (1) > export (2) >
+  waveform (3); the priority test is updated.
+- **Frontend:** `api/exports.ts` (create/list/download; authenticated
+  fetch → Blob → synthetic `<a download>`), `waitForJob(onProgress)`,
+  an inline `ExportPanel` in the `TrackStack` mode bar (stem
+  checkboxes, format/rate selects, linked normalization, progress,
+  download list, clipping error surfacing).
+
+**Phase log:**
+
+- **Phase 1 — Plan + ledger:** done (2026-10-17). `m2.13-plan.md`
+  written; this section added.
+- **Phase 2 — Backend plumbing:** done (2026-10-17). `JobType.EXPORT`
+  + the three export stages; migration 9 (`export_artifacts` + the
+  `media_jobs` CHECK rebuild, schema v9); `ExportArtifactRepository`
+  (republish-safe DELETE-then-INSERT); `manager._run_job` import-less
+  source resolution (`_parameter_source_path`: waveform →
+  `parameters["source_path"]`, export → first stem) with the
+  stem-waveform regression test; `_export_parameters_for` + safe
+  download filenames; `POST /projects/{id}/exports` (Idempotency-Key,
+  `result_set_id`/`asset_ids`/`format`/`sample_rate`/`normalize`,
+  validation `EXPORT_RESULT_SET`/`EXPORT_STEM_MISSING`/
+  `EXPORT_ALIGNMENT`/`NO_STEMS`), `GET .../exports`, `GET
+  /downloads/{artifact_id}` (attachment stream); publisher
+  `ExportResult` branch (hash-dedup move to `data/exports/<sha256>.wav`);
+  reclaim protection (`in_flight_export_asset_ids`); export priority
+  class (2, between import-critical and waveform); contract + TS types
+  regenerated (`check_contract.py` OK). 53 new backend tests; full
+  suite 1238 passed.
+- **Phase 3 — Worker export DSP:** done (2026-10-17).
+  `media/export.py` (streaming size/hash/joint-peak measurement, disk
+  pre-flight, clip rule, `volume`+`aresample` chain with
+  `out_sample_fmt`/triangular dither, `-rf64 auto`, duration-based
+  ffprobe verification, per-stem timeouts, cancellation); worker
+  wiring (`_export_parameters` validation, `_run_export`, `EXPORT`
+  dispatch, `EXPORT_*` error codes, `media.export` capability);
+  `tests/integration/test_export_worker.py` (16 real-ffmpeg tests:
+  wav16/24/32f, 44.1→48k resample, linked normalization to −1 dBFS,
+  clipping refusal, verification failures, cancellation, progress
+  stages, disk budget, worker protocol). Full suite 1254 passed;
+  ruff + mypy clean.
+- **Phase 4 — Frontend export panel:** done (2026-10-17).
+  `src/api/exports.ts` (`createExport` with a fresh `Idempotency-Key`
+  per call, `listExports`, `downloadExport` via authenticated fetch →
+  Blob → synthetic `<a download>`, `ExportRequestError` carrying the
+  server code); `waitForJob` gained an `onProgress` option
+  (`src/api/playback.ts`); `src/tracks/ExportPanel.tsx` (collapsible
+  in the `TrackStack` mode bar: stem checkboxes defaulting to all of
+  the active set, format/rate selects, linked −1 dBFS normalization,
+  job progress with stage labels, delivered-artifact list with
+  download buttons, error surfacing incl. `EXPORT_CLIPPING`); CSS in
+  `styles.css`. Frontend gates: 537 Vitest passed (530 baseline + 7
+  new in `tests/exports.test.ts`; the 4 `track-stack.test.tsx` name
+  queries scoped to `.track-name`), `tsc -b` at the 32-error baseline
+  (no new errors), prettier clean, `vite build` OK.
+
+
 
 - uv 0.12.0; uv-managed Python 3.11.15 installed at
   `~/.local/share/uv/python/cpython-3.11-linux-x86-64-gnu`.

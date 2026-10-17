@@ -34,6 +34,7 @@ class JobType(StrEnum):
     MONITORING_DOWNMIX = "monitoring_downmix"
     PLAYBACK_RATE = "playback_rate"
     WAVEFORM = "waveform"
+    EXPORT = "export"
 
 
 class JobState(StrEnum):
@@ -55,6 +56,9 @@ class JobStage(StrEnum):
     DECODING = "decoding"
     PREPARING_PLAYBACK = "preparing_playback"
     BUILDING_WAVEFORM = "building_waveform"
+    VERIFYING_STEMS = "verifying_stems"
+    ENCODING = "encoding"
+    VERIFYING_EXPORT = "verifying_export"
     READY = "ready"
 
 

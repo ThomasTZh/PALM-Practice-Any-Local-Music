@@ -15,6 +15,7 @@ from basseparate.storage.paths import (
     resolve_storage_paths,
 )
 from basseparate.storage.repository import (
+    ExportArtifactRepository,
     ImportRepository,
     JobRepository,
     ProjectRepository,
@@ -25,6 +26,7 @@ from basseparate.storage.repository import (
 
 __all__ = [
     "DatabaseError",
+    "ExportArtifactRepository",
     "ImportRepository",
     "JobRepository",
     "ProjectRepository",

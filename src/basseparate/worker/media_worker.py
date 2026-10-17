@@ -29,8 +29,16 @@ from pathlib import Path
 from typing import Any
 
 from basseparate.domain.common import JS_SAFE_INTEGER_MAX, Uuid
+from basseparate.domain.export import (
+    ExportFormat,
+    ExportNormalization,
+    ExportResult,
+    ExportStemResult,
+    export_dither_for,
+)
 from basseparate.domain.media_job import JobStage, JobType
 from basseparate.domain.representation import MonitoringDownmixResult, PlaybackRateResult
+from basseparate.domain.separation import StemRole
 from basseparate.domain.waveform import BASE_BUCKET_FRAMES, WaveformResult
 from basseparate.media.decode import (
     DecodeCancelledError,
@@ -58,6 +66,17 @@ from basseparate.media.derived import (
 )
 from basseparate.media.derived import (
     NonFiniteSamplesError as _DerivedNonFiniteSamplesError,
+)
+from basseparate.media.export import (
+    ExportCancelledError,
+    ExportClippingError,
+    ExportDiskSpaceError,
+    ExportError,
+    ExportStemInput,
+    ExportStemVerificationError,
+    ExportTimeoutError,
+    ExportVerificationError,
+    export_stems,
 )
 from basseparate.media.probe import (
     NoAudioStreamError,
@@ -163,6 +182,20 @@ def _derived_error_code(exc: DerivedError) -> str:
     if isinstance(exc, _DerivedInsufficientDiskSpaceError):
         return "INSUFFICIENT_DISK_SPACE"
     return "DERIVED_FAILED"
+
+
+def _export_error_code(exc: ExportError) -> str:
+    if isinstance(exc, ExportTimeoutError):
+        return "EXPORT_TIMEOUT"
+    if isinstance(exc, ExportClippingError):
+        return "EXPORT_CLIPPING"
+    if isinstance(exc, ExportDiskSpaceError):
+        return "EXPORT_DISK"
+    if isinstance(exc, ExportStemVerificationError):
+        return "EXPORT_STEM_MISSING"
+    if isinstance(exc, ExportVerificationError):
+        return "EXPORT_VERIFICATION"
+    return "EXPORT_FAILED"
 
 
 def _as_int_param(parameters: dict[str, Any], name: str, minimum: int, maximum: int) -> int:
@@ -372,6 +405,123 @@ def _run_playback_rate(payload: RunPayload, cancel_event: threading.Event) -> No
     _send(make_completed(job_id, result.model_dump(mode="json")))
 
 
+def _export_parameters(
+    payload: RunPayload,
+) -> tuple[str, ExportFormat, int | None, ExportNormalization, list[ExportStemInput]]:
+    """Parse and validate the export job parameters (M2.13 §15)."""
+    parameters = payload.parameters
+    result_set_id = _as_str_param(parameters, "result_set_id", 64)
+    format_value = _as_str_param(parameters, "format", 16)
+    try:
+        export_format = ExportFormat(format_value)
+    except ValueError as exc:
+        raise ValueError("format must be one of wav16, wav24, wav32f") from exc
+    normalize_value = _as_str_param(parameters, "normalize", 32)
+    try:
+        normalize = ExportNormalization(normalize_value)
+    except ValueError as exc:
+        raise ValueError("normalize must be one of off, linked_peak") from exc
+    if "target_sample_rate" in parameters:
+        target_rate = _as_int_param(parameters, "target_sample_rate", 8_000, 192_000)
+    else:
+        target_rate = None
+    stems_raw = parameters.get("stems")
+    if not isinstance(stems_raw, list) or not 1 <= len(stems_raw) <= 16:
+        raise ValueError("stems must be a list of 1-16 stem payloads")
+    stems: list[ExportStemInput] = []
+    for index, entry in enumerate(stems_raw, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"stem {index} must be an object")
+        try:
+            stem = ExportStemInput(
+                stem_id=_as_str_param(entry, "stem_id", 64),
+                asset_id=_as_str_param(entry, "asset_id", 64),
+                role=_as_str_param(entry, "role", 32),
+                source_path=Path(_as_str_param(entry, "source_path", 4096)),
+                source_hash=_as_str_param(entry, "source_hash", 64),
+                sample_rate=_as_int_param(entry, "sample_rate", 8_000, 192_000),
+                channel_count=_as_int_param(entry, "channel_count", 1, 8),
+                frame_count=_as_int_param(entry, "frame_count", 1, 1_000_000_000),
+                download_filename=_as_str_param(entry, "download_filename", 200),
+            )
+        except ValueError as exc:
+            raise ValueError(f"stem {index}: {exc}") from exc
+        if not re.fullmatch(r"[0-9a-f]{64}", stem.source_hash):
+            raise ValueError(f"stem {index}: source_hash must be 64 hex characters")
+        if not stem.source_path.is_absolute():
+            raise ValueError(f"stem {index}: source_path must be absolute")
+        try:
+            StemRole(stem.role)
+        except ValueError as exc:
+            raise ValueError(f"stem {index}: unknown stem role {stem.role!r}") from exc
+        stems.append(stem)
+    if len({s.sample_rate for s in stems}) != 1:
+        raise ValueError("all stems must share one sample rate")
+    if len({s.frame_count for s in stems}) != 1:
+        raise ValueError("all stems must share one frame count")
+    return result_set_id, export_format, target_rate, normalize, stems
+
+
+def _run_export(payload: RunPayload, cancel_event: threading.Event) -> None:
+    """Execute a WAV stem export (M2.13 §15): encode, verify, report."""
+    job_id = payload.job_id
+    _send(make_progress(job_id, JobStage.VERIFYING_STEMS, None, "verifying stem sources"))
+    try:
+        (
+            result_set_id,
+            export_format,
+            target_rate,
+            normalize,
+            stems,
+        ) = _export_parameters(payload)
+    except ValueError as exc:
+        _send(make_failed(job_id, "EXPORT_PARAMETERS", str(exc)))
+        return
+
+    def on_progress(stage: str, fraction: float | None, detail: str) -> None:
+        _send(make_progress(job_id, JobStage(stage), fraction, detail))
+
+    outcome = asyncio.run(
+        export_stems(
+            stems=stems,
+            staging_dir=Path(payload.staging_dir),
+            format=export_format,
+            target_sample_rate=target_rate,
+            normalize=normalize,
+            max_threads=payload.max_threads,
+            cancel_event=cancel_event,
+            on_progress=on_progress,
+        )
+    )
+    dither = export_dither_for(export_format)
+    artifacts = [
+        ExportStemResult(
+            stem_id=stem.stem_id,
+            audio_asset_id=stem.asset_id,
+            role=StemRole(stem.role),
+            format=export_format,
+            sample_rate=output.output_rate,
+            channel_count=stem.channel_count,
+            frame_count=output.frame_count,
+            source_frame_count=stem.frame_count,
+            normalized=outcome.gain_db is not None,
+            gain_db=outcome.gain_db,
+            dither=dither,
+            sha256=output.sha256,
+            byte_size=output.byte_size,
+            download_filename=stem.download_filename,
+            staging_path=str(output.staging_path.resolve()),
+        )
+        for stem, output in zip(stems, outcome.stems, strict=True)
+    ]
+    result = ExportResult(
+        result_set_id=result_set_id,
+        artifacts=artifacts,
+        joint_peak=outcome.joint_peak,
+    )
+    _send(make_completed(job_id, result.model_dump(mode="json")))
+
+
 def _run_waveform(payload: RunPayload, cancel_event: threading.Event) -> None:
     """Execute a waveform job: pyramid cache on disk, result metadata only.
 
@@ -463,6 +613,8 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
             _run_playback_rate(payload, cancel_event)
         elif payload.job_type is JobType.WAVEFORM:
             _run_waveform(payload, cancel_event)
+        elif payload.job_type is JobType.EXPORT:
+            _run_export(payload, cancel_event)
         else:
             # Defensive: every protocol-v2 type is implemented, but a newer
             # protocol version may carry a type this worker does not know.
@@ -478,6 +630,7 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
         DecodeCancelledError,
         DerivedCancelledError,
         WaveformCancelledError,
+        ExportCancelledError,
     ):
         removed = _remove_staging(payload.staging_dir)
         _log(f"job {job_id} cancelled; staging removed={removed}")
@@ -499,6 +652,10 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} failed: WAVEFORM_FAILED: {exc}")
         _send(make_failed(job_id, "WAVEFORM_FAILED", str(exc)))
+    except ExportError as exc:
+        _remove_staging(payload.staging_dir)
+        _log(f"job {job_id} failed: {_export_error_code(exc)}: {exc}")
+        _send(make_failed(job_id, _export_error_code(exc), str(exc)))
     except Exception as exc:  # noqa: BLE001 - last-resort guard inside the job thread
         _remove_staging(payload.staging_dir)
         _log(f"job {job_id} crashed: {exc!r}")
@@ -599,6 +756,10 @@ def _handle(message: WorkerMessage) -> int | None:
                     Capability(
                         id="media.waveform",
                         description="Generate waveform peaks (M1.8).",
+                    ),
+                    Capability(
+                        id="media.export",
+                        description="Export selected stems as WAV files (M2.13).",
                     ),
                 ],
                 models=[],
