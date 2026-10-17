@@ -32,11 +32,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.13 (WAV stem export, spec §15) — **in
-  progress; Phases 1–4 done** (plan + ledger; backend plumbing +
-  export storage + delivery; worker export DSP; frontend export
-  panel), Phase 5 pending (evidence + gates + commit). Plan:
-  `projectPlans/m2.13-plan.md`. See the M2.13 section below.
+- **Current work package:** M2.14 (portable project format, spec
+  §16) — **not started** (Phase 1: plan + ledger).
+- **M2.13:** complete — `ff350c8` + this ledger-hash follow-up
+  (WAV stem export, spec §15; backend 1254 pytest green, frontend
+  537 Vitest green).
 - **M2.12:** complete — `0e88c7a` + ledger-hash follow-up `1b79846`
   (extended buffering and resource limits, spec §14; backend 1180
   pytest green, frontend 530 Vitest green; the local acceptance run
@@ -52,9 +52,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `0e88c7a` — M2.12 (extended buffering and resource
-  limits); this ledger-hash follow-up on top. `f65370a` — M2.11 (saved
-  practice loops);
+- **Last commit:** `ff350c8` — M2.13 (WAV stem export); this
+  ledger-hash follow-up on top. `0e88c7a` — M2.12 (extended buffering
+  and resource limits); `1b79846` (ledger: M2.12 hash) on top;
+  `f65370a` — M2.11 (saved practice loops);
   `cfa3223` (ledger: M2.10 hash) on top of `f46baaf` — M2.10
   (latency, bypass, and transport
   mapping); `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
@@ -84,28 +85,25 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.13 Phase 5 (close-out): write
-  `docs/evidence/m2.13-wav-export.md`, re-run all gates (backend
-  pytest/ruff/mypy + `check_contract.py`; frontend vitest/tsc/prettier/
-  vite build), then the single M2.13 commit
-  `M2.13: WAV stem export (spec §15)` and the
-  `Ledger: record M2.13 commit hash (<hash>)` follow-up.
-  Everything is committed at `1b79846` (M2.12 complete); the M2.13
-  work is in the working tree.
+- **Next action:** M2.14 Phase 1: write
+  `projectPlans/m2.14-plan.md` (portable project format, spec §16 —
+  the format definition; the save and open work is M2.15/M2.16) and
+  add the M2.14 section to this ledger. Everything is committed at
+  `ff350c8` (M2.13 complete) + this ledger-hash follow-up.
   The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `1b79846` (M2.12
-  complete + ledger hash); the M2.13 work is in the working tree,
-  uncommitted. Establish the baseline:
+- **Resume procedure:** read this file; HEAD is `ff350c8` (M2.13
+  complete) + this ledger-hash follow-up; the tree is clean.
+  Establish the baseline:
   `.venv/bin/python -m pytest tests/ -q` (1254 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
   `.venv/bin/python -m mypy src/` (67 files clean),
-  `/home/thomas/.npm-global/bin/pnpm --dir frontend run test` (530
-  passed), `tsc -b` (32 pre-existing errors), `prettier --check .`
-  (clean).
+  `cd frontend && npx vitest run` (537 passed),
+  `cd frontend && npx tsc -b` (32 pre-existing errors),
+  `cd frontend && npx prettier --check .` (clean).
   **Recovery note:** if working-tree files appear reverted, versions
   are recoverable from the OpenCode snapshot store
   (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
@@ -3247,6 +3245,18 @@ M2.17; export is a media-worker job.
   new in `tests/exports.test.ts`; the 4 `track-stack.test.tsx` name
   queries scoped to `.track-name`), `tsc -b` at the 32-error baseline
   (no new errors), prettier clean, `vite build` OK.
+M2.13 complete. Evidence in `docs/evidence/m2.13-wav-export.md`
+(git-ignored): the export pipeline is verified end to end at the
+worker level with real ffmpeg 8.1.2 (measurement, encoding,
+duration-based ffprobe verification, clip refusal, cancellation,
+disk budget, worker protocol), the routes and storage with the
+FastAPI TestClient, and the frontend with jsdom. Accepted
+caveats: duration-based frame verification (FFmpeg 8.x reports
+no meaningful `nb_frames` for PCM), float32 passthrough within 1
+ULP (deterministic pipeline rounding, no dither/quantization),
+hash-deduped export files, no production-bundle browser run of
+the panel. Commit `ff350c8` (`M2.13: WAV stem export (spec
+§15)`).
 
 
 
