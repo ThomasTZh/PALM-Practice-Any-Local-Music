@@ -1157,6 +1157,50 @@ button:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+/* Portable save panel (M2.15, spec §17.5) */
+.portable-save-panel {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  background: #10151c;
+  font-size: 0.82rem;
+  color: #c8d4e0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.portable-save-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.portable-save-state {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #9aa7b4;
+}
+
+.portable-save-stale {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #fbbf24;
+}
+
+.portable-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.portable-save-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #f87171;
+}
+
 /* Playback speed control (M2.9, spec §11.6) */
 .speed-control {
   display: flex;

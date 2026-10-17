@@ -473,6 +473,31 @@ class ExportArtifactNotFoundError(ApiError):
         )
 
 
+class PortableArtifactNotFoundError(ApiError):
+    def __init__(self, artifact_id: str, missing_file: bool = False) -> None:
+        if missing_file:
+            message = f"The portable save's file is missing from storage: {artifact_id}"
+        else:
+            message = f"The requested portable save does not exist: {artifact_id}"
+        super().__init__(
+            code="PORTABLE_ARTIFACT_NOT_FOUND",
+            message=message,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class PortableSaveConflictError(ApiError):
+    def __init__(self, details: dict[str, Any] | None = None) -> None:
+        missing = (details or {}).get("missing", [])
+        super().__init__(
+            code="SAVE_ASSET_MISSING",
+            message="A portable save cannot be created: essential asset file(s) "
+            "are missing from the store",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"missing": missing},
+        )
+
+
 class TileNotReadyError(ApiError):
     def __init__(self, level: int, tile: int) -> None:
         super().__init__(

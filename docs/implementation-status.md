@@ -33,7 +33,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.15 (safely save portable projects,
-  spec §17) — **not started** (Phase 1: plan + ledger).
+  spec §17) — **complete, pending commit** (all phases implemented
+  and green: 1321 backend pytest, 550 frontend vitest, contract in
+  sync; commit `M2.15: safely save portable projects (spec §17)`
+  plus the ledger-hash follow-up).
 - **M2.14:** complete — `ec0b1eb` + this ledger-hash follow-up
   (portable project format definition, spec §16; `portable/`
   package: format constants/manifest schema, dependency closure,
@@ -91,26 +94,26 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.15 Phase 1: read spec §17 in
-  `projectPlans/milestone2.md` (line 1242) and write
-  `projectPlans/m2.15-plan.md` (safely save portable projects —
-  the archive writer on top of the M2.14 `portable/` package), then
-  add the M2.15 section to this ledger. Everything is committed at
-  `ff350c8` (M2.13 complete) + this ledger-hash follow-up.
-  The e2e `app.spec.ts` harness bug
-  (spawns the Python server via `process.execPath`) is pre-existing and
-  out of scope — address it if/when the e2e suite is re-run in a
-  full environment.
-- **Resume procedure:** read this file; HEAD is `ec0b1eb` (M2.14
-  complete) + this ledger-hash follow-up; the tree is clean.
-  Establish the baseline:
-  `.venv/bin/python -m pytest tests/ -q` (1297 passed; the
+- **Next action:** commit the complete M2.15 work package
+  (`M2.15: safely save portable projects (spec §17)`), then the
+  ledger-hash follow-up, then M2.16 (open portable projects,
+  spec §18, milestone2.md line 1305). The e2e `app.spec.ts`
+  harness bug (spawns the Python server via
+  `process.execPath`) is pre-existing and out of scope — address it
+  if/when the e2e suite is re-run in a full environment.
+- **Resume procedure:** read this file; HEAD is `744e165` (M2.14
+  ledger hash); the tree has the complete uncommitted M2.15 work
+  package (plan, backend, routes, frontend, tests, contract).
+  Baseline established 2026-10-17:
+  `.venv/bin/python -m pytest tests/ -q` (1321 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/` (71 files clean),
-  `cd frontend && npx vitest run` (537 passed),
-  `cd frontend && npx tsc -b` (32 pre-existing errors),
-  `cd frontend && npx prettier --check .` (clean).
+  `.venv/bin/python -m mypy src/basseparate` (75 files clean),
+  `cd frontend && npx vitest run` (550 passed),
+  `cd frontend && npx tsc --noEmit` (no errors),
+  `cd frontend && npx prettier --check "src/**/*.{ts,tsx,css}" "tests/**/*.{ts,tsx}"` (clean),
+  `cd frontend && npx vite build` (OK),
+  `.venv/bin/python scripts/check_contract.py` (OK).
   **Recovery note:** if working-tree files appear reverted, versions
   are recoverable from the OpenCode snapshot store
   (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
@@ -3339,6 +3342,97 @@ implemented and tested; the archive writer (M2.15, spec §17)
 and the archive reader/validator (M2.16, spec §18) build on
 this package. Commit `ec0b1eb` (`M2.14: portable project format
 (spec §16)`) + this ledger-hash follow-up.
+
+## M2.15 — Safely save portable projects (spec §17)
+
+**Phase 1 (2026-10-17):** plan written
+(`projectPlans/m2.15-plan.md`). Design: synchronous save (FastAPI
+threadpool, no media job — pure file I/O; job scheduling stays in
+M2.17). `portable/writer.py`: ZIP64 writer, deterministic
+`date_time` from `saved_at`, per-member streaming SHA-256,
+`compression_for` per member, members in fixed order
+(`project.sqlite`, `assets/...`,
+`caches/waveforms/...`, provenance JSONs, `manifest.json` last),
+manifest excludes itself, close + fsync. `portable/save.py`:
+§17.1 pipeline — capture `projects.revision`, `compute_portable_plan`
+(the plan's asset set is the temporary reference for the save),
+file-presence check (essential missing → `SAVE_ASSET_MISSING` 409;
+optional missing → excluded from archive AND portable DB via the new
+`excluded_asset_ids` parameter on `build_portable_database`), size
+estimate + free-space check (`SAVE_NO_SPACE` 507), stage in
+`data/portable/.staging/<uuid>.basseparate`, verify the staged
+archive (CRC + re-hash every member against the manifest + member-set
+check + manifest validation), archive sha256, retain one previous
+artifact, atomic `os.replace` publish to
+`data/portable/<project_id>/<revision>-<sha12>.basseparate`,
+best-effort directory fsync, record the `portable_artifacts` row;
+failure deletes only its own staging file — the last valid file is
+never destroyed. `domain/portable.py`: `PortableArtifact` (id,
+project_id, saved_revision, sha256, byte_size, relative_path,
+download_filename, created_at). Migration 10: `portable_artifacts`
+table + index, schema v10. `PortableArtifactRepository` (publish,
+delete_older, get, list, latest). Routes: `POST
+/projects/{id}/portable-saves` (201, Idempotency-Key per M2.13),
+`GET /projects/{id}/portable-saves`, `GET
+/portable-downloads/{artifact_id}` (streaming, Content-Disposition,
+X-Content-Sha256). Frontend: `api/portable.ts`,
+`PortableSavePanel.tsx` in `ProjectView` (§17.5: saved-through
+revision N + download link + newer-unsaved-changes note + saving
+state), CSS, vitest. Contract regeneration required (new API
+surface). "Flush pending manual commands" is an architectural no-op
+(commands are durable at apply-time).
+
+**Phase 2–6 (2026-10-17):** implemented and green. Backend:
+`domain/portable.py` + migration 10 (`portable_artifacts` table +
+index, schema v10, `DATABASE_SCHEMA_VERSION` bump); v9 test
+baselines updated to v10; `PortableArtifactRepository` (publish /
+delete_older / get / list_for_project / latest_for_project,
+record_json + `model_validate_json` pattern) exported from
+`basseparate.storage`; `excluded_asset_ids` on
+`build_portable_database` filters `assets`, `representations`,
+`waveform_caches` AND `project_assets` (FK constraint discovery;
+invariant: excluded assets are never parents of retained
+representation rows — true for playback-rate assets by
+construction); `portable/writer.py` (ZIP64, per-member
+`compression_for`, 1 MiB streamed chunks with SHA-256, all
+`date_time` from `saved_at` for deterministic bytes, fixed member
+order with `manifest.json` last, partial-file + fsync + replace);
+`portable/save.py` (error family `SAVE_ASSET_MISSING` 409 /
+`SAVE_NO_SPACE` 507 / `SAVE_VERIFY_FAILED` 500;
+`plan_with_exclusions`; file-presence check; size estimate +
+`shutil.disk_usage` check; `_verify_archive` = testzip + per-member
+re-hash vs manifest + member-set equality + manifest validation;
+retain one previous artifact; row recorded only after publish;
+failure deletes only its own staging files — the last valid file is
+never destroyed). Routes: `POST /api/v1/projects/{id}/portable-saves`
+(201, Idempotency-Key, empty-body hash), `GET
+/api/v1/projects/{id}/portable-saves`, `GET
+/api/v1/portable-downloads/{artifact_id}` (streaming,
+Content-Disposition, X-Content-Sha256, X-Artifact-Id);
+`PortableArtifactNotFoundError` (404, missing_file variant) and
+`PortableSaveConflictError` (409) in `api/errors.py`; router wired
+in `app.py` (`app.state.portable_repository`). `relative_path`
+carries the `data/` category prefix
+(`data/portable/<project_id>/<file>.basseparate`) so
+`StoragePaths.resolve_asset_path` resolves it like every other
+data-root path (initial design used a bare `portable/...` prefix,
+which resolved to the state dir — caught in route tests).
+`portable_seed.py` extended: project rows carry the full source
+fields (`source_stream_index`, `source_channel_count`,
+`decode_profile_version`, `source_metadata`) and
+`create_seed_files` writes the on-disk files (7 asset files +
+waveform cache). Frontend: `api/portable.ts` (save / list /
+download), `PortableSavePanel.tsx` mounted in `ProjectView` (§17.5:
+saved-through revision N + size, download button, newer-unsaved
+note, saving state, inline errors), CSS in `styles.css`, tests.
+Contract regenerated (`contracts/openapi.json` +
+`frontend/src/api/schema.ts`); `scripts/check_contract.py` passes.
+New tests: 24 backend (`test_portable_writer.py`,
+`test_portable_plan_exclusions.py`, `test_portable_save.py`,
+`test_portable_routes.py`) + 13 frontend (`portable.test.ts`,
+`portable-panel.test.tsx`). Gates green: 1321 backend pytest
+(1297 + 24), ruff clean, mypy 75 files, 550 frontend vitest
+(537 + 13), tsc clean, prettier clean, vite build OK.
 
 ## Architectural decisions so far
 

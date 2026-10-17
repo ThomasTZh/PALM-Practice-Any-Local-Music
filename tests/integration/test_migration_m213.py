@@ -62,7 +62,7 @@ def test_v8_to_v9_preserves_jobs_and_allows_export(tmp_path: Path) -> None:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 10
 
         # The rebuilt table kept the old job row and its columns.
         row = conn.execute("SELECT * FROM media_jobs WHERE id = ?", (str(JOB_ID),)).fetchone()

@@ -1636,6 +1636,73 @@
         "title": "PlaybackResponse",
         "type": "object"
       },
+      "PortableSaveListingResponse": {
+        "properties": {
+          "saves": {
+            "items": {
+              "$ref": "#/components/schemas/PortableSaveResponse"
+            },
+            "title": "Saves",
+            "type": "array"
+          }
+        },
+        "required": [
+          "saves"
+        ],
+        "title": "PortableSaveListingResponse",
+        "type": "object"
+      },
+      "PortableSaveResponse": {
+        "description": "One published portable save with its download endpoint.",
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_filename": {
+            "title": "Download Filename",
+            "type": "string"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "saved_revision": {
+            "title": "Saved Revision",
+            "type": "integer"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "project_id",
+          "saved_revision",
+          "sha256",
+          "byte_size",
+          "download_filename",
+          "created_at",
+          "download_url"
+        ],
+        "title": "PortableSaveResponse",
+        "type": "object"
+      },
       "PracticeLoop": {
         "description": "A saved practice loop with integer source-frame boundaries (spec \u00a713.1).\n\n``repeat_count`` is the total number of passes (not \"extra repeats\");\n``None`` means infinite. ``boundary_fade`` enables the short output\nfades at the join (\u00a713.6); disabling them gives exact boundary\naudition. The boundaries are exact source frames and are never\nexpanded (\u00a713.3.5\u20136).",
         "properties": {
@@ -4153,6 +4220,45 @@
         "summary": "List Modules"
       }
     },
+    "/api/v1/portable-downloads/{artifact_id}": {
+      "get": {
+        "description": "Authenticated download of one published portable archive (\u00a719.2).\n\nThe response carries ``Content-Disposition: attachment`` with the\nartifact's safe download filename, its exact byte length, and the\ncontent hash for verification.",
+        "operationId": "download_portable_save_api_v1_portable_downloads__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Portable Save"
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "operationId": "list_projects_api_v1_projects_get",
@@ -4665,6 +4771,86 @@
           }
         },
         "summary": "Create Playback Preparation"
+      }
+    },
+    "/api/v1/projects/{project_id}/portable-saves": {
+      "get": {
+        "description": "The project's portable saves, newest first (spec \u00a717.5).",
+        "operationId": "list_portable_saves_api_v1_projects__project_id__portable_saves_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortableSaveListingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Portable Saves"
+      },
+      "post": {
+        "description": "Save the working project as a portable archive (spec \u00a717.1).\n\nSynchronous by design: the save is file I/O only (archive, hash,\natomic publish) and never blocks on media work, so it runs in the\nthreadpool and returns the recorded artifact in one response.",
+        "operationId": "create_portable_save_api_v1_projects__project_id__portable_saves_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortableSaveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Portable Save"
       }
     },
     "/api/v1/projects/{project_id}/redo": {

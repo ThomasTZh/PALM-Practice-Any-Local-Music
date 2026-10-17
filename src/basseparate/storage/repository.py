@@ -36,6 +36,7 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
+from basseparate.domain.portable import PortableArtifact
 from basseparate.domain.practice import (
     DEFAULT_LOOP_COLOR,
     MAX_LOOP_NAME_LENGTH,
@@ -2457,5 +2458,114 @@ class ExportArtifactRepository:
                 )
                 for r in rows
             ]
+        finally:
+            conn.close()
+
+
+class PortableArtifactRepository:
+    """Synchronous repository for portable project artifacts (M2.15 §17.5).
+
+    One row per successfully published ``.basseparate`` archive. The
+    published file itself lives in the managed portable store
+    (``data/portable/<project_id>/<revision>-<sha12>.basseparate``); rows
+    record the report required by §17.5 (saved revision, hash, size,
+    download name) and survive cache reclaim because a portable save is
+    user data, not a rebuildable cache entry.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    def publish(self, artifact: PortableArtifact) -> PortableArtifact:
+        """Record one published artifact.
+
+        The file was moved into managed storage beforehand; a retry of the
+        same save publishes the same row id and is a no-op.
+        """
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """
+                INSERT INTO portable_artifacts (
+                    id, project_id, saved_revision, sha256, byte_size,
+                    relative_path, download_filename, created_at, record_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(artifact.id),
+                    str(artifact.project_id),
+                    artifact.saved_revision,
+                    artifact.sha256,
+                    artifact.byte_size,
+                    artifact.relative_path,
+                    artifact.download_filename,
+                    artifact.created_at.isoformat().replace("+00:00", "Z"),
+                    artifact.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot publish portable artifact: {exc}") from exc
+        finally:
+            conn.close()
+        return artifact
+
+    def delete_older(self, project_id: uuid.UUID, keep_ids: set[uuid.UUID]) -> int:
+        """Remove artifact rows for the project not in ``keep_ids``.
+
+        Files are removed by the caller; missing files are tolerated.
+        Returns the number of rows removed.
+        """
+        conn = _open(self._db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            placeholders = ", ".join("?" for _ in keep_ids) or "NULL"
+            cur = conn.execute(
+                f"""
+                DELETE FROM portable_artifacts
+                WHERE project_id = ? AND id NOT IN ({placeholders})
+                """,
+                (str(project_id), *sorted(str(i) for i in keep_ids)),
+            )
+            conn.execute("COMMIT")
+            removed = cur.rowcount
+        finally:
+            conn.close()
+        return removed
+
+    def get(self, artifact_id: uuid.UUID) -> PortableArtifact | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM portable_artifacts WHERE id = ?",
+                (str(artifact_id),),
+            ).fetchone()
+            return PortableArtifact.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_for_project(self, project_id: uuid.UUID) -> list[PortableArtifact]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT record_json FROM portable_artifacts WHERE project_id = ? "
+                "ORDER BY created_at DESC, id DESC",
+                (str(project_id),),
+            ).fetchall()
+            return [PortableArtifact.model_validate_json(r["record_json"]) for r in rows]
+        finally:
+            conn.close()
+
+    def latest_for_project(self, project_id: uuid.UUID) -> PortableArtifact | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM portable_artifacts WHERE project_id = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (str(project_id),),
+            ).fetchone()
+            return PortableArtifact.model_validate_json(row["record_json"]) if row else None
         finally:
             conn.close()

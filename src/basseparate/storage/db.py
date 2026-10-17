@@ -454,6 +454,33 @@ def _migration_8_to_9(conn: sqlite3.Connection) -> None:
 register_migration(9, _migration_8_to_9)
 
 
+_MIGRATION_10_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS portable_artifacts (
+        id                TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        saved_revision    INTEGER NOT NULL,
+        sha256            TEXT NOT NULL,
+        byte_size         INTEGER NOT NULL,
+        relative_path     TEXT NOT NULL,
+        download_filename TEXT NOT NULL,
+        created_at        TEXT NOT NULL,
+        record_json       TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_portable_artifacts_project "
+    "ON portable_artifacts(project_id)",
+)
+
+
+def _migration_9_to_10(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_10_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(10, _migration_9_to_10)
+
+
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
 

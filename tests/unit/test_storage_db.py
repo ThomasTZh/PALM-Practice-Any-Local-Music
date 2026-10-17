@@ -77,13 +77,14 @@ class TestInitialization:
             "separation_runs",
             "separation_result_sets",
             "stems",
+            "portable_artifacts",
         } <= tables
 
-    def test_schema_version_is_9(self, db_path: Path) -> None:
+    def test_schema_version_is_10(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 9
+        assert version == 10
 
     def test_migration_5_to_6_preserves_existing_projects(self, tmp_path: Path) -> None:
         # Build a genuine v5 database, insert a project, then upgrade.
@@ -109,7 +110,7 @@ class TestInitialization:
         conn.row_factory = sqlite3.Row
         try:
             version = conn.execute("PRAGMA user_version").fetchone()[0]
-            assert version == 9
+            assert version == 10
             row = conn.execute(
                 "SELECT name, working_state, history_seq, practice_state "
                 "FROM projects WHERE id = 'p1'"

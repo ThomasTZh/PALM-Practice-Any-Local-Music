@@ -312,6 +312,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/portable-downloads/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Portable Save
+         * @description Authenticated download of one published portable archive (§19.2).
+         *
+         *     The response carries ``Content-Disposition: attachment`` with the
+         *     artifact's safe download filename, its exact byte length, and the
+         *     content hash for verification.
+         */
+        get: operations["download_portable_save_api_v1_portable_downloads__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -475,6 +499,34 @@ export interface paths {
          *     the same target rate is reused, never duplicated (spec §6.5.6).
          */
         post: operations["create_playback_preparation_api_v1_projects__project_id__playback_preparations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/portable-saves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Portable Saves
+         * @description The project's portable saves, newest first (spec §17.5).
+         */
+        get: operations["list_portable_saves_api_v1_projects__project_id__portable_saves_get"];
+        put?: never;
+        /**
+         * Create Portable Save
+         * @description Save the working project as a portable archive (spec §17.1).
+         *
+         *     Synchronous by design: the save is file I/O only (archive, hash,
+         *     atomic publish) and never blocks on media work, so it runs in the
+         *     threadpool and returns the recorded artifact in one response.
+         */
+        post: operations["create_portable_save_api_v1_projects__project_id__portable_saves_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1266,6 +1318,39 @@ export interface components {
             role: string;
             /** Sample Rate */
             sample_rate: number;
+        };
+        /** PortableSaveListingResponse */
+        PortableSaveListingResponse: {
+            /** Saves */
+            saves: components["schemas"]["PortableSaveResponse"][];
+        };
+        /**
+         * PortableSaveResponse
+         * @description One published portable save with its download endpoint.
+         */
+        PortableSaveResponse: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            artifact_id: string;
+            /** Byte Size */
+            byte_size: number;
+            /** Created At */
+            created_at: string;
+            /** Download Filename */
+            download_filename: string;
+            /** Download Url */
+            download_url: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Saved Revision */
+            saved_revision: number;
+            /** Sha256 */
+            sha256: string;
         };
         /**
          * PracticeLoop
@@ -2650,6 +2735,37 @@ export interface operations {
             };
         };
     };
+    download_portable_save_api_v1_portable_downloads__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_projects_api_v1_projects_get: {
         parameters: {
             query?: never;
@@ -3022,6 +3138,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaybackPreparationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_portable_saves_api_v1_projects__project_id__portable_saves_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortableSaveListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_portable_save_api_v1_projects__project_id__portable_saves_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortableSaveResponse"];
                 };
             };
             /** @description Validation Error */

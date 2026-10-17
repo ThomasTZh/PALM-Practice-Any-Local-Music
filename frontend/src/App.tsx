@@ -37,6 +37,7 @@ import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform
 import type { View as EditorView } from './waveform/viewport'
 import { useProjectCommands } from './projects/useProjectCommands'
 import { LoopsPanel, MIN_REPEATABLE_LOOP_SECONDS, type LoopPatch } from './practice/LoopsPanel'
+import { PortableSavePanel } from './tracks/PortableSavePanel'
 import type { ConnectionState, ProjectSummary } from './types'
 import {
   BASS_PAIR_ROLES,
@@ -1716,6 +1717,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         canRedo={commands.canRedo}
         registerView={handleRegisterView}
       />
+      <PortableSavePanel projectId={project.id} currentRevision={commands.revision} />
       <dl className="project-meta">
         <dt>Status</dt>
         <dd>Ready</dd>

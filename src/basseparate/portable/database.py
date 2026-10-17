@@ -109,18 +109,33 @@ def _copy_rows(
     project_id: str,
     asset_ids: frozenset[str],
     result_set_ids: frozenset[str],
+    excluded_asset_ids: frozenset[str] = frozenset(),
 ) -> None:
+    # Assets in ``excluded_asset_ids`` drop their ``assets`` row and every
+    # dependent row (``representations``, ``waveform_caches``,
+    # ``project_assets``) so the portable database stays self-consistent
+    # when an optional asset file is missing at save time (M2.15,
+    # spec §17.1).
+    effective_asset_ids = asset_ids - excluded_asset_ids
     for table, column, scope in _TABLE_PREDICATES:
         if scope == "project":
-            new.execute(
-                f"INSERT INTO {table} SELECT * FROM snap.{table} WHERE {column} = ?",
-                (project_id,),
-            )
-        elif scope == "assets" and asset_ids:
+            if table == "project_assets" and excluded_asset_ids:
+                new.execute(
+                    f"INSERT INTO {table} SELECT * FROM snap.{table} "
+                    f"WHERE {column} = ? AND asset_id NOT IN "
+                    f"({','.join('?' for _ in excluded_asset_ids)})",
+                    (project_id, *sorted(excluded_asset_ids)),
+                )
+            else:
+                new.execute(
+                    f"INSERT INTO {table} SELECT * FROM snap.{table} WHERE {column} = ?",
+                    (project_id,),
+                )
+        elif scope == "assets" and effective_asset_ids:
             new.execute(
                 f"INSERT INTO {table} SELECT * FROM snap.{table} "
-                f"WHERE {_in_predicate(column, asset_ids)}",
-                tuple(sorted(asset_ids)),
+                f"WHERE {_in_predicate(column, effective_asset_ids)}",
+                tuple(sorted(effective_asset_ids)),
             )
         elif scope == "result_sets" and result_set_ids:
             new.execute(
@@ -136,6 +151,7 @@ def _attach_and_copy(
     project_id: str,
     asset_ids: frozenset[str],
     result_set_ids: frozenset[str],
+    excluded_asset_ids: frozenset[str] = frozenset(),
 ) -> None:
     """Attach the snapshot, copy the closure rows, verify, and detach.
 
@@ -145,7 +161,7 @@ def _attach_and_copy(
     new.execute("ATTACH DATABASE ? AS snap", (str(snapshot),))
     try:
         try:
-            _copy_rows(new, project_id, asset_ids, result_set_ids)
+            _copy_rows(new, project_id, asset_ids, result_set_ids, excluded_asset_ids)
             _verify(new, project_id)
             new.commit()
         except BaseException:
@@ -183,8 +199,18 @@ def _verify(new: sqlite3.Connection, project_id: str) -> None:
             )
 
 
-def build_portable_database(source_db: Path, project_id: str, destination: Path) -> None:
+def build_portable_database(
+    source_db: Path,
+    project_id: str,
+    destination: Path,
+    excluded_asset_ids: frozenset[str] = frozenset(),
+) -> None:
     """Build the project-only portable database at ``destination``.
+
+    ``excluded_asset_ids`` removes optional assets (and their dependent
+    ``representations``/``waveform_caches`` rows) from the portable
+    database when their files are missing at save time (M2.15,
+    spec §17.1).
 
     Raises ``PortableFormatError`` on a missing source/project, a
     dangling reference, an FK violation, or an isolation failure. On
@@ -216,7 +242,10 @@ def build_portable_database(source_db: Path, project_id: str, destination: Path)
                     plan = compute_portable_plan(snap, project_id)
                 finally:
                     snap.close()
-                _attach_and_copy(new, snapshot, project_id, plan.asset_ids, plan.result_set_ids)
+                _attach_and_copy(
+                    new, snapshot, project_id, plan.asset_ids, plan.result_set_ids,
+                    excluded_asset_ids,
+                )
             finally:
                 new.close()
         except BaseException:

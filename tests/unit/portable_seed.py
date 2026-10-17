@@ -177,9 +177,12 @@ def _insert_project(
     conn.execute(
         "INSERT INTO projects (id, name, created_at, updated_at, revision, "
         "source_asset_id, canonical_asset_id, monitoring_asset_id, sample_rate, "
-        "duration_frames, status) VALUES (?, ?, ?, ?, 5, ?, ?, ?, 48000, 441000, 'ready')",
+        "duration_frames, status, source_stream_index, source_channel_count, "
+        "source_channel_layout, decode_profile_version, source_metadata) "
+        "VALUES (?, ?, ?, ?, 5, ?, ?, ?, 48000, 441000, 'ready', 0, 2, "
+        "'stereo', 1, ?)",
         (str(project_id), name, _now_z(), _now_z(), str(source_asset), str(canonical),
-         str(monitoring) if monitoring else None),
+         str(monitoring) if monitoring else None, '{"format": "wav"}'),
     )
 
 
@@ -304,3 +307,36 @@ def _insert_separation(
             "INSERT INTO stems (id, result_set_id, role, record_json) VALUES (?, ?, ?, ?)",
             (str(stem.id), str(rs_id), stem.role.value, stem.model_dump_json()),
         )
+
+
+def create_seed_files(root: Path, seed: Seed) -> dict[str, Path]:
+    """Write the on-disk files for project A's closure assets.
+
+    Returns a map of relative path → absolute file path so tests can
+    delete one file to exercise the missing-asset paths.
+    """
+    files: dict[str, bytes] = {
+        "runtime/uploads/impA.part": b"WAVF" * 1024,
+        f"data/assets/{CAN_HASH_A}.pcm": b"\x00\x01" * 20000,
+        f"data/assets/{DMX_HASH_A}.pcm": b"\x02" * 30000,
+        f"data/assets/{STEM1_HASH_A}.pcm": b"\x03" * 40000,
+        f"data/assets/{STEM2_HASH_A}.pcm": b"\x04" * 50000,
+        f"data/assets/{RES_HASH_A}.pcm": b"\x05" * 60000,
+        f"data/assets/{PB_HASH_A}.pcm": b"\x06" * 70000,
+    }
+    created: dict[str, Path] = {}
+    for rel, content in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        created[rel] = path
+    # Waveform cache tree for the canonical PCM (optional, reproducible).
+    wf_dir = root / "cache" / "waveforms" / WF_HASH_A
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = wf_dir / "manifest.json"
+    manifest_path.write_text('{"ok": true}')
+    created[f"cache/waveforms/{WF_HASH_A}/manifest.json"] = manifest_path
+    tile_path = wf_dir / "tile0.bin"
+    tile_path.write_bytes(b"\x07" * 5000)
+    created[f"cache/waveforms/{WF_HASH_A}/tile0.bin"] = tile_path
+    return created
