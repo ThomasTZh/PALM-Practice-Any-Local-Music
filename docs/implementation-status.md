@@ -32,9 +32,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   active-result-set selection, and the 50 GiB configurable storage
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
-- **Current work package:** M2.14 (portable project format, spec
-  §16) — **complete, pending commit** (Phases 1–5 done:
-  plan + ledger + `portable/` package + 43 tests; all gates green).
+- **Current work package:** M2.15 (safely save portable projects,
+  spec §17) — **not started** (Phase 1: plan + ledger).
+- **M2.14:** complete — `ec0b1eb` + this ledger-hash follow-up
+  (portable project format definition, spec §16; `portable/`
+  package: format constants/manifest schema, dependency closure,
+  project-only database builder; 43 new tests; backend 1297 pytest
+  green, frontend 537 Vitest green).
 - **M2.13:** complete — `ff350c8` + this ledger-hash follow-up
   (WAV stem export, spec §15; backend 1254 pytest green, frontend
   537 Vitest green).
@@ -53,8 +57,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `ff350c8` — M2.13 (WAV stem export); this
-  ledger-hash follow-up on top. `0e88c7a` — M2.12 (extended buffering
+- **Last commit:** `ec0b1eb` — M2.14 (portable project
+  format); this ledger-hash follow-up on top. `ff350c8` — M2.13
+  (WAV stem export); `4cdf9fc` (ledger: M2.13 hash) on top. `0e88c7a` — M2.12 (extended buffering
   and resource limits); `1b79846` (ledger: M2.12 hash) on top;
   `f65370a` — M2.11 (saved practice loops);
   `cfa3223` (ledger: M2.10 hash) on top of `f46baaf` — M2.10
@@ -86,22 +91,23 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.14 Phase 2: implement
-  `src/basseparate/portable/` (`format.py`, `closure.py`,
-  `database.py`) per `projectPlans/m2.14-plan.md`, then Phase 5
-  tests + gates + commit. Everything is committed at
+- **Next action:** M2.15 Phase 1: read spec §17 in
+  `projectPlans/milestone2.md` (line 1242) and write
+  `projectPlans/m2.15-plan.md` (safely save portable projects —
+  the archive writer on top of the M2.14 `portable/` package), then
+  add the M2.15 section to this ledger. Everything is committed at
   `ff350c8` (M2.13 complete) + this ledger-hash follow-up.
   The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `ff350c8` (M2.13
+- **Resume procedure:** read this file; HEAD is `ec0b1eb` (M2.14
   complete) + this ledger-hash follow-up; the tree is clean.
   Establish the baseline:
-  `.venv/bin/python -m pytest tests/ -q` (1254 passed; the
+  `.venv/bin/python -m pytest tests/ -q` (1297 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/` (67 files clean),
+  `.venv/bin/python -m mypy src/` (71 files clean),
   `cd frontend && npx vitest run` (537 passed),
   `cd frontend && npx tsc -b` (32 pre-existing errors),
   `cd frontend && npx prettier --check .` (clean).
@@ -3325,6 +3331,14 @@ Gates (all green): backend 1297 pytest (1254 baseline + 43),
 ruff clean, mypy clean (71 files), contract in sync; frontend
 untouched — 537 vitest (baseline), tsc -b 32 pre-existing
 errors (baseline), prettier clean, vite build OK.
+M2.14 complete. Evidence in
+`docs/evidence/m2.14-portable-format.md` (git-ignored). The
+portable format is defined and its two core algorithms (the
+dependency closure and the project-only database builder) are
+implemented and tested; the archive writer (M2.15, spec §17)
+and the archive reader/validator (M2.16, spec §18) build on
+this package. Commit `ec0b1eb` (`M2.14: portable project format
+(spec §16)`) + this ledger-hash follow-up.
 
 ## Architectural decisions so far
 
