@@ -33,12 +33,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.11 (Saved practice loops, spec §13) —
-  **complete** (Phases 1–6); the final commit is part of this work
-  package. Plan: `projectPlans/m2.11-plan.md`. Gate: backend
-  1147/1147 pytest, ruff + mypy clean (63 files), contract in sync;
-  frontend 495/495 Vitest (28 files), `tsc -b` unchanged (32
-  pre-existing), prettier clean. Hash recorded in the ledger
-  follow-up. See the M2.11 section below.
+  **complete** — `f65370a`. Plan: `projectPlans/m2.11-plan.md` (as
+  built). Gate: backend 1147/1147 pytest, ruff + mypy clean (63
+  files), contract in sync; frontend 495/495 Vitest (28 files),
+  `tsc -b` unchanged (32 pre-existing), prettier clean. See the M2.11
+  section below.
+- **M2.11:** complete — `f65370a` (saved practice loops, spec §13;
+  backend 1147 pytest green, frontend 495 Vitest green).
 - **M2.10:** complete — `f46baaf` + ledger-hash follow-up `cfa3223`
   (rolling-seek wrapper + rebuilt artifacts, worklet warm-up/exact
   anchors/1× bypass, transport pre-roll + `anchorRate` ledger +
@@ -47,7 +48,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `f46baaf` — M2.10 (latency, bypass, and transport
+- **Last commit:** `f65370a` — M2.11 (saved practice loops);
+  `cfa3223` (ledger: M2.10 hash) on top of `f46baaf` — M2.10
+  (latency, bypass, and transport
   mapping); `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
   M2.9 (integrate the time-stretch
   engine); `79d898e` — M2.8 (add aligned tracks and the stem
@@ -75,22 +78,21 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** make the ledger-hash follow-up commit (`Ledger:
-  record M2.11 commit hash (<hash>)`) after the M2.11 commit lands,
-  updating the top section and the M2.11 Phase 6 entry. Then start
-  M2.12 (Extend buffering and resource limits, spec §14) with its own
-  plan + ledger section. M2.10 is committed at `f46baaf` (+ ledger
-  `cfa3223`).
-  No M2.9 follow-ups remain; the e2e `app.spec.ts` harness bug
+- **Next action:** start M2.12 (Extend buffering and resource limits,
+  spec §14) from `projectPlans/milestone2.md` §14; write the M2.12
+  plan + ledger section first, as with prior packages. M2.11 is
+  committed at `f65370a`. The M2.11 ledger-hash follow-up is this
+  commit.
+  The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is `cfa3223` (M2.10
-  ledger hash); the M2.11 work (plan + phases 2–6) is in progress in
-  the working tree and lands in one M2.11 commit. Establish the
+- **Resume procedure:** read this file; HEAD is `f65370a` (M2.11
+  complete; the ledger-hash follow-up follows). Everything is
+  committed; the tree is clean. Establish the
   baseline:
-  `.venv/bin/python -m pytest tests/ -q` (1147 tests, 1146 green +
-  one known-flaky job-manager timing test),
+  `.venv/bin/python -m pytest tests/ -q` (1147 passed; the
+  job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
   `.venv/bin/python -m mypy src/` (63 files clean),
   `/home/thomas/.npm-global/bin/pnpm --dir frontend run test` (495
@@ -99,8 +101,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   **Recovery note:** if working-tree files appear reverted, versions
   are recoverable from the OpenCode snapshot store
   (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
-  with `git cat-file` inside that repository); a tarball of the
-  uncommitted M2.11 work sits in `/tmp/opencode/m2.11-backup/`.
+  with `git cat-file` inside that repository).
 
 ## Completed requirements (with evidence)
 
@@ -2838,7 +2839,7 @@ and boundary edits apply at controlled transitions (synchronized
 re-seek, §13.8); seeks outside an enabled loop disable looping and
 retain the loop (§13.4.5).
 
-**Phase log:**
+**Phase log (all complete — `f65370a`):**
 
 - **Phase 1 — Plan + ledger:** done (2026-10-16). `m2.11-plan.md`
   written (stream model, fade design, playback rules, domain/UI
@@ -2955,9 +2956,8 @@ retain the loop (§13.4.5).
   passed), `ruff check src/ tests/` clean, `mypy src/` clean (63
   files), `check_contract.py` in sync; frontend **495/495** Vitest (28
   files; +30 over the pre-M2.11 465), `tsc -b` at the unchanged 32-error
-  pre-existing baseline, `prettier --check .` clean. Commit
-  `M2.11: saved practice loops (spec §13)`; its hash is recorded in the
-  ledger-hash follow-up.
+  pre-existing baseline, `prettier --check .` clean. Commit `f65370a`
+  (`M2.11: saved practice loops (spec §13)`).
 
 **Accepted caveats (documented in the evidence):** the mid-stream
 install policy is a deliberate refinement of the plan's "always send
