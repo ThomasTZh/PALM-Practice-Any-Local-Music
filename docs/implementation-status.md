@@ -33,15 +33,18 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.12 (Extended buffering and resource
-  limits, spec §14) — **complete** (Phases 1–7); the final commit is
-  part of this work package. Plan: `projectPlans/m2.12-plan.md`. Gate:
+  limits, spec §14) — **complete** — `0e88c7a` + this ledger-hash
+  follow-up. Plan: `projectPlans/m2.12-plan.md` (as built). Gate:
   backend 1180/1180 pytest, ruff + mypy clean (64 files), contract in
   sync; frontend 530/530 Vitest (31 files), `tsc -b` unchanged (32
   pre-existing), prettier clean. The local browser acceptance run
   passed (full 6:00 playback, zero underruns, waveform +
   playback-rate media jobs while playing) and required fixing five
-  pre-existing browser playback defects (see the M2.12 section). Hash
-  recorded in the ledger follow-up. See the M2.12 section below.
+  pre-existing browser playback defects (see the M2.12 section). See
+  the M2.12 section below.
+- **M2.12:** complete — `0e88c7a` (extended buffering and resource
+  limits, spec §14; backend 1180 pytest green, frontend 530 Vitest
+  green; the local acceptance run added the browser-path fixes).
 - **M2.11:** complete — `f65370a` + ledger-hash follow-up `ce94136`
   (saved practice loops, spec §13; backend 1147 pytest green,
   frontend 495 Vitest green).
@@ -53,7 +56,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `f65370a` — M2.11 (saved practice loops);
+- **Last commit:** `0e88c7a` — M2.12 (extended buffering and resource
+  limits); this ledger-hash follow-up on top. `f65370a` — M2.11 (saved
+  practice loops);
   `cfa3223` (ledger: M2.10 hash) on top of `f46baaf` — M2.10
   (latency, bypass, and transport
   mapping); `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
@@ -83,19 +88,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** make the ledger-hash follow-up commit (`Ledger:
-  record M2.12 commit hash (<hash>)`) after the M2.12 commit lands,
-  updating the top section, the last-commit list, the resume
-  procedure, and the M2.12 Phase 7 entry. Then start M2.13 (WAV stem
-  export, spec §15) with its own plan + ledger section. M2.11 is
-  committed at `f65370a` (+ ledger `ce94136`).
+- **Next action:** start M2.13 (WAV stem export, spec §15): write
+  `projectPlans/m2.13-plan.md` + ledger section first, as with prior
+  packages. M2.12 is committed at `0e88c7a`; the M2.12 ledger-hash
+  follow-up is this commit.
   The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
   out of scope — address it if/when the e2e suite is re-run in a
   full environment.
-- **Resume procedure:** read this file; HEAD is the M2.12 commit (see
-  the last-commit list; the ledger-hash follow-up follows). Everything
-  is committed; the tree is clean. Establish the baseline:
+- **Resume procedure:** read this file; HEAD is `0e88c7a` (M2.12
+  complete; this ledger-hash follow-up is on top). Everything is
+  committed; the tree is clean. Establish the baseline:
   `.venv/bin/python -m pytest tests/ -q` (1180 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
@@ -3010,7 +3013,7 @@ through `/api/v1/system`. Separation job scheduling stays with M2.17
   worklet `buffered` extension (`stems`, `capacityFrames`,
   `lastCallbackMs`, `stretcher`); no telemetry, same-origin only.
 
-**Phase log:**
+**Phase log (all complete — `0e88c7a`):**
 
 - **Phase 1 — Plan + ledger:** done (2026-10-17). `m2.12-plan.md`
   written; this section added.
@@ -3134,9 +3137,8 @@ through `/api/v1/system`. Separation job scheduling stays with M2.17
   uploader chunk-hash mismatch and the missing UI `canonical_decode`
   caller meant the acceptance imports were seeded through the HTTP
   API, exactly as the backend tests do; the separation half of the
-  acceptance stays deferred with M2.17. Commit `M2.12: extended
-  buffering and resource limits (spec §14)`; its hash is recorded in
-  the ledger-hash follow-up.
+  acceptance stays deferred with M2.17. Commit `0e88c7a` (`M2.12:
+  extended buffering and resource limits (spec §14)`).
 
 ## Environment facts (re-verified 2026-09-29, not from old inventory)
 
