@@ -33,7 +33,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   policy (pinning, reclaimable-size report, explicit LRU reclaim;
   records never deleted).
 - **Current work package:** M2.14 (portable project format, spec
-  §16) — **not started** (Phase 1: plan + ledger).
+  §16) — **complete, pending commit** (Phases 1–5 done:
+  plan + ledger + `portable/` package + 43 tests; all gates green).
 - **M2.13:** complete — `ff350c8` + this ledger-hash follow-up
   (WAV stem export, spec §15; backend 1254 pytest green, frontend
   537 Vitest green).
@@ -85,10 +86,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.14 Phase 1: write
-  `projectPlans/m2.14-plan.md` (portable project format, spec §16 —
-  the format definition; the save and open work is M2.15/M2.16) and
-  add the M2.14 section to this ledger. Everything is committed at
+- **Next action:** M2.14 Phase 2: implement
+  `src/basseparate/portable/` (`format.py`, `closure.py`,
+  `database.py`) per `projectPlans/m2.14-plan.md`, then Phase 5
+  tests + gates + commit. Everything is committed at
   `ff350c8` (M2.13 complete) + this ledger-hash follow-up.
   The e2e `app.spec.ts` harness bug
   (spawns the Python server via `process.execPath`) is pre-existing and
@@ -3271,6 +3272,59 @@ the panel. Commit `ff350c8` (`M2.13: WAV stem export (spec
   CUDA/PyTorch runtime NOT yet qualified (M2+ concern; M0 needs no GPU).
 - No Emscripten on PATH (M2 concern).
 - Disk: ~399 GB free on `/home`.
+
+## M2.14 — Portable project format (spec §16)
+
+**Phase 1 (2026-10-17):** plan written
+(`projectPlans/m2.14-plan.md`). M2.14 is the format *definition*
+only: container layout, manifest schema, compression policy,
+dependency closure, and the project-only database builder. Archive
+writing is M2.15 (spec §17); opening is M2.16 (spec §18). No
+routes, no frontend. Design: `portable/format.py` (FORMAT_ID
+`basseparate.project`, container v1; members `manifest.json`,
+`project.sqlite`, `assets/sha256/<hash><ext>`,
+`caches/waveforms/<source_hash>/...`,
+`provenance/separation-runs.json`,
+`provenance/model-manifests.json`; stored compression for
+media/PCM/sqlite, deflate for text; essential vs optional
+classification — playback-rate and waveform caches optional,
+source/canonical/downmix/stems essential); `portable/closure.py`
+(`PortablePlan`: asset closure from project columns +
+`project_assets` + result-set/stem `record_json` refs +
+representation parents; waveform caches; provenance payloads;
+export artifacts excluded — reproducible deliverables, not in
+the §16.2 list); `portable/database.py` (backup-API snapshot →
+DDL replay from `iterdump` → streaming `INSERT ... SELECT` per
+table with closure predicates → `foreign_key_check` →
+isolation proof → atomic move; delete journal mode, no WAL
+sidecar).
+
+**Phases 2–4 (2026-10-17):** `src/basseparate/portable/` implemented.
+`format.py`: FORMAT_ID `basseparate.project`, container v1, fixed
+member names, asset member naming (`assets/sha256/<hash><ext>`: `.pcm`
+for PCM roles, the upload extension for `source_original`, `.bin`
+fallback), waveform cache prefix `caches/waveforms/<source_hash>/`,
+compression policy (stored for media/cache/sqlite, deflate for
+text), `ManifestMember`/`ManifestAsset`/`ManifestProvenance`/
+`PortableManifest` (all §16.4 fields, frozen, JSON round-trip).
+`closure.py`: `compute_portable_plan` → `PortablePlan` (asset
+closure from project columns + `project_assets` + result-set/stem
+`record_json` refs + representation-parent fixpoint; waveform caches;
+separation run records; `PortableAsset.essential` classification
+— playback-rate caches optional, source/canonical/downmix/stems
+essential); `separation_runs_payload` / `model_manifests_payload`
+(registry metadata only, no weights). `database.py`:
+`build_portable_database` (backup-API snapshot → DDL replay from
+`iterdump` + explicit `user_version` → streaming `INSERT ... SELECT`
+per table → `foreign_key_check` + `integrity_check` + isolation
+proof → atomic `.part` → final move; `export_artifacts` excluded).
+43 new unit tests (`tests/unit/test_portable_format.py`,
+`test_portable_closure.py`, `test_portable_database.py` +
+`portable_seed.py` two-project seed incl. a WAL-mode source test).
+Gates (all green): backend 1297 pytest (1254 baseline + 43),
+ruff clean, mypy clean (71 files), contract in sync; frontend
+untouched — 537 vitest (baseline), tsc -b 32 pre-existing
+errors (baseline), prettier clean, vite build OK.
 
 ## Architectural decisions so far
 
