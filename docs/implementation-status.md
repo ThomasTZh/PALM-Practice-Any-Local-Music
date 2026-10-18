@@ -90,8 +90,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `346dea5` — blend-dip investigation (level match ruled
-  out); this ledger-hash follow-up on top. `ed5e418` — Carousel listening
+- **Last commit:** `e296795` — accept minor blend dip (Carousel listening
+  review); this ledger-hash follow-up on top. `346dea5` — blend-dip
+  investigation (level match ruled
+  out); `4eb6ce7` — Carousel listening
   findings and blend-dip analysis; `d88171c` (ledger: Carousel findings
   hash) on top. `4eb6ce7` — Carousel
   listening results and review clarifications; `9f71c96` (ledger:
