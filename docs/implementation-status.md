@@ -3717,10 +3717,14 @@ Final gates: backend suite green, ruff/mypy/frontend gates unchanged.
 
 ## M2.21 — Listening review setup (pause point)
 
-**2026-10-18 (review started):** Carousel Theory is the primary
+**2026-10-18 (review updated):** Carousel Theory is the primary
 acceptance recording. The listener judged the bass stem acceptable (not
-perfect), the Others solo fine, and the sum "about right"; window joins
-(1:52–2:00 and 3:44–3:52) and the stereo image are pending. The five GPU
+perfect), the Others solo fine, the sum "about right", and the stereo
+image good. Window joins: a click+dip at 2:07/08 (the step matches a
+reference transient; likely source content) and a real level dip at
+3:48/49 (50 ms sum/reference RMS 0.94–0.97 inside the 224–232 s blend
+region). Other recordings were briefly judged acceptable. The blend dip
+is a candidate DSP follow-up. The five GPU
 acceptance runs' stems were converted to
 24-bit 44.1 kHz WAVs under `/tmp/opencode/listening-review/<slug>/`
 (`reference`, `drums`, `bass`, `other`, `vocals`, `others` =
