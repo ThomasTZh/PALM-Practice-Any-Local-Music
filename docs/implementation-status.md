@@ -3676,6 +3676,20 @@ recordings, the 60-minute playback run, and the listening review are not
 claimed. No functional work packages remain; the milestone's automated
 surface is complete (backend 1412 pytest, frontend 566 Vitest).
 
+## M2.19 — Acceptance update (full recording + backend end-to-end)
+
+**2026-10-18 (continuation):** the complete 68.57 s `46.GIBBS` recording
+ran on CPU: 351.5 s (RTF 5.13×), peak RSS 2.62 GiB, four stems,
+3,024,001 frames. The real backend path was also exercised end to end
+(HTTP run request → analysis worker → `separate.py` → M2.6 publication):
+job completed in 42.4 s for a 5 s project, one valid result set, four
+stems at the exact project frame count. This exposed and fixed a real
+publisher bug: transient dispatch parameters are not persisted on the
+job row, so the publisher now re-derives the reference mix, source
+identity, geometry, and model rate from the run/project (regression test
+added). Also added the §20.7.3 save-while-separation-queued test.
+Final gates: backend suite green, ruff/mypy/frontend gates unchanged.
+
 ## Architectural decisions so far
 
 - Python 3.11.15 via uv, `>=3.11,<3.12`, Hatchling, src layout, console script `basseparate`.

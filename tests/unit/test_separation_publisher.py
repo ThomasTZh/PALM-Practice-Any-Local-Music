@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
 from basseparate.domain.media_job import JobStage, JobType
 from basseparate.domain.separation import (
     DeviceType,
@@ -47,16 +49,32 @@ def env(tmp_path: Path) -> dict:
     initialize_database(db)
     projects = ProjectRepository(db)
     project = projects.create_project("Song")
+    canonical_hash = "a" * 64
+    canonical = AssetRecord(
+        id=uuid.uuid4(),
+        content_hash=canonical_hash,
+        role=AssetRole.SOURCE_PCM,
+        relative_path=f"data/assets/{canonical_hash}.pcm",
+        media_type="application/octet-stream",
+        byte_count=100 * 2 * 4,
+        created_at=datetime.now(UTC),
+        audio=AudioMetadata(
+            sample_rate=48_000,
+            channel_count=2,
+            frame_count=100,
+            sample_format="f32le",
+        ),
+    )
+    projects.register_asset(canonical)
     conn = sqlite3.connect(db)
     try:
-        fake_asset = str(uuid.uuid4())
         conn.execute(
             "UPDATE projects SET status = 'ready', sample_rate = 48000, "
             "duration_frames = 100, source_channel_count = 2, "
             "source_channel_layout = 'stereo', source_stream_index = 0, "
             "decode_profile_version = 1, source_asset_id = ?, "
             "canonical_asset_id = ? WHERE id = ?",
-            (fake_asset, fake_asset, str(project.id)),
+            (str(canonical.id), str(canonical.id), str(project.id)),
         )
         conn.commit()
     finally:
@@ -103,6 +121,8 @@ def env(tmp_path: Path) -> dict:
         "separations": separations,
         "jobs": jobs,
         "asset_id": asset_id,
+        "canonical_id": canonical.id,
+        "canonical_hash": canonical_hash,
         "run": run,
         "attempt": attempt,
         "reference": reference,
@@ -115,13 +135,8 @@ def _job(env: dict):
         JobType.SEPARATION,
         parameters={
             "run_id": str(env["run"].id),
-            "reference_path": str(env["reference"]),
-            "source_asset_id": str(env["asset_id"]),
-            "source_hash": "a" * 64,
-            "sample_rate": 48_000,
-            "duration_frames": 100,
-            "channel_count": 2,
-            "model_rate": 44_100,
+            "requested_mode": "four_stems",
+            "device": "cpu",
         },
     )
 
@@ -168,9 +183,11 @@ class TestSeparationPublisher:
         assert calls["run"].id == env["run"].id
         assert calls["attempt_dir"] == env["attempt"]
         assert calls["stem_labels"] == ["bass", "drums", "other", "vocals"]
-        assert calls["reference_path"] == env["reference"]
-        assert calls["source"].asset_id == env["asset_id"]
-        assert calls["source"].source_hash == "a" * 64
+        assert calls["reference_path"] == env["paths"].resolve_asset_path(
+            f"data/assets/{env['canonical_hash']}.pcm"
+        )
+        assert calls["source"].asset_id == env["canonical_id"]
+        assert calls["source"].source_hash == env["canonical_hash"]
         assert calls["sample_rate"] == 48_000
         assert calls["duration_frames"] == 100
         assert calls["channel_count"] == 2

@@ -59,6 +59,12 @@ from basseparate.media.downmix import (
 )
 from basseparate.media.preparation import sha256_file
 from basseparate.media.publication import publish_separation_result
+from basseparate.media.separation_request import (
+    SeparationRequestError,
+    model_manifest,
+    output_channel_count,
+    reference_mix_plan,
+)
 from basseparate.media.waveform import validate_tile_bytes
 from basseparate.storage import (
     ExportArtifactRepository,
@@ -671,17 +677,24 @@ def _publish_separation(
     if project.sample_rate is None or project.duration_frames is None:
         raise PublishError("the project has no source geometry")
 
-    def _string_parameter(name: str) -> str:
-        value = job.parameters.get(name)
-        if not isinstance(value, str) or not value:
-            raise PublishError(f"separation job parameter {name!r} is missing")
-        return value
-
-    def _int_parameter(name: str) -> int:
-        value = job.parameters.get(name)
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise PublishError(f"separation job parameter {name!r} is missing")
-        return value
+    canonical = (
+        projects.get_asset(project.canonical_asset_id)
+        if project.canonical_asset_id
+        else None
+    )
+    monitoring = (
+        projects.get_asset(project.monitoring_asset_id)
+        if project.monitoring_asset_id
+        else None
+    )
+    try:
+        plan = reference_mix_plan(project, canonical, monitoring)
+    except SeparationRequestError as exc:
+        raise PublishError(str(exc)) from exc
+    reference_asset = monitoring if plan.kind == "multichannel" else canonical
+    if reference_asset is None or reference_asset.audio is None:
+        raise PublishError("the separation reference mix asset is missing")
+    manifest = model_manifest()
 
     attempt_dir = Path(payload.attempt_dir)
     if not attempt_dir.is_dir():
@@ -702,20 +715,20 @@ def _publish_separation(
             staging_dir=staging_dir,
             attempt_dir=attempt_dir,
             stem_labels=payload.stem_labels,
-            reference_path=Path(_string_parameter("reference_path")),
+            reference_path=paths.resolve_asset_path(reference_asset.relative_path),
             source=SourceIdentity(
-                asset_id=uuid.UUID(_string_parameter("source_asset_id")),
-                source_hash=_string_parameter("source_hash"),
-                sample_rate=_int_parameter("sample_rate"),
-                duration_frames=_int_parameter("duration_frames"),
+                asset_id=plan.asset_id,
+                source_hash=plan.source_hash,
+                sample_rate=project.sample_rate,
+                duration_frames=project.duration_frames,
             ),
             sample_rate=project.sample_rate,
             duration_frames=project.duration_frames,
-            channel_count=_int_parameter("channel_count"),
+            channel_count=output_channel_count(plan),
             asset_dir=paths.data / "assets",
             separation_repository=separations,
             cache_key=run.cache_key,
-            model_rate=_int_parameter("model_rate"),
+            model_rate=manifest.input_sample_rate,
             job_repository=job_repository,
             max_threads=job.max_threads,
             on_progress=on_progress,

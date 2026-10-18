@@ -305,6 +305,49 @@ class TestRunRoutes:
         assert body["job_id"] is None
         assert fake_manager.created == []
 
+    def test_save_is_consistent_while_a_separation_is_queued(
+        self, client, auth_headers, seeded, fake_manager, monkeypatch
+    ) -> None:
+        """A portable save captures the committed state (spec §20.7.3).
+
+        The separation job is queued in the analysis class; the save runs
+        on a read-only snapshot and must return the current revision with
+        a valid archive.
+        """
+        import zipfile
+
+        from basseparate.portable.format import PortableManifest
+
+        monkeypatch.setattr(analysis_routes, "discover_gpus", lambda: [])
+        run = client.post(
+            f"/api/v1/projects/{seeded.project_a}/runs",
+            headers=auth_headers,
+            json={"device": "cpu"},
+        )
+        assert run.status_code == 201, run.text
+
+        saved = client.post(
+            f"/api/v1/projects/{seeded.project_a}/portable-saves",
+            headers=auth_headers,
+        )
+        assert saved.status_code == 201, saved.text
+        body = saved.json()
+        assert body["saved_revision"] == 5
+        paths = client.app.state.storage_paths
+        archive = (
+            paths.data
+            / "portable"
+            / seeded.project_a
+            / f"{body['saved_revision']}-{body['sha256'][:12]}.basseparate"
+        )
+        assert archive.is_file()
+        with zipfile.ZipFile(archive) as zf:
+            assert zf.testzip() is None
+            manifest = PortableManifest.model_validate_json(
+                zf.read("manifest.json").decode("utf-8")
+            )
+        assert manifest.saved_revision == 5
+
     def test_separation_results_alias(self, client, auth_headers, seeded) -> None:
         response = client.get(
             f"/api/v1/projects/{seeded.project_a}/separation-results",
