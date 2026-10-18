@@ -90,8 +90,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `4eb6ce7` — Carousel listening results and review
-  clarifications; this ledger-hash follow-up on top. `795fb9b` — session
+- **Last commit:** `ed5e418` — Carousel listening findings and blend-dip
+  analysis; this ledger-hash follow-up on top. `4eb6ce7` — Carousel
+  listening results and review clarifications; `9f71c96` (ledger:
+  Carousel review hash) on top. `795fb9b` — session
   handover and listening-review setup; `b882274` (ledger: pause docs hash)
   on top. `99f06f1` — M2.19
   (five-recording GPU acceptance evidence); `2f03ac1` (ledger: M2.19 GPU
