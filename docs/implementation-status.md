@@ -3726,7 +3726,11 @@ image good. Window joins: a click+dip at 2:07/08 (the step matches a
 reference transient; likely source content) and a real level dip at
 3:48/49 (50 ms sum/reference RMS 0.94–0.97 inside the 224–232 s blend
 region). Other recordings were briefly judged acceptable. The blend dip
-is a candidate DSP follow-up. The five GPU
+is a candidate DSP follow-up. A level-matched blend experiment (gains
+0.998/0.995) left the dip unchanged, so the cause is content/phase
+difference between independently inferred windows, not gain; the
+experiment was reverted. Remaining: accept the minor dip or test a
+shorter crossfade around the seam. The five GPU
 acceptance runs' stems were converted to
 24-bit 44.1 kHz WAVs under `/tmp/opencode/listening-review/<slug>/`
 (`reference`, `drums`, `bass`, `other`, `vocals`, `others` =
