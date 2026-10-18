@@ -3731,8 +3731,10 @@ region). Other recordings were briefly judged acceptable. The blend dip
 is a candidate DSP follow-up. A level-matched blend experiment (gains
 0.998/0.995) left the dip unchanged, so the cause is content/phase
 difference between independently inferred windows, not gain; the
-experiment was reverted. Remaining: accept the minor dip or test a
-shorter crossfade around the seam. The five GPU
+experiment was reverted. **Decision: the ~3:49 dip is accepted as a
+minor artifact; no DSP change.** Remaining: app-level listening checks
+(0.5×/0.75×, loop, WAV export, save/reopen) and the 60-minute playback
+measurement. The five GPU
 acceptance runs' stems were converted to
 24-bit 44.1 kHz WAVs under `/tmp/opencode/listening-review/<slug>/`
 (`reference`, `drums`, `bass`, `other`, `vocals`, `others` =
