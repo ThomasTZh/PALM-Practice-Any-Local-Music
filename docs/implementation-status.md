@@ -3715,7 +3715,11 @@ Final gates: backend suite green, ruff/mypy/frontend gates unchanged.
 
 ## M2.21 — Listening review setup (pause point)
 
-**2026-10-18:** the five GPU acceptance runs' stems were converted to
+**2026-10-18 (review started):** Carousel Theory is the primary
+acceptance recording. The listener judged the bass stem acceptable (not
+perfect), the Others solo fine, and the sum "about right"; window joins
+(1:52–2:00 and 3:44–3:52) and the stereo image are pending. The five GPU
+acceptance runs' stems were converted to
 24-bit 44.1 kHz WAVs under `/tmp/opencode/listening-review/<slug>/`
 (`reference`, `drums`, `bass`, `other`, `vocals`, `others` =
 drums+other+vocals, `bass_plus_others`), with a README and the §21.4
