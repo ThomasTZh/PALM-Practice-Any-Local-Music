@@ -620,3 +620,59 @@ class TestPublishSeparationResult:
         assert queue_stem_waveforms(jobs, project.id, [a1, a2, a3]) == []
         # A fourth asset is queued.
         assert len(queue_stem_waveforms(jobs, project.id, [a1, asset(4)])) == 1
+
+    @pytest.mark.asyncio
+    async def test_disk_full_during_asset_move_leaves_no_rows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ENOSPC while publishing stems leaves the run unpublished (§8.7)."""
+        import errno
+        import sqlite3
+
+        from basseparate.media import publication
+
+        run, staging_dir, attempt_dir, reference_path = self._staged_run(
+            tmp_path, SeparationMode.FOUR_STEMS
+        )
+        data = tmp_path / "data"
+        db_path = data / "basseparate.db"
+        separation = SeparationRepository(db_path)
+        jobs = JobRepository(db_path)
+        source = SourceIdentity(
+            asset_id=uuid.uuid4(),
+            source_hash="ab" * 32,
+            sample_rate=PROJECT_RATE,
+            duration_frames=PROJECT_RATE,
+        )
+
+        def full_disk(*args: object, **kwargs: object) -> None:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(publication.shutil, "move", full_disk)
+        with pytest.raises(OSError):
+            await publish_separation_result(
+                run=run,
+                staging_dir=staging_dir,
+                attempt_dir=attempt_dir,
+                stem_labels=list(self.LABELS),
+                reference_path=reference_path,
+                source=source,
+                sample_rate=PROJECT_RATE,
+                duration_frames=PROJECT_RATE,
+                channel_count=2,
+                asset_dir=data / "assets",
+                separation_repository=separation,
+                job_repository=jobs,
+            )
+
+        assert separation.get_run(run.id).status is SeparationRunStatus.RUNNING
+        assert separation.list_result_sets_for_project(run.project_id) == []
+        conn = sqlite3.connect(str(db_path))
+        try:
+            for table in ("separation_result_sets", "stems", "assets"):
+                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                assert count == 0, table
+        finally:
+            conn.close()
+        # Staged stems are kept for diagnostics, never silently discarded.
+        assert attempt_dir.is_dir()

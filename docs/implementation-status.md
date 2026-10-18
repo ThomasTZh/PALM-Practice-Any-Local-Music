@@ -40,8 +40,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   retain one previous, atomic publish; routes + PortableSavePanel;
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
-- **Current work package:** M2.18 (test matrix, spec §20) — not
-  started (projectPlans/milestone2.md line 1443).
+- **Current work package:** M2.19 (real separation acceptance evidence)
+  — not started; M2.20 (performance targets, spec §21.1–21.3) and M2.21
+  (practical acceptance + final checklist, §21.4/§22) follow.
+- **M2.18:** complete — this commit + ledger-hash follow-up (test matrix,
+  spec §20; mapping evidence doc + 3 gap tests; backend 1412 pytest
+  green, frontend 566 Vitest green).
 - **M2.17:** complete — `76b8f06` + this ledger-hash follow-up (analysis
   interfaces and separation scheduling, spec §19; dedicated analysis
   worker + two job classes, runs/hardware/models routes, migration 12;
@@ -114,20 +118,23 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.18 (test matrix, spec §20,
-  projectPlans/milestone2.md line 1443): bundled-model integrity,
-  separation correctness, worker/device failures, mixer timing,
-  stretching, loops, portable projects, exports, and acceptance
-  evidence. The e2e `app.spec.ts`
+- **Next action:** M2.19 (real separation acceptance): run the
+  bundled `htdemucs_ft` offline on the five `audio2test/` recordings
+  with the analysis environment, measuring wall time, real-time factor,
+  peak VRAM and host RAM, and record the objective results
+  (`docs/evidence/m2.19-...`). The §21.4 listening review is human-only
+  and is reported as not performed by the agent. M2.20/M2.21 cover the
+  performance targets and the final checklist. The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
   if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is the M2.17 commit
-  (`M2.17: analysis interfaces and separation scheduling (spec §19)`)
-  with this ledger-hash follow-up on top; the tree is clean.
+- **Resume procedure:** read this file; HEAD is the M2.18 commit
+  (`M2.18: test matrix (spec §20)`) with this ledger-hash follow-up on
+  top; the tree is clean.
   Baseline established 2026-10-18:
-  `.venv/bin/python -m pytest tests/ -q` (1409 passed; the
-  job-manager timing test is occasionally flaky),
+  `.venv/bin/python -m pytest tests/ -q` (1412 passed; the
+  job-manager timing test and `test_stderr_does_not_corrupt_protocol`
+  are occasionally flaky under load),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
   `.venv/bin/python -m mypy src/basseparate` (82 files clean),
   `cd frontend && npx vitest run` (566 passed),
@@ -3615,6 +3622,24 @@ verification store. 13 route tests.
 `src/ tests/` clean (also `analysis/worker.py`); mypy 82 files clean;
 frontend 566 Vitest green; tsc 0 errors; prettier clean; Vite build OK;
 contract regenerated and in sync.
+
+## M2.18 — Test matrix (spec §20)
+
+**2026-10-18:** `docs/evidence/m2.18-test-matrix.md` maps every §20
+requirement (model provisioning/integrity, separation correctness,
+worker/device failures, mixer timing, stretching, loops, portable
+projects, WAV export) to the automated tests and earlier evidence that
+exercise it. Three gaps closed: the analysis runner's offline flags are
+pinned **before** torch/model load and the protocol worker never imports
+torch (`tests/unit/test_analysis_offline.py`, 2 tests); an ENOSPC during
+stem publication leaves no result-set/stem/asset rows, keeps the run
+unpublished and the staged stems for diagnostics
+(`test_publication.py::test_disk_full_during_asset_move_leaves_no_rows`).
+Real inference correctness, timing/VRAM/RAM, the five-recording workflow,
+and the human listening review are M2.19–M2.21 evidence, not claimed
+here. Final gates: backend 1412 pytest green (one flaky supervisor test
+passes on rerun); ruff clean; mypy 82 files clean; frontend 566 Vitest
+green; tsc/prettier/Vite build/contract unchanged and green.
 
 ## Architectural decisions so far
 
