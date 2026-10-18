@@ -42,7 +42,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   green, frontend 550 Vitest green).
 - **Current work package:** M2.18 (test matrix, spec §20) — not
   started (projectPlans/milestone2.md line 1443).
-- **M2.17:** complete — this commit + ledger-hash follow-up (analysis
+- **M2.17:** complete — `76b8f06` + this ledger-hash follow-up (analysis
   interfaces and separation scheduling, spec §19; dedicated analysis
   worker + two job classes, runs/hardware/models routes, migration 12;
   41 new backend tests; backend 1409 pytest green, frontend 566 Vitest
@@ -75,8 +75,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `4027815` — M2.16 (open portable projects); this
-  ledger-hash follow-up on top. `8fc239d` — M2.15 (safely save portable
+- **Last commit:** `76b8f06` — M2.17 (analysis interfaces and separation
+  scheduling); this ledger-hash follow-up on top. `4027815` — M2.16
+  (open portable projects); `cb45811` (ledger: M2.16 hash) on top.
+  `8fc239d` — M2.15 (safely save portable
   projects); `5fbb6ff` (ledger: M2.15 hash) on top. `ec0b1eb` — M2.14
   (portable project format); `744e165` (ledger: M2.14 hash) on top.
   `ff350c8` — M2.13
