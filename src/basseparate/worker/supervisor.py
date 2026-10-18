@@ -106,6 +106,30 @@ def media_worker_command(memory_limit_mb: int | None = None) -> list[str]:
     return command
 
 
+def analysis_root() -> Path:
+    """The isolated analysis environment root (M2.17, spec §4.1.7).
+
+    ``BASSEPARATE_ANALYSIS_ROOT`` overrides the repository-relative
+    default (packaged installs and tests use it).
+    """
+
+    override = os.environ.get("BASSEPARATE_ANALYSIS_ROOT")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[3] / "analysis"
+
+
+def analysis_worker_command() -> list[str]:
+    """Argument array for the isolated analysis worker (M2.17).
+
+    The worker is launched through the analysis environment's explicit
+    interpreter path; the application environment never imports torch.
+    """
+
+    root = analysis_root()
+    return [str(root / ".venv" / "bin" / "python"), str(root / "worker.py")]
+
+
 class WorkerSupervisor:
     """Owns one worker subprocess and its protocol exchange."""
 

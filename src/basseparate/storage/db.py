@@ -497,6 +497,103 @@ def _migration_10_to_11(conn: sqlite3.Connection) -> None:
 register_migration(11, _migration_10_to_11)
 
 
+#: M2.17 adds the separation job type and its progress stages. SQLite
+#: cannot alter a CHECK constraint, so ``media_jobs`` is rebuilt with the
+#: migration-9 pattern (rename, create, copy, drop).
+_MIGRATION_12_STATEMENTS: tuple[str, ...] = (
+    # SQLite rewrites REFERENCES clauses when a table is renamed, so both
+    # the parent (media_jobs) and its referencing table (export_artifacts)
+    # are rebuilt: rename, create the new shape, copy, drop.
+    "ALTER TABLE export_artifacts RENAME TO export_artifacts_old",
+    "ALTER TABLE media_jobs RENAME TO media_jobs_old",
+    """
+    CREATE TABLE media_jobs (
+        id                 TEXT PRIMARY KEY,
+        project_id         TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        import_id          TEXT REFERENCES imports(id) ON DELETE SET NULL,
+        job_type           TEXT NOT NULL
+                           CHECK (job_type IN ('probe', 'canonical_decode',
+                                               'monitoring_downmix', 'playback_rate',
+                                               'waveform', 'export', 'separation')),
+        state              TEXT NOT NULL DEFAULT 'queued'
+                           CHECK (state IN ('queued', 'running', 'completed',
+                                           'failed', 'cancelling', 'cancelled',
+                                           'interrupted')),
+        stage              TEXT
+                           CHECK (stage IN ('transferring', 'verifying', 'inspecting',
+                                            'decoding', 'preparing_playback',
+                                            'preparing_input', 'separating',
+                                            'building_waveform', 'verifying_stems',
+                                            'encoding', 'verifying_export', 'ready')),
+        progress_fraction  REAL CHECK (progress_fraction IS NULL
+                                       OR (progress_fraction >= 0
+                                           AND progress_fraction <= 1)),
+        progress_detail    TEXT,
+        result             TEXT,
+        error_code         TEXT,
+        error              TEXT,
+        max_threads        INTEGER NOT NULL DEFAULT 4,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        parameters         TEXT NOT NULL DEFAULT '{}'
+    )
+    """,
+    """
+    INSERT INTO media_jobs (
+        id, project_id, import_id, job_type, state, stage,
+        progress_fraction, progress_detail, result, error_code, error,
+        max_threads, created_at, updated_at, parameters
+    )
+    SELECT
+        id, project_id, import_id, job_type, state, stage,
+        progress_fraction, progress_detail, result, error_code, error,
+        max_threads, created_at, updated_at, parameters
+    FROM media_jobs_old
+    """,
+    """
+    CREATE TABLE export_artifacts (
+        id                TEXT PRIMARY KEY,
+        job_id            TEXT NOT NULL REFERENCES media_jobs(id) ON DELETE CASCADE,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        result_set_id     TEXT NOT NULL,
+        stem_id           TEXT NOT NULL,
+        audio_asset_id    TEXT NOT NULL,
+        sha256            TEXT NOT NULL,
+        relative_path     TEXT NOT NULL,
+        download_filename TEXT NOT NULL,
+        created_at        TEXT NOT NULL,
+        record_json       TEXT NOT NULL
+    )
+    """,
+    """
+    INSERT INTO export_artifacts (
+        id, job_id, project_id, result_set_id, stem_id, audio_asset_id,
+        sha256, relative_path, download_filename, created_at, record_json
+    )
+    SELECT
+        id, job_id, project_id, result_set_id, stem_id, audio_asset_id,
+        sha256, relative_path, download_filename, created_at, record_json
+    FROM export_artifacts_old
+    """,
+    "DROP TABLE export_artifacts_old",
+    "DROP TABLE media_jobs_old",
+    "CREATE INDEX IF NOT EXISTS idx_media_jobs_project ON media_jobs(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_media_jobs_state ON media_jobs(state)",
+    "CREATE INDEX IF NOT EXISTS idx_export_artifacts_project "
+    "ON export_artifacts(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_export_artifacts_job ON export_artifacts(job_id)",
+    "CREATE INDEX IF NOT EXISTS idx_export_artifacts_sha256 ON export_artifacts(sha256)",
+)
+
+
+def _migration_11_to_12(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_12_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(12, _migration_11_to_12)
+
+
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
 

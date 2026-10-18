@@ -40,8 +40,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   retain one previous, atomic publish; routes + PortableSavePanel;
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
-- **Current work package:** M2.17 (API and command additions, spec §19)
-  — not started (projectPlans/milestone2.md line 1379).
+- **Current work package:** M2.18 (test matrix, spec §20) — not
+  started (projectPlans/milestone2.md line 1443).
+- **M2.17:** complete — this commit + ledger-hash follow-up (analysis
+  interfaces and separation scheduling, spec §19; dedicated analysis
+  worker + two job classes, runs/hardware/models routes, migration 12;
+  41 new backend tests; backend 1409 pytest green, frontend 566 Vitest
+  green).
 - **M2.16:** complete — `4027815` + this ledger-hash follow-up (open
   portable projects, spec §18; `portable/open.py` + errors/bundle,
   archive upload routes, single-transaction import, frontend
@@ -107,21 +112,22 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.17 (API and command additions, spec §19,
-  projectPlans/milestone2.md line 1379): hardware/models/runs/results
-  interfaces, analysis qualification state, and analysis-worker wiring.
-  The e2e `app.spec.ts`
+- **Next action:** M2.18 (test matrix, spec §20,
+  projectPlans/milestone2.md line 1443): bundled-model integrity,
+  separation correctness, worker/device failures, mixer timing,
+  stretching, loops, portable projects, exports, and acceptance
+  evidence. The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
   if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is the M2.16 commit
-  (`M2.16: open portable projects (spec §18)`) with this ledger-hash
-  follow-up on top; the tree is clean.
+- **Resume procedure:** read this file; HEAD is the M2.17 commit
+  (`M2.17: analysis interfaces and separation scheduling (spec §19)`)
+  with this ledger-hash follow-up on top; the tree is clean.
   Baseline established 2026-10-18:
-  `.venv/bin/python -m pytest tests/ -q` (1368 passed; the
+  `.venv/bin/python -m pytest tests/ -q` (1409 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/basseparate` (79 files clean),
+  `.venv/bin/python -m mypy src/basseparate` (82 files clean),
   `cd frontend && npx vitest run` (566 passed),
   `cd frontend && npx tsc --noEmit` (no errors),
   `cd frontend && npx prettier --check "src/**/*.{ts,tsx,css}" "tests/**/*.{ts,tsx}"` (clean),
@@ -3544,6 +3550,69 @@ clean-install entry point); CSS; 16 tests. Contract regenerated
 **Final gates (2026-10-18):** backend 1368 pytest green; ruff
 `src/ tests/` clean; mypy 79 files clean; frontend 566 Vitest green;
 tsc 0 errors; prettier clean; Vite build OK; contract in sync.
+
+## M2.17 — Analysis interfaces and separation scheduling (spec §19)
+
+**Phase 1 (2026-10-18):** plan written (`projectPlans/m2.17-plan.md`).
+Design: dedicated analysis worker (`analysis/worker.py`, protocol v2,
+launched with the analysis environment interpreter per §4.1.7) that
+relays `analysis/separate.py` progress and cancellation; `JobManager`
+gains a second (analysis) job class + lazily started supervisor so
+separation never blocks playback preparation; `POST /projects/{id}/runs`
+resolves the reference plan/device/cache key, coalesces live runs, serves
+valid cache hits, else creates a queued run + separation job;
+preparation (M2.4) runs in the dispatch hook; the M2.6 publisher
+validates/publishes stems; `GET /hardware` wraps the M2.2 device
+discovery/qualification store; `GET /models` + `POST /models/{id}/verify`
+wrap the M2.3 registry/bundle verification (local hashing, no network);
+`GET /projects/{id}/separation-results` aliases the result-set listing.
+Migration 12 extends the `media_jobs` job-type/stage CHECK constraints
+(`separation`, `preparing_input`, `separating`); schema v12.
+
+**Phase 2 (2026-10-18):** `JobType.SEPARATION`, `JobStage.PREPARING_INPUT`
+and `SEPARATING`; migration 12 rebuilds `media_jobs` (and
+`export_artifacts`, whose FK SQLite rewrites on the parent rename) with
+the new CHECK values; `DATABASE_SCHEMA_VERSION` = 12; v11 baselines
+updated.
+
+**Phase 3 (2026-10-18):** `analysis/worker.py`: protocol-v2 worker for
+the isolated environment (stdlib only at startup), capabilities declare
+`analysis.separation.v1`, `run` spawns `analysis/separate.py` through
+the explicit interpreter, relays JSON-lines progress, writes the cancel
+flag, and reports completed (attempt dir, labels, record) / cancelled /
+failed. `analysis_worker_command()` + `analysis_root()` (env override);
+10 protocol tests with a fake separator (no torch).
+
+**Phase 4 (2026-10-18):** `JobManager` two-class scheduling: a media
+queue/supervisor (eager, unchanged) and an analysis queue with a lazily
+started supervisor stopped when idle; cancellation routes to the running
+class; the analysis receive timeout is 900 s. Four tests: completion,
+missing runtime (`ANALYSIS_RUNTIME_UNAVAILABLE`), cancellation, and a
+media job completing while a slow separation runs.
+
+**Phase 5 (2026-10-18):** `media/separation_request.py` (reference mix
+§6.1, model identity, requested parameters, §9.1 cache key/transform
+hash, device profile); app dispatch hook prepares the model input
+(M2.4) into job staging and writes the profile; the separation
+publisher calls the M2.6 `publish_separation_result` with the run,
+project-rate reference, geometry, and cache key, and queues stem
+waveforms. 14 planner/publisher tests.
+
+**Phase 6 (2026-10-18):** `api/analysis_routes.py`: `POST
+/projects/{id}/runs` (reference plan, device rules incl. explicit CPU,
+cache key, live-run coalescing with stale-run healing, cached results,
+queued run + job; failures never leave a live run without a job), `GET
+/projects/{id}/separation-results` (spec-name alias), `GET /hardware`
+(discovery + qualification store + default selection), `GET /models`
+(registry + cheap bundle state + recorded verification + qualification),
+`POST /models/{id}/verify` (local hash verification recorded under
+`state/analysis/models.json`). `SeparationRepository.fail_run` and the
+verification store. 13 route tests.
+
+**Final gates (2026-10-18):** backend 1409 pytest green; ruff
+`src/ tests/` clean (also `analysis/worker.py`); mypy 82 files clean;
+frontend 566 Vitest green; tsc 0 errors; prettier clean; Vite build OK;
+contract regenerated and in sync.
 
 ## Architectural decisions so far
 

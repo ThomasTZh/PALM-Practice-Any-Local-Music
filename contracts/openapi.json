@@ -852,6 +852,102 @@
         "title": "CreateProjectRequest",
         "type": "object"
       },
+      "CreateRunRequest": {
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "mode": {
+            "default": "four_stems",
+            "enum": [
+              "four_stems",
+              "bass_pair"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "seed": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "title": "CreateRunRequest",
+        "type": "object"
+      },
+      "CreateRunResponse": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "coalesced": {
+            "default": false,
+            "title": "Coalesced",
+            "type": "boolean"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "result_set_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Set Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "title": "CreateRunResponse",
+        "type": "object"
+      },
       "DeleteLoopOp": {
         "description": "Delete a saved loop (M2.11, spec \u00a713.2.8).\n\nWhen the deleted loop was active, the selection is cleared and\nlooping disabled; other loops are untouched.",
         "properties": {
@@ -893,6 +989,106 @@
           "marker_id"
         ],
         "title": "DeleteMarkerOp",
+        "type": "object"
+      },
+      "DeviceKind": {
+        "description": "Kind of analysis device.",
+        "enum": [
+          "gpu",
+          "cpu"
+        ],
+        "title": "DeviceKind",
+        "type": "string"
+      },
+      "DeviceRecord": {
+        "description": "One selectable analysis device (GPU or CPU).\n\nInvariants:\n- A ``qualified`` record must carry ``last_qualified_at``.\n- A ``failed`` record must carry ``unavailability_reason``.\n- A GPU record must carry ``vram_total_mib``; ``vram_free_mib`` is the\n  last measured value and may be ``None`` until refreshed.\n- A CPU record carries no VRAM facts.",
+        "properties": {
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "identifier": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Identifier",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind"
+          },
+          "last_qualification_detail": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Qualification Detail"
+          },
+          "last_qualified_at": {
+            "anyOf": [
+              {
+                "description": "UTC timestamp in ISO 8601 form",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Qualified At"
+          },
+          "qualification_status": {
+            "$ref": "#/components/schemas/QualificationStatus",
+            "default": "untested"
+          },
+          "unavailability_reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailability Reason"
+          },
+          "vram_free_mib": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Free Mib"
+          },
+          "vram_total_mib": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Total Mib"
+          }
+        },
+        "required": [
+          "kind",
+          "identifier",
+          "display_name"
+        ],
+        "title": "DeviceRecord",
         "type": "object"
       },
       "DuplicateLoopOp": {
@@ -1124,6 +1320,48 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HardwareResponse": {
+        "properties": {
+          "cpu_offered": {
+            "default": false,
+            "title": "Cpu Offered",
+            "type": "boolean"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceRecord"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devices"
+        ],
+        "title": "HardwareResponse",
+        "type": "object"
+      },
       "HealthResponse": {
         "properties": {
           "api_version": {
@@ -1308,6 +1546,8 @@
           "inspecting",
           "decoding",
           "preparing_playback",
+          "preparing_input",
+          "separating",
           "building_waveform",
           "verifying_stems",
           "encoding",
@@ -1337,7 +1577,8 @@
           "monitoring_downmix",
           "playback_rate",
           "waveform",
-          "export"
+          "export",
+          "separation"
         ],
         "title": "JobType",
         "type": "string"
@@ -1537,14 +1778,162 @@
         "properties": {
           "models": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/ModelStatus"
             },
             "title": "Models",
             "type": "array"
           }
         },
+        "required": [
+          "models"
+        ],
         "title": "ModelListResponse",
+        "type": "object"
+      },
+      "ModelStatus": {
+        "properties": {
+          "bundle_dir": {
+            "title": "Bundle Dir",
+            "type": "string"
+          },
+          "bundle_state": {
+            "title": "Bundle State",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "input_channels": {
+            "title": "Input Channels",
+            "type": "integer"
+          },
+          "input_sample_rate": {
+            "title": "Input Sample Rate",
+            "type": "integer"
+          },
+          "last_verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelVerificationInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "license_notice": {
+            "title": "License Notice",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "output_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Output Labels",
+            "type": "array"
+          },
+          "qualification_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualification Detail"
+          },
+          "qualification_status": {
+            "title": "Qualification Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "display_name",
+          "input_sample_rate",
+          "input_channels",
+          "output_labels",
+          "bundle_dir",
+          "bundle_state",
+          "qualification_status",
+          "license_notice"
+        ],
+        "title": "ModelStatus",
+        "type": "object"
+      },
+      "ModelVerificationInfo": {
+        "properties": {
+          "corrupt": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corrupt",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "verified_at": {
+            "title": "Verified At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "verified_at"
+        ],
+        "title": "ModelVerificationInfo",
+        "type": "object"
+      },
+      "ModelVerifyResponse": {
+        "properties": {
+          "corrupt": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corrupt",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "verified_at": {
+            "title": "Verified At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "verified_at",
+          "model_id"
+        ],
+        "title": "ModelVerifyResponse",
         "type": "object"
       },
       "ModuleListResponse": {
@@ -2404,6 +2793,16 @@
           "ready"
         ],
         "title": "ProjectStatus",
+        "type": "string"
+      },
+      "QualificationStatus": {
+        "description": "Qualification state of a device for the analysis runtime.\n\n- ``untested``: no qualification has been recorded for this device with\n  the current environment fingerprint.\n- ``qualified``: tensor, convolution, FFT, and a short model run all\n  passed on this device.\n- ``failed``: a qualification attempt failed; the reason is recorded in\n  ``unavailability_reason``.",
+        "enum": [
+          "untested",
+          "qualified",
+          "failed"
+        ],
+        "title": "QualificationStatus",
         "type": "string"
       },
       "ResultSetDetail": {
@@ -4022,6 +4421,25 @@
         "summary": "Download Artifact"
       }
     },
+    "/api/v1/hardware": {
+      "get": {
+        "description": "Device qualification and availability (spec \u00a74.4, \u00a719.1).",
+        "operationId": "get_hardware_api_v1_hardware_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Hardware"
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -4379,6 +4797,7 @@
     },
     "/api/v1/models": {
       "get": {
+        "description": "Registered bundled models with presence/verification state (\u00a719.1).",
         "operationId": "list_models_api_v1_models_get",
         "responses": {
           "200": {
@@ -4393,6 +4812,46 @@
           }
         },
         "summary": "List Models"
+      }
+    },
+    "/api/v1/models/{model_id}/verify": {
+      "post": {
+        "description": "Verify one bundled model by size and SHA-256 (spec \u00a719.1).\n\nLocal hashing only: no network, no inference. The result is recorded\nfor ``GET /models``.",
+        "operationId": "verify_model_api_v1_models__model_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelVerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Model"
       }
     },
     "/api/v1/modules": {
@@ -5400,6 +5859,102 @@
           }
         },
         "summary": "Get Result Set Detail"
+      }
+    },
+    "/api/v1/projects/{project_id}/runs": {
+      "post": {
+        "description": "Request a separation run (spec \u00a73.2, \u00a79.2).\n\nA live identical run is coalesced; a valid cached result is returned\nwithout a job; otherwise the run + job are created. Preparation and\ninference happen in the analysis worker.",
+        "operationId": "create_separation_run_api_v1_projects__project_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Separation Run"
+      }
+    },
+    "/api/v1/projects/{project_id}/separation-results": {
+      "get": {
+        "description": "Immutable result sets for the project (spec \u00a719.1 name).",
+        "operationId": "list_separation_results_api_v1_projects__project_id__separation_results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResultSetSummary"
+                  },
+                  "title": "Response List Separation Results Api V1 Projects  Project Id  Separation Results Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Separation Results"
       }
     },
     "/api/v1/projects/{project_id}/source-info": {

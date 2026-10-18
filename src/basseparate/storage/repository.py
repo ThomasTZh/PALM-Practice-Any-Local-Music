@@ -2393,6 +2393,48 @@ class SeparationRepository:
             conn.close()
         return run
 
+    def fail_run(
+        self, run_id: uuid.UUID, code: str, message: str
+    ) -> SeparationRun | None:
+        """Mark a live run failed (M2.17 scheduling/publication failure).
+
+        A run whose job disappeared or failed must never stay "live":
+        identical requests would coalesce onto it forever (§9.2.8).
+        Completed/terminal runs are returned unchanged.
+        """
+        run = self.get_run(run_id)
+        if run is None or run.status not in (
+            SeparationRunStatus.QUEUED,
+            SeparationRunStatus.RUNNING,
+        ):
+            return run
+        warnings = list(run.warnings) + [f"{code}: {message}"[:500]]
+        updates: dict[str, object] = {
+            "status": SeparationRunStatus.FAILED,
+            "warnings": warnings,
+        }
+        if run.started_at is not None:
+            # A queued run never started; the domain model requires an
+            # ended_at only after a started_at.
+            updates["ended_at"] = datetime.now(UTC)
+        failed = run.model_copy(update=updates)
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                "UPDATE separation_runs SET status = ?, record_json = ? WHERE id = ?",
+                (
+                    SeparationRunStatus.FAILED.value,
+                    failed.model_dump_json(),
+                    str(run_id),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot fail separation run: {exc}") from exc
+        finally:
+            conn.close()
+        return failed
+
     def get_run(self, run_id: uuid.UUID) -> SeparationRun | None:
         conn = _open(self._db_path)
         try:

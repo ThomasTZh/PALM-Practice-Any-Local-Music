@@ -28,6 +28,7 @@ from fastapi import FastAPI, Request
 from starlette.staticfiles import StaticFiles
 
 from basseparate import API_VERSION
+from basseparate.api.analysis_routes import router as analysis_router
 from basseparate.api.asset_routes import router as asset_router
 from basseparate.api.command_routes import router as command_router
 from basseparate.api.errors import ApiError, create_error_response
@@ -44,6 +45,7 @@ from basseparate.api.result_set_routes import router as result_set_router
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
+from basseparate.devices import NvidiaSmiError, discover_gpus
 from basseparate.domain.asset import AssetRecord
 from basseparate.domain.export import (
     ALTERNATE_EXPORT_SAMPLE_RATES,
@@ -52,15 +54,23 @@ from basseparate.domain.export import (
     export_download_filenames,
 )
 from basseparate.domain.import_record import TransferState
-from basseparate.domain.media_job import JobType, MediaJob
+from basseparate.domain.media_job import JobStage, JobType, MediaJob
 from basseparate.domain.project import (
     MAX_SAMPLE_RATE,
     MIN_SAMPLE_RATE,
     ProjectRecord,
 )
-from basseparate.domain.separation import StemRecord, ValidationStatus
+from basseparate.domain.separation import DeviceType, StemRecord, ValidationStatus
 from basseparate.jobs import JobManager, ParameterResolutionError, build_publishers
 from basseparate.media.downmix import MonitorSelectionError, pan_expression, resolve_downmix
+from basseparate.media.preparation import prepare_separation_input
+from basseparate.media.separation_request import (
+    SeparationRequestError,
+    model_manifest,
+    output_channel_count,
+    reference_mix_plan,
+)
+from basseparate.models import default_bundle_dir
 from basseparate.runtime_diagnostics import GpuPeakTracker, RuntimeDiagnostics
 from basseparate.storage import (
     ExportArtifactRepository,
@@ -262,6 +272,144 @@ def _waveform_parameters_for(
         "frame_count": audio.frame_count,
         "channel_count": audio.channel_count,
         "cache_dir": str(paths.cache / "waveforms" / asset.content_hash),
+    }
+
+
+async def _separation_parameters_for(
+    job: MediaJob,
+    staging_dir: Path,
+    projects: ProjectRepository,
+    separations: SeparationRepository,
+    paths: StoragePaths,
+    jobs: JobRepository,
+) -> dict[str, Any]:
+    """Prepare the model input and worker parameters for one run (M2.17).
+
+    Runs in the analysis scheduler before the worker starts: resolve the
+    run/project/reference mix, prepare the model-rate input (M2.4), write
+    the normalization profile, and hand the analysis worker absolute
+    paths plus the requested quality parameters. The publisher re-uses
+    the stored project-rate reference for reconstruction diagnostics.
+    """
+    raw_run_id = job.parameters.get("run_id")
+    if not isinstance(raw_run_id, str):
+        raise ParameterResolutionError(
+            "RUN_NOT_FOUND", "the separation job has no run id"
+        )
+    run = separations.get_run(uuid.UUID(raw_run_id))
+    if run is None:
+        raise ParameterResolutionError(
+            "RUN_NOT_FOUND", f"separation run {raw_run_id} no longer exists"
+        )
+    project = projects.get_project(run.project_id)
+    if project is None:
+        raise ParameterResolutionError(
+            "PROJECT_NOT_FOUND", f"project {run.project_id} no longer exists"
+        )
+    canonical = (
+        projects.get_asset(project.canonical_asset_id)
+        if project.canonical_asset_id
+        else None
+    )
+    monitoring = (
+        projects.get_asset(project.monitoring_asset_id)
+        if project.monitoring_asset_id
+        else None
+    )
+    try:
+        plan = reference_mix_plan(project, canonical, monitoring)
+    except SeparationRequestError as exc:
+        raise ParameterResolutionError("REFERENCE_MIX_UNAVAILABLE", str(exc)) from exc
+    reference_asset = monitoring if plan.kind == "multichannel" else canonical
+    if reference_asset is None or reference_asset.audio is None:
+        raise ParameterResolutionError(
+            "REFERENCE_MIX_UNAVAILABLE", "the reference mix asset is missing"
+        )
+    source_path = paths.resolve_asset_path(reference_asset.relative_path)
+    if not source_path.is_file():
+        raise ParameterResolutionError(
+            "REFERENCE_MIX_UNAVAILABLE",
+            f"the reference mix file is missing: {reference_asset.relative_path}",
+        )
+
+    if run.device_type is DeviceType.CPU:
+        device_argument = "cpu"
+    else:
+        try:
+            gpus = discover_gpus()
+        except NvidiaSmiError as exc:
+            raise ParameterResolutionError("DEVICE_UNAVAILABLE", str(exc)) from exc
+        index = next(
+            (i for i, gpu in enumerate(gpus) if gpu.uuid == run.gpu_uuid), None
+        )
+        if index is None:
+            raise ParameterResolutionError(
+                "DEVICE_UNAVAILABLE",
+                f"the selected GPU {run.gpu_uuid} is no longer present",
+            )
+        device_argument = f"cuda:{index}"
+
+    manifest = model_manifest()
+    parameters = run.requested_parameters or {}
+
+    def _number(name: str, default: float) -> float:
+        value = parameters.get(name, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ParameterResolutionError(
+                "INVALID_PARAMETERS", f"separation parameter {name!r} is invalid"
+            )
+        return float(value)
+
+    def on_progress(progress: Any) -> None:
+        jobs.set_progress(
+            job.id,
+            JobStage.PREPARING_INPUT,
+            getattr(progress, "fraction", None),
+            "preparing the model input",
+        )
+
+    try:
+        prepared = await prepare_separation_input(
+            plan=plan,
+            source_path=source_path,
+            source_rate=reference_asset.audio.sample_rate,
+            source_channels=reference_asset.audio.channel_count,
+            model_rate=manifest.input_sample_rate,
+            work_dir=staging_dir / "prepared",
+            max_threads=job.max_threads,
+            estimated_duration_seconds=(
+                project.duration_frames / project.sample_rate
+                if project.duration_frames and project.sample_rate
+                else None
+            ),
+            on_progress=on_progress,
+        )
+    except Exception as exc:  # noqa: BLE001 - reported as a job failure
+        raise ParameterResolutionError(
+            "SEPARATION_PREPARATION_FAILED",
+            f"could not prepare the model input: {exc}"[:2000],
+        ) from exc
+
+    profile_path = staging_dir / "profile.json"
+    profile_path.write_text(prepared.profile.model_dump_json(), encoding="utf-8")
+    return {
+        "run_id": str(run.id),
+        "input_path": str(prepared.final_path),
+        "profile_path": str(profile_path),
+        "out_dir": str(staging_dir / "analysis"),
+        "bundle_dir": str(default_bundle_dir(manifest)),
+        "device": device_argument,
+        "seed": run.random_seed,
+        "segment_seconds": _number("segment_seconds", 7.5),
+        "window_seconds": _number("window_seconds", 120.0),
+        "overlap_seconds": _number("overlap_seconds", 8.0),
+        "reference_path": str(source_path),
+        "source_asset_id": str(plan.asset_id),
+        "source_hash": plan.source_hash,
+        "sample_rate": reference_asset.audio.sample_rate,
+        "duration_frames": int(project.duration_frames or 0),
+        "channel_count": output_channel_count(plan),
+        "model_rate": manifest.input_sample_rate,
     }
 
 
@@ -492,6 +640,9 @@ def create_app(config: AppConfig) -> FastAPI:
                 cast(JobRepository, app.state.job_repository),
                 cache_repository,
                 export_repository,
+                separation_repository=cast(
+                    SeparationRepository, app.state.separation_repository
+                ),
             ),
             parameters_for=lambda job: _job_parameters_for(
                 job,
@@ -501,6 +652,14 @@ def create_app(config: AppConfig) -> FastAPI:
                 paths,
             ),
             worker_memory_limit_mb=config.media_worker_memory_limit_mb,
+            separation_parameters_for=lambda job, staging: _separation_parameters_for(
+                job,
+                staging,
+                cast(ProjectRepository, app.state.repository),
+                cast(SeparationRepository, app.state.separation_repository),
+                paths,
+                cast(JobRepository, app.state.job_repository),
+            ),
         )
         gpu_tracker = GpuPeakTracker(
             should_sample=lambda: app.state.job_manager.active_job_id is not None
@@ -559,6 +718,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(export_router)
     app.include_router(portable_router)
     app.include_router(open_router)
+    app.include_router(analysis_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

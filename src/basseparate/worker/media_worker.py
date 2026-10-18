@@ -616,13 +616,13 @@ def _execute_job(payload: RunPayload, cancel_event: threading.Event) -> None:
         elif payload.job_type is JobType.EXPORT:
             _run_export(payload, cancel_event)
         else:
-            # Defensive: every protocol-v2 type is implemented, but a newer
-            # protocol version may carry a type this worker does not know.
-            _send(  # type: ignore[unreachable]
+            # Defensive: separation runs in the analysis worker (M2.17);
+            # a newer protocol version may also carry an unknown type.
+            _send(
                 make_failed(
                     job_id,
                     ERR_NOT_IMPLEMENTED,
-                    f"job type {payload.job_type.value!r} is implemented in a later milestone",
+                    f"the media worker does not implement {payload.job_type.value!r}",
                 )
             )
     except (

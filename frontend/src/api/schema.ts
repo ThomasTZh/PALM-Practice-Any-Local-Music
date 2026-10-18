@@ -125,6 +125,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/hardware": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Hardware
+         * @description Device qualification and availability (spec §4.4, §19.1).
+         */
+        get: operations["get_hardware_api_v1_hardware_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -285,10 +305,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Models */
+        /**
+         * List Models
+         * @description Registered bundled models with presence/verification state (§19.1).
+         */
         get: operations["list_models_api_v1_models_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{model_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Model
+         * @description Verify one bundled model by size and SHA-256 (spec §19.1).
+         *
+         *     Local hashing only: no network, no inference. The result is recorded
+         *     for ``GET /models``.
+         */
+        post: operations["verify_model_api_v1_models__model_id__verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -689,6 +735,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Separation Run
+         * @description Request a separation run (spec §3.2, §9.2).
+         *
+         *     A live identical run is coalesced; a valid cached result is returned
+         *     without a job; otherwise the run + job are created. Preparation and
+         *     inference happen in the analysis worker.
+         */
+        post: operations["create_separation_run_api_v1_projects__project_id__runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/separation-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Separation Results
+         * @description Immutable result sets for the project (spec §19.1 name).
+         */
+        get: operations["list_separation_results_api_v1_projects__project_id__separation_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/source-info": {
         parameters: {
             query?: never;
@@ -1078,6 +1168,43 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** CreateRunRequest */
+        CreateRunRequest: {
+            /** Device */
+            device?: string | null;
+            /**
+             * Mode
+             * @default four_stems
+             * @enum {string}
+             */
+            mode: "four_stems" | "bass_pair";
+            /**
+             * Seed
+             * @default 0
+             */
+            seed: number;
+        };
+        /** CreateRunResponse */
+        CreateRunResponse: {
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /**
+             * Coalesced
+             * @default false
+             */
+            coalesced: boolean;
+            /** Device */
+            device?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Result Set Id */
+            result_set_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+        };
         /**
          * DeleteLoopOp
          * @description Delete a saved loop (M2.11, spec §13.2.8).
@@ -1111,6 +1238,42 @@ export interface components {
              * @enum {string}
              */
             type: "delete_marker";
+        };
+        /**
+         * DeviceKind
+         * @description Kind of analysis device.
+         * @enum {string}
+         */
+        DeviceKind: "gpu" | "cpu";
+        /**
+         * DeviceRecord
+         * @description One selectable analysis device (GPU or CPU).
+         *
+         *     Invariants:
+         *     - A ``qualified`` record must carry ``last_qualified_at``.
+         *     - A ``failed`` record must carry ``unavailability_reason``.
+         *     - A GPU record must carry ``vram_total_mib``; ``vram_free_mib`` is the
+         *       last measured value and may be ``None`` until refreshed.
+         *     - A CPU record carries no VRAM facts.
+         */
+        DeviceRecord: {
+            /** Display Name */
+            display_name: string;
+            /** Identifier */
+            identifier: string;
+            kind: components["schemas"]["DeviceKind"];
+            /** Last Qualification Detail */
+            last_qualification_detail?: string | null;
+            /** Last Qualified At */
+            last_qualified_at?: string | null;
+            /** @default untested */
+            qualification_status: components["schemas"]["QualificationStatus"];
+            /** Unavailability Reason */
+            unavailability_reason?: string | null;
+            /** Vram Free Mib */
+            vram_free_mib?: number | null;
+            /** Vram Total Mib */
+            vram_total_mib?: number | null;
         };
         /**
          * DuplicateLoopOp
@@ -1216,6 +1379,19 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HardwareResponse */
+        HardwareResponse: {
+            /**
+             * Cpu Offered
+             * @default false
+             */
+            cpu_offered: boolean;
+            /** Devices */
+            devices: components["schemas"]["DeviceRecord"][];
+            /** Reason */
+            reason?: string | null;
+            selected?: components["schemas"]["DeviceRecord"] | null;
+        };
         /** HealthResponse */
         HealthResponse: {
             /** Api Version */
@@ -1292,7 +1468,7 @@ export interface components {
          * @description Progress stages reported by workers (milestone1.md §6.6).
          * @enum {string}
          */
-        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "building_waveform" | "verifying_stems" | "encoding" | "verifying_export" | "ready";
+        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "preparing_input" | "separating" | "building_waveform" | "verifying_stems" | "encoding" | "verifying_export" | "ready";
         /**
          * JobState
          * @enum {string}
@@ -1302,7 +1478,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform" | "export";
+        JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform" | "export" | "separation";
         /**
          * MarkerRecord
          * @description A single marker annotation in a project (§17.1).
@@ -1397,9 +1573,55 @@ export interface components {
         /** ModelListResponse */
         ModelListResponse: {
             /** Models */
-            models?: {
-                [key: string]: unknown;
-            }[];
+            models: components["schemas"]["ModelStatus"][];
+        };
+        /** ModelStatus */
+        ModelStatus: {
+            /** Bundle Dir */
+            bundle_dir: string;
+            /** Bundle State */
+            bundle_state: string;
+            /** Display Name */
+            display_name: string;
+            /** Input Channels */
+            input_channels: number;
+            /** Input Sample Rate */
+            input_sample_rate: number;
+            last_verification?: components["schemas"]["ModelVerificationInfo"] | null;
+            /** License Notice */
+            license_notice: string;
+            /** Model Id */
+            model_id: string;
+            /** Output Labels */
+            output_labels: string[];
+            /** Qualification Detail */
+            qualification_detail?: string | null;
+            /** Qualification Status */
+            qualification_status: string;
+        };
+        /** ModelVerificationInfo */
+        ModelVerificationInfo: {
+            /** Corrupt */
+            corrupt?: string[];
+            /** Missing */
+            missing?: string[];
+            /** State */
+            state: string;
+            /** Verified At */
+            verified_at: string;
+        };
+        /** ModelVerifyResponse */
+        ModelVerifyResponse: {
+            /** Corrupt */
+            corrupt?: string[];
+            /** Missing */
+            missing?: string[];
+            /** Model Id */
+            model_id: string;
+            /** State */
+            state: string;
+            /** Verified At */
+            verified_at: string;
         };
         /** ModuleListResponse */
         ModuleListResponse: {
@@ -1772,6 +1994,19 @@ export interface components {
          * @enum {string}
          */
         ProjectStatus: "empty" | "ready";
+        /**
+         * QualificationStatus
+         * @description Qualification state of a device for the analysis runtime.
+         *
+         *     - ``untested``: no qualification has been recorded for this device with
+         *       the current environment fingerprint.
+         *     - ``qualified``: tensor, convolution, FFT, and a short model run all
+         *       passed on this device.
+         *     - ``failed``: a qualification attempt failed; the reason is recorded in
+         *       ``unavailability_reason``.
+         * @enum {string}
+         */
+        QualificationStatus: "untested" | "qualified" | "failed";
         /**
          * ResultSetDetail
          * @description A result set with its stems and run provenance (spec §10.1.6).
@@ -2609,6 +2844,26 @@ export interface operations {
             };
         };
     };
+    get_hardware_api_v1_hardware_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HardwareResponse"];
+                };
+            };
+        };
+    };
     health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -2901,6 +3156,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelListResponse"];
+                };
+            };
+        };
+    };
+    verify_model_api_v1_models__model_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelVerifyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3647,6 +3933,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultSetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_separation_run_api_v1_projects__project_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_separation_results_api_v1_projects__project_id__separation_results_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultSetSummary"][];
                 };
             };
             /** @description Validation Error */

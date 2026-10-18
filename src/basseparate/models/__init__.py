@@ -27,6 +27,11 @@ from basseparate.models.registry import (
     RegistryError,
     get_manifest,
 )
+from basseparate.models.verification import (
+    VERIFICATION_STORE_VERSION,
+    VerificationRecord,
+    VerificationStore,
+)
 
 __all__ = [
     "REGISTRY",
@@ -45,4 +50,7 @@ __all__ = [
     "record_qualification",
     "sha256_of",
     "verify_bundle",
+    "VERIFICATION_STORE_VERSION",
+    "VerificationRecord",
+    "VerificationStore",
 ]

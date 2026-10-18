@@ -35,6 +35,7 @@ class JobType(StrEnum):
     PLAYBACK_RATE = "playback_rate"
     WAVEFORM = "waveform"
     EXPORT = "export"
+    SEPARATION = "separation"
 
 
 class JobState(StrEnum):
@@ -55,6 +56,8 @@ class JobStage(StrEnum):
     INSPECTING = "inspecting"
     DECODING = "decoding"
     PREPARING_PLAYBACK = "preparing_playback"
+    PREPARING_INPUT = "preparing_input"
+    SEPARATING = "separating"
     BUILDING_WAVEFORM = "building_waveform"
     VERIFYING_STEMS = "verifying_stems"
     ENCODING = "encoding"

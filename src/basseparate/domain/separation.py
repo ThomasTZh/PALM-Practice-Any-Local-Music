@@ -211,6 +211,26 @@ class SeparationResultSet(BaseModel):
         return self
 
 
+class SeparationJobResult(BaseModel):
+    """The analysis worker's ``completed`` payload (M2.17, §19.5).
+
+    ``attempt_dir`` holds the model-rate stems (one ``<label>.pcm`` per
+    label); ``record`` is the separator's full run record (window
+    policy, attempts, timings) kept for provenance and diagnostics.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    status: str = Field(min_length=1, max_length=64)
+    attempt_dir: str = Field(min_length=1)
+    record_path: str = Field(min_length=1)
+    stem_labels: list[str] = Field(min_length=1)
+    frames: int | None = Field(default=None, ge=1)
+    device: str | None = None
+    elapsed_seconds: float | None = Field(default=None, ge=0)
+    record: dict[str, Any] = Field(default_factory=dict)
+
+
 class StemRecord(BaseModel):
     """One instrument output of a result set (spec §3.4)."""
 

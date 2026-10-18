@@ -163,10 +163,17 @@ class TestModulesAndModels:
         assert resp.status_code == 200
         assert resp.json()["modules"] == []
 
-    def test_models_empty(self, client: TestClient, auth_headers: dict) -> None:
+    def test_models_lists_the_registry(self, client: TestClient, auth_headers: dict) -> None:
         resp = client.get("/api/v1/models", headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.json()["models"] == []
+        models = resp.json()["models"]
+        assert [model["model_id"] for model in models] == ["htdemucs_ft"]
+        model = models[0]
+        assert model["input_sample_rate"] == 44100
+        assert model["input_channels"] == 2
+        assert model["output_labels"] == ["drums", "bass", "other", "vocals"]
+        assert model["bundle_state"] in {"available", "missing", "corrupt"}
+        assert model["qualification_status"] == "not-qualified"
 
 
 class TestRequestTracing:

@@ -14,6 +14,7 @@ and the project source fields are re-set to the same values.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import shutil
 import uuid
@@ -29,7 +30,7 @@ from basseparate.domain.import_record import (
     ProbeResult,
     TransferState,
 )
-from basseparate.domain.media_job import JobState, JobType, MediaJob
+from basseparate.domain.media_job import JobStage, JobState, JobType, MediaJob
 from basseparate.domain.project import ProjectRecord
 from basseparate.domain.representation import (
     AudioRepresentation,
@@ -43,6 +44,7 @@ from basseparate.domain.representation import (
     compute_playback_key,
     compute_transform_key,
 )
+from basseparate.domain.separation import SeparationJobResult, SourceIdentity
 from basseparate.domain.waveform import (
     WaveformManifest,
     WaveformResult,
@@ -56,6 +58,7 @@ from basseparate.media.downmix import (
     standard_51_matrix,
 )
 from basseparate.media.preparation import sha256_file
+from basseparate.media.publication import publish_separation_result
 from basseparate.media.waveform import validate_tile_bytes
 from basseparate.storage import (
     ExportArtifactRepository,
@@ -63,6 +66,7 @@ from basseparate.storage import (
     JobRepository,
     ProjectRepository,
     RepresentationRepository,
+    SeparationRepository,
     StoragePaths,
     WaveformCacheRepository,
 )
@@ -637,6 +641,88 @@ def _publish_export(
     exports.publish_artifacts(job.id, artifacts)
 
 
+def _publish_separation(
+    job: MediaJob,
+    result: dict[str, Any],
+    projects: ProjectRepository,
+    separations: SeparationRepository,
+    paths: StoragePaths,
+    job_repository: JobRepository,
+) -> None:
+    """Validate and publish a finished analysis run's stems (M2.17, §8).
+
+    The analysis worker wrote model-rate stems to ``attempt_dir``; the
+    M2.6 pipeline restores them to the project representation, validates
+    them, derives the Bass + Others residual in bass-pair mode, moves the
+    assets into the content-addressed store, and publishes the immutable
+    result set in one transaction. The run is marked complete by that
+    same transaction.
+    """
+    payload = SeparationJobResult(**result)
+    raw_run_id = job.parameters.get("run_id")
+    if not isinstance(raw_run_id, str) or not raw_run_id:
+        raise PublishError("the separation job has no run id")
+    run = separations.get_run(uuid.UUID(raw_run_id))
+    if run is None:
+        raise PublishError(f"separation run {raw_run_id} no longer exists")
+    project = projects.get_project(run.project_id)
+    if project is None:
+        raise PublishError(f"project {run.project_id} no longer exists")
+    if project.sample_rate is None or project.duration_frames is None:
+        raise PublishError("the project has no source geometry")
+
+    def _string_parameter(name: str) -> str:
+        value = job.parameters.get(name)
+        if not isinstance(value, str) or not value:
+            raise PublishError(f"separation job parameter {name!r} is missing")
+        return value
+
+    def _int_parameter(name: str) -> int:
+        value = job.parameters.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise PublishError(f"separation job parameter {name!r} is missing")
+        return value
+
+    attempt_dir = Path(payload.attempt_dir)
+    if not attempt_dir.is_dir():
+        raise PublishError(f"the analysis attempt directory is missing: {attempt_dir}")
+    staging_dir = paths.runtime / "jobs" / job.id.hex / "staging"
+
+    def on_progress(progress: Any) -> None:
+        job_repository.set_progress(
+            job.id,
+            JobStage.VERIFYING_STEMS,
+            getattr(progress, "fraction", None),
+            None,
+        )
+
+    asyncio.run(
+        publish_separation_result(
+            run=run,
+            staging_dir=staging_dir,
+            attempt_dir=attempt_dir,
+            stem_labels=payload.stem_labels,
+            reference_path=Path(_string_parameter("reference_path")),
+            source=SourceIdentity(
+                asset_id=uuid.UUID(_string_parameter("source_asset_id")),
+                source_hash=_string_parameter("source_hash"),
+                sample_rate=_int_parameter("sample_rate"),
+                duration_frames=_int_parameter("duration_frames"),
+            ),
+            sample_rate=project.sample_rate,
+            duration_frames=project.duration_frames,
+            channel_count=_int_parameter("channel_count"),
+            asset_dir=paths.data / "assets",
+            separation_repository=separations,
+            cache_key=run.cache_key,
+            model_rate=_int_parameter("model_rate"),
+            job_repository=job_repository,
+            max_threads=job.max_threads,
+            on_progress=on_progress,
+        )
+    )
+
+
 def build_publishers(
     import_repository: ImportRepository,
     project_repository: ProjectRepository,
@@ -645,8 +731,10 @@ def build_publishers(
     job_repository: JobRepository,
     cache_repository: WaveformCacheRepository,
     export_repository: ExportArtifactRepository,
+    *,
+    separation_repository: SeparationRepository | None = None,
 ) -> Publisher:
-    """Dispatch verified job results to their publisher (M1.4-M1.8, M2.13)."""
+    """Dispatch verified job results to their publisher (M1.4-M1.8, M2.13/M2.17)."""
 
     def publish(job: MediaJob, result: dict[str, Any]) -> None:
         if job.job_type is JobType.PROBE:
@@ -691,6 +779,17 @@ def build_publishers(
                 project_repository,
                 export_repository,
                 paths,
+            )
+        elif job.job_type is JobType.SEPARATION:
+            if separation_repository is None:
+                raise PublishError("no separation repository is configured")
+            _publish_separation(
+                job,
+                result,
+                project_repository,
+                separation_repository,
+                paths,
+                job_repository,
             )
 
     return publish

@@ -259,9 +259,15 @@ def _insert_assets(
     rows: tuple[tuple[uuid.UUID, str, str, str, str, int], ...],
 ) -> None:
     for asset_id, content_hash, role, relative_path, media_type, byte_count in rows:
+        # PCM assets carry audio metadata (the separation planner and the
+        # publication pipeline read it); the source original is an opaque
+        # upload file and stays without audio facts.
+        pcm = media_type == "audio/pcm"
         conn.execute(
             "INSERT INTO assets (id, content_hash, role, relative_path, media_type, "
-            "byte_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "byte_count, created_at, audio_sample_rate, audio_channel_count, "
+            "audio_frame_count, audio_sample_format) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(asset_id),
                 content_hash,
@@ -270,6 +276,10 @@ def _insert_assets(
                 media_type,
                 byte_count,
                 _now_z(),
+                48_000 if pcm else None,
+                2 if pcm else None,
+                byte_count // (4 * 2) if pcm else None,
+                "f32le" if pcm else None,
             ),
         )
 

@@ -92,10 +92,6 @@ class ModuleListResponse(BaseModel):
     modules: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class ModelListResponse(BaseModel):
-    models: list[dict[str, Any]] = Field(default_factory=list)
-
-
 def _is_ready(request: Request) -> bool:
     return bool(getattr(request.app.state, "ready", False))
 
@@ -182,6 +178,3 @@ async def list_modules() -> ModuleListResponse:
     return ModuleListResponse(modules=[])
 
 
-@router.get("/models", response_model=ModelListResponse)
-async def list_models() -> ModelListResponse:
-    return ModelListResponse(models=[])
