@@ -40,8 +40,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   retain one previous, atomic publish; routes + PortableSavePanel;
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
-- **Current work package:** M2.20–M2.21 (performance targets and final
-  acceptance evidence) — in progress.
+- **Current work package:** none — all functional work packages
+  (M2.1–M2.18) are complete. The practical acceptance remains partial:
+  GPU performance, the five-recording workflow, the 60-minute playback
+  run, and the human listening review await suitable hardware and a human
+  reviewer (see M2.19/M2.20–M2.21 evidence).
+- **M2.20–M2.21:** complete — this commit + ledger-hash follow-up
+  (performance targets §21.1–21.3 and final checklist §21.4/§22 evidence;
+  measured CPU RTF plus explicit unverified/human-only items).
 - **M2.19:** complete — `ac40bc1` + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
@@ -123,19 +129,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.19 (real separation acceptance): run the
-  bundled `htdemucs_ft` offline on the five `audio2test/` recordings
-  with the analysis environment, measuring wall time, real-time factor,
-  peak VRAM and host RAM, and record the objective results
-  (`docs/evidence/m2.19-...`). The §21.4 listening review is human-only
-  and is reported as not performed by the agent. M2.20/M2.21 cover the
-  performance targets and the final checklist. The e2e `app.spec.ts`
+- **Next action:** practical acceptance on a machine with a working
+  NVIDIA driver: qualify the GPU, run the five `audio2test/` recordings
+  through the real pipeline, measure wall time/RTF/peak VRAM/RAM, run the
+  60-minute playback test, and perform the §21.4 human listening review.
+  The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
   if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is the M2.18 commit
-  (`M2.18: test matrix (spec §20)`) with this ledger-hash follow-up on
-  top; the tree is clean.
+- **Resume procedure:** read this file; HEAD is the M2.20–M2.21 commit
+  (`M2.20-M2.21: performance targets and final acceptance evidence`)
+  with this ledger-hash follow-up on top; the tree is clean.
   Baseline established 2026-10-18:
   `.venv/bin/python -m pytest tests/ -q` (1412 passed; the
   job-manager timing test and `test_stderr_does_not_corrupt_protocol`
@@ -3657,6 +3661,18 @@ frames, 78.1 s (RTF 6.51×), peak host RSS 2.04 GiB, bundle verified
 locally, network flags set before torch. The five full recordings
 (≈18.4 min audio, ≈2 h at the measured CPU RTF), GPU/VRAM measurements,
 and the human listening review remain open and are not claimed.
+
+## M2.20–M2.21 — Performance targets and final acceptance
+
+**2026-10-18:** `docs/evidence/m2.20-performance-and-acceptance.md`.
+Records the measured targets (CPU RTF 6.51×, peak RSS 2.04 GiB for the
+M2.19 excerpt; earlier M2.9/M2.10/M2.12 playback and latency evidence),
+the responsiveness architecture (event loop never blocked; cancellation
+acknowledged immediately), and the §22 final checklist with explicit
+**partial/not-verified/human-only** statuses. GPU performance, all five
+recordings, the 60-minute playback run, and the listening review are not
+claimed. No functional work packages remain; the milestone's automated
+surface is complete (backend 1412 pytest, frontend 566 Vitest).
 
 ## Architectural decisions so far
 
