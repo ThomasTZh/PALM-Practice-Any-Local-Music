@@ -43,7 +43,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Current work package:** M2.19 (real separation acceptance evidence)
   — not started; M2.20 (performance targets, spec §21.1–21.3) and M2.21
   (practical acceptance + final checklist, §21.4/§22) follow.
-- **M2.18:** complete — this commit + ledger-hash follow-up (test matrix,
+- **M2.18:** complete — `aa77677` + this ledger-hash follow-up (test matrix,
   spec §20; mapping evidence doc + 3 gap tests; backend 1412 pytest
   green, frontend 566 Vitest green).
 - **M2.17:** complete — `76b8f06` + this ledger-hash follow-up (analysis
@@ -79,8 +79,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `76b8f06` — M2.17 (analysis interfaces and separation
-  scheduling); this ledger-hash follow-up on top. `4027815` — M2.16
+- **Last commit:** `aa77677` — M2.18 (test matrix); this ledger-hash
+  follow-up on top. `76b8f06` — M2.17 (analysis interfaces and
+  separation scheduling); `59f7f09` (ledger: M2.17 hash) on top.
+  `4027815` — M2.16
   (open portable projects); `cb45811` (ledger: M2.16 hash) on top.
   `8fc239d` — M2.15 (safely save portable
   projects); `5fbb6ff` (ledger: M2.15 hash) on top. `ec0b1eb` — M2.14
