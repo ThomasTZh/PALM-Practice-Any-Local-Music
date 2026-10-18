@@ -47,7 +47,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.20–M2.21:** complete — `a24357f` + this ledger-hash follow-up
   (performance targets §21.1–21.3 and final checklist §21.4/§22 evidence;
   measured CPU RTF plus explicit unverified/human-only items).
-- **M2.19:** complete — `ac40bc1` + `ba28fa2` + GPU acceptance + this ledger-hash follow-up (real offline
+- **M2.19:** complete — `ac40bc1` + `ba28fa2` + `99f06f1` + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
 - **M2.18:** complete — `aa77677` + this ledger-hash follow-up (test matrix,
@@ -86,8 +86,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `ba28fa2` — M2.19 (backend end-to-end acceptance and
-  publisher fix); this ledger-hash follow-up on top. `a24357f` — M2.20–M2.21
+- **Last commit:** `99f06f1` — M2.19 (five-recording GPU acceptance
+  evidence); this ledger-hash follow-up on top. `ba28fa2` — M2.19
+  (backend end-to-end acceptance and publisher fix); `ede851f` (ledger:
+  M2.19 follow-up hash) on top. `a24357f` — M2.20–M2.21
   (performance targets and final acceptance evidence); `ce47d12` (ledger:
   M2.20–M2.21 hash) on top. `ac40bc1` —
   M2.19 (real separator acceptance, partial); `44ea328` (ledger: M2.19
