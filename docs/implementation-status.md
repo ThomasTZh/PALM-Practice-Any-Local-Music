@@ -42,7 +42,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   green, frontend 550 Vitest green).
 - **Current work package:** M2.17 (API and command additions, spec §19)
   — not started (projectPlans/milestone2.md line 1379).
-- **M2.16:** complete — this commit + ledger-hash follow-up (open
+- **M2.16:** complete — `4027815` + this ledger-hash follow-up (open
   portable projects, spec §18; `portable/open.py` + errors/bundle,
   archive upload routes, single-transaction import, frontend
   `OpenProjectPanel`; 47 new backend tests (38 open + 9 routes), 16 new
@@ -70,9 +70,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `8fc239d` — M2.15 (safely save portable
-  projects); this ledger-hash follow-up on top. `ec0b1eb` — M2.14 (portable project
-  format); `744e165` (ledger: M2.14 hash) on top. `ff350c8` — M2.13
+- **Last commit:** `4027815` — M2.16 (open portable projects); this
+  ledger-hash follow-up on top. `8fc239d` — M2.15 (safely save portable
+  projects); `5fbb6ff` (ledger: M2.15 hash) on top. `ec0b1eb` — M2.14
+  (portable project format); `744e165` (ledger: M2.14 hash) on top.
+  `ff350c8` — M2.13
   (WAV stem export); `4cdf9fc` (ledger: M2.13 hash) on top. `0e88c7a` — M2.12 (extended buffering
   and resource limits); `1b79846` (ledger: M2.12 hash) on top;
   `f65370a` — M2.11 (saved practice loops);
