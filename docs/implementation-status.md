@@ -40,10 +40,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   retain one previous, atomic publish; routes + PortableSavePanel;
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
-- **Current work package:** none — all functional work packages
+- **Pause point (2026-10-18):** all functional work packages
   (M2.1–M2.18) are complete and the five-recording GPU analysis
-  acceptance passed (M2.19). Remaining acceptance is the 60-minute
-  playback/latency measurement and the human listening review.
+  acceptance passed (M2.19). Paused for the human listening review;
+  materials in `/tmp/opencode/listening-review/` (24-bit WAV: reference,
+  four stems, Others sum, Bass+Others) and the checklist in
+  `docs/evidence/m2.21-listening-review.md`. Session record:
+  `docs/evidence/session-2026-10-18-handover.md`. Remaining after the
+  review: the 60-minute playback/latency measurement.
 - **M2.20–M2.21:** complete — `a24357f` + this ledger-hash follow-up
   (performance targets §21.1–21.3 and final checklist §21.4/§22 evidence;
   measured CPU RTF plus explicit unverified/human-only items).
@@ -3706,6 +3710,17 @@ job row, so the publisher now re-derives the reference mix, source
 identity, geometry, and model rate from the run/project (regression test
 added). Also added the §20.7.3 save-while-separation-queued test.
 Final gates: backend suite green, ruff/mypy/frontend gates unchanged.
+
+## M2.21 — Listening review setup (pause point)
+
+**2026-10-18:** the five GPU acceptance runs' stems were converted to
+24-bit 44.1 kHz WAVs under `/tmp/opencode/listening-review/<slug>/`
+(`reference`, `drums`, `bass`, `other`, `vocals`, `others` =
+drums+other+vocals, `bass_plus_others`), with a README and the §21.4
+checklist in `docs/evidence/m2.21-listening-review.md`. The session
+handover is `docs/evidence/session-2026-10-18-handover.md`. Work is
+paused here for the human review; the 60-minute playback measurement
+follows it.
 
 ## Architectural decisions so far
 
