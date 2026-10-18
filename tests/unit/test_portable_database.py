@@ -101,7 +101,7 @@ class TestPortableDatabase:
         build_portable_database(seed.db_path, seed.project_a, destination)
         conn = sqlite3.connect(destination)
         try:
-            assert conn.execute("PRAGMA user_version").fetchone()[0] == 10
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == 11
             tables = {
                 row[0]
                 for row in conn.execute(

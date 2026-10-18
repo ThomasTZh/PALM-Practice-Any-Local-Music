@@ -498,6 +498,92 @@ class PortableSaveConflictError(ApiError):
         )
 
 
+class ArchiveBadFilenameError(ApiError):
+    """The uploaded open target is not a ``.basseparate`` archive."""
+
+    def __init__(self, filename: str) -> None:
+        super().__init__(
+            code="ARCHIVE_BAD_FILENAME",
+            message="A project archive file must end in .basseparate",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"filename": filename},
+        )
+
+
+class ArchiveSizeLimitError(ApiError):
+    """The declared archive transfer size exceeds the configured cap."""
+
+    def __init__(self, declared_bytes: int, limit: int) -> None:
+        super().__init__(
+            code="ARCHIVE_SIZE_LIMIT",
+            message=f"The project archive is {declared_bytes} bytes, limit is {limit}",
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            details={"declared_bytes": declared_bytes, "limit": limit},
+        )
+
+
+class OpenSessionNotFoundError(ApiError):
+    """The open session is unknown or has expired."""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(
+            code="OPEN_SESSION_NOT_FOUND",
+            message=f"The open session does not exist: {session_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class OpenSessionIncompleteError(ApiError):
+    """The archive transfer is not fully acknowledged."""
+
+    def __init__(self, received_bytes: int, declared_bytes: int) -> None:
+        super().__init__(
+            code="OPEN_SESSION_INCOMPLETE",
+            message=f"The archive transfer is incomplete: {received_bytes} of "
+            f"{declared_bytes} bytes acknowledged",
+            status_code=status.HTTP_409_CONFLICT,
+            details={
+                "received_bytes": received_bytes,
+                "declared_bytes": declared_bytes,
+            },
+        )
+
+
+class OpenSessionStateError(ApiError):
+    """The open session cannot accept the requested operation."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="OPEN_SESSION_STATE",
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class OpenNoSpaceError(ApiError):
+    """Not enough free disk space to receive or restore the archive."""
+
+    def __init__(self, needed_bytes: int, free_bytes: int) -> None:
+        super().__init__(
+            code="OPEN_NO_SPACE",
+            message="Not enough free disk space to open this project",
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            details={"needed_bytes": needed_bytes, "free_bytes": free_bytes},
+        )
+
+
+class OpenIdConflictError(ApiError):
+    """The archived project ID already exists in the store."""
+
+    def __init__(self, project_id: str) -> None:
+        super().__init__(
+            code="OPEN_ID_CONFLICT",
+            message="The archived project already exists; open it as a new working copy",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project_id},
+        )
+
+
 class TileNotReadyError(ApiError):
     def __init__(self, level: int, tile: int) -> None:
         super().__init__(

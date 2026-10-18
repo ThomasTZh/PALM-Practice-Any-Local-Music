@@ -306,6 +306,25 @@
         "title": "CancelImportResponse",
         "type": "object"
       },
+      "CancelOpenSessionResponse": {
+        "properties": {
+          "open_session_id": {
+            "format": "uuid",
+            "title": "Open Session Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_session_id",
+          "state"
+        ],
+        "title": "CancelOpenSessionResponse",
+        "type": "object"
+      },
       "ChannelDisplay": {
         "description": "Channel display (amplitude) settings (M1.15 \u00a717.5).\n\n``scales`` are per-channel display amplitudes (editor range\n0.25-16); at most one entry per source channel.",
         "properties": {
@@ -560,6 +579,35 @@
         "title": "CompleteImportResponse",
         "type": "object"
       },
+      "CompleteOpenSessionResponse": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "status",
+          "revision"
+        ],
+        "title": "CompleteOpenSessionResponse",
+        "type": "object"
+      },
       "CreateExportRequest": {
         "description": "Export selection and options (spec \u00a715.1\u201315.2).",
         "properties": {
@@ -715,6 +763,78 @@
           "import_id"
         ],
         "title": "CreateJobRequest",
+        "type": "object"
+      },
+      "CreateOpenSessionRequest": {
+        "properties": {
+          "declared_byte_count": {
+            "minimum": 1.0,
+            "title": "Declared Byte Count",
+            "type": "integer"
+          },
+          "filename": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "open_mode": {
+            "default": "new-copy",
+            "enum": [
+              "new-copy",
+              "as-archived"
+            ],
+            "title": "Open Mode",
+            "type": "string"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          }
+        },
+        "required": [
+          "filename",
+          "declared_byte_count"
+        ],
+        "title": "CreateOpenSessionRequest",
+        "type": "object"
+      },
+      "CreateOpenSessionResponse": {
+        "properties": {
+          "chunk_size": {
+            "title": "Chunk Size",
+            "type": "integer"
+          },
+          "max_project_archive_bytes": {
+            "title": "Max Project Archive Bytes",
+            "type": "integer"
+          },
+          "open_session_id": {
+            "format": "uuid",
+            "title": "Open Session Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_session_id",
+          "chunk_size",
+          "max_project_archive_bytes",
+          "state"
+        ],
+        "title": "CreateOpenSessionResponse",
         "type": "object"
       },
       "CreateProjectRequest": {
@@ -1490,6 +1610,79 @@
           "right_channel"
         ],
         "title": "MonitoringInfo",
+        "type": "object"
+      },
+      "OpenChunkAckResponse": {
+        "properties": {
+          "chunk_bytes": {
+            "title": "Chunk Bytes",
+            "type": "integer"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "chunk_bytes"
+        ],
+        "title": "OpenChunkAckResponse",
+        "type": "object"
+      },
+      "OpenSessionStateResponse": {
+        "properties": {
+          "declared_byte_count": {
+            "title": "Declared Byte Count",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "open_mode": {
+            "title": "Open Mode",
+            "type": "string"
+          },
+          "open_session_id": {
+            "format": "uuid",
+            "title": "Open Session Id",
+            "type": "string"
+          },
+          "received_byte_count": {
+            "title": "Received Byte Count",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_session_id",
+          "filename",
+          "declared_byte_count",
+          "received_byte_count",
+          "state",
+          "open_mode"
+        ],
+        "title": "OpenSessionStateResponse",
         "type": "object"
       },
       "PlaybackMode": {
@@ -4311,6 +4504,218 @@
           }
         },
         "summary": "Create Project"
+      }
+    },
+    "/api/v1/projects/open": {
+      "post": {
+        "description": "Create an archive transfer session (spec \u00a718.1).",
+        "operationId": "create_open_session_api_v1_projects_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOpenSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOpenSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Open Session"
+      }
+    },
+    "/api/v1/projects/open/{session_id}": {
+      "get": {
+        "description": "The session's acknowledged bytes, state, and last error.",
+        "operationId": "get_open_session_api_v1_projects_open__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenSessionStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Open Session"
+      }
+    },
+    "/api/v1/projects/open/{session_id}/cancel": {
+      "post": {
+        "description": "Remove the session's upload files and metadata (idempotent).",
+        "operationId": "cancel_open_session_api_v1_projects_open__session_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelOpenSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Open Session"
+      }
+    },
+    "/api/v1/projects/open/{session_id}/chunks": {
+      "put": {
+        "description": "Upload the next archive chunk with the import chunk protocol.",
+        "operationId": "upload_open_chunk_api_v1_projects_open__session_id__chunks_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": true,
+            "schema": {
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenChunkAckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Open Chunk"
+      }
+    },
+    "/api/v1/projects/open/{session_id}/complete": {
+      "post": {
+        "description": "Run the \u00a718 open pipeline for a fully acknowledged transfer.\n\nThe blocking work (archive validation, extraction, database read,\nremap, asset restoration, one transaction) runs in the threadpool \u2014\nno media job is dispatched. A failure keeps the session files so the\nclient can retry; success removes them.",
+        "operationId": "complete_open_session_api_v1_projects_open__session_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteOpenSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Open Session"
       }
     },
     "/api/v1/projects/{project_id}": {

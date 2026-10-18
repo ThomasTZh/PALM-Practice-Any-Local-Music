@@ -35,6 +35,7 @@ import { formatTime } from './playback/pcm'
 import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import type { View as EditorView } from './waveform/viewport'
+import { OpenProjectPanel } from './projects/OpenProjectPanel'
 import { useProjectCommands } from './projects/useProjectCommands'
 import { LoopsPanel, MIN_REPEATABLE_LOOP_SECONDS, type LoopPatch } from './practice/LoopsPanel'
 import { PortableSavePanel } from './tracks/PortableSavePanel'
@@ -1899,6 +1900,8 @@ export default function App() {
                   </ul>
                 )}
               </section>
+
+              <OpenProjectPanel onOpened={openProject} />
 
               {showCreateForm && (
                 <NewProjectForm

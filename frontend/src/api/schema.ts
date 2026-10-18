@@ -354,6 +354,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Open Session
+         * @description Create an archive transfer session (spec §18.1).
+         */
+        post: operations["create_open_session_api_v1_projects_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/open/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Open Session
+         * @description The session's acknowledged bytes, state, and last error.
+         */
+        get: operations["get_open_session_api_v1_projects_open__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/open/{session_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Open Session
+         * @description Remove the session's upload files and metadata (idempotent).
+         */
+        post: operations["cancel_open_session_api_v1_projects_open__session_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/open/{session_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload Open Chunk
+         * @description Upload the next archive chunk with the import chunk protocol.
+         */
+        put: operations["upload_open_chunk_api_v1_projects_open__session_id__chunks_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/open/{session_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Open Session
+         * @description Run the §18 open pipeline for a fully acknowledged transfer.
+         *
+         *     The blocking work (archive validation, extraction, database read,
+         *     remap, asset restoration, one transaction) runs in the threadpool —
+         *     no media job is dispatched. A failure keeps the session files so the
+         *     client can retry; success removes them.
+         */
+        post: operations["complete_open_session_api_v1_projects_open__session_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -762,6 +867,16 @@ export interface components {
             /** State */
             state: string;
         };
+        /** CancelOpenSessionResponse */
+        CancelOpenSessionResponse: {
+            /**
+             * Open Session Id
+             * Format: uuid
+             */
+            open_session_id: string;
+            /** State */
+            state: string;
+        };
         /**
          * ChannelDisplay
          * @description Channel display (amplitude) settings (M1.15 §17.5).
@@ -842,6 +957,20 @@ export interface components {
             /** State */
             state: string;
         };
+        /** CompleteOpenSessionResponse */
+        CompleteOpenSessionResponse: {
+            /** Name */
+            name: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Revision */
+            revision: number;
+            /** Status */
+            status: string;
+        };
         /**
          * CreateExportRequest
          * @description Export selection and options (spec §15.1–15.2).
@@ -914,6 +1043,35 @@ export interface components {
             job_type: components["schemas"]["JobType"];
             /** Target Sample Rate */
             target_sample_rate?: number | null;
+        };
+        /** CreateOpenSessionRequest */
+        CreateOpenSessionRequest: {
+            /** Declared Byte Count */
+            declared_byte_count: number;
+            /** Filename */
+            filename: string;
+            /**
+             * Open Mode
+             * @default new-copy
+             * @enum {string}
+             */
+            open_mode: "new-copy" | "as-archived";
+            /** Project Name */
+            project_name?: string | null;
+        };
+        /** CreateOpenSessionResponse */
+        CreateOpenSessionResponse: {
+            /** Chunk Size */
+            chunk_size: number;
+            /** Max Project Archive Bytes */
+            max_project_archive_bytes: number;
+            /**
+             * Open Session Id
+             * Format: uuid
+             */
+            open_session_id: string;
+            /** State */
+            state: string;
         };
         /** CreateProjectRequest */
         CreateProjectRequest: {
@@ -1270,6 +1428,38 @@ export interface components {
             mode: string;
             /** Right Channel */
             right_channel: number;
+        };
+        /** OpenChunkAckResponse */
+        OpenChunkAckResponse: {
+            /** Chunk Bytes */
+            chunk_bytes: number;
+            /**
+             * Idempotent Replay
+             * @default false
+             */
+            idempotent_replay: boolean;
+            /** Offset */
+            offset: number;
+        };
+        /** OpenSessionStateResponse */
+        OpenSessionStateResponse: {
+            /** Declared Byte Count */
+            declared_byte_count: number;
+            /** Filename */
+            filename: string;
+            /** Last Error */
+            last_error?: string | null;
+            /** Open Mode */
+            open_mode: string;
+            /**
+             * Open Session Id
+             * Format: uuid
+             */
+            open_session_id: string;
+            /** Received Byte Count */
+            received_byte_count: number;
+            /** State */
+            state: string;
         };
         /**
          * PlaybackMode
@@ -2806,6 +2996,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_open_session_api_v1_projects_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOpenSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateOpenSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_open_session_api_v1_projects_open__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenSessionStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_open_session_api_v1_projects_open__session_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelOpenSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_open_chunk_api_v1_projects_open__session_id__chunks_put: {
+        parameters: {
+            query: {
+                offset: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenChunkAckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_open_session_api_v1_projects_open__session_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteOpenSessionResponse"];
                 };
             };
             /** @description Validation Error */

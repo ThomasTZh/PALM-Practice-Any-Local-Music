@@ -7,12 +7,13 @@ records. Uses parameterized SQL throughout.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
@@ -67,7 +68,11 @@ from basseparate.domain.separation import (
     ValidationStatus,
 )
 from basseparate.domain.waveform import WaveformCacheRecord, WaveformLevelSummary, WaveformResult
+from basseparate.portable.errors import PortableOpenDbInvalid
 from basseparate.storage.db import DatabaseError
+
+if TYPE_CHECKING:
+    from basseparate.portable.bundle import PortableImportBundle
 
 
 def _open(db_path: Path) -> sqlite3.Connection:
@@ -653,6 +658,304 @@ def _validate_loop_range(start: int, end: int, duration: int) -> None:
         raise LoopRangeInvalidError(start, end, duration)
 
 
+def _insert_portable_bundle_rows(
+    conn: sqlite3.Connection, bundle: PortableImportBundle
+) -> None:
+    """Insert every row of an opened working copy (caller owns the txn).
+
+    FK order: assets, project, links, imports, representations, caches,
+    markers, history, runs, result sets, stems, jobs. Existing
+    content-addressed assets are not inserted again (``insert_asset_ids``
+    holds only the new rows).
+    """
+    project = bundle.project
+
+    for asset in bundle.assets:
+        if str(asset.id) not in bundle.insert_asset_ids:
+            continue
+        audio = asset.audio
+        conn.execute(
+            """
+            INSERT INTO assets (id, content_hash, role, relative_path,
+                                media_type, byte_count, created_at,
+                                audio_sample_rate, audio_channel_count,
+                                audio_frame_count, audio_sample_format,
+                                revision)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(asset.id),
+                asset.content_hash,
+                asset.role.value,
+                asset.relative_path,
+                asset.media_type,
+                asset.byte_count,
+                _timestamp_z(asset.created_at),
+                audio.sample_rate if audio else None,
+                audio.channel_count if audio else None,
+                audio.frame_count if audio else None,
+                audio.sample_format if audio else None,
+                asset.revision,
+            ),
+        )
+
+    conn.execute(
+        """
+        INSERT INTO projects (id, name, created_at, updated_at, revision,
+                              source_asset_id, sample_rate, duration_frames,
+                              status, schema_version, canonical_asset_id,
+                              source_stream_index, source_channel_count,
+                              source_channel_layout, decode_profile_version,
+                              waveform_status, monitoring_asset_id,
+                              source_metadata, monitoring_left_channel,
+                              monitoring_right_channel, working_state,
+                              history_seq, practice_state, portable_provenance)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(project.id),
+            project.name,
+            _timestamp_z(project.created_at),
+            _timestamp_z(project.updated_at),
+            project.revision,
+            str(project.source_asset_id) if project.source_asset_id else None,
+            project.sample_rate,
+            project.duration_frames,
+            project.status.value,
+            project.schema_version,
+            str(project.canonical_asset_id) if project.canonical_asset_id else None,
+            project.source_stream_index,
+            project.source_channel_count,
+            project.source_channel_layout,
+            project.decode_profile_version,
+            project.waveform_status.value,
+            str(project.monitoring_asset_id) if project.monitoring_asset_id else None,
+            json.dumps(project.source_metadata, sort_keys=True),
+            project.monitoring_left_channel,
+            project.monitoring_right_channel,
+            project.working_state.model_dump_json(),
+            bundle.history_seq,
+            project.practice_state.model_dump_json(),
+            (
+                json.dumps(bundle.portable_provenance, sort_keys=True)
+                if bundle.portable_provenance is not None
+                else None
+            ),
+        ),
+    )
+
+    for project_id, asset_id, role in bundle.asset_links:
+        conn.execute(
+            "INSERT INTO project_assets (project_id, asset_id, role) VALUES (?, ?, ?)",
+            (project_id, asset_id, role),
+        )
+
+    for imp in bundle.imports:
+        probe = imp.probe_result
+        conn.execute(
+            """
+            INSERT INTO imports (id, project_id, filename, declared_byte_count,
+                                 received_byte_count, source_sha256,
+                                 transfer_state, probe_result,
+                                 selected_stream_index, job_ids, error,
+                                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(imp.id),
+                str(imp.project_id),
+                imp.filename,
+                imp.declared_byte_count,
+                imp.received_byte_count,
+                imp.source_sha256,
+                imp.transfer_state.value,
+                (
+                    json.dumps(probe.model_dump(mode="json"), sort_keys=True)
+                    if probe
+                    else None
+                ),
+                imp.selected_stream_index,
+                json.dumps([str(job_id) for job_id in imp.job_ids]),
+                imp.error,
+                _timestamp_z(imp.created_at),
+                _timestamp_z(imp.updated_at),
+            ),
+        )
+
+    for rep in bundle.representations:
+        conn.execute(
+            """
+            INSERT INTO representations (asset_id, parent_asset_id, role,
+                                         sample_rate, channel_count,
+                                         channel_layout, frame_count, encoding,
+                                         interleaving, transform_key,
+                                         project_rate, representation_rate,
+                                         tool, tool_version, profile_version,
+                                         created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(rep.asset_id),
+                str(rep.parent_asset_id) if rep.parent_asset_id else None,
+                rep.role.value,
+                rep.sample_rate,
+                rep.channel_count,
+                rep.channel_layout,
+                rep.frame_count,
+                rep.encoding,
+                rep.interleaving,
+                rep.transform_key,
+                rep.time_mapping.project_rate,
+                rep.time_mapping.representation_rate,
+                rep.provenance.tool,
+                rep.provenance.tool_version,
+                rep.provenance.profile_version,
+                _timestamp_z(rep.provenance.created_at),
+            ),
+        )
+
+    for cache in bundle.waveform_caches:
+        conn.execute(
+            """
+            INSERT INTO waveform_caches (id, asset_id, cache_version,
+                                         source_hash, sample_rate, frame_count,
+                                         channel_count, levels_json,
+                                         manifest_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(cache.id),
+                str(cache.asset_id),
+                cache.cache_version,
+                cache.source_hash,
+                cache.sample_rate,
+                cache.frame_count,
+                cache.channel_count,
+                json.dumps(
+                    [level.model_dump() for level in cache.levels], sort_keys=True
+                ),
+                cache.manifest_path,
+                _timestamp_z(cache.created_at),
+            ),
+        )
+
+    for marker in bundle.markers:
+        conn.execute(
+            """
+            INSERT INTO markers (id, project_id, position_frames, label, color,
+                                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(marker.id),
+                str(marker.project_id),
+                marker.position_frames,
+                marker.label,
+                marker.color,
+                _timestamp_z(marker.created_at),
+                _timestamp_z(marker.updated_at),
+            ),
+        )
+
+    for row in bundle.history:
+        conn.execute(
+            """
+            INSERT INTO project_history (id, project_id, seq, kind,
+                                         before_json, after_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row.id,
+                row.project_id,
+                row.seq,
+                row.kind,
+                row.before_json,
+                row.after_json,
+                row.created_at,
+            ),
+        )
+
+    for run in bundle.runs:
+        conn.execute(
+            """
+            INSERT INTO separation_runs (id, project_id, status, requested_mode,
+                                         result_set_id, cache_key, record_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(run.id),
+                str(run.project_id),
+                run.status.value,
+                run.requested_mode.value,
+                str(run.result_set_id) if run.result_set_id else None,
+                run.cache_key,
+                run.model_dump_json(),
+            ),
+        )
+
+    for result_set in bundle.result_sets:
+        conn.execute(
+            """
+            INSERT INTO separation_result_sets (id, run_id, project_id,
+                                                validation_status, created_at,
+                                                cache_key, record_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(result_set.id),
+                str(result_set.run_id),
+                str(result_set.project_id),
+                result_set.validation_status.value,
+                _timestamp_z(result_set.created_at),
+                result_set.cache_key,
+                result_set.model_dump_json(),
+            ),
+        )
+
+    for stem in bundle.stems:
+        conn.execute(
+            "INSERT INTO stems (id, result_set_id, role, record_json) VALUES (?, ?, ?, ?)",
+            (
+                str(stem.id),
+                str(stem.result_set_id),
+                stem.role.value,
+                stem.model_dump_json(),
+            ),
+        )
+
+    for job in bundle.jobs:
+        conn.execute(
+            """
+            INSERT INTO media_jobs (id, project_id, import_id, job_type, state,
+                                    stage, progress_fraction, progress_detail,
+                                    result, error_code, error, max_threads,
+                                    parameters, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(job.id),
+                str(job.project_id),
+                str(job.import_id) if job.import_id else None,
+                job.job_type.value,
+                job.state.value,
+                job.stage.value if job.stage else None,
+                job.progress_fraction,
+                job.progress_detail,
+                (
+                    json.dumps(job.result, sort_keys=True)
+                    if job.result is not None
+                    else None
+                ),
+                job.error_code,
+                job.error,
+                job.max_threads,
+                json.dumps(job.parameters, sort_keys=True),
+                _timestamp_z(job.created_at),
+                _timestamp_z(job.updated_at),
+            ),
+        )
+
+
 class ProjectRepository:
     """Synchronous repository for project and asset operations.
 
@@ -686,6 +989,96 @@ class ProjectRepository:
         record = self.get_project(uuid.UUID(project_id))
         assert record is not None
         return record
+
+    def get_assets_by_hashes(self, content_hashes: set[str]) -> dict[str, AssetRecord]:
+        """Existing asset rows keyed by content hash (content-addressed reuse).
+
+        ``assets.content_hash`` is globally unique, so an opened working
+        copy links an existing row instead of inserting a duplicate.
+        """
+        if not content_hashes:
+            return {}
+        placeholders = ",".join("?" for _ in content_hashes)
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                f"SELECT * FROM assets WHERE content_hash IN ({placeholders})",
+                tuple(sorted(content_hashes)),
+            ).fetchall()
+            return {row["content_hash"]: _row_to_asset(row) for row in rows}
+        finally:
+            conn.close()
+
+    def get_asset_metadata_ids(
+        self, asset_ids: set[uuid.UUID]
+    ) -> tuple[set[str], set[str]]:
+        """Existing global rows keyed by asset (representations, caches).
+
+        Representations and waveform caches are asset-global, like asset
+        rows themselves; an opened working copy reuses them when the
+        store already has a row for the final asset id.
+        """
+        if not asset_ids:
+            return set(), set()
+        placeholders = ",".join("?" for _ in asset_ids)
+        params = tuple(sorted(str(asset_id) for asset_id in asset_ids))
+        conn = _open(self._db_path)
+        try:
+            representation_ids = {
+                row[0]
+                for row in conn.execute(
+                    f"SELECT asset_id FROM representations "
+                    f"WHERE asset_id IN ({placeholders})",
+                    params,
+                )
+            }
+            cache_ids = {
+                row[0]
+                for row in conn.execute(
+                    f"SELECT asset_id FROM waveform_caches "
+                    f"WHERE asset_id IN ({placeholders})",
+                    params,
+                )
+            }
+            return representation_ids, cache_ids
+        finally:
+            conn.close()
+
+    def import_portable_bundle(self, bundle: PortableImportBundle) -> ProjectRecord:
+        """Insert one opened portable working copy in a single transaction.
+
+        M2.16 §18.4: assets first, the project row last, ``foreign_key_check``
+        before the commit, so the project becomes visible to
+        ``list_projects``/``get_project`` only after all rows and links
+        exist. Any failure rolls the whole import back.
+        """
+        conn = _open(self._db_path)
+        conn.isolation_level = None
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                _insert_portable_bundle_rows(conn, bundle)
+                violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise PortableOpenDbInvalid(
+                        "portable import left foreign key violations: "
+                        f"{[tuple(row) for row in violations[:3]]}"
+                    )
+                conn.execute("COMMIT")
+            except BaseException:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.execute("ROLLBACK")
+                raise
+        except sqlite3.IntegrityError as exc:
+            raise PortableOpenDbInvalid(
+                f"cannot import the opened project: {exc}"
+            ) from exc
+        finally:
+            conn.close()
+        project = self.get_project(bundle.project.id)
+        if project is None:  # pragma: no cover - defensive
+            raise DatabaseError("opened project is missing after import")
+        return project
 
     def get_project(self, project_id: uuid.UUID) -> ProjectRecord | None:
         conn = _open(self._db_path)

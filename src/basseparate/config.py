@@ -28,6 +28,13 @@ class ConfigError(ValueError):
 
 DEFAULT_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024  # 8 MiB
 DEFAULT_MAX_IMPORT_BYTES = 20 * 1024**3  # 20 GiB
+#: Portable project archive transfer cap (M2.16, spec §18.1). Deliberately
+#: independent of the media-import value: a maximal 20 GiB source project
+#: carries original + canonical + downmix + 4 stems + residual (≈7.5×
+#: source size), all stored uncompressed in the archive.
+DEFAULT_MAX_PROJECT_ARCHIVE_BYTES = 160 * 1024**3  # 160 GiB
+DEFAULT_MAX_ARCHIVE_UNCOMPRESSED_BYTES = 160 * 1024**3  # 160 GiB
+DEFAULT_MAX_ARCHIVE_MEMBER_COUNT = 10_000
 #: Rebuildable-cache budget for separation results (M2.7, spec §9.5.1);
 #: model storage is counted separately and never against this limit.
 DEFAULT_CACHE_LIMIT_BYTES = 50 * 1024**3  # 50 GiB
@@ -52,6 +59,9 @@ class AppConfig:
     database_busy_timeout_seconds: float
     import_chunk_bytes: int
     max_import_bytes: int
+    max_project_archive_bytes: int
+    max_archive_uncompressed_bytes: int
+    max_archive_member_count: int
     cache_limit_bytes: int
     media_worker_memory_limit_mb: int
     storage_root: Path | None
@@ -70,6 +80,9 @@ class AppConfig:
             f"database_busy_timeout={self.database_busy_timeout_seconds}s "
             f"import_chunk_bytes={self.import_chunk_bytes} "
             f"max_import_bytes={self.max_import_bytes} "
+            f"max_project_archive_bytes={self.max_project_archive_bytes} "
+            f"max_archive_uncompressed_bytes={self.max_archive_uncompressed_bytes} "
+            f"max_archive_member_count={self.max_archive_member_count} "
             f"cache_limit_bytes={self.cache_limit_bytes} "
             f"media_worker_memory_limit_mb={self.media_worker_memory_limit_mb} "
             f"storage_root={self.storage_root}"
@@ -103,6 +116,9 @@ _FIELDS: tuple[_FieldSpec, ...] = (
     _FieldSpec("database_busy_timeout_seconds", float, 5.0),
     _FieldSpec("import_chunk_bytes", int, DEFAULT_IMPORT_CHUNK_BYTES),
     _FieldSpec("max_import_bytes", int, DEFAULT_MAX_IMPORT_BYTES),
+    _FieldSpec("max_project_archive_bytes", int, DEFAULT_MAX_PROJECT_ARCHIVE_BYTES),
+    _FieldSpec("max_archive_uncompressed_bytes", int, DEFAULT_MAX_ARCHIVE_UNCOMPRESSED_BYTES),
+    _FieldSpec("max_archive_member_count", int, DEFAULT_MAX_ARCHIVE_MEMBER_COUNT),
     _FieldSpec("cache_limit_bytes", int, DEFAULT_CACHE_LIMIT_BYTES),
     _FieldSpec(
         "media_worker_memory_limit_mb", int, DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB
@@ -195,6 +211,24 @@ def _validate(values: dict[str, object]) -> None:
         )
     if max_bytes < chunk:
         raise ConfigError(f"max_import_bytes must be at least import_chunk_bytes, got {max_bytes}")
+
+    archive_bytes = values["max_project_archive_bytes"]
+    archive_uncompressed = values["max_archive_uncompressed_bytes"]
+    archive_members = values["max_archive_member_count"]
+    assert isinstance(archive_bytes, int)
+    assert isinstance(archive_uncompressed, int)
+    assert isinstance(archive_members, int)
+    if archive_bytes < chunk:
+        raise ConfigError(
+            f"max_project_archive_bytes must be at least import_chunk_bytes, got {archive_bytes}"
+        )
+    if archive_uncompressed < archive_bytes:
+        raise ConfigError(
+            f"max_archive_uncompressed_bytes ({archive_uncompressed}) must not be "
+            f"less than max_project_archive_bytes ({archive_bytes})"
+        )
+    if archive_members < 1:
+        raise ConfigError(f"max_archive_member_count must be positive, got {archive_members}")
 
     cache_limit = values["cache_limit_bytes"]
     assert isinstance(cache_limit, int)

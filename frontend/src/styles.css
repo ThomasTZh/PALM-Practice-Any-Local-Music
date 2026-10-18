@@ -1606,3 +1606,14 @@ button:hover:not(:disabled) {
 .loop-fade input {
   accent-color: #4da3ff;
 }
+
+/* Open portable project (M2.16 §18.1) */
+.open-panel {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--panel);
+}
+
+.open-panel .list-header {
+  margin-bottom: 0.75rem;
+}

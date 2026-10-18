@@ -36,6 +36,8 @@ from basseparate.api.idempotency import IdempotencyStore
 from basseparate.api.import_routes import router as import_router
 from basseparate.api.job_routes import router as job_router
 from basseparate.api.middleware import RequestTracingMiddleware
+from basseparate.api.open_routes import OpenSessionStore
+from basseparate.api.open_routes import router as open_router
 from basseparate.api.playback_routes import router as playback_router
 from basseparate.api.portable_routes import router as portable_router
 from basseparate.api.result_set_routes import router as result_set_router
@@ -456,6 +458,16 @@ def create_app(config: AppConfig) -> FastAPI:
             chunk_size=config.import_chunk_bytes,
             max_import_bytes=config.max_import_bytes,
         )
+        # Portable archives use a second bounded transfer manager with
+        # their own, deliberately larger cap (spec §18.1); session
+        # metadata lives beside the upload files (no DB rows).
+        archive_uploads_dir = paths.runtime / "archive-uploads"
+        app.state.archive_uploads = UploadManager(
+            uploads_dir=archive_uploads_dir,
+            chunk_size=config.import_chunk_bytes,
+            max_import_bytes=config.max_project_archive_bytes,
+        )
+        app.state.open_session_store = OpenSessionStore(archive_uploads_dir)
         app.state.idempotency_store = IdempotencyStore()
         app.state.session_token = session_token
         app.state.job_repository = JobRepository(paths.database_path)
@@ -546,6 +558,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(result_set_router)
     app.include_router(export_router)
     app.include_router(portable_router)
+    app.include_router(open_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

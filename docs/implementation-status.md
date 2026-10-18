@@ -40,8 +40,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   retain one previous, atomic publish; routes + PortableSavePanel;
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
-- **Current work package:** M2.16 (open portable projects, spec §18)
-  — **not started** (milestone2.md line 1305).
+- **Current work package:** M2.17 (API and command additions, spec §19)
+  — not started (projectPlans/milestone2.md line 1379).
+- **M2.16:** complete — this commit + ledger-hash follow-up (open
+  portable projects, spec §18; `portable/open.py` + errors/bundle,
+  archive upload routes, single-transaction import, frontend
+  `OpenProjectPanel`; 47 new backend tests (38 open + 9 routes), 16 new
+  frontend tests; backend 1368 pytest green, frontend 566 Vitest green).
 - **M2.14:** complete — `ec0b1eb` + this ledger-hash follow-up
   (portable project format definition, spec §16; `portable/`
   package: format constants/manifest schema, dependency closure,
@@ -100,20 +105,22 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** M2.16 (open portable projects, spec §18,
-  milestone2.md line 1305): plan first (`projectPlans/m2.16-plan.md`).
+- **Next action:** M2.17 (API and command additions, spec §19,
+  projectPlans/milestone2.md line 1379): hardware/models/runs/results
+  interfaces, analysis qualification state, and analysis-worker wiring.
   The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
   if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is `8fc239d` (M2.15)
-  with this ledger-hash follow-up on top; the tree is clean.
-  Baseline established 2026-10-17:
-  `.venv/bin/python -m pytest tests/ -q` (1321 passed; the
+- **Resume procedure:** read this file; HEAD is the M2.16 commit
+  (`M2.16: open portable projects (spec §18)`) with this ledger-hash
+  follow-up on top; the tree is clean.
+  Baseline established 2026-10-18:
+  `.venv/bin/python -m pytest tests/ -q` (1368 passed; the
   job-manager timing test is occasionally flaky),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/basseparate` (75 files clean),
-  `cd frontend && npx vitest run` (550 passed),
+  `.venv/bin/python -m mypy src/basseparate` (79 files clean),
+  `cd frontend && npx vitest run` (566 passed),
   `cd frontend && npx tsc --noEmit` (no errors),
   `cd frontend && npx prettier --check "src/**/*.{ts,tsx,css}" "tests/**/*.{ts,tsx}"` (clean),
   `cd frontend && npx vite build` (OK),
@@ -3437,6 +3444,104 @@ New tests: 24 backend (`test_portable_writer.py`,
 `portable-panel.test.tsx`). Gates green: 1321 backend pytest
 (1297 + 24), ruff clean, mypy 75 files, 550 frontend vitest
 (537 + 13), tsc clean, prettier clean, vite build OK.
+
+## M2.16 — Open portable projects (spec §18)
+
+**Phase 1 (2026-10-17):** plan written
+(`projectPlans/m2.16-plan.md`). Design: open a `.basseparate` archive
+produced by M2.15 as a new working copy. Transfer reuses the bounded
+chunked-upload mechanism with a second `UploadManager`
+(`runtime/archive-uploads`) under a new dedicated cap
+`max_project_archive_bytes` (default 160 GiB, not the 20 GiB media value —
+a maximal project's asset set is ≈7.5× the source size, stored
+uncompressed in the archive) plus `max_archive_uncompressed_bytes` and
+`max_archive_member_count` safeguards. Routes: `POST /projects/open`
+(session), chunk `PUT`, synchronous `complete` (threadpool, pure file I/O
++ DB — no jobs), `GET` state, `POST` cancel. `portable/open.py`:
+validate-before-import per §18.2 (ZIP directory, limits, bounded 1 MiB
+manifest, format/container version, path safety incl. symlink/encrypted/
+directory rejection, member-set equality, per-member streamed SHA-256),
+staged extraction to `data/portable/.import-staging/<uuid>/` (no
+`extractall`), then untrusted-DB handling per §18.3 (read-only, no
+extensions, `user_version` must equal the current schema version, explicit
+column queries, domain-model validation, no SQL from the archive). ID
+policy per §18.5: default new working copy (new project ID, every row gets
+a new ID, all FK references + `record_json`-embedded IDs remapped via
+domain objects; free-form JSON gets exact-UUID replacement);
+`as-archived` only when the archived ID is free (else 409); archived
+identity kept in new `projects.portable_provenance` JSON column
+(migration 11, schema v11). Asset restoration per §18.4: content-addressed
+dedupe by hash, `source_original` to a fresh `runtime/uploads/<id>.part`,
+optional missing assets (playback-rate) drop their rows for on-demand
+regeneration (§18.6), waveform caches restored or dropped for rebuild.
+Single-transaction `ProjectRepository.import_portable_bundle` — the
+project is exposed only after commit. §18.7 state restoration is carried by
+the imported rows (working_state, practice_state, markers, result sets);
+the project opens paused. Frontend: `api/open.ts` + `OpenProjectPanel.tsx`
+(file picker + drag-and-drop, upload progress, opening state, inline
+errors) in the project-list view.
+
+**Phase 2 (2026-10-18):** config keys `max_project_archive_bytes`
+(160 GiB), `max_archive_uncompressed_bytes` (160 GiB),
+`max_archive_member_count` (10 000) with validation; migration 11 adds
+`projects.portable_provenance`; `DATABASE_SCHEMA_VERSION` = 11; v10
+test baselines updated.
+
+**Phase 3 (2026-10-18):** `portable/errors.py` (error family),
+`portable/bundle.py` (validated `PortableImportBundle`), and
+`portable/open.py`: `_validate_archive` (ZIP directory, limits, 1 MiB
+manifest, versions, safety incl. duplicate/symlink/encrypted/directory,
+member-set equality, essential presence), `_extract_staged` (streamed
+hash-verified partial + rename), `_read_database` (read-only URI,
+`query_only`, extensions off, schema equality, required tables, domain
+model validation, isolation proof), `plan_assets` / `build_bundle`
+(content-addressed asset reuse, full FK + `record_json` remap, loop IDs
+kept, provenance), `drop_absent_optional_assets` (§18.6 asset + cache
+drops), `check_free_space`, `restore_asset_files` (hash dedupe,
+collision rejects), and the orchestrator. Design correction found by
+the round trip: assets are **global** rows (`content_hash` UNIQUE), so
+new-copy reuses asset/representation/waveform-cache rows by content
+hash instead of duplicating them; project-local rows keep fresh IDs.
+
+**Phase 4 (2026-10-18):** `ProjectRepository.import_portable_bundle`
+(single `BEGIN IMMEDIATE`, assets before the project row,
+`PRAGMA foreign_key_check`, commit; rollback on any failure),
+`get_assets_by_hashes` and `get_asset_metadata_ids` reuse lookups.
+`tests/integration/test_portable_open.py`: 38 tests (round trip, dedupe,
+as-archived/conflict, optional asset/cache drops, every validation
+failure code, DB tampering, rollback). Seed fixture corrected to real
+content hashes/byte counts so archives are content-addressed.
+
+**Phase 5 (2026-10-18):** `api/open_routes.py`: `POST /projects/open`
+(filename/size/open-mode validation, 413 over the archive cap, 507 on a
+failed reservation), chunk `PUT` (import protocol, 404/400/409/413),
+`GET` session state, synchronous `complete` (threadpool via
+`run_in_threadpool`, no jobs; failure keeps the session and records the
+last error, success removes it), idempotent `cancel`. `OpenSessionStore`
+persists the client parameters beside the upload manifest
+(`runtime/archive-uploads/<id>.open.json`; no DB rows). App wiring:
+second `UploadManager` under the archive cap + router. Nine route
+integration tests.
+
+**Phase 6 (2026-10-18):** round-trip integration coverage: save with
+M2.15 → open into a fresh store (ready, all asset/cache files verified,
+working/practice state and markers restored, provenance recorded, new
+project id), second open into the same store (assets, representations,
+and waveform caches reused; only project-local rows duplicated),
+as-archived (IDs kept; second open → 409 `OPEN_ID_CONFLICT`), damaged
+essential → rejected with the member named and no store rows.
+
+**Phase 7 (2026-10-18):** frontend `api/open.ts` (typed session/chunk/
+complete/cancel client, progress, retries, friendly error mapping for the
+archive codes) and `projects/OpenProjectPanel.tsx` (file picker +
+drag-and-drop, upload progress, "Opening…" phase, inline errors, cancel,
+`onOpened`), mounted in the project-list view beside "New project" (the
+clean-install entry point); CSS; 16 tests. Contract regenerated
+(`contracts/openapi.json` + `frontend/src/api/schema.ts`).
+
+**Final gates (2026-10-18):** backend 1368 pytest green; ruff
+`src/ tests/` clean; mypy 79 files clean; frontend 566 Vitest green;
+tsc 0 errors; prettier clean; Vite build OK; contract in sync.
 
 ## Architectural decisions so far
 

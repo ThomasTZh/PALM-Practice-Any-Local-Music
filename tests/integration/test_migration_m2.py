@@ -73,7 +73,7 @@ def test_v6_to_v7_adds_separation_tables(tmp_path: Path) -> None:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 11
         tables = {
             r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
@@ -132,7 +132,7 @@ def test_v7_to_v8_adds_cache_key_columns(tmp_path: Path) -> None:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 11
         for table in ("separation_runs", "separation_result_sets"):
             columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
             assert "cache_key" in columns

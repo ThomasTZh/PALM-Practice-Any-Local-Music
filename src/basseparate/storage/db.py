@@ -481,6 +481,22 @@ def _migration_9_to_10(conn: sqlite3.Connection) -> None:
 register_migration(10, _migration_9_to_10)
 
 
+_MIGRATION_11_STATEMENTS: tuple[str, ...] = (
+    # Provenance for projects opened from a portable archive (M2.16,
+    # spec §18.5): JSON with the archived project identity
+    # (archived_project_id, saved_revision, saved_at, source_filename).
+    "ALTER TABLE projects ADD COLUMN portable_provenance TEXT",
+)
+
+
+def _migration_10_to_11(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_11_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(11, _migration_10_to_11)
+
+
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
 
