@@ -41,14 +41,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
 - **Current work package:** none — all functional work packages
-  (M2.1–M2.18) are complete. The practical acceptance remains partial:
-  GPU performance, the five-recording workflow, the 60-minute playback
-  run, and the human listening review await suitable hardware and a human
-  reviewer (see M2.19/M2.20–M2.21 evidence).
+  (M2.1–M2.18) are complete and the five-recording GPU analysis
+  acceptance passed (M2.19). Remaining acceptance is the 60-minute
+  playback/latency measurement and the human listening review.
 - **M2.20–M2.21:** complete — `a24357f` + this ledger-hash follow-up
   (performance targets §21.1–21.3 and final checklist §21.4/§22 evidence;
   measured CPU RTF plus explicit unverified/human-only items).
-- **M2.19:** complete — `ac40bc1` + `ba28fa2` + this ledger-hash follow-up (real offline
+- **M2.19:** complete — `ac40bc1` + `ba28fa2` + GPU acceptance + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
 - **M2.18:** complete — `aa77677` + this ledger-hash follow-up (test matrix,
@@ -133,10 +132,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** practical acceptance on a machine with a working
-  NVIDIA driver: qualify the GPU, run the five `audio2test/` recordings
-  through the real pipeline, measure wall time/RTF/peak VRAM/RAM, run the
-  60-minute playback test, and perform the §21.4 human listening review.
+- **Next action:** measure the 60-minute playback session and perform
+  the §21.4 human listening review. The GPU qualification and the five
+  recordings are complete (M2.19).
   The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
@@ -3677,6 +3675,21 @@ acknowledged immediately), and the §22 final checklist with explicit
 recordings, the 60-minute playback run, and the listening review are not
 claimed. No functional work packages remain; the milestone's automated
 surface is complete (backend 1412 pytest, frontend 566 Vitest).
+
+## M2.19 — GPU acceptance (five recordings)
+
+**2026-10-18 (GPU run):** with approved escalated device access (the
+sandbox hides `/dev/nvidia*`), `analysis/qualify.py --all` passed on both
+GPUs and the CPU. All five `audio2test/` recordings then completed on the
+RTX 4080 (`cuda:0`, local verified bundle, offline flags): 18.4 min of
+audio in 4.4 min of inference, RTF 0.217–0.260, peak VRAM 4,087–4,260
+MiB, peak host RSS 3.05–4.20 GiB, four stems each, one attempt each.
+Recorded in `docs/evidence/m2.19-separation-acceptance.md`; the
+performance checklist in `m2.20-performance-and-acceptance.md` is updated
+(analysis rows done; 60-minute playback and listening review remain).
+Note: `analysis/qualify.py` itself does not set the offline flags and
+printed an HF request warning; the production runner is offline and used
+the local bundle for every acceptance run.
 
 ## M2.19 — Acceptance update (full recording + backend end-to-end)
 
