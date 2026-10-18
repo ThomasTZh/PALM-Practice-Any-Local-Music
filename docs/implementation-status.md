@@ -40,9 +40,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   retain one previous, atomic publish; routes + PortableSavePanel;
   24 new backend tests, 13 new frontend tests; backend 1321 pytest
   green, frontend 550 Vitest green).
-- **Current work package:** M2.19 (real separation acceptance evidence)
-  — not started; M2.20 (performance targets, spec §21.1–21.3) and M2.21
-  (practical acceptance + final checklist, §21.4/§22) follow.
+- **Current work package:** M2.20–M2.21 (performance targets and final
+  acceptance evidence) — in progress.
+- **M2.19:** complete — this commit + ledger-hash follow-up (real offline
+  CPU inference evidence; GPU/five-recording acceptance remains open
+  because the environment has no NVIDIA driver).
 - **M2.18:** complete — `aa77677` + this ledger-hash follow-up (test matrix,
   spec §20; mapping evidence doc + 3 gap tests; backend 1412 pytest
   green, frontend 566 Vitest green).
@@ -3642,6 +3644,18 @@ and the human listening review are M2.19–M2.21 evidence, not claimed
 here. Final gates: backend 1412 pytest green (one flaky supervisor test
 passes on rerun); ruff clean; mypy 82 files clean; frontend 566 Vitest
 green; tsc/prettier/Vite build/contract unchanged and green.
+
+## M2.19 — Real separation acceptance (partial)
+
+**2026-10-18:** `docs/evidence/m2.19-separation-acceptance.md`. The
+environment has no usable NVIDIA driver (`nvidia-smi` fails;
+`torch.cuda.is_available()` false), so the GPU acceptance could not run.
+A real offline CPU run on a 12 s stereo 44.1 kHz excerpt of
+`audio2test/46.GIBBS - Simplicity.wav` completed: four stems, 529,200
+frames, 78.1 s (RTF 6.51×), peak host RSS 2.04 GiB, bundle verified
+locally, network flags set before torch. The five full recordings
+(≈18.4 min audio, ≈2 h at the measured CPU RTF), GPU/VRAM measurements,
+and the human listening review remain open and are not claimed.
 
 ## Architectural decisions so far
 
