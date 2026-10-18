@@ -42,7 +42,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   green, frontend 550 Vitest green).
 - **Current work package:** M2.20–M2.21 (performance targets and final
   acceptance evidence) — in progress.
-- **M2.19:** complete — this commit + ledger-hash follow-up (real offline
+- **M2.19:** complete — `ac40bc1` + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
 - **M2.18:** complete — `aa77677` + this ledger-hash follow-up (test matrix,
@@ -81,8 +81,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `aa77677` — M2.18 (test matrix); this ledger-hash
-  follow-up on top. `76b8f06` — M2.17 (analysis interfaces and
+- **Last commit:** `ac40bc1` — M2.19 (real separator acceptance, partial);
+  this ledger-hash follow-up on top. `aa77677` — M2.18 (test matrix);
+  `01e3b6d` (ledger: M2.18 hash) on top. `76b8f06` — M2.17 (analysis interfaces and
   separation scheduling); `59f7f09` (ledger: M2.17 hash) on top.
   `4027815` — M2.16
   (open portable projects); `cb45811` (ledger: M2.16 hash) on top.
