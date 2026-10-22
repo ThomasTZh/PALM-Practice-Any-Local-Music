@@ -113,6 +113,9 @@ class RestoredStemOutcome:
     max_amplitude: float
     pcm_byte_count: int
     endpoint_difference_frames: int
+    #: Signed trailing-edge adjustment applied to hit the exact project
+    #: frame count (the documented resampling rounding, spec §8.1.7).
+    endpoint_correction_frames: int
     resampled: bool
     mono_collapsed: bool
 
@@ -165,6 +168,34 @@ def _frame_count(path: Path, channel_count: int, what: str) -> int:
         return check_frame_alignment(path.stat().st_size, channel_count)
     except (OSError, DecodeFailedError) as exc:
         raise PublicationError(f"{what}: {exc}") from exc
+
+
+def _correct_endpoint_frames(
+    path: Path, channel_count: int, target_frames: int
+) -> int:
+    """Align a restored stem's trailing edge to the project frame count.
+
+    The pinned resampler can finish one or two frames early or late
+    (spec §8.1.7, the documented endpoint rounding). Downstream mixing
+    requires exact project timing, so a discrepancy inside the documented
+    tolerance is corrected at the trailing edge only: a late endpoint is
+    truncated, an early one holds the final frame. Returns the signed
+    number of corrected frames (positive = trimmed).
+    """
+    frame_bytes = channel_count * 4
+    current = _frame_count(path, channel_count, f"restored stem {path.name}")
+    difference = current - target_frames
+    if difference == 0:
+        return 0
+    with path.open("r+b") as handle:
+        if difference > 0:
+            handle.truncate(target_frames * frame_bytes)
+        else:
+            handle.seek((current - 1) * frame_bytes)
+            last = handle.read(frame_bytes)
+            handle.seek(0, 2)
+            handle.write(last * (-difference))
+    return difference
 
 
 def _remove(*paths: Path | None) -> None:
@@ -332,6 +363,10 @@ async def restore_stem_project_representation(
     The source is a staged model stem (interleaved f32le). On success
     ``output_path`` holds the validated project-rate PCM; on failure no
     staging file is left behind. The source file is never modified.
+
+    A trailing frame-count difference inside the documented resampling
+    endpoint rounding is corrected to the exact project count; larger
+    discrepancies fail (spec §8.1.6-8).
     """
     if source_rate <= 0 or target_rate <= 0:
         raise PublicationError(
@@ -404,11 +439,23 @@ async def restore_stem_project_representation(
         final_frames = _frame_count(
             output_path, target_channels, f"restored stem {output_path.name}"
         )
+        endpoint_correction = 0
         if final_frames != target_frame_count:
-            raise RestoreFrameCountError(
-                f"restored stem has {final_frames} frames; the project requires exactly "
-                f"{target_frame_count} (endpoint policy: never a blind trim)"
+            difference = final_frames - target_frame_count
+            # Two resampling stages precede the restore (preparation and
+            # restoration), each documented as +/- ENDPOINT_TOLERANCE_FRAMES.
+            # Anything beyond that combined bound is an unexplained length
+            # discrepancy, not rounding; never trim it blindly.
+            if not resampled or abs(difference) > 2 * ENDPOINT_TOLERANCE_FRAMES:
+                raise RestoreFrameCountError(
+                    f"restored stem has {final_frames} frames; the project requires "
+                    f"exactly {target_frame_count} (difference {difference}; documented "
+                    f"endpoint rounding is +/-{ENDPOINT_TOLERANCE_FRAMES} per resample)"
+                )
+            endpoint_correction = _correct_endpoint_frames(
+                output_path, target_channels, target_frame_count
             )
+            final_frames = target_frame_count
         content_hash, max_amplitude = await asyncio.to_thread(
             validate_pcm, output_path, target_channels
         )
@@ -424,6 +471,7 @@ async def restore_stem_project_representation(
         max_amplitude=max_amplitude,
         pcm_byte_count=output_path.stat().st_size,
         endpoint_difference_frames=endpoint_difference,
+        endpoint_correction_frames=endpoint_correction,
         resampled=resampled,
         mono_collapsed=source_channels == 2 and target_channels == 1,
     )
@@ -654,6 +702,9 @@ async def publish_separation_result(
     channel_count: int,
     asset_dir: Path,
     separation_repository: SeparationRepository,
+    #: Content-hash lookup so identical audio already in the store is
+    #: reused (its asset id), not re-inserted under a fresh id.
+    find_asset_by_hash: Callable[[str], AssetRecord | None] | None = None,
     cache_key: str | None = None,
     model_rate: int = 44_100,
     job_repository: JobRepository | None = None,
@@ -765,21 +816,48 @@ async def publish_separation_result(
                 assert residual is not None
                 _move_to_asset_store(stem_path, residual.content_hash, asset_dir)
                 content_hash, byte_count = residual.content_hash, residual.pcm_byte_count
-            asset = AssetRecord(
-                id=uuid.uuid4(),
-                content_hash=content_hash,
-                role=AssetRole.STEM,
-                relative_path=f"data/assets/{content_hash}.pcm",
-                media_type=PCM_ASSET_MEDIA_TYPE,
-                byte_count=byte_count,
-                created_at=now,
-                audio=AudioMetadata(
-                    sample_rate=sample_rate,
-                    channel_count=channel_count,
-                    frame_count=duration_frames,
-                    sample_format="f32le",
-                ),
+            existing = (
+                find_asset_by_hash(content_hash)
+                if find_asset_by_hash is not None
+                else None
             )
+            if existing is not None:
+                # The content-addressed store already holds these bytes
+                # (for example, the same recording separated in another
+                # project). Reuse the existing row and id so the new
+                # project links to it; a fresh id would collide on the
+                # unique content hash and break the transactional publish.
+                audio = existing.audio
+                if (
+                    existing.role is not AssetRole.STEM
+                    or audio is None
+                    or audio.sample_rate != sample_rate
+                    or audio.channel_count != channel_count
+                    or audio.frame_count != duration_frames
+                ):
+                    raise PublicationError(
+                        f"existing asset {existing.id} for hash {content_hash} "
+                        "does not match the project representation"
+                    )
+                asset = existing
+            else:
+                asset = AssetRecord(
+                    id=uuid.uuid4(),
+                    content_hash=content_hash,
+                    role=AssetRole.STEM,
+                    relative_path=f"data/assets/{content_hash}.pcm",
+                    media_type=PCM_ASSET_MEDIA_TYPE,
+                    byte_count=byte_count,
+                    created_at=now,
+                    audio=AudioMetadata(
+                        sample_rate=sample_rate,
+                        channel_count=channel_count,
+                        frame_count=duration_frames,
+                        sample_format="f32le",
+                    ),
+                )
+            # Reused assets stay in the list: the repository ignores the
+            # duplicate asset row and still links it to this project.
             assets.append(asset)
             assets_by_label[label] = asset
 

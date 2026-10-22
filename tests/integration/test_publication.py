@@ -4,8 +4,9 @@ Covers:
 - restore with the pinned SWR profile: 44.1 kHz → 48 kHz (stereo), the
   mono-project collapse (stereo → mono at 48 kHz), and the identity
   fast path;
-- the endpoint policy: a restored frame count that misses the project
-  frame count fails (never a blind trim) and leaves no staging file;
+- the endpoint policy: a restored frame count inside the documented
+  resampling rounding is corrected to the exact project count, a larger
+  miss fails (never a blind trim), and a failure leaves no staging file;
 - a full mini pipeline: four synthetic stems + reference mix restored to
   the project rate, the §8.2 validation, four-stem reconstruction
   diagnostics, and the Bass + Others residual (validated as a fifth
@@ -131,7 +132,9 @@ class TestRestore:
         out = tmp_path / "restored.pcm"
         _write_f32le_pcm(src, data)
 
-        with pytest.raises(PublicationError, match="requires exactly 48001"):
+        # 100 frames beyond the resampler output is an unexplained
+        # discrepancy, not the documented endpoint rounding.
+        with pytest.raises(PublicationError, match="requires exactly 48100"):
             await restore_stem_project_representation(
                 source_path=src,
                 source_rate=MODEL_RATE,
@@ -139,7 +142,7 @@ class TestRestore:
                 output_path=out,
                 target_rate=PROJECT_RATE,
                 target_channels=2,
-                target_frame_count=48001,
+                target_frame_count=48100,
             )
         assert not out.exists()
 
@@ -399,6 +402,70 @@ class TestPublishSeparationResult:
         assert not staging_dir.exists()
 
     @pytest.mark.asyncio
+    async def test_identical_stems_reuse_existing_assets(self, tmp_path: Path) -> None:
+        """A second project separating the same audio links the stored assets.
+
+        ``assets.content_hash`` is unique. Re-inserting the same bytes under
+        a fresh id silently skips the row, and the following project_assets
+        insert fails its foreign key; the publisher must reuse the stored id.
+        """
+        data = tmp_path / "data"
+        db_path = data / "basseparate.db"
+        projects = ProjectRepository(db_path)
+        separation = SeparationRepository(db_path)
+        jobs = JobRepository(db_path)
+        source = SourceIdentity(
+            asset_id=uuid.uuid4(),
+            source_hash="ab" * 32,
+            sample_rate=PROJECT_RATE,
+            duration_frames=PROJECT_RATE,
+        )
+
+        outcomes = []
+        for _ in range(2):
+            run, staging_dir, attempt_dir, reference_path = self._staged_run(
+                tmp_path, SeparationMode.FOUR_STEMS
+            )
+            outcomes.append(
+                await publish_separation_result(
+                    run=run,
+                    staging_dir=staging_dir,
+                    attempt_dir=attempt_dir,
+                    stem_labels=list(self.LABELS),
+                    reference_path=reference_path,
+                    source=source,
+                    sample_rate=PROJECT_RATE,
+                    duration_frames=PROJECT_RATE,
+                    channel_count=2,
+                    asset_dir=data / "assets",
+                    separation_repository=separation,
+                    find_asset_by_hash=projects.get_asset_by_hash,
+                    job_repository=jobs,
+                )
+            )
+
+        def assets_by_role(result_set_id: uuid.UUID) -> dict[str, uuid.UUID]:
+            return {
+                stem.role.value: stem.audio_asset_id
+                for stem in separation.list_stems_for_result_set(result_set_id)
+            }
+
+        first = assets_by_role(outcomes[0].result_set.id)
+        second = assets_by_role(outcomes[1].result_set.id)
+        assert second == first
+        assert {asset.id for asset in outcomes[1].assets} == set(first.values())
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT asset_id FROM project_assets WHERE project_id = ?",
+            (str(outcomes[1].run.project_id),),
+        ).fetchall()
+        conn.close()
+        assert {row[0] for row in rows} == {str(value) for value in first.values()}
+
+    @pytest.mark.asyncio
     async def test_publish_stamps_cache_key(self, tmp_path: Path) -> None:
         """M2.7 §9.1: the caller-computed key is stamped on run and set."""
         key = "ff" * 32
@@ -503,15 +570,42 @@ class TestPublishSeparationResult:
         assert len([j for j in queued if j.job_type.value == "waveform"]) == 5
 
     @pytest.mark.asyncio
+    async def test_small_endpoint_rounding_is_corrected(self, tmp_path: Path) -> None:
+        # A two-frame endpoint miss (44101 frames for a 48000-frame
+        # project) is the documented resampler rounding: the trailing edge
+        # is corrected to exact project timing.
+        data = tone_frames(
+            MODEL_RATE + 1, MODEL_RATE, frequency=220.0, amplitude=0.5, channels=2
+        )
+        src = tmp_path / "staged.pcm"
+        out = tmp_path / "restored.pcm"
+        _write_f32le_pcm(src, data)
+
+        outcome = await restore_stem_project_representation(
+            source_path=src,
+            source_rate=MODEL_RATE,
+            source_channels=2,
+            output_path=out,
+            target_rate=PROJECT_RATE,
+            target_channels=2,
+            target_frame_count=PROJECT_RATE,
+        )
+
+        assert outcome.frame_count == PROJECT_RATE
+        assert outcome.endpoint_correction_frames == 2
+        assert out.stat().st_size == PROJECT_RATE * 2 * 4
+
+    @pytest.mark.asyncio
     async def test_failure_leaves_no_partial_records(self, tmp_path: Path) -> None:
         run, staging_dir, attempt_dir, reference_path = self._staged_run(
             tmp_path, SeparationMode.FOUR_STEMS
         )
-        # One stem is one frame long at the model rate: the restore's
-        # endpoint policy fails (48001 != 48000), never a blind trim.
+        # A stem many frames too long at the model rate is an unexplained
+        # length discrepancy, not endpoint rounding: publication fails
+        # without a blind trim.
         _write_f32le_pcm(
             attempt_dir / "drums.pcm",
-            dc_offset(MODEL_RATE + 1, MODEL_RATE, 0.2, channels=2),
+            dc_offset(MODEL_RATE + 100, MODEL_RATE, 0.2, channels=2),
         )
         data = tmp_path / "data"
         db_path = data / "basseparate.db"

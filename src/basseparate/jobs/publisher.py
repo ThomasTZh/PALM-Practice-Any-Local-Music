@@ -727,6 +727,7 @@ def _publish_separation(
             channel_count=output_channel_count(plan),
             asset_dir=paths.data / "assets",
             separation_repository=separations,
+            find_asset_by_hash=projects.get_asset_by_hash,
             cache_key=run.cache_key,
             model_rate=manifest.input_sample_rate,
             job_repository=job_repository,
