@@ -12,9 +12,11 @@ import type { components } from './schema'
 
 const client = createApiClient()
 
+export type StemRole = components['schemas']['StemRole']
+
 export interface ResultSetStem {
   id: string
-  role: string
+  role: StemRole
   displayName: string
   audioAssetId: string
   sampleRate: number
@@ -100,7 +102,9 @@ export async function fetchResultSetDetail(
     cacheKey: data.cache_key ?? null,
     stems: (data.stems ?? []).map((stem) => ({
       id: stem.id,
-      role: stem.role,
+      // The detail schema widens the role to string; the server only
+      // emits the StemRole enum.
+      role: stem.role as StemRole,
       displayName: stem.display_name,
       audioAssetId: stem.audio_asset_id,
       sampleRate: stem.sample_rate,

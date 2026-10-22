@@ -69,7 +69,11 @@ describe('createOpenSession', () => {
     expect(mockClient.POST).toHaveBeenCalledWith(
       '/api/v1/projects/open',
       expect.objectContaining({
-        body: { filename: 'song.basseparate', declared_byte_count: 500_000 },
+        body: {
+          filename: 'song.basseparate',
+          declared_byte_count: 500_000,
+          open_mode: 'new-copy',
+        },
       }),
     )
     expect(session).toEqual({

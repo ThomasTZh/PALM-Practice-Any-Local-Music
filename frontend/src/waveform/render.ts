@@ -13,11 +13,11 @@ import { frameToX, xToFrame, type Viewport } from './viewport'
 
 /** Minimal structural subset of `CanvasRenderingContext2D` used here. */
 export interface WaveformContext {
-  fillStyle: string
-  strokeStyle: string
+  fillStyle: string | CanvasGradient | CanvasPattern
+  strokeStyle: string | CanvasGradient | CanvasPattern
   lineWidth: number
   font: string
-  textBaseline: string
+  textBaseline: CanvasTextBaseline
   fillRect(x: number, y: number, w: number, h: number): void
   clearRect(x: number, y: number, w: number, h: number): void
   beginPath(): void

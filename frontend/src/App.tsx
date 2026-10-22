@@ -19,7 +19,11 @@ import {
   type UploadState,
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
-import { fetchResultSetDetail, type ResultSetDetail } from './api/result-sets'
+import {
+  fetchResultSetDetail,
+  type ResultSetDetail,
+  type StemRole,
+} from './api/result-sets'
 import type { PracticeLoop, PracticeState } from './api/commands'
 import {
   initialTransportDiagnostics,
@@ -1366,7 +1370,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         const s = byRole.get(role)!
         return {
           role: s.role,
-          assetId: s.assetId,
+          assetId: s.audioAssetId,
           sampleRate: s.sampleRate,
           channelCount: s.channelCount,
           frameCount: s.frameCount,
@@ -1380,10 +1384,10 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const handleSelectSet = useCallback((resultSetId: string) => {
     void sendRef.current({ type: 'set_active_result_set', result_set_id: resultSetId })
   }, [])
-  const handleTrackSettings = useCallback((role: string, patch: TrackSettingsPatch) => {
+  const handleTrackSettings = useCallback((role: StemRole, patch: TrackSettingsPatch) => {
     const op = { type: 'set_track_settings', stem_role: role } as {
       type: 'set_track_settings'
-      stem_role: string
+      stem_role: StemRole
     } & Partial<TrackSettingsPatch>
     if (patch.gain !== undefined) op.gain = patch.gain
     if (patch.mute !== undefined) op.mute = patch.mute

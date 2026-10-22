@@ -505,8 +505,8 @@ describe('MixState', () => {
 
   function stereoChunk(frames: number, l: (f: number) => number, r: (f: number) => number) {
     return [
-      Array.from({ length: frames }, (_, f) => l(f)),
-      Array.from({ length: frames }, (_, f) => r(f)),
+      Float32Array.from({ length: frames }, (_, f) => l(f)),
+      Float32Array.from({ length: frames }, (_, f) => r(f)),
     ]
   }
 
@@ -775,12 +775,13 @@ describe('MixState', () => {
     // underrun once, and the following silent block reports zero peaks
     // (the per-quantum reset is visible).
     let t = 0.128
-    let stalling = null
+    let stalling: ReturnType<typeof mixBlock> | null = null
     while (mix.position < 800) {
       stalling = mixBlock(mix, t, 128)
       t += 0.128
     }
-    expect(stalling.res.underrun).toBe(true)
+    expect(stalling).not.toBeNull()
+    expect(stalling!.res.underrun).toBe(true)
     const silent = mixBlock(mix, t, 128)
     expect(silent.res.consumed).toBe(0)
     expect(silent.res.underrun).toBe(false) // one report per episode

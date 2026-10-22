@@ -893,6 +893,7 @@ export class PcmTransport {
     // A pre-target park (M1.15 §17.6.4): first play starts from there.
     if (this.parkedProjectFrame > 0) {
       const primary = this.primary
+      if (!primary) throw new RangeError('at least one source is required')
       const frame = clampToDuration(
         playbackPosition(this.parkedProjectFrame, projectRate, primary.sampleRate),
         primary.frameCount,
@@ -931,6 +932,7 @@ export class PcmTransport {
     this.generation = 0
     this.abort = new AbortController()
     const primary = this.primary
+    if (!primary) throw new RangeError('at least one source is required')
     const frame = clampToDuration(
       playbackPosition(this.retainedProjectFrame, projectRate, primary.sampleRate),
       primary.frameCount,

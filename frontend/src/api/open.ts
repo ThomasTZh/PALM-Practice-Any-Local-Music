@@ -128,7 +128,7 @@ export async function createOpenSession(
   signal?: AbortSignal,
 ): Promise<OpenSession> {
   const res = await client.POST('/api/v1/projects/open', {
-    body: { filename, declared_byte_count: declaredByteCount },
+    body: { filename, declared_byte_count: declaredByteCount, open_mode: 'new-copy' },
     signal,
   })
   if (!res.response.ok || !res.data) {

@@ -12,8 +12,12 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { PracticeState } from '../api/commands'
-import type { components } from '../api/schema'
-import { fetchResultSets, type ResultSetDetail, type ResultSetSummary } from '../api/result-sets'
+import {
+  fetchResultSets,
+  type ResultSetDetail,
+  type ResultSetSummary,
+  type StemRole,
+} from '../api/result-sets'
 import { effectiveTracks } from '../projects/trackSettings'
 import type { MixPeaks } from '../playback/transport'
 import type { PlayheadSource, ViewSource } from '../waveform/WaveformEditor'
@@ -27,8 +31,8 @@ import { TrackLane } from './TrackLane'
 export type { PlaybackMode }
 
 /** Canonical stem order per mode (spec §10.4). */
-export const BASS_PAIR_ROLES = ['bass', 'others']
-export const FOUR_STEM_ROLES = ['vocals', 'drums', 'bass', 'other']
+export const BASS_PAIR_ROLES: StemRole[] = ['bass', 'others']
+export const FOUR_STEM_ROLES: StemRole[] = ['vocals', 'drums', 'bass', 'other']
 
 /** Base lane height in CSS px (× `display_height`). */
 export const LANE_BASE_HEIGHT = 48
@@ -46,7 +50,7 @@ export interface TrackStackProps {
   /** Per-quantum peaks (index = mix source order), from the transport. */
   peaks: MixPeaks | null
   /** Patch one stem's settings (sends `set_track_settings`). */
-  onTrackSettings: (role: string, patch: TrackSettingsPatch) => void
+  onTrackSettings: (role: StemRole, patch: TrackSettingsPatch) => void
   /** Set the master monitoring gain (linear; sends `set_master_gain`). */
   onMasterGain: (linear: number) => void
   /** Toggle the monitoring limiter (sends `set_monitoring_limiter`). */
@@ -149,7 +153,7 @@ export function TrackStack({
             </div>
             <TrackLane
               projectId={projectId}
-              assetId={stem.assetId}
+              assetId={stem.audioAssetId}
               viewSource={viewSource}
               playheadSource={playheadSource}
               height={LANE_BASE_HEIGHT * settings.display_height}

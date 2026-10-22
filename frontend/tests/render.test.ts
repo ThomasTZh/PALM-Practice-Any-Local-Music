@@ -40,7 +40,7 @@ class RecordingContext implements WaveformContext {
   strokeStyle = ''
   lineWidth = 1
   font = ''
-  textBaseline = ''
+  textBaseline: CanvasTextBaseline = 'alphabetic'
 
   record(fn: string, args: (number | string)[]): void {
     this.calls.push({ fn, args })
