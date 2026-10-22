@@ -438,6 +438,34 @@ def _wait_for_terminal(supervisor: WorkerSupervisor, timeout: float = 30.0) -> l
 
 
 class TestExportWorkerProtocol:
+    def test_null_target_rate_keeps_source_rate(
+        self, supervisor: WorkerSupervisor, tmp_path: Path
+    ) -> None:
+        # The API documents sample_rate=null as "keep the source rate";
+        # the job builder forwards that null explicitly.
+        supervisor.wait_for_handshake()
+        params = _export_params(tmp_path, amplitude=0.4)
+        params["target_sample_rate"] = None
+        first_path = params.pop("_first_path")
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        supervisor.send(
+            make_run(
+                uuid.uuid4(),
+                JobType.EXPORT,
+                str(first_path),
+                str(staging),
+                parameters=params,
+            )
+        )
+        messages = _wait_for_terminal(supervisor)
+        final = messages[-1]
+        assert isinstance(final, CompletedMessage)
+        assert all(
+            artifact["sample_rate"] == 44100
+            for artifact in final.payload.result["artifacts"]
+        )
+
     def test_export_completes_with_artifacts(
         self, supervisor: WorkerSupervisor, tmp_path: Path
     ) -> None:

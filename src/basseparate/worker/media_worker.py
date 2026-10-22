@@ -421,7 +421,9 @@ def _export_parameters(
         normalize = ExportNormalization(normalize_value)
     except ValueError as exc:
         raise ValueError("normalize must be one of off, linked_peak") from exc
-    if "target_sample_rate" in parameters:
+    # The API documents null as "keep the source rate"; the parameter
+    # builder forwards that null, so an explicit None means no override.
+    if parameters.get("target_sample_rate") is not None:
         target_rate = _as_int_param(parameters, "target_sample_rate", 8_000, 192_000)
     else:
         target_rate = None
