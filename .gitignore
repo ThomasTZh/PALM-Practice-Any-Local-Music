@@ -56,3 +56,6 @@ audio2test/
 
 # Playwright MCP scratch
 .playwright-mcp/
+
+# M2.21 app-level acceptance rig (scripts, reports, run artifacts)
+.m2.21-acceptance/
