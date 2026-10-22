@@ -1325,6 +1325,12 @@ export class PcmTransport {
    */
   setRate(speed: number): void {
     const clamped = Math.max(0.25, Math.min(2.0, Number.isFinite(speed) ? speed : 1))
+    // The UI re-applies the full mixer state on every practice-state update
+    // (the 5 s playhead autosave). An unchanged rate must not add a timing
+    // segment: its coordinate is clamped to the project duration, while a
+    // looped stream is unbounded, so repeated segments would make the
+    // audible-position mapping jump after the first loop pass.
+    if (clamped === this.speed) return
     this.speed = clamped
     // Optimistic: the worklet's next anchor confirms the ramped rate.
     this.anchorRate = clamped
@@ -1334,12 +1340,15 @@ export class PcmTransport {
     const target = this.primary
     if (context && target && this.isActiveState(this.state)) {
       const now = context.currentTime
-      const frame = Math.min(
+      // Segment coordinates are stream coordinates: do not clamp a looped
+      // stream to the project frame count (the linear mapping clamps in
+      // getAudiblePosition when needed).
+      const frame = Math.max(
+        0,
         Math.round(
           this.consumedFrame +
             Math.max(0, now - this.anchorTime) * target.sampleRate * this.anchorRate,
         ),
-        target.frameCount,
       )
       this.pushSegment(now, frame)
     }

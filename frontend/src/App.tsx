@@ -19,11 +19,7 @@ import {
   type UploadState,
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
-import {
-  fetchResultSetDetail,
-  type ResultSetDetail,
-  type StemRole,
-} from './api/result-sets'
+import { fetchResultSetDetail, type ResultSetDetail, type StemRole } from './api/result-sets'
 import type { PracticeLoop, PracticeState } from './api/commands'
 import {
   initialTransportDiagnostics,

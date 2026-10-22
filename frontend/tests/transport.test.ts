@@ -1431,6 +1431,19 @@ describe('M2.9 stretch integration (spec §11)', () => {
     await rig.transport.play()
     expect(freshNode.posted('rate')).toEqual([{ type: 'rate', value: 2 }])
   })
+
+  it('does not re-anchor an unchanged rate (the 5 s practice-state replay)', async () => {
+    const rig = makeRig()
+    await ready(rig)
+    // The default speed is already 1; the mixer effect replays it on every
+    // practice-state update (the playhead autosave). It must not post a
+    // rate message or push a timing segment whose project-frame clamp
+    // would corrupt the playhead mapping once a loop passes the end.
+    rig.transport.setRate(1)
+    expect(rig.node.posted('rate')).toEqual([])
+    rig.transport.setRate(1.5)
+    expect(rig.node.posted('rate')).toEqual([{ type: 'rate', value: 1.5 }])
+  })
 })
 
 describe('M2.11 practice loops (spec §13)', () => {
