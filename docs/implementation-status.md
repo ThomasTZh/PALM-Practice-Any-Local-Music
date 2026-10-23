@@ -47,10 +47,27 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   four stems, Others sum, Bass+Others) and the checklist in
   `docs/evidence/m2.21-listening-review.md`. Session record:
   `docs/evidence/session-2026-10-18-handover.md`. Remaining after the
-  review: the 60-minute playback/latency measurement.
+  review: the 60-minute playback/latency measurement; the objective
+  playback passed on 2026-10-23 and audible latency remains human-only.
 - **M2.20–M2.21:** complete — `a24357f` + this ledger-hash follow-up
   (performance targets §21.1–21.3 and final checklist §21.4/§22 evidence;
   measured CPU RTF plus explicit unverified/human-only items).
+- **M2.21 app-level acceptance (2026-10-22/23):** objective pass on
+  Carousel Theory. The detached app served `storage/m2.21/` on port
+  18796; GPU separation on the RTX 4080 took 72.5 s and published four
+  valid 48 kHz stems. WAV24 export: exactly 14,133,913 frames per stem,
+  zero-lag four-stem sum (corr 0.9927, RMS ratio 1.0008). Portable save:
+  702,266,762 bytes, 380 members; reopened ready with matching geometry,
+  one valid set, matching stems and archive hash. The final 60-minute
+  whole-track loop playback passed on 2026-10-23: 12 resets, 11 full
+  periods of 293.88–294.91 s (mean 294.468 s vs expected 294.4565 s),
+  one startup underrun and none later, with bounded backend/media/browser
+  memory.
+  Fixed blockers: 48 kHz endpoint rounding and duplicate-content asset
+  reuse (`42655c4`), null export target rate (`094eeb7`), the frontend
+  `audioAssetId` playback wiring plus clean-build typing (`10b183f`),
+  and the 5 s autosave loop-playhead mapping bug (`b2e244c`). The human
+  perceptual checks remain.
 - **M2.19:** complete — `ac40bc1` + `ba28fa2` + `99f06f1` + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
@@ -90,8 +107,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `e296795` — accept minor blend dip (Carousel listening
-  review); this ledger-hash follow-up on top. `346dea5` — blend-dip
+- **Last commit:** `b2e244c` — keep the looped playhead stable when the
+  rate is re-applied; `10b183f` — play four stems from the mapped audio
+  asset ids; `094eeb7` — accept a null export target rate; `42655c4` —
+  correct stem endpoints and reuse existing assets; this ledger-hash
+  follow-up on top. `e296795` — accept minor blend dip (Carousel
+  listening
+  review); `346dea5` — blend-dip
   investigation (level match ruled
   out); `4eb6ce7` — Carousel listening
   findings and blend-dip analysis; `d88171c` (ledger: Carousel findings
@@ -148,27 +170,34 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** measure the 60-minute playback session and perform
-  the §21.4 human listening review. The GPU qualification and the five
-  recordings are complete (M2.19).
+- **Next action:** perform the §21.4 human perceptual checks on the
+  running app (the objective acceptance is complete): 0.5×/0.75×
+  practice, loop click/timing audibility, in-app stereo, audible
+  latency/smoothness, exported stems, and repeat after reopen. The GPU
+  qualification and the five recordings are complete (M2.19); the human
+  checks require the listener.
   The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
   if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is the M2.20–M2.21 commit
-  (`M2.20-M2.21: performance targets and final acceptance evidence`)
-  with this ledger-hash follow-up on top; the tree is clean.
-  Baseline established 2026-10-18:
-  `.venv/bin/python -m pytest tests/ -q` (1412 passed; the
+- **Resume procedure:** read this file; HEAD is the M2.21 app-level
+  acceptance ledger-hash follow-up on top of `b2e244c`; the tree is
+  clean. Baseline re-established 2026-10-22:
+  `.venv/bin/python -m pytest tests/ -q` (1416 passed; the
   job-manager timing test and `test_stderr_does_not_corrupt_protocol`
   are occasionally flaky under load),
   `.venv/bin/python -m ruff check src/ tests/` (clean),
   `.venv/bin/python -m mypy src/basseparate` (82 files clean),
-  `cd frontend && npx vitest run` (566 passed),
-  `cd frontend && npx tsc --noEmit` (no errors),
-  `cd frontend && npx prettier --check "src/**/*.{ts,tsx,css}" "tests/**/*.{ts,tsx}"` (clean),
-  `cd frontend && npx vite build` (OK),
+  `cd frontend && npx vitest run` (567 passed),
+  `cd frontend && npx tsc -b --force` (clean; the earlier
+  `tsc --noEmit` did not check the referenced app project),
+  `cd frontend && npm run format:check` (clean),
+  `cd frontend && npm run build` (OK),
   `.venv/bin/python scripts/check_contract.py` (OK).
+  `cd frontend && npm run lint` still reports 131 pre-existing issues
+  (mostly node/no-this-alias in older tests); the changed files are
+  clean under targeted eslint except the pre-existing `offset`
+  initializer in `src/api/open.ts`.
   **Recovery note:** if working-tree files appear reverted, versions
   are recoverable from the OpenCode snapshot store
   (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
@@ -3745,6 +3774,84 @@ checklist in `docs/evidence/m2.21-listening-review.md`. The session
 handover is `docs/evidence/session-2026-10-18-handover.md`. Work is
 paused here for the human review; the 60-minute playback measurement
 follows it.
+
+## M2.21 — App-level acceptance (Carousel, 2026-10-22)
+
+**Setup:** detached `basseparate serve --port 18796 --storage-root
+storage/m2.21`; source `audio2test/Carousel Theory Full Mix V1 (With
+Limiter).wav` (48 kHz, 2 ch, 113,071,396 bytes, SHA-256 `2bc81e32...`);
+project 14,133,913 frames (294.4565 s); device store qualified
+`GPU-0dab3af3-...` and `cpu`; separation device `cuda:0`.
+
+**2026-10-23 (playback rerun):** the first 60-minute attempt completed
+but failed its loop criterion: 81 resets, 80 intervals at ~5 s, from
+the autosave `setRate` defect fixed in `b2e244c`. A corrected run then
+reached seven full passes (~294.4 s each) before the app server was
+shut down at 19:59 on 2026-10-22, 38.8 minutes in. On 2026-10-23 the
+server was restarted with the preserved `storage/m2.21` storage
+(project `923d1e34...`, result set `5299022f...`), the two diagnostic
+loops were removed, and the final 60-minute run completed on 2026-10-23:
+12 resets, 11 full periods of 293.88–294.91 s (mean 294.468 s vs
+expected 294.4565 s), one startup underrun and none later, bounded
+memory. The restart needs no GPU: the earlier separation result is
+preserved and playback is CPU-side; the current environment's NVIDIA
+driver is unavailable, so no new separation is attempted.
+
+**Objective results:**
+
+- Separation run `df241f20...`: 72.5 s, result set `aa637e45...`,
+  validation `valid`, four stems at 48 kHz/2 ch/14,133,913 frames,
+  adapter `outer-window-v1`, engine `demucs-4.1.0`.
+- WAV24 export: four artifacts, 84,803,616 bytes each, SHA-256 headers
+  match; four-stem sum vs reference: zero lag, corr 0.9927 at 30 s,
+  RMS ratio 1.0008; all roles present.
+- Portable save: 702,266,762 bytes, SHA-256 `a656172a...`, 380 members,
+  no model/source paths. Reopened project `923d1e34...`: ready, 48 kHz,
+  14,133,913 frames, one valid set `5299022f...`, stem frames match,
+  archive hash matches.
+- Whole-track loop `929a5978...`: 0..14,133,913 frames, enabled.
+- 60-minute playback: final run `.m2.21-acceptance/play60-final/`
+  (2026-10-23): 3,600.7 s, 119 samples, no errors; 12 resets; the first
+  interval (285.36 s) is partial and starts at the 10 s probe; the 11
+  full periods were 293.88–294.91 s, mean 294.468 s vs expected
+  294.4565 s (1 s sampling). Terminal playhead 60.86 s; one startup
+  underrun and none later. Backend RSS 65.9–79.8 MB; media worker
+  51.5 → 8.3 MB (cache released after the initial asset fetch; no
+  error); browser process tree 0.93–1.60 GB; JS heap 7.5–38.1 MB
+  (GC sawtooth); DOM 813–821.
+
+**Defects found and fixed during acceptance:**
+
+1. 48 kHz stem endpoints: two-stage resampling left 1–2 trailing frames;
+   publication now corrects at most 4 frames (2 per stage) and fails
+   larger differences; identity restores stay exact (`42655c4`).
+2. Duplicate content hashes: publishing the same stems into a second
+   project inserted a new asset id that `INSERT OR IGNORE` skipped, then
+   failed the `project_assets` foreign key; the publisher now reuses the
+   stored asset id (`42655c4`, regression test).
+3. A null export target rate was coerced instead of meaning keep-source
+   (`094eeb7`, regression test).
+4. The app's four-stem transport and stem lanes read a nonexistent
+   `assetId` instead of `audioAssetId`, so playback fetched
+   `/assets/undefined/bytes` and failed 422. Fixed in `10b183f`; this
+   also restored a clean `tsc -b` build (open_mode, StemRole typing,
+   canvas types, test mocks). The prior ledger's `npx tsc --noEmit`
+   did not check the referenced app project; use `npx tsc -b`.
+5. The 5 s playhead autosave replays the practice state, so `setRate(1.0)`
+   ran every 5 s. It pushed a timing segment even for an unchanged rate
+   and clamped the segment coordinate to the project frame count; once a
+   looped stream passed that count, the playhead mapping jumped every
+   5 s and a full-track loop could not sustain a pass. The first
+   60-minute attempt completed but failed objectively with 81 resets
+   (80 intervals at ~5.0 s). Fixed in `b2e244c`: unchanged rates are a
+   no-op and real rate changes use the unbounded stream coordinate. A
+   10 s end-of-track loop then wrapped correctly; the corrected partial
+   run reached seven full passes, and the final 60-minute run validated
+   the full track.
+
+**Human-only items:** 0.5×/0.75× practice, loop click/timing audibility,
+in-app stereo image, audible latency/smoothness, and listening to the
+exported stems. Objective timing/alignment does not attest perception.
 
 ## Architectural decisions so far
 
