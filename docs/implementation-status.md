@@ -5,9 +5,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Current position
 
-- **Milestone:** 2 (Bass practice workflow)
+- **Milestone:** 2 (Bass practice workflow) — **complete and accepted
+  (2026-10-23)**.
 - **Gate:** Milestone 1 exit complete — all of M1.1–M1.16 committed; §18
-  test corpus green (748 py + 307 frontend); contract in sync.
+  test corpus green (748 py + 307 frontend); contract in sync. M2.20–M2.21
+  final acceptance (objective + human) complete; see the handover
+  `docs/evidence/session-2026-10-23-handover.md`.
 - **Work package:** M2.1 (Confirm prerequisites and extend the domain) —
   **complete** (800 py + 307 frontend green; `ba0b151`).
 - **M2.2:** complete — `42d8726` (842 py + 307 frontend green; all 3
@@ -49,27 +52,33 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `docs/evidence/session-2026-10-18-handover.md`. Remaining after the
   review: the 60-minute playback/latency measurement; the objective
   playback passed on 2026-10-23 and audible latency remains human-only.
-- **M2.20–M2.21:** complete — `a24357f` + this ledger-hash follow-up
-  (performance targets §21.1–21.3 and final checklist §21.4/§22 evidence;
-  measured CPU RTF plus explicit unverified/human-only items).
-- **M2.21 app-level acceptance (2026-10-22/23):** objective pass on
-  Carousel Theory. The detached app served `storage/m2.21/` on port
-  18796; GPU separation on the RTX 4080 took 72.5 s and published four
-  valid 48 kHz stems. WAV24 export: exactly 14,133,913 frames per stem,
-  zero-lag four-stem sum (corr 0.9927, RMS ratio 1.0008). Portable save:
-  702,266,762 bytes, 380 members; reopened ready with matching geometry,
-  one valid set, matching stems and archive hash. The final 60-minute
-  whole-track loop playback passed on 2026-10-23: 12 resets, 11 full
-  periods of 293.88–294.91 s (mean 294.468 s vs expected 294.4565 s),
-  one startup underrun and none later, with bounded backend/media/browser
-  memory.
+- **M2.20–M2.21:** complete and accepted — `a24357f` + ledger
+  follow-ups (performance targets §21.1–21.3 and final checklist
+  §21.4/§22 evidence; measured CPU RTF plus explicit unverified/
+  human-only items). The human listening review passed **all steps
+  6–10** on 2026-10-23; M2.21 is complete. The only open item is an
+  optional, non-blocking future improvement to make the loop join
+  seamless without the 5 ms fade notch.
+- **M2.21 app-level acceptance (2026-10-22/23):** objective and human
+  pass on Carousel Theory. The detached app served `storage/m2.21/` on
+  port 18796; GPU separation on the RTX 4080 took 72.5 s and published
+  four valid 48 kHz stems. WAV24 export: exactly 14,133,913 frames per
+  stem, zero-lag four-stem sum (corr 0.9927, RMS ratio 1.0008).
+  Portable save: 702,266,762 bytes, 380 members; reopened ready with
+  matching geometry, one valid set, matching stems and archive hash.
+  The final 60-minute whole-track loop playback passed on 2026-10-23:
+  12 resets, 11 full periods of 293.88–294.91 s (mean 294.468 s vs
+  expected 294.4565 s), one startup underrun and none later, with
+  bounded backend/media/browser memory.
   Fixed blockers: 48 kHz endpoint rounding and duplicate-content asset
   reuse (`42655c4`), null export target rate (`094eeb7`), the frontend
   `audioAssetId` playback wiring plus clean-build typing (`10b183f`),
-  the 5 s autosave loop-playhead mapping bug (`b2e244c`), and the
-  active-loop selection gesture (`53d2e32`). The human review on
-  2026-10-23 passed steps 6, 9 and 10; step 7 awaits retest and step 8's
-  in-app stereo image is unconfirmed.
+  the 5 s autosave loop-playhead mapping bug (`b2e244c`), the
+  active-loop selection gesture (`53d2e32`), and the loop overlay /
+  plain-drag UX (`2e1c2f0`). Human steps 6–10 all pass: speeds,
+  exports, reopen repeat, loop boundary timing, and in-app stereo
+  image. See `docs/evidence/m2.21-listening-review.md` and the final
+  handover `docs/evidence/session-2026-10-23-handover.md`.
 - **M2.19:** complete — `ac40bc1` + `ba28fa2` + `99f06f1` + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
@@ -109,8 +118,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `53d2e32` — select on waveform drags inside active
-  loops; this ledger-hash follow-up on top. `c531488` — record the M2.21
+- **Last work commits:** `2e1c2f0` — show and drag the active loop
+  overlay (final loop UX fix); `424b46b` — ledger for `2e1c2f0`; the
+  final acceptance/handover docs commit is on top (hash recorded in the
+  follow-up ledger entry). Earlier acceptance fixes: `53d2e32` — select
+  on waveform drags inside active loops; `c531488` — record the M2.21
   60-minute playback acceptance; `b2e244c` — keep the looped playhead
   stable when the rate is re-applied; `10b183f` — play four stems from
   the mapped audio asset ids; `094eeb7` — accept a null export target
@@ -174,19 +186,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** retest step 7 on the running app (drag the chorus,
-  click `Create from selection`, tick `Looping`, Play) and confirm the
-  in-app stereo image for step 8. The human review passed steps 6, 9 and
-  10 on 2026-10-23; the objective acceptance and the 60-minute run are
-  complete, and the remaining items are listener-only. The GPU
-  qualification and the five recordings are complete (M2.19).
-  The e2e `app.spec.ts`
-  harness bug (spawns the Python server via
-  `process.execPath`) is pre-existing and out of scope — address it
-  if/when the e2e suite is re-run in a full environment.
-- **Resume procedure:** read this file; HEAD is the M2.21 app-level
-  acceptance ledger-hash follow-up on top of `b2e244c`; the tree is
-  clean. Baseline re-established 2026-10-22:
+- **Next action:** none. M2.21 is complete and accepted; all human
+  steps 6–10 pass. No functional work is pending. Optional future work
+  only: make the loop join seamless without the 5 ms fade notch (for
+  example a short crossfade) and continue loop UX polish. The e2e
+  `app.spec.ts` harness bug (spawns the Python server via
+  `process.execPath`) is pre-existing and out of scope; address it
+  if/when the e2e suite is re-run in a full environment. For a new
+  session, read this file and `docs/evidence/session-2026-10-23-handover.md`.
+- **Resume procedure:** read this file and the 2026-10-23 handover; HEAD
+  is the final acceptance/handover commit on top of `2e1c2f0`; the tree
+  is clean. Baseline re-established 2026-10-22:
   `.venv/bin/python -m pytest tests/ -q` (1416 passed; the
   job-manager timing test and `test_stderr_does_not_corrupt_protocol`
   are occasionally flaky under load),
@@ -198,13 +208,28 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `cd frontend && npm run format:check` (clean),
   `cd frontend && npm run build` (OK),
   `.venv/bin/python scripts/check_contract.py` (OK).
-  Focused regression after the 2026-10-23 loop-selection fix:
+  Focused regression after the 2026-10-23 loop fixes:
   `cd frontend && npx vitest run tests/WaveformEditor.test.tsx`
-  (58 passed). The 567-pass full baseline predates that added test.
+  (59 passed after `2e1c2f0`). The 567-pass full baseline predates the
+  two added loop regression tests; the full suite was not rerun after
+  them. `cd frontend && npm run build` passed after `2e1c2f0`.
   `cd frontend && npm run lint` still reports 131 pre-existing issues
   (mostly node/no-this-alias in older tests); the changed files are
   clean under targeted eslint except the pre-existing `offset`
   initializer in `src/api/open.ts`.
+  **App resume:** the app was left running at
+  `http://127.0.0.1:18796/` with `storage/m2.21` (current token in
+  `.m2.21-acceptance/server.log`). If it is down, relaunch with
+  `.venv/bin/basseparate serve --no-browser --port 18796 --storage-root
+  storage/m2.21` and use the new token. Project
+  `923d1e34-8141-495d-847d-6bb6aae3c114`, result set
+  `5299022f-4495-4839-95c2-6358f7199735`; project position 2,592,000
+  frames (54.0 s), selection 3,202,809–4,956,380 frames, one active
+  loop `929a5978-15ff-4b1d-aa45-db1ce44761e8` at 2,400,000–2,832,000
+  frames (50.0–59.0 s), `Fade` off, `Looping` enabled (snapshot at
+  revision 1861; the position may advance if playback was left running).
+  The NVIDIA driver is unavailable, so do not attempt a new separation;
+  the four stems and result set are preserved and playback is CPU-side.
   **Recovery note:** if working-tree files appear reverted, versions
   are recoverable from the OpenCode snapshot store
   (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
@@ -3725,8 +3750,20 @@ the responsiveness architecture (event loop never blocked; cancellation
 acknowledged immediately), and the §22 final checklist with explicit
 **partial/not-verified/human-only** statuses. GPU performance, all five
 recordings, the 60-minute playback run, and the listening review are not
-claimed. No functional work packages remain; the milestone's automated
-surface is complete (backend 1412 pytest, frontend 566 Vitest).
+claimed at that point. No functional work packages remain; the
+milestone's automated surface is complete (backend 1412 pytest,
+frontend 566 Vitest).
+
+**2026-10-23 final update:** the human listening review passed all steps
+6–10. The listener accepted loop boundary timing (step 7) and the in-app
+stereo image (step 8); practice speeds, exports, and reopen repeat had
+already passed. The final loop UX fix is `2e1c2f0` (loop overlay above
+the selection, 2 px border, top-center grip, plain-drag top edge), with
+the focused `WaveformEditor` suite at 59 passed and a clean production
+build. M2.20–M2.21 is complete. Optional future work only: a seamless
+loop join without the 5 ms fade notch. See
+`docs/evidence/m2.21-listening-review.md` and
+`docs/evidence/session-2026-10-23-handover.md`.
 
 ## M2.19 — GPU acceptance (five recordings)
 
@@ -3840,9 +3877,9 @@ activates it but does not enable repetition. Fixed in `53d2e32`: plain
 drags select, Alt+drag moves the loop body, the boundary handles still
 resize, and the hint documents the gestures. The acceptance loop was
 restored to 0..14,133,913 frames, saved inactive, and the project reset
-to position 0. Step 7 awaits retest. Step 8's response confirmed the
-`x1` speed reset, not the stereo image; the in-app stereo image is still
-unconfirmed.
+to position 0. Step 8's response confirmed the `x1` speed reset, not the
+stereo image; the in-app stereo image was still unconfirmed at that
+point, before the final retest.
 
 **2026-10-23 (step 7 overlay/drag retest).** The listener confirmed that
 the audio loops, but reported no visible loop indication, no plain drag,
@@ -3858,7 +3895,18 @@ toggles". Focused `WaveformEditor.test.tsx`: 59 passed; production build
 passed. The current loop is not the selection, so the listener may drag
 the existing loop or create a new one from the selection. The slight
 join gap is the intended 5 ms boundary fade; `Fade` off gives an exact
-join. Step 7 still awaits the final boundary/timing retest.
+join.
+
+**2026-10-23 (final human acceptance):** step 7 passed: boundary timing
+was good with `Fade` off. The listener also confirmed step 8's in-app
+stereo image is good. With steps 6, 9 and 10 already passed, all human
+steps 6–10 pass and M2.21 is complete. The loop UX fix is `2e1c2f0`;
+the final wrap-up state and resume instructions are in
+`docs/evidence/session-2026-10-23-handover.md`. Future improvement,
+non-blocking: make the loop join seamless without the 5 ms fade notch.
+The current test loop is 2,400,000–2,832,000 frames (50.0–59.0 s),
+`Fade` off, active and looping; position 2,592,000 frames; selection
+3,202,809–4,956,380 frames.
 
 **Defects found and fixed during acceptance:**
 
@@ -3902,14 +3950,16 @@ join. Step 7 still awaits the final boundary/timing retest.
    the selection tint; the loop body had no plain-drag move. Fixed in
    `2e1c2f0`: loop on top of the selection, 2 px border, top-center grip
    plus a forgiving 12 px top-edge move band. Focused
-   `WaveformEditor.test.tsx`: 59 passed; build passed. Step 7 still
-   awaits the final boundary/timing retest.
+   `WaveformEditor.test.tsx`: 59 passed; build passed. Final retest:
+   step 7 passed; boundary timing accepted with `Fade` off.
 
-**Human-only items:** the listener accepted the practice speeds (step
-6), the exported stems (step 9), and repeat playback after reopen (step
-10). Step 7's audio loop is confirmed; its overlay/drag fix awaits the
-final boundary/timing retest. Step 8's in-app stereo image is
-unconfirmed. Objective timing/alignment does not attest perception.
+**Human-only items:** all accepted by the listener on 2026-10-23:
+practice speeds (step 6), exported stems (step 9), repeat playback after
+reopen (step 10), loop boundary timing (step 7), and the in-app stereo
+image (step 8). Objective timing/alignment does not attest perception;
+these are the listener's own confirmations. Audible control-response
+latency was not separately re-tested; the M2.10 objective latency/bypass
+evidence stands.
 
 ## Architectural decisions so far
 
