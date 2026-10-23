@@ -119,9 +119,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
 - **Last work commits:** `2e1c2f0` — show and drag the active loop
-  overlay (final loop UX fix); `424b46b` — ledger for `2e1c2f0`; the
-  final acceptance/handover docs commit is on top (hash recorded in the
-  follow-up ledger entry). Earlier acceptance fixes: `53d2e32` — select
+  overlay (final loop UX fix); `424b46b` — ledger for `2e1c2f0`;
+  `33162c5` — finalize the M2.21 human acceptance and handover. Earlier
+  acceptance fixes: `53d2e32` — select
   on waveform drags inside active loops; `c531488` — record the M2.21
   60-minute playback acceptance; `b2e244c` — keep the looped playhead
   stable when the rate is re-applied; `10b183f` — play four stems from
@@ -195,8 +195,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   if/when the e2e suite is re-run in a full environment. For a new
   session, read this file and `docs/evidence/session-2026-10-23-handover.md`.
 - **Resume procedure:** read this file and the 2026-10-23 handover; HEAD
-  is the final acceptance/handover commit on top of `2e1c2f0`; the tree
-  is clean. Baseline re-established 2026-10-22:
+  is the final M2.21 acceptance ledger on top of `2e1c2f0`; the tree is
+  clean. Baseline re-established 2026-10-22:
   `.venv/bin/python -m pytest tests/ -q` (1416 passed; the
   job-manager timing test and `test_stderr_does_not_corrupt_protocol`
   are occasionally flaky under load),
