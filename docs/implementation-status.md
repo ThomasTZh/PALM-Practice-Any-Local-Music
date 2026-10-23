@@ -3844,6 +3844,22 @@ to position 0. Step 7 awaits retest. Step 8's response confirmed the
 `x1` speed reset, not the stereo image; the in-app stereo image is still
 unconfirmed.
 
+**2026-10-23 (step 7 overlay/drag retest).** The listener confirmed that
+the audio loops, but reported no visible loop indication, no plain drag,
+and a slight gap at the join. The active loop was 2,400,000–3,621,936
+frames (50.0–75.456 s), while the live selection was 3,202,809–4,956,380
+frames (66.7–103.258 s): the visible selection was not the loop, and the
+loop overlay was drawn under the selection tint. Fixed in `2e1c2f0`:
+selection is drawn first, the active loop last, with a 2 px border and a
+20×4 px top-center grip; a plain drag on the loop's top 12 px band moves
+the whole interval, the boundary handles resize, and Alt+drag on the
+body still moves. The hint now reads "Drag selects; grip moves loop; L
+toggles". Focused `WaveformEditor.test.tsx`: 59 passed; production build
+passed. The current loop is not the selection, so the listener may drag
+the existing loop or create a new one from the selection. The slight
+join gap is the intended 5 ms boundary fade; `Fade` off gives an exact
+join. Step 7 still awaits the final boundary/timing retest.
+
 **Defects found and fixed during acceptance:**
 
 1. 48 kHz stem endpoints: two-stage resampling left 1–2 trailing frames;
@@ -3880,12 +3896,20 @@ unconfirmed.
    moves; L toggles". The acceptance loop is saved inactive at
    0..14,133,913 frames; the project is at position 0. Focused
    `WaveformEditor.test.tsx` regression: 58 passed.
+7. The step 7 retest confirmed audio looping but exposed a visibility
+   and drag problem. The active loop (50.0–75.456 s) differed from the
+   live selection (66.7–103.258 s), and the loop overlay was drawn under
+   the selection tint; the loop body had no plain-drag move. Fixed in
+   `2e1c2f0`: loop on top of the selection, 2 px border, top-center grip
+   plus a forgiving 12 px top-edge move band. Focused
+   `WaveformEditor.test.tsx`: 59 passed; build passed. Step 7 still
+   awaits the final boundary/timing retest.
 
 **Human-only items:** the listener accepted the practice speeds (step
 6), the exported stems (step 9), and repeat playback after reopen (step
-10). Step 7 (loop) awaits retest after `53d2e32`; step 8's in-app stereo
-image is unconfirmed. Objective timing/alignment does not attest
-perception.
+10). Step 7's audio loop is confirmed; its overlay/drag fix awaits the
+final boundary/timing retest. Step 8's in-app stereo image is
+unconfirmed. Objective timing/alignment does not attest perception.
 
 ## Architectural decisions so far
 
