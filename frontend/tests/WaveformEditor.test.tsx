@@ -236,9 +236,14 @@ function hitbox(): HTMLElement {
   return document.querySelector('.wave-lane-hitarea') as HTMLElement
 }
 
-function pointer(type: string, el: Element, clientX: number): void {
+function pointer(
+  type: string,
+  el: Element,
+  clientX: number,
+  init: MouseEventInit = {},
+): void {
   act(() => {
-    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX }))
+    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, ...init }))
   })
 }
 
@@ -1036,11 +1041,12 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     mockReady()
     await renderReadyEditor({ loop: loopRange() })
     const sel = ctxOf(canvasById('lane:0:selection'))
-    // Tint fill, top border, then the two boundary handles.
+    // Tint fill, 2 px top border, the two boundary handles, then the grip.
     expect(sel.rects[0]).toEqual([100, 0, 100, 48])
-    expect(sel.rects[1]).toEqual([98.5, 0, 103, 1])
+    expect(sel.rects[1]).toEqual([98.5, 0, 103, 2])
     expect(sel.rects[2]).toEqual([98.5, 0, 3, 48])
     expect(sel.rects[3]).toEqual([198.5, 0, 3, 48])
+    expect(sel.rects[4]).toEqual([140, 2, 20, 4])
   })
 
   it('drags the end handle: local preview, one commit on release', async () => {
@@ -1074,9 +1080,21 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
     const hit = hitbox()
-    pointerW('pointerdown', hit, 150, { altKey: true }) // body
-    pointerW('pointermove', hit, 160, { altKey: true }) // +10 px = +640 frames
-    pointerW('pointerup', hit, 160, { altKey: true })
+    pointerW('pointerdown', hit, 150, { altKey: true, clientY: 24 }) // body, below the grip
+    pointerW('pointermove', hit, 160, { altKey: true, clientY: 24 }) // +10 px = +640 frames
+    pointerW('pointerup', hit, 160, { altKey: true, clientY: 24 })
+    expect(onLoopRangeChange).toHaveBeenCalledTimes(1)
+    expect(onLoopRangeChange).toHaveBeenCalledWith(7040, 13_440)
+  })
+
+  it('moves the whole interval on a plain drag of the top-center grip', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointer('pointerdown', hit, 150, { clientY: 3 })
+    pointer('pointermove', hit, 160, { clientY: 3 })
+    pointer('pointerup', hit, 160, { clientY: 3 })
     expect(onLoopRangeChange).toHaveBeenCalledTimes(1)
     expect(onLoopRangeChange).toHaveBeenCalledWith(7040, 13_440)
   })
@@ -1086,9 +1104,9 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
     const hit = hitbox()
-    pointerW('pointerdown', hit, 150, { altKey: true })
-    pointerW('pointermove', hit, 0, { altKey: true }) // far left: start clamps to 0
-    pointerW('pointerup', hit, 0, { altKey: true })
+    pointerW('pointerdown', hit, 150, { altKey: true, clientY: 24 })
+    pointerW('pointermove', hit, 0, { altKey: true, clientY: 24 }) // far left: start clamps to 0
+    pointerW('pointerup', hit, 0, { altKey: true, clientY: 24 })
     expect(onLoopRangeChange).toHaveBeenCalledWith(0, 6400)
   })
 
@@ -1097,9 +1115,9 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
     const hit = hitbox()
-    pointer('pointerdown', hit, 150)
-    pointer('pointermove', hit, 160)
-    pointer('pointerup', hit, 160)
+    pointer('pointerdown', hit, 150, { clientY: 24 })
+    pointer('pointermove', hit, 160, { clientY: 24 })
+    pointer('pointerup', hit, 160, { clientY: 24 })
     expect(onLoopRangeChange).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Selection')).toHaveTextContent(
       '0:00.200 – 0:00.213 · 0:00.013',
@@ -1112,8 +1130,8 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onSeek, onLoopRangeChange })
     const hit = hitbox()
-    pointer('pointerdown', hit, 150)
-    pointer('pointerup', hit, 150)
+    pointer('pointerdown', hit, 150, { clientY: 24 })
+    pointer('pointerup', hit, 150, { clientY: 24 })
     expect(onSeek).toHaveBeenCalledWith(9600)
     pointer('pointerdown', hit, 200) // the end handle
     pointer('pointerup', hit, 200)
@@ -1126,9 +1144,9 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
     const hit = hitbox()
-    pointerW('pointerdown', hit, 120, { shiftKey: true })
-    pointerW('pointermove', hit, 180, { shiftKey: true })
-    pointerW('pointerup', hit, 180, { shiftKey: true })
+    pointerW('pointerdown', hit, 120, { shiftKey: true, clientY: 24 })
+    pointerW('pointermove', hit, 180, { shiftKey: true, clientY: 24 })
+    pointerW('pointerup', hit, 180, { shiftKey: true, clientY: 24 })
     expect(onLoopRangeChange).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.160 – 0:00.240 · 0:00.080')
   })

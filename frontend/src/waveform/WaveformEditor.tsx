@@ -57,6 +57,8 @@ import {
   drawRuler,
   drawSamplePoints,
   drawSelection,
+  LOOP_GRIP_HEIGHT,
+  LOOP_GRIP_TOP,
   MARKER_COLORS,
   MARKER_FLAG_WIDTH,
   type BucketSource,
@@ -154,8 +156,9 @@ export interface WaveformEditorProps {
   onFollowChange?: (follow: boolean) => void
   /**
    * The active practice loop to draw and drag (M2.11 §13.2.3–4); null →
-   * no overlay. A plain drag selects; the boundary handles resize, and
-   * Alt+drag moves the interval. Shift+drag also forces a selection.
+   * no overlay. A plain drag selects; the boundary handles resize, the
+   * top grip/edge moves the interval, and Alt+drag also moves it.
+   * Shift+drag forces a selection.
    */
   loop?: LoopRange | null
   /** Commit a loop range edit on drag end (exactly one per gesture). */
@@ -203,6 +206,8 @@ const AMP_MAX = 16
 const DRAG_THRESHOLD_PX = 3
 /** Boundary handle hit radius in CSS px (§13.4.8). */
 const HANDLE_HIT_PX = 4
+/** Loop grip hit box height in CSS px (the drawn bar sits at the top). */
+const LOOP_GRIP_HIT_HEIGHT = LOOP_GRIP_TOP + LOOP_GRIP_HEIGHT + 6
 
 interface AmpState {
   linked: boolean
@@ -742,26 +747,40 @@ export function WaveformEditor({
     [contentWidth],
   )
 
+  const laneY = useCallback((clientY: number) => {
+    const el = hitRef.current
+    if (!el) return 0
+    return clientY - el.getBoundingClientRect().top
+  }, [])
+
   const onLanePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!viewport || !manifest) return
       e.preventDefault()
       const x = laneX(e.clientX)
+      const y = laneY(e.clientY)
       let mode: DragMode = 'maybe'
       let loopStart: number | undefined
       let loopEnd: number | undefined
       // The loop overlay keeps its boundary handles (§13.2.3–4), but a
-      // plain drag anywhere else is a selection. Moving the body needs
-      // Alt so selecting a passage inside a loop remains the default;
-      // Shift bypasses the handles as well.
+      // plain drag anywhere else is a selection. The top grip/edge is a
+      // visible plain-drag target for moving the interval; Alt+drag on
+      // the body still works. Shift bypasses every loop handle.
       if (loop && !e.shiftKey) {
         const x0 = frameToX(viewport, loop.start)
         const x1 = frameToX(viewport, loop.end)
+        // The drawn overlay is clamped to the viewport; match its grip.
+        const vx0 = Math.max(0, x0)
+        const vx1 = Math.min(contentWidth, x1)
         loopStart = loop.start
         loopEnd = loop.end
         if (Math.abs(x - x0) <= HANDLE_HIT_PX) mode = 'loop-start'
         else if (Math.abs(x - x1) <= HANDLE_HIT_PX) mode = 'loop-end'
-        else if (e.altKey && x > x0 && x < x1) mode = 'loop-move'
+        else if (vx1 > vx0 && y <= LOOP_GRIP_HIT_HEIGHT && x > vx0 && x < vx1) {
+          // The whole top band moves the loop; the drawn center grip is
+          // the visible affordance, but the hit target is forgiving.
+          mode = 'loop-move'
+        } else if (e.altKey && x > x0 && x < x1) mode = 'loop-move'
       }
       if (mode === 'maybe' && selection) {
         const x0 = frameToX(viewport, selection.start)
@@ -776,7 +795,7 @@ export function WaveformEditor({
         // No pointer capture (jsdom): the drag still works.
       }
     },
-    [viewport, manifest, selection, laneX, loop],
+    [viewport, manifest, selection, laneX, laneY, loop, contentWidth],
   )
 
   const onLanePointerMove = useCallback(
@@ -1289,9 +1308,11 @@ export function WaveformEditor({
     labels,
   ])
 
-  // Selection layer: the loop overlay under the selection range, each
-  // boundary with a handle (§13.4.7, §13.2.3–4). A loop drag previews
-  // locally until pointer-up commits it.
+  // Selection layer: the selection range under the active-loop overlay,
+  // each boundary with a handle (§13.4.7, §13.2.3–4). The loop is drawn
+  // last so an equal or overlapping selection cannot hide its tint,
+  // border, handles, or grip. A loop drag previews locally until
+  // pointer-up commits it.
   useEffect(() => {
     if (state !== 'ready' || !viewport || contentWidth <= 0) return
     const loopRange = loopDrag ?? loop ?? null
@@ -1299,6 +1320,13 @@ export function WaveformEditor({
       const sctx = ctxRef.current.get(`lane:${ch}:selection`)
       if (!sctx) continue
       sctx.clearRect(0, 0, contentWidth, LANE_HEIGHT)
+      if (selection) {
+        const x0 = frameToX(viewport, selection.start)
+        const x1 = frameToX(viewport, selection.end)
+        if (x1 > 0 && x0 < contentWidth) {
+          drawSelection(sctx, Math.max(0, x0), Math.min(contentWidth, x1), LANE_HEIGHT)
+        }
+      }
       if (loopRange) {
         const x0 = frameToX(viewport, loopRange.start)
         const x1 = frameToX(viewport, loopRange.end)
@@ -1306,13 +1334,6 @@ export function WaveformEditor({
           drawLoop(sctx, Math.max(0, x0), Math.min(contentWidth, x1), LANE_HEIGHT, {
             color: loop?.color,
           })
-        }
-      }
-      if (selection) {
-        const x0 = frameToX(viewport, selection.start)
-        const x1 = frameToX(viewport, selection.end)
-        if (x1 > 0 && x0 < contentWidth) {
-          drawSelection(sctx, Math.max(0, x0), Math.min(contentWidth, x1), LANE_HEIGHT)
         }
       }
     }

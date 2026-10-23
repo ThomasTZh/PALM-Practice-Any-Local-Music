@@ -383,10 +383,19 @@ export interface LoopDrawOptions {
   handleWidth?: number
 }
 
+/** Width of the top-center loop grip in CSS px. */
+export const LOOP_GRIP_WIDTH = 20
+/** Height of the top-center loop grip in CSS px. */
+export const LOOP_GRIP_HEIGHT = 4
+/** Top offset of the loop grip in CSS px. */
+export const LOOP_GRIP_TOP = 2
+
 /**
  * Practice-loop overlay on one lane (M2.11, spec §13.2.3–4): a tinted
- * fill of `[x0, x1]`, a handle at each boundary, and a 1 px top border
- * so the range stays readable over the selection tint.
+ * fill of `[x0, x1]`, a handle at each boundary, and a 2 px top border
+ * with a grip bar at the top center. The border keeps the range readable
+ * over the selection tint; the grip is the plain-drag target for moving
+ * the whole interval.
  */
 export function drawLoop(
   ctx: WaveformContext,
@@ -401,9 +410,13 @@ export function drawLoop(
   ctx.fillStyle = loopFillColor(color, opts.fillAlpha ?? 0.15)
   ctx.fillRect(x0, 0, x1 - x0, height)
   ctx.fillStyle = color
-  ctx.fillRect(x0 - handle / 2, 0, x1 - x0 + handle, 1)
+  ctx.fillRect(x0 - handle / 2, 0, x1 - x0 + handle, 2)
   ctx.fillRect(x0 - handle / 2, 0, handle, height)
   ctx.fillRect(x1 - handle / 2, 0, handle, height)
+  // The grip is clamped to the visible portion by the caller, so a loop
+  // running past the viewport edge still shows a usable center handle.
+  const grip = Math.min(LOOP_GRIP_WIDTH, x1 - x0)
+  ctx.fillRect((x0 + x1) / 2 - grip / 2, LOOP_GRIP_TOP, grip, LOOP_GRIP_HEIGHT)
 }
 
 export interface OverviewWindowOptions {
