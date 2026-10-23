@@ -154,8 +154,8 @@ export interface WaveformEditorProps {
   onFollowChange?: (follow: boolean) => void
   /**
    * The active practice loop to draw and drag (M2.11 §13.2.3–4); null →
-   * no overlay. The boundary handles resize and a body drag moves the
-   * interval; Shift+drag inside the loop keeps the selection gesture.
+   * no overlay. A plain drag selects; the boundary handles resize, and
+   * Alt+drag moves the interval. Shift+drag also forces a selection.
    */
   loop?: LoopRange | null
   /** Commit a loop range edit on drag end (exactly one per gesture). */
@@ -750,9 +750,10 @@ export function WaveformEditor({
       let mode: DragMode = 'maybe'
       let loopStart: number | undefined
       let loopEnd: number | undefined
-      // The loop overlay owns the pointer inside its range (§13.2.3–4):
-      // boundary handles resize, the body moves. Shift+drag bypasses it
-      // so a selection can still start inside the loop.
+      // The loop overlay keeps its boundary handles (§13.2.3–4), but a
+      // plain drag anywhere else is a selection. Moving the body needs
+      // Alt so selecting a passage inside a loop remains the default;
+      // Shift bypasses the handles as well.
       if (loop && !e.shiftKey) {
         const x0 = frameToX(viewport, loop.start)
         const x1 = frameToX(viewport, loop.end)
@@ -760,7 +761,7 @@ export function WaveformEditor({
         loopEnd = loop.end
         if (Math.abs(x - x0) <= HANDLE_HIT_PX) mode = 'loop-start'
         else if (Math.abs(x - x1) <= HANDLE_HIT_PX) mode = 'loop-end'
-        else if (x > x0 && x < x1) mode = 'loop-move'
+        else if (e.altKey && x > x0 && x < x1) mode = 'loop-move'
       }
       if (mode === 'maybe' && selection) {
         const x0 = frameToX(viewport, selection.start)

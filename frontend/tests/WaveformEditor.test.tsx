@@ -1069,27 +1069,41 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     expect(onLoopRangeChange).toHaveBeenCalledWith(12_799, 12_800)
   })
 
-  it('moves the whole interval on a body drag, preserving the length', async () => {
+  it('moves the whole interval on an Alt+drag body gesture, preserving the length', async () => {
     const onLoopRangeChange = vi.fn()
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
     const hit = hitbox()
-    pointer('pointerdown', hit, 150) // body
-    pointer('pointermove', hit, 160) // +10 px = +640 frames
-    pointer('pointerup', hit, 160)
+    pointerW('pointerdown', hit, 150, { altKey: true }) // body
+    pointerW('pointermove', hit, 160, { altKey: true }) // +10 px = +640 frames
+    pointerW('pointerup', hit, 160, { altKey: true })
     expect(onLoopRangeChange).toHaveBeenCalledTimes(1)
     expect(onLoopRangeChange).toHaveBeenCalledWith(7040, 13_440)
   })
 
-  it('clamps a body move to the source bounds', async () => {
+  it('clamps an Alt+drag body move to the source bounds', async () => {
+    const onLoopRangeChange = vi.fn()
+    mockReady()
+    await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
+    const hit = hitbox()
+    pointerW('pointerdown', hit, 150, { altKey: true })
+    pointerW('pointermove', hit, 0, { altKey: true }) // far left: start clamps to 0
+    pointerW('pointerup', hit, 0, { altKey: true })
+    expect(onLoopRangeChange).toHaveBeenCalledWith(0, 6400)
+  })
+
+  it('plain body drag selects instead of moving the loop', async () => {
     const onLoopRangeChange = vi.fn()
     mockReady()
     await renderReadyEditor({ loop: loopRange(), onLoopRangeChange })
     const hit = hitbox()
     pointer('pointerdown', hit, 150)
-    pointer('pointermove', hit, 0) // far left: start clamps to 0
-    pointer('pointerup', hit, 0)
-    expect(onLoopRangeChange).toHaveBeenCalledWith(0, 6400)
+    pointer('pointermove', hit, 160)
+    pointer('pointerup', hit, 160)
+    expect(onLoopRangeChange).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Selection')).toHaveTextContent(
+      '0:00.200 – 0:00.213 · 0:00.013',
+    )
   })
 
   it('a click inside the loop body seeks; a handle click does not', async () => {

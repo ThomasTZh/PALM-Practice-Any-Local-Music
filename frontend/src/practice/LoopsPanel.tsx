@@ -148,7 +148,7 @@ export function LoopsPanel({
           />
           Looping
         </label>
-        <span className="loops-hint muted">L toggles</span>
+        <span className="loops-hint muted">Drag selects; Alt-drag moves; L toggles</span>
       </div>
       {notice && (
         <p className="loops-notice" role="alert">
