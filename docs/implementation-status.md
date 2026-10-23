@@ -66,8 +66,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   Fixed blockers: 48 kHz endpoint rounding and duplicate-content asset
   reuse (`42655c4`), null export target rate (`094eeb7`), the frontend
   `audioAssetId` playback wiring plus clean-build typing (`10b183f`),
-  and the 5 s autosave loop-playhead mapping bug (`b2e244c`). The human
-  perceptual checks remain.
+  the 5 s autosave loop-playhead mapping bug (`b2e244c`), and the
+  active-loop selection gesture (`53d2e32`). The human review on
+  2026-10-23 passed steps 6, 9 and 10; step 7 awaits retest and step 8's
+  in-app stereo image is unconfirmed.
 - **M2.19:** complete — `ac40bc1` + `ba28fa2` + `99f06f1` + this ledger-hash follow-up (real offline
   CPU inference evidence; GPU/five-recording acceptance remains open
   because the environment has no NVIDIA driver).
@@ -107,11 +109,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
   (34 files incl. committed WASM artifacts; backend 1108 pytest green,
   frontend 419 Vitest green; spec §11 closed).
-- **Last commit:** `b2e244c` — keep the looped playhead stable when the
-  rate is re-applied; `10b183f` — play four stems from the mapped audio
-  asset ids; `094eeb7` — accept a null export target rate; `42655c4` —
-  correct stem endpoints and reuse existing assets; this ledger-hash
-  follow-up on top. `e296795` — accept minor blend dip (Carousel
+- **Last commit:** `53d2e32` — select on waveform drags inside active
+  loops; this ledger-hash follow-up on top. `c531488` — record the M2.21
+  60-minute playback acceptance; `b2e244c` — keep the looped playhead
+  stable when the rate is re-applied; `10b183f` — play four stems from
+  the mapped audio asset ids; `094eeb7` — accept a null export target
+  rate; `42655c4` — correct stem endpoints and reuse existing assets.
+  `e296795` — accept minor blend dip (Carousel
   listening
   review); `346dea5` — blend-dip
   investigation (level match ruled
@@ -170,12 +174,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `af6ad7f` — M1.7 (monitoring + playback rate);
   `4098c58` — M1.6 (disk budget + acceptance tests);
   `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** perform the §21.4 human perceptual checks on the
-  running app (the objective acceptance is complete): 0.5×/0.75×
-  practice, loop click/timing audibility, in-app stereo, audible
-  latency/smoothness, exported stems, and repeat after reopen. The GPU
-  qualification and the five recordings are complete (M2.19); the human
-  checks require the listener.
+- **Next action:** retest step 7 on the running app (drag the chorus,
+  click `Create from selection`, tick `Looping`, Play) and confirm the
+  in-app stereo image for step 8. The human review passed steps 6, 9 and
+  10 on 2026-10-23; the objective acceptance and the 60-minute run are
+  complete, and the remaining items are listener-only. The GPU
+  qualification and the five recordings are complete (M2.19).
   The e2e `app.spec.ts`
   harness bug (spawns the Python server via
   `process.execPath`) is pre-existing and out of scope — address it
@@ -194,6 +198,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `cd frontend && npm run format:check` (clean),
   `cd frontend && npm run build` (OK),
   `.venv/bin/python scripts/check_contract.py` (OK).
+  Focused regression after the 2026-10-23 loop-selection fix:
+  `cd frontend && npx vitest run tests/WaveformEditor.test.tsx`
+  (58 passed). The 567-pass full baseline predates that added test.
   `cd frontend && npm run lint` still reports 131 pre-existing issues
   (mostly node/no-this-alias in older tests); the changed files are
   clean under targeted eslint except the pre-existing `offset`
@@ -3809,7 +3816,9 @@ driver is unavailable, so no new separation is attempted.
   no model/source paths. Reopened project `923d1e34...`: ready, 48 kHz,
   14,133,913 frames, one valid set `5299022f...`, stem frames match,
   archive hash matches.
-- Whole-track loop `929a5978...`: 0..14,133,913 frames, enabled.
+- Whole-track loop `929a5978...`: 0..14,133,913 frames; it was enabled
+  for the 60-minute run and is now saved inactive for the human loop
+  test.
 - 60-minute playback: final run `.m2.21-acceptance/play60-final/`
   (2026-10-23): 3,600.7 s, 119 samples, no errors; 12 resets; the first
   interval (285.36 s) is partial and starts at the 10 s probe; the 11
@@ -3819,6 +3828,21 @@ driver is unavailable, so no new separation is attempted.
   51.5 → 8.3 MB (cache released after the initial asset fetch; no
   error); browser process tree 0.93–1.60 GB; JS heap 7.5–38.1 MB
   (GC sawtooth); DOM 813–821.
+
+**2026-10-23 (human review):** steps 6, 9 and 10 passed: all practice
+speeds through 1× were normal, the four exported stems were accepted,
+and repeat playback after reopen was confirmed. The first step 7
+attempt exposed the active-loop selection gesture: the whole-track
+acceptance loop's body owned waveform drags, so selecting the chorus
+moved/trimmed the loop and `Create from selection` stayed disabled. The
+loop panel's looping checkbox is a separate switch; creating a loop
+activates it but does not enable repetition. Fixed in `53d2e32`: plain
+drags select, Alt+drag moves the loop body, the boundary handles still
+resize, and the hint documents the gestures. The acceptance loop was
+restored to 0..14,133,913 frames, saved inactive, and the project reset
+to position 0. Step 7 awaits retest. Step 8's response confirmed the
+`x1` speed reset, not the stereo image; the in-app stereo image is still
+unconfirmed.
 
 **Defects found and fixed during acceptance:**
 
@@ -3848,10 +3872,20 @@ driver is unavailable, so no new separation is attempted.
    10 s end-of-track loop then wrapped correctly; the corrected partial
    run reached seven full passes, and the final 60-minute run validated
    the full track.
+6. With a full-track loop active, its body drag owned the waveform
+   pointer, so a listener trying to select a chorus moved/trimmed the
+   loop and `Create from selection` stayed disabled. Fixed in `53d2e32`:
+   plain drags select, Alt+drag moves the loop body, and the boundary
+   handles still resize. The hint now reads "Drag selects; Alt-drag
+   moves; L toggles". The acceptance loop is saved inactive at
+   0..14,133,913 frames; the project is at position 0. Focused
+   `WaveformEditor.test.tsx` regression: 58 passed.
 
-**Human-only items:** 0.5×/0.75× practice, loop click/timing audibility,
-in-app stereo image, audible latency/smoothness, and listening to the
-exported stems. Objective timing/alignment does not attest perception.
+**Human-only items:** the listener accepted the practice speeds (step
+6), the exported stems (step 9), and repeat playback after reopen (step
+10). Step 7 (loop) awaits retest after `53d2e32`; step 8's in-app stereo
+image is unconfirmed. Objective timing/alignment does not attest
+perception.
 
 ## Architectural decisions so far
 
