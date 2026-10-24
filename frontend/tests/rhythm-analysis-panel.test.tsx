@@ -44,6 +44,26 @@ describe('RhythmAnalysisPanel', () => {
     expect(screen.getByRole('status').textContent).toContain('completed')
   })
 
+  it('keeps polling while activation is complete but the grid is not', async () => {
+    startRhythmRun.mockResolvedValue(running)
+    getRhythmRun
+      .mockResolvedValueOnce({
+        id: 'run-1',
+        status: 'completed',
+        decoded_result_id: null,
+        warnings: [],
+      } as never)
+      .mockResolvedValue(completed)
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    render(<RhythmAnalysisPanel projectId="project-1" refresh={refresh} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Analyze rhythm' }))
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce(), { timeout: 4000 })
+    expect(getRhythmRun).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('status').textContent).toContain('completed')
+  })
+
   it('reports a failed run warning', async () => {
     startRhythmRun.mockResolvedValue(running)
     getRhythmRun.mockResolvedValue({

@@ -56,7 +56,7 @@ def headers(app) -> dict[str, str]:
     return {"Authorization": f"Bearer {app.state.session_token}"}
 
 
-def _seed(app, *, with_branch: bool = True) -> uuid.UUID:
+def _seed(app, *, with_branch: bool = True, anchor_offset: int = 0) -> uuid.UUID:
     projects = ProjectRepository(app.state.repository._db_path)
     project = projects.create_project("Grid")
     db = app.state.repository._db_path
@@ -80,7 +80,11 @@ def _seed(app, *, with_branch: bool = True) -> uuid.UUID:
         return project.id
     branch_id = uuid.uuid4()
     confidence = Confidence(kind=ConfidenceKind.HEURISTIC, value=0.9)
-    sources = [(0, 0), (48_000, 2), (96_000, 4)]
+    sources = [
+        (anchor_offset, 0),
+        (anchor_offset + 48_000, 2),
+        (anchor_offset + 96_000, 4),
+    ]
     anchor_ids = [uuid.uuid4() for _ in sources]
     pulse_ids = [uuid.uuid4() for _ in sources]
     anchors = [
@@ -143,6 +147,19 @@ def _seed(app, *, with_branch: bool = True) -> uuid.UUID:
         ),
     )
     return project.id
+
+
+def test_grid_clamps_a_viewport_before_the_first_anchor(
+    client: TestClient, app, headers
+) -> None:
+    project_id = _seed(app, anchor_offset=1_200)
+    response = client.get(
+        f"/api/v1/projects/{project_id}/rhythm-grid",
+        params={"start_frame": 0, "end_frame": 96_000},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["grid"]["events"]
 
 
 def test_returns_grid_and_branch_metadata(client: TestClient, app, headers) -> None:

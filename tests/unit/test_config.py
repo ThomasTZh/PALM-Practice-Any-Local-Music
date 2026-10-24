@@ -145,3 +145,16 @@ def test_media_worker_memory_limit_default_env_and_validation(tmp_path) -> None:
             env={"BASSEPARATE_MEDIA_WORKER_MEMORY_LIMIT_MB": "64"},
             config_file=tmp_path / "absent.toml",
         )
+
+
+def test_relative_storage_root_resolves_to_absolute_paths(tmp_path, monkeypatch) -> None:
+    """Workers only accept absolute paths (import/decode job regression)."""
+    from pathlib import Path
+
+    from basseparate.storage.paths import resolve_storage_paths
+
+    monkeypatch.chdir(tmp_path)
+    paths = resolve_storage_paths(Path("store"))
+    for path in (paths.config, paths.data, paths.cache, paths.state, paths.runtime):
+        assert path.is_absolute()
+    assert paths.data == (tmp_path / "store" / "data").resolve()

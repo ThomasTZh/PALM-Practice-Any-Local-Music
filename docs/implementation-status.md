@@ -56,6 +56,29 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   manual import attempts in `storage/m3-ff-acceptance` left only an empty
   `.part` file and a zero-offset manifest; retrying the import creates a
   new session and is safe.
+- **Relative storage-root worker fix (2026-10-24):** launching
+  `serve --storage-root storage/...` produced relative data/runtime
+  paths; every canonical decode then failed in the worker with
+  ``RunPayload source_path/staging_dir must be absolute``. 
+  `resolve_storage_paths` now anchors a relative root at the current
+  directory and resolves it, so all derived paths are absolute. Added
+  `tests/unit/test_config.py` path assertion and
+  `tests/integration/test_relative_storage_root.py` (real import ->
+  canonical decode -> ready project with a relative root).
+- **Grid viewport clamp (2026-10-24):** a real track often starts before
+  the first accepted pulse; the grid endpoint rejected `start_frame=0`
+  with "outside the mapped tempo interval", leaving the lanes empty
+  after a successful analysis. The route now clamps the viewport to the
+  tempo-map edges (`test_grid_clamps_a_viewport_before_the_first_anchor`).
+- **Analyze completion signal (2026-10-24):** activation marks a run
+  `completed` before decoding/tempo/meter/branch publication. The
+  Analyze panel now polls for a non-null `decoded_result_id` before
+  refreshing, so the selector/lanes no longer disappear when activation
+  is done. Covered by the panel test and the Firefox E2E.
+- **Firefox E2E (2026-10-24):** `frontend/e2e/m3-rhythm.spec.ts` imports
+  a generated 12 s click track, runs the real final0 pipeline, checks the
+  meter/branch/metronome/count-in/portable-save UI. Result: 1 passed in
+  9.7 s with the cached Firefox 1542 binary. Chromium remains deferred.
 - **Import completion wiring fix (2026-10-24):** `POST /imports/{id}/complete`
   only records the completed transfer; the UI never created the
   `canonical_decode` job, so a successful upload left the project empty.
@@ -92,12 +115,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1681 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1684 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 113 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 616 passed, 51 files |
+| `npx vitest run` (frontend) | 617 passed, 51 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4675,8 +4698,8 @@ commit.
   `scripts/check_contract.py` (§19.10).
 - **Tests:** pipeline entry tests (unknown project, uninstalled model,
   manifest identity), rhythm-run route tests, branch-store and transport
-  tests, and Analyze panel tests. Backend **1681 passed, 1 skipped**;
-  frontend **616 passed, 51 files**; ruff/mypy/contract green.
+  tests, and Analyze panel tests. Backend **1684 passed, 1 skipped**;
+  frontend **617 passed, 51 files**; ruff/mypy/contract green.
 
 ### M3.18 — Cache identity, persistence, autosave, portable projects (complete)
 

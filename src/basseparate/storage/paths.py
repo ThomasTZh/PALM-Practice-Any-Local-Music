@@ -65,7 +65,14 @@ def default_storage_paths() -> StoragePaths:
 def resolve_storage_paths(storage_root: Path | None) -> StoragePaths:
     if storage_root is None:
         return default_storage_paths()
+    # An explicit root may be relative (for example
+    # ``--storage-root storage/acceptance``). Every derived path must be
+    # absolute: workers reject relative paths, and the process working
+    # directory is not part of the durable configuration.
     root = storage_root.expanduser()
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    root = root.resolve()
     return StoragePaths(
         config=root / "config",
         data=root / "data",

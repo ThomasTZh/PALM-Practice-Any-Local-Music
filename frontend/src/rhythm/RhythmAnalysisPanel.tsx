@@ -38,7 +38,9 @@ export function RhythmAnalysisPanel({ projectId, refresh }: RhythmAnalysisPanelP
         try {
           const next = await getRhythmRun(projectId, runId)
           setRun(next)
-          if (next.status === 'completed') {
+          // Activation completes before decode/tempo/meter/branch
+          // publication; only a decoded result means the grid is ready.
+          if (next.status === 'completed' && next.decoded_result_id) {
             setBusy(false)
             await refresh()
             return
@@ -77,7 +79,8 @@ export function RhythmAnalysisPanel({ projectId, refresh }: RhythmAnalysisPanelP
     }
   }, [poll, projectId])
 
-  const status = run?.status ?? 'idle'
+  const status =
+    run?.status === 'completed' && !run.decoded_result_id ? 'finalizing' : (run?.status ?? 'idle')
   return (
     <section className="rhythm-analysis" aria-label="Rhythm analysis">
       <h2>Musical analysis</h2>

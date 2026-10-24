@@ -168,10 +168,28 @@ async def get_rhythm_grid(
     start = None
     end = None
     try:
+        # The request range is the viewport, not the mapped interval: a
+        # real track often starts before the first accepted pulse. Clamp
+        # to the map edges instead of failing the whole grid request; the
+        # mixer/ruler reports unmapped time separately.
+        first_source = tempo_map.anchors[0].source_frame
+        last_source = tempo_map.anchors[-1].source_frame
         if start_frame is not None:
-            start = tempo_map.map_source_to_musical(start_frame)
+            start = (
+                tempo_map.musical_start
+                if start_frame < first_source
+                else tempo_map.musical_end
+                if start_frame > last_source
+                else tempo_map.map_source_to_musical(start_frame)
+            )
         if end_frame is not None:
-            end = tempo_map.map_source_to_musical(end_frame)
+            end = (
+                tempo_map.musical_start
+                if end_frame < first_source
+                else tempo_map.musical_end
+                if end_frame > last_source
+                else tempo_map.map_source_to_musical(end_frame)
+            )
     except ValueError as exc:
         raise ApiError(
             code="RHYTHM_GRID_RANGE_INVALID",
