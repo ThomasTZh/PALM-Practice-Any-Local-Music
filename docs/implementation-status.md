@@ -17,9 +17,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.11 (rhythm lanes and musical ruler), then
-  M3.12–M3.13 to complete Gate D, followed by M3.14–M3.16 metronome and
-  transport. Specification is
+- **In progress:** M3.11 (rhythm lanes and musical ruler). The pure ruler
+  geometry and hit-testing foundation is implemented and tested; the React
+  lanes/ruler/inspector integration remains. Then M3.12–M3.13 complete
+  Gate D, followed by M3.14–M3.16 metronome and transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.10 ledger follow-up on
@@ -74,7 +75,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 101 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 573 passed, 37 files |
+| `npx vitest run` (frontend) | 578 passed, 38 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4448,6 +4449,20 @@ commit.
 - **Deferred:** HTTP routes and 409 JSON mapping (M3.17), unified project/
   rhythm undo stack (M3.17), editor lanes/drag gestures/batch navigation
   (M3.11/M3.13), multi-region automatic meter sequence decoding.
+
+### M3.11 — Rhythm lanes and musical ruler (in progress)
+
+Spec: `milestone3.md` §13. Plan: `projectPlans/m3.11-plan.md`.
+
+- **Foundation:** `frontend/src/music/ruler.ts` provides zoom-dependent
+  detail, binary-search viewport culling, label-overlap suppression, and
+  priority hit testing with a minimum handle width. It is React/DOM-free
+  so static ruler primitives can be cached across playhead updates.
+  `frontend/tests/ruler.test.ts` adds 5 tests.
+- **Remaining:** React ruler/lanes above the waveform, layered rendering,
+  tempo/meter/beat visuals, inspector, keyboard alternatives, drag/
+  selection integration, performance budget, and visual-alignment
+  acceptance.
 
 ## Architectural decisions so far
 
