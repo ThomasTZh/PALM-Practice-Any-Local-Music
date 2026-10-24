@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-24T09:58:50.363295+00:00",
+  "generated": "2026-10-24T10:41:49.752569+00:00",
   "project": "basseparate",
   "milestone": "2",
   "note": "The application environment installs no machine-learning packages. The isolated analysis environment uses the bundled model weights listed under model_weights. No public license is claimed for the application itself; it is private and unpublished.",
@@ -7,7 +7,9 @@
     {
       "model_id": "htdemucs_ft",
       "display_name": "Hybrid Transformer Demucs (fine-tuned 4-model ensemble)",
+      "distribution": "bundled",
       "bundle_prefix": "models/htdemucs_ft",
+      "checkpoint": null,
       "engine_requirement": "demucs 4.1.0 with torch >= 2.1 in the locked analysis environment (see analysis/uv.lock); inference only, no training",
       "upstream_revision": "preset config: demucs 4.1.0 sdist, demucs/remote/htdemucs_ft.yaml, byte-identical to upstream main on 2026-10-10; checkpoints: official demucs hybrid_transformer release on dl.fbaipublicfiles.com",
       "artifact_count": 5,
@@ -17,6 +19,52 @@
         "htdemucs_ft is a bag of 4 models whose outputs are combined with the per-source weights in htdemucs_ft.yaml (identity ensemble: one component per source).",
         "Component signatures: f7e0c4bc, d12395a8, 92cfc3b6, 04573f0d. Each checkpoint file name embeds the first 8 hex characters of its SHA-256, matching demucs' built-in checksum format.",
         "Model: Hybrid Transformer Demucs, arXiv:2111.03600; weights trained by Meta AI and distributed via the official demucs channels (dl.fbaipublicfiles.com, huggingface.co/adefossez)."
+      ]
+    },
+    {
+      "model_id": "beat_this_final0",
+      "display_name": "Beat This! final0 (main beat/downbeat model)",
+      "distribution": "explicit install (never downloaded automatically)",
+      "bundle_prefix": "",
+      "checkpoint": {
+        "filename": "final0.ckpt",
+        "size_bytes": 81058141,
+        "sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
+        "upstream_url": "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt"
+      },
+      "engine_requirement": "beat-this 1.1.0 in the isolated rhythm environment (rhythm/uv.lock)",
+      "upstream_revision": "v1.1.0 (commit ad7974846029835307ba19a3d5cefbf40b243041); PyPI beat-this 1.1.0",
+      "artifact_count": 1,
+      "total_bytes": 81058141,
+      "license_notice": "Beat This! code and the published model weights are MIT licensed (CPJKU/beat_this LICENSE, Copyright (c) 2024 Institute of Computational Perception, JKU Linz). The upstream README states the published checkpoints are MIT; training annotations include fully copyrighted or limited Creative Commons material, so downstream users must assess training-data implications themselves. The checkpoint is downloaded only from the official CPJKU cloud space and its SHA-256 is verified against this registry before use.",
+      "notices": [
+        "Official implementation: CPJKU/beat_this, ISMIR 2024 paper 'Beat This! Accurate Beat Tracking Without DBN Postprocessing'.",
+        "Checkpoint format: PyTorch Lightning checkpoint with optimizer state stripped; inference converts it to vanilla BeatThis modules.",
+        "Input: mono 22,050 Hz audio; the adapter resamples project audio itself. Output: two float32 framewise logit arrays at 50 fps (beat, downbeat); sigmoid gives probabilities. Frame f maps to source frame f * 441 * project_sample_rate / 22050.",
+        "The application never downloads automatically. Installation is an explicit, offline-gated action; offline bundle import verifies the same hash and manifest identity."
+      ]
+    },
+    {
+      "model_id": "beat_this_small0",
+      "display_name": "Beat This! small0 (faster optional beat/downbeat model)",
+      "distribution": "explicit install (never downloaded automatically)",
+      "bundle_prefix": "",
+      "checkpoint": {
+        "filename": "small0.ckpt",
+        "size_bytes": 8451101,
+        "sha256": "6074be2c4d490c5f6101fcc374a1ec72ae93456e23bb6019783b849f5dc7d47b",
+        "upstream_url": "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/small0.ckpt"
+      },
+      "engine_requirement": "beat-this 1.1.0 in the isolated rhythm environment (rhythm/uv.lock)",
+      "upstream_revision": "v1.1.0 (commit ad7974846029835307ba19a3d5cefbf40b243041); PyPI beat-this 1.1.0",
+      "artifact_count": 1,
+      "total_bytes": 8451101,
+      "license_notice": "Beat This! code and the published model weights are MIT licensed (CPJKU/beat_this LICENSE, Copyright (c) 2024 Institute of Computational Perception, JKU Linz). The upstream README states the published checkpoints are MIT; training annotations include fully copyrighted or limited Creative Commons material, so downstream users must assess training-data implications themselves. The checkpoint is downloaded only from the official CPJKU cloud space and its SHA-256 is verified against this registry before use.",
+      "notices": [
+        "Official implementation: CPJKU/beat_this, ISMIR 2024 paper 'Beat This! Accurate Beat Tracking Without DBN Postprocessing'.",
+        "Checkpoint format: PyTorch Lightning checkpoint with optimizer state stripped; inference converts it to vanilla BeatThis modules.",
+        "Input: mono 22,050 Hz audio; the adapter resamples project audio itself. Output: two float32 framewise logit arrays at 50 fps (beat, downbeat); sigmoid gives probabilities. Frame f maps to source frame f * 441 * project_sample_rate / 22050.",
+        "The application never downloads automatically. Installation is an explicit, offline-gated action; offline bundle import verifies the same hash and manifest identity."
       ]
     }
   ],

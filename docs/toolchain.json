@@ -1,7 +1,7 @@
 {
   "recorded": "2026-09-29",
   "refreshed": "2026-10-24",
-  "note": "Authoritative resolved toolchain. Lockfiles (uv.lock, pnpm-lock.yaml, analysis/uv.lock) are the source of truth; this manifest records the verified toolchain. The application environment is torch-free; inference packages live only in the isolated analysis environment.",
+  "note": "Authoritative resolved toolchain. Lockfiles (uv.lock, pnpm-lock.yaml, analysis/uv.lock, rhythm/uv.lock) are the source of truth; this manifest records the verified toolchain. The application environment is torch-free; inference packages live only in the isolated analysis and rhythm environments.",
   "python": {
     "version": "3.11.15",
     "managed_by": "uv 0.12.0",
@@ -18,8 +18,14 @@
     "pinned_in": "package.json packageManager field (12.8.1)",
     "note": "On 2026-10-24 the installed pnpm could not switch to the pinned 12.8.1 engine in this sandbox (read-only package-manager store). The existing frontend/node_modules remains usable; frontend gates were run with it."
   },
-  "ffmpeg": { "version": "8.1.2", "location": "/usr/bin/ffmpeg" },
-  "ffprobe": { "version": "8.1.2", "location": "/usr/bin/ffprobe" },
+  "ffmpeg": {
+    "version": "8.1.2",
+    "location": "/usr/bin/ffmpeg"
+  },
+  "ffprobe": {
+    "version": "8.1.2",
+    "location": "/usr/bin/ffprobe"
+  },
   "python_runtime_dependencies": {
     "fastapi": "0.142.0",
     "uvicorn": "0.54.0",
@@ -75,5 +81,14 @@
     "note": "Used once to build the committed Signalsmith Stretch WASM variants; not needed at launch. See frontend/src/playback/stretch/BUILD.md."
   },
   "typescript_note": "Pinned to 5.9.3 (latest 5.x). TypeScript 7.x native compiler exists on the registry but was not selected for the initial toolchain to keep the ESLint/Vite ecosystem on a fully verified major.",
-  "ml_packages": "none in the application environment; torch/demucs/soundfile are isolated in analysis/.venv"
+  "ml_packages": "none in the application environment; demucs/soundfile in analysis/.venv and beat-this/torch/torchaudio in rhythm/.venv",
+  "rhythm_environment": {
+    "location": "rhythm/.venv",
+    "lockfile": "rhythm/uv.lock",
+    "python": "3.11.15",
+    "beat_this": "1.1.0",
+    "torch": "2.9.1+cu128 (pytorch-cu128 index)",
+    "torchaudio": "2.9.1+cu128 (pytorch-cu128 index)",
+    "note": "Beat This! inference/qualification only. Launched by explicit interpreter path; the application never imports torch or beat_this. Model checkpoints are separately installed and hash-pinned; see src/basseparate/models/rhythm_registry.py."
+  }
 }

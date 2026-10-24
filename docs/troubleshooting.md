@@ -290,3 +290,61 @@ runner verifies every size and SHA-256 against
 `src/basseparate/models/registry.py` before loading; there is no remote
 fallback. For a non-default analysis location, set
 `BASSEPARATE_ANALYSIS_ROOT`.
+
+## Model install refused: offline mode
+
+**Symptom:** `basseparate models install ...` exits with "offline mode is
+active" or the install boundary raises `OfflineModeError`.
+
+**Cause:** Offline mode is enabled by default. Model installation is the
+only network operation and never overrides offline mode implicitly.
+
+**Fix:** Disable offline mode explicitly for the install action, for
+example:
+
+```sh
+BASSEPARATE_OFFLINE_MODE=false \
+  .venv/bin/basseparate models install beat_this_final0 --yes
+```
+
+Then restart the application without the override. No other action
+downloads anything.
+
+## Rhythm model not installed
+
+**Symptom:** `doctor` reports `rhythm-models: ... not installed`, or a
+rhythm analysis job fails with a missing-model error.
+
+**Cause:** Beat This! checkpoints are not bundled; the user must install
+one explicitly.
+
+**Fix:** Install the required preset while online, or import a verified
+offline bundle:
+
+```sh
+BASSEPARATE_OFFLINE_MODE=false .venv/bin/basseparate models install beat_this_final0 --yes
+# or
+.venv/bin/basseparate models import-bundle beat_this_final0 /path/to/bundle
+.venv/bin/basseparate models verify beat_this_final0
+```
+
+Existing import, playback, waveform, separation, export, and portable
+work is unaffected when the rhythm model is absent.
+
+## Beat This! runtime missing
+
+**Symptom:** Qualification or rhythm inference fails because
+`rhythm/.venv/bin/python` does not exist.
+
+**Fix:**
+
+```sh
+cd rhythm && uv sync --locked
+rhythm/.venv/bin/python rhythm/qualify.py \
+  --model-id beat_this_final0 \
+  --checkpoint <storage>/data/models/beat_this_final0/final0.ckpt \
+  --device cpu --threads 4
+```
+
+The rhythm environment is separate from the application and Demucs
+environments; installing one does not create the others.

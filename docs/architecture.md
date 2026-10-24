@@ -24,7 +24,12 @@ later milestones extend it. The authoritative product specification is
    the same protocol. It runs the Demucs `htdemucs_ft` pipeline through
    `analysis/separate.py` and is stopped when the analysis queue is idle. The
    application environment never imports torch.
-5. **Browser**: React/TypeScript. Talks to the API through a generated client
+5. **Rhythm runtime**: a second isolated environment, `rhythm/.venv`
+   (beat-this, torch, torchaudio), launched by explicit interpreter path for
+   Beat This! qualification and, from M3.4, rhythm inference. The backend
+   never imports it. Model checkpoints are installed explicitly into the
+   managed store; there is no inference-time download.
+6. **Browser**: React/TypeScript. Talks to the API through a generated client
    (openapi-fetch over generated types). Waveform rendering is canvas-based.
    Playback runs in an AudioWorklet: a fetch worker produces PCM into shared
    memory when cross-origin isolation permits `SharedArrayBuffer`, otherwise
@@ -88,6 +93,11 @@ stream coordinate.
   `data/portable/<project_id>/<revision>-<sha12>.basseparate`, built from a
   project-only database and dependency closure, verified member by member,
   then published atomically; one previous archive is retained.
+- Separately installed model checkpoints live under
+  `data/models/<model_id>/` with an `installed.json` provenance record
+  (source, license notice, adapter version, checkpoint hash). Installation
+  streams to a staging file, verifies size and SHA-256 against the checked-in
+  rhythm registry, and publishes atomically.
 - Staging for workers lives under `runtime/`; export and portable builds use
   the same staged, verify-then-rename discipline.
 
@@ -116,15 +126,24 @@ audio callback never grows the WASM heap.
 
 ## Models and inference
 
-- The bundled Demucs baseline is `htdemucs_ft`: four 84,141,271-byte
+- Bundled Demucs baseline (`htdemucs_ft`): four 84,141,271-byte
   checkpoints plus the 149-byte preset YAML, 336,565,233 bytes in total.
   Hashes, sizes, upstream URLs, provenance, and the weight-license notice are
-  checked in at `src/basseparate/models/registry.py`.
-- The development bundle lives in the gitignored `models/htdemucs_ft`; a
-  release copy is provisioned separately. The runner verifies every artifact
-  before loading and sets `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`
-  before importing torch.
-- Inference runs only in the isolated `analysis/.venv`
-  (Python 3.11.15, demucs 4.1.0, torch 2.9.1+cu128, soundfile 0.14.0). Device
-  choice uses stable GPU identity (UUID) with an explicit `cpu` fallback;
-  windowed inference bounds memory on long tracks.
+  checked in at `src/basseparate/models/registry.py`. The development bundle
+  lives in the gitignored `models/htdemucs_ft`; a release copy is provisioned
+  separately. The runner verifies every artifact before loading and sets
+  `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` before importing torch.
+  Inference runs only in the isolated `analysis/.venv` (Python 3.11.15,
+  demucs 4.1.0, torch 2.9.1+cu128, soundfile 0.14.0).
+- Separately installed rhythm models: Beat This! `final0` (81,058,141 bytes)
+  and `small0` (8,451,101 bytes) are described by
+  `src/basseparate/models/rhythm_registry.py` (upstream tag `v1.1.0`,
+  package 1.1.0, SHA-256, preprocessing, 50 fps output semantics, MIT code
+  and weight notices). The explicit install boundary
+  (`src/basseparate/models/install.py`, CLI `basseparate models ...`) is
+  offline-gated, cancellable, hash-verifying, atomic, and separate from the
+  inference runtime. Offline bundles are verified against the same registry.
+  Qualification and inference run in `rhythm/.venv` with an explicit local
+  checkpoint path, never a downloadable preset name.
+- Device choice for both runtimes uses stable GPU identity (UUID) with an
+  explicit `cpu` fallback; no inference-time network fallback exists.

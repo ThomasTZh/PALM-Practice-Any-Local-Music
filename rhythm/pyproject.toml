@@ -1,0 +1,37 @@
+[project]
+name = "basseparate-rhythm"
+version = "0.1.0-dev"
+description = "Isolated Beat This! rhythm-analysis environment (M3.2). Inference only; separate from the application and Demucs environments."
+requires-python = ">=3.11,<3.12"
+license = { text = "Proprietary - unpublished" }
+authors = [{ name = "basseparate" }]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    # Locked together (M3.2 spec 4.1): pinned adapter + PyTorch wheel +
+    # its audio I/O. torch/torchaudio resolve from the same cu128 index
+    # used by the Demucs analysis environment, so the two runtimes share
+    # the verified driver/CUDA line; the wheel falls back to CPU when no
+    # GPU driver is present.
+    "beat-this==1.1.0",
+    "torch==2.9.1",
+    "torchaudio==2.9.1",
+]
+
+# No build-system: this is a virtual environment project, not a package.
+# The application never imports from it; the worker is launched with the
+# explicit interpreter path (spec 4.1.7).
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }

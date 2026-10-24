@@ -6,10 +6,11 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
-  schema) complete on 2026-10-24 (`3d3c307`). M2.21 final separation-app acceptance was
+  schema, `3d3c307`) and M3.2 (Beat This! runtime, registry, install
+  boundary, CPU qualification) complete on 2026-10-24. M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
-- **Next work package:** M3.2 (integrate the Beat This! runtime and
-  model registry), then M3.3. Specification is
+- **Next work package:** M3.3 (prepare rhythm-analysis input
+  reproducibly). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.1 ledger follow-up on
@@ -45,10 +46,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1460 passed |
+| `pytest tests/ -q` | 1474 passed |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 83 files |
+| `mypy src/basseparate` | clean, 85 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -3961,6 +3962,66 @@ this ledger update is the follow-up commit.
   `RhythmResult` and its table arrive in M3.6, so the branch parent and
   project active-result IDs are unconstrained nullable UUIDs until
   then. Command/undo integration for rhythm state is M3.10.
+
+### M3.2 — Integrate the Beat This! runtime and model registry (complete)
+
+Spec: `milestone3.md` §4. Plan: `projectPlans/m3.2-plan.md`. Isolated
+rhythm runtime, verified model registry, explicit install/offline-import
+boundary, and CPU qualification. Implementation commit follows this
+ledger update.
+
+- **Runtime (§4.1):** `rhythm/` is a dedicated uv project with its own
+  lockfile: Python 3.11.15, `beat-this==1.1.0`, torch/torchaudio
+  2.9.1+cu128 from the same `pytorch-cu128` index as the Demucs
+  environment (33 packages). The backend never imports torch or
+  beat_this; `rhythm/qualify.py` is launched with the explicit
+  interpreter and a local checkpoint path.
+- **Registry (§4.2):** `src/basseparate/models/rhythm_registry.py` pins
+  `beat_this_final0` (81,058,141 bytes, SHA-256 `8c328b45...`) and
+  `beat_this_small0` (8,451,101 bytes, SHA-256 `6074be2c...`), upstream
+  tag `v1.1.0`/commit `ad7974846029`, PyPI wheel SHA-256, preprocessing
+  (22,050 Hz, hop 441, 128 mels), 50 fps logit semantics, adapter
+  version, CPU/GPU capability, MIT code and weight notices, and
+  training-data caveats. The server SHA-1 checksums were verified at
+  download time.
+- **Install boundary (§4.3):** `src/basseparate/models/install.py`
+  (`ModelStore`, `install_from_download`, `install_from_bundle`,
+  `InstalledModel`, typed errors). Online install refuses before network
+  access while offline mode is active, streams to staging with byte
+  progress, checks cancellation, verifies exact size and SHA-256, and
+  publishes atomically with an `installed.json` provenance/license
+  record. Offline import verifies bundle manifest identity and re-hashes
+  the checkpoint during copy. No torch import in this module.
+- **CLI + diagnostics (§4.7):** `basseparate models
+  list|install|verify|import-bundle`; `doctor` gains an optional
+  `rhythm-models` check that reports installed presets and never
+  downloads.
+- **Real acceptance (2026-10-24):** both presets were installed through
+  the explicit boundary from the official CPJKU source (offline mode
+  disabled only for the command), then qualified on CPU from an
+  explicit local path with `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1`
+  set before torch import. Both passed: finite, deterministic, 251
+  frames at 50.2 fps on the 5 s fixture; final0 load 0.357 s, first
+  inference 0.216 s, two-run total 0.732 s, RTF 0.146, peak RSS 708
+  MiB; small0 first inference 0.086 s, two-run total 0.194 s, RTF
+  0.039, peak RSS 638 MiB. Offline bundle import into a second store
+  and `models verify` both passed. Evidence:
+  `docs/evidence/m3.2-beat-this-qualification.md`; reports in
+  `storage/m3.2/data/models/beat_this_*/qualification-cpu.json`.
+- **Tests:** `tests/unit/test_model_install.py` (14) covers registry
+  validation, offline-mode rejection before network, successful
+  install/provenance, hash and size mismatch cleanup, cancellation,
+  network errors, tampered checkpoints, and bundle success/mismatch/
+  missing cases.
+- **Gate:** backend **1474 passed** (1460 M3.1 baseline + 14 new); ruff
+  check clean; mypy clean (85 files); contract in sync; frontend
+  unchanged from M3.1 (569 passed, tsc/format/build green).
+- **Known boundaries:** GPU qualification was not performed (no loaded
+  NVIDIA driver; CUDA capability recorded but not claimed). The durable
+  download job/worker, API routes, and settings UI are M3.17; the CLI is
+  the explicit install path until then. Rhythm inference, activation
+  artifacts, and publication are M3.4. Installed checkpoints live under
+  `data/models/<model_id>/` in the active storage root.
 
 ## Architectural decisions so far
 

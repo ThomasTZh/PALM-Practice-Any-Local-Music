@@ -147,7 +147,7 @@ def run_diagnostics(config: AppConfig) -> list[DiagnosticCheck]:
             DiagnosticCheck(
                 "gpu",
                 "warn",
-                "nvidia-smi not available; GPU inference is unavailable (optional in Milestone 0)",
+                "nvidia-smi not available; GPU inference is unavailable (CPU remains usable)",
                 required=False,
             )
         )
@@ -179,6 +179,7 @@ def run_diagnostics(config: AppConfig) -> list[DiagnosticCheck]:
             )
 
     checks.append(_model_baseline_check())
+    checks.append(_rhythm_models_check(config))
 
     build = _frontend_build_available()
     if build is not None:
@@ -258,6 +259,32 @@ def _model_baseline_check() -> DiagnosticCheck:
         "model-baseline",
         worst,
         "; ".join(details),
+        required=False,
+    )
+
+
+def _rhythm_models_check(config: AppConfig) -> DiagnosticCheck:
+    """Report explicitly installed rhythm models without network access.
+
+    Missing models are a warning, never a failure: existing projects stay
+    usable and inference is simply unavailable until the user installs one
+    (M3.2 §4.7).
+    """
+    from basseparate.models import ModelStore, list_rhythm_models
+
+    store = ModelStore(_storage_dir(config, "data") / "models")
+    details: list[str] = []
+    installed = 0
+    for manifest in list_rhythm_models():
+        if store.is_installed(manifest):
+            installed += 1
+            details.append(f"{manifest.model_id}: installed")
+        else:
+            details.append(f"{manifest.model_id}: not installed")
+    return DiagnosticCheck(
+        "rhythm-models",
+        "ok" if installed else "warn",
+        "; ".join(details) + " (explicit install; never downloaded automatically)",
         required=False,
     )
 

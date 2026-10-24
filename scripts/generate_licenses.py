@@ -106,8 +106,9 @@ def _parse_pnpm_lock(path: Path) -> list[dict[str, str]]:
 
 
 def _model_inventory() -> list[dict[str, object]]:
-    """Describe the bundled model weights from the checked-in registry."""
+    """Describe bundled and explicitly installed model weights from the registries."""
     from basseparate.models.registry import REGISTRY
+    from basseparate.models.rhythm_registry import list_rhythm_models
 
     inventory: list[dict[str, object]] = []
     for manifest in REGISTRY.values():
@@ -115,13 +116,39 @@ def _model_inventory() -> list[dict[str, object]]:
             {
                 "model_id": manifest.model_id,
                 "display_name": manifest.display_name,
+                "distribution": "bundled",
                 "bundle_prefix": manifest.bundle_prefix,
+                "checkpoint": None,
                 "engine_requirement": manifest.engine_requirement,
                 "upstream_revision": manifest.upstream_revision,
                 "artifact_count": len(manifest.artifacts),
                 "total_bytes": sum(artifact.size_bytes for artifact in manifest.artifacts),
                 "license_notice": manifest.license_notice,
                 "notices": list(manifest.notices),
+            }
+        )
+    for rhythm in list_rhythm_models():
+        inventory.append(
+            {
+                "model_id": rhythm.model_id,
+                "display_name": rhythm.display_name,
+                "distribution": "explicit install (never downloaded automatically)",
+                "bundle_prefix": "",
+                "checkpoint": {
+                    "filename": rhythm.checkpoint.filename,
+                    "size_bytes": rhythm.checkpoint.size_bytes,
+                    "sha256": rhythm.checkpoint.sha256,
+                    "upstream_url": rhythm.checkpoint.upstream_url,
+                },
+                "engine_requirement": (
+                    f"{rhythm.package_name} {rhythm.package_version} in the "
+                    "isolated rhythm environment (rhythm/uv.lock)"
+                ),
+                "upstream_revision": rhythm.upstream_revision,
+                "artifact_count": 1,
+                "total_bytes": rhythm.checkpoint.size_bytes,
+                "license_notice": rhythm.license_notice,
+                "notices": list(rhythm.notices),
             }
         )
     return inventory
@@ -340,14 +367,14 @@ def main() -> int:
             "package index. The runner verifies every artifact against the",
             "checked-in registry before loading it.",
             "",
-            "| Model | Display name | Artifacts | Total bytes | Bundle path |",
-            "|-------|--------------|-----------|-------------|-------------|",
+            "| Model | Display name | Artifacts | Total bytes | Distribution |",
+            "|-------|--------------|-----------|-------------|--------------|",
         ])
         for model in model_weights:
             lines.append(
                 f"| `{model['model_id']}` | {model['display_name']} | "
                 f"{model['artifact_count']} | {model['total_bytes']:,} | "
-                f"`{model['bundle_prefix']}` |"
+                f"{model['distribution']} |"
             )
         for model in model_weights:
             lines.extend([
@@ -358,6 +385,15 @@ def main() -> int:
                 f"- Engine: {model['engine_requirement']}",
                 f"- License notice: {model['license_notice']}",
             ])
+            checkpoint = model.get("checkpoint")
+            if isinstance(checkpoint, dict):
+                lines.append(
+                    f"- Checkpoint: `{checkpoint['filename']}` "
+                    f"({checkpoint['size_bytes']:,} bytes), SHA-256 "
+                    f"`{checkpoint['sha256']}`"
+                )
+            elif model.get("bundle_prefix"):
+                lines.append(f"- Bundle: `{model['bundle_prefix']}`")
             if model["notices"]:
                 lines.append("- Notes:")
                 for notice in model["notices"]:

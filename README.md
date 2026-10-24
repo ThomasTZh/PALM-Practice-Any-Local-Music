@@ -7,7 +7,9 @@ Local music-analysis and bass practice application.
 Milestones 0, 1, and 2 are complete (foundation, media pipeline and
 waveform editor, separation-based bass practice workflow). Milestone 2
 final acceptance passed on 2026-10-23, including the human listening
-review. Milestone 3 (musical grid) has not started. See
+review. Milestone 3 (musical grid) is in progress: M3.1 (rhythm domain and
+schema) and M3.2 (isolated Beat This! runtime, verified model registry,
+explicit install boundary, CPU qualification) are complete. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
 authoritative resume ledger and verified test results.
 
@@ -30,11 +32,17 @@ authoritative resume ledger and verified test results.
 - WAV stem export and self-contained portable project save/open.
 - Autosaved working state (markers, viewport, selection, volume,
   position, loops) with server-side revision checks and recovery.
+- Rhythm analysis foundation (Milestone 3): exact rational musical
+  positions, rhythm branch/pulse/anchor/meter persistence, and a
+  verified, separately installed Beat This! runtime. Beat/downbeat
+  decoding and the musical editor are implemented in later M3 packages.
 
 ## Not implemented yet
 
-- Milestone 3: musical grid (Beat This! beat/downbeat analysis, tempo
-  map, meter regions, musical ruler and snapping, metronome, count-in).
+- Remaining Milestone 3 work: beat/downbeat decoding, tempo map, meter
+  regions, musical ruler and snapping, metronome, and count-in. The M3.1
+  domain/schema and M3.2 runtime/install/qualification foundation are in
+  place.
 - Milestone 4: harmony analysis and editing.
 - Milestone 5: bass transcription.
 - Milestones 6-8: complete persistence/workflow, quality models and
@@ -56,6 +64,7 @@ tested. The service binds loopback only.
 | FFmpeg | 8.x | System package (`ffmpeg`, `ffprobe`) |
 | uv | 0.12+ | Python environment manager |
 | Analysis environment | Python 3.11, demucs 4.1.0, torch 2.9.1+cu128 | Separate `analysis/` environment and lockfile; GPU optional |
+| Rhythm environment | Python 3.11, beat-this 1.1.0, torch/torchaudio 2.9.1+cu128 | Separate `rhythm/` environment and lockfile; GPU optional |
 | Model bundle | `htdemucs_ft` (hash-pinned) | `models/htdemucs_ft`; not in source control |
 
 ## Setup
@@ -79,6 +88,27 @@ artifact's size and SHA-256 against
 `src/basseparate/models/registry.py` before loading it, and runs with
 the Hugging Face/Transformers offline flags set. `basseparate doctor`
 reports whether the bundle is available.
+
+Rhythm analysis environment (Beat This!, Milestone 3):
+
+```sh
+cd rhythm && uv sync --locked
+```
+
+Beat This! checkpoints are **not bundled** and are never downloaded
+automatically. Install one explicitly while online mode is allowed:
+
+```sh
+BASSEPARATE_OFFLINE_MODE=false \
+  .venv/bin/basseparate models install beat_this_final0 --yes
+```
+
+`beat_this_small0` is the faster optional preset. A verified offline
+bundle can be imported with `basseparate models import-bundle`, and
+`basseparate models verify` checks an installed checkpoint. The
+checkpoint store is `data/models/<model_id>/` under the active storage
+root; `basseparate doctor` reports installed models without downloading
+anything.
 
 ## Build
 
@@ -130,6 +160,18 @@ Press **Ctrl-C** (SIGINT) or send SIGTERM. The service:
 | Runtime (locks, staging) | `~/.local/state/basseparate/runtime` | `--storage-root` |
 
 With `--storage-root /path`, all categories are placed under `/path/`.
+
+## Models
+
+| Model | Delivery | Notes |
+|---|---|---|
+| Demucs `htdemucs_ft` | Bundled development/release copy in `models/htdemucs_ft` | Hash-pinned; verified before loading; offline |
+| Beat This! `final0` | Explicit install from the official CPJKU source | 81,058,141 bytes; SHA-256 pinned; MIT weights |
+| Beat This! `small0` | Explicit install | 8,451,101 bytes; SHA-256 pinned; faster/optional |
+
+Installation is offline-gated: while `offline_mode` is active (the
+default), the install action refuses before any network access. Existing
+projects and playback work with no rhythm model installed.
 
 ## Tests
 
@@ -184,6 +226,9 @@ Starts the Vite dev server and the backend together. Stop both with Ctrl-C.
 - [Milestone 1 specification](projectPlans/milestone1.md)
 - [Milestone 2 specification](projectPlans/milestone2.md)
 - [Milestone 3 specification](projectPlans/milestone3.md)
+- [Milestone 3 M3.1 plan](projectPlans/m3.1-plan.md)
+- [Milestone 3 M3.2 plan](projectPlans/m3.2-plan.md)
+- [Rhythm environment notes](rhythm/README.md)
 - [Architecture notes](docs/architecture.md)
 - [Troubleshooting guide](docs/troubleshooting.md)
 - [Implementation status](docs/implementation-status.md)
