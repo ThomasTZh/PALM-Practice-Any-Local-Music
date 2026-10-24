@@ -6,16 +6,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
-  schema) complete on 2026-10-24 (implementation commit in the
-  follow-up ledger entry). M2.21 final separation-app acceptance was
+  schema) complete on 2026-10-24 (`3d3c307`). M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
 - **Next work package:** M3.2 (integrate the Beat This! runtime and
   model registry), then M3.3. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD `3ac9fef` ("Ledger: record the
-  docs/license refresh hash (ba37ffc)"); 112 commits; the tree was clean
-  at the start of the 2026-10-24 M3.1 work.
+- **Repository:** branch `main`; HEAD is the M3.1 ledger follow-up on
+  top of `3d3c307` ("M3.1: verify prerequisites and extend the rhythm
+  domain"); 113 commits at the implementation commit; the tree was
+  clean before the M3.1 work.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -140,7 +140,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `ba37ffc` refresh the
+- **Recent commits (full history in `git log`):** `3d3c307` M3.1 rhythm
+  domain and schema; `ba37ffc` refresh the
   status ledger and project docs; `9bcdd6c` final
   ledger hash; `33162c5` finalize M2.21 acceptance and handover;
   `424b46b` ledger for the loop overlay fix; `2e1c2f0` show and drag
@@ -3898,8 +3899,8 @@ GPU-dependent acceptance runs will need the NVIDIA driver restored.
 
 Spec: `milestone3.md` §3. Plan: `projectPlans/m3.1-plan.md`. Domain,
 schema, project/portable serialization, and contracts only. No model,
-GPU, network, or analysis execution. Implementation commit and ledger
-hash are in the follow-up commit.
+GPU, network, or analysis execution. Implementation commit `3d3c307`;
+this ledger update is the follow-up commit.
 
 - **Prerequisites (§3.1, 2026-10-24):** current full gates were green
   except the two known load-sensitive timing tests and the pre-existing
