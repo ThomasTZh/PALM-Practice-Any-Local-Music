@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import math
 import statistics
+from bisect import bisect_right
 from enum import StrEnum
 from fractions import Fraction
+from functools import cached_property
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -230,7 +232,7 @@ class TempoMap(BaseModel):
             raise ValueError("summary BPM must be finite")
         return self
 
-    @property
+    @cached_property
     def segments(self) -> list[TempoMapSegment]:
         result: list[TempoMapSegment] = []
         for left, right in zip(self.anchors, self.anchors[1:], strict=False):
@@ -260,6 +262,14 @@ class TempoMap(BaseModel):
     def musical_end(self) -> MusicalPosition:
         return self.anchors[-1].musical_position
 
+    @cached_property
+    def _segment_source_starts(self) -> list[int]:
+        return [segment.source_start for segment in self.segments]
+
+    @cached_property
+    def _segment_musical_starts(self) -> list[Fraction]:
+        return [segment.musical_start.as_quarter_notes() for segment in self.segments]
+
     def _segment_for_source(self, source_frame: int) -> TempoMapSegment:
         if source_frame < self.anchors[0].source_frame or source_frame > self.anchors[
             -1
@@ -267,10 +277,12 @@ class TempoMap(BaseModel):
             raise TempoMapRangeError(
                 f"source frame {source_frame} is outside the mapped tempo interval"
             )
-        for segment in self.segments:
-            if segment.source_start <= source_frame <= segment.source_end:
-                return segment
-        raise TempoMapRangeError(f"no tempo segment contains source frame {source_frame}")
+        # Anchors are strictly increasing; binary-search the segment. A
+        # boundary frame belongs to the segment that ends there, which is
+        # equivalent for BPM and mapping purposes.
+        index = bisect_right(self._segment_source_starts, source_frame)
+        index = max(0, min(index - 1, len(self.segments) - 1))
+        return self.segments[index]
 
     def _segment_for_musical(self, position: MusicalPosition) -> TempoMapSegment:
         start = self.musical_start.as_quarter_notes()
@@ -280,14 +292,9 @@ class TempoMap(BaseModel):
             raise TempoMapRangeError(
                 "musical position is outside the mapped tempo interval"
             )
-        for segment in self.segments:
-            if (
-                segment.musical_start.as_quarter_notes()
-                <= value
-                <= segment.musical_end.as_quarter_notes()
-            ):
-                return segment
-        raise TempoMapRangeError("no tempo segment contains the musical position")
+        index = bisect_right(self._segment_musical_starts, value)
+        index = max(0, min(index - 1, len(self.segments) - 1))
+        return self.segments[index]
 
     def map_source_to_musical(self, source_frame: int) -> MusicalPosition:
         """Exact musical position for a source frame (§9.1)."""

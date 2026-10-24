@@ -467,3 +467,18 @@ the schedule error.
 run). The new branch numbers bar 1 at the first meter region. The
 metronome schedule endpoint now also clamps a viewport before the first
 mapped pulse instead of rejecting it.
+
+
+## Finalizing a rhythm run takes minutes
+
+**Symptom:** activation reaches `completed`, then `finalizing` stays for
+minutes on a normal-length song.
+
+**Cause (fixed 2026-10-24):** meter inference calls the tempo map for
+thousands of candidate positions. `TempoMap.segments` was rebuilt on
+every call and searched linearly, making a five-minute track take about
+63 s in meter scoring alone.
+
+**Fix:** segments and their search keys are cached, and segment lookup
+uses binary search. The same five-minute benchmark now takes about
+0.4 s. Restart the server and click **Re-analyze** to rebuild the branch.

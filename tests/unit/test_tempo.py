@@ -273,3 +273,41 @@ def test_display_unit_conversion() -> None:
     assert bpm_for_display_unit(120, MeterTempoUnit.HALF) == pytest.approx(60)
     assert bpm_for_display_unit(120, MeterTempoUnit.DOTTED_QUARTER) == pytest.approx(80)
     assert bpm_for_display_unit(120, MeterTempoUnit.EIGHTH) == pytest.approx(240)
+
+
+def test_segments_are_cached_for_repeated_mapping() -> None:
+    """Meter inference maps thousands of positions; rebuilding segments per
+    call made five-minute finalization take ~60 s instead of under a second."""
+    import uuid as _uuid
+
+    from basseparate.domain.confidence import Confidence, ConfidenceKind
+    from basseparate.domain.rhythm import (
+        PulseAcceptance,
+        PulseRole,
+        RhythmOrigin,
+        RhythmPulse,
+    )
+    from basseparate.rhythm.tempo import build_automatic_tempo_map
+
+    confidence = Confidence(kind=ConfidenceKind.HEURISTIC, value=0.9)
+    pulses = [
+        RhythmPulse(
+            id=_uuid.uuid4(),
+            parent_id=_uuid.uuid4(),
+            source_frame=index * 24_000,
+            model_frame_index=index,
+            role=PulseRole.BEAT,
+            acceptance=PulseAcceptance.ACCEPTED,
+            confidence=confidence,
+            origin=RhythmOrigin.AUTOMATIC,
+        )
+        for index in range(64)
+    ]
+    tempo_map = build_automatic_tempo_map(
+        pulses,
+        project_id=_uuid.uuid4(),
+        project_sample_rate=48_000,
+        source_duration_frames=64 * 24_000,
+    )
+    assert tempo_map.segments is tempo_map.segments
+    assert tempo_map._segment_source_starts is tempo_map._segment_source_starts
