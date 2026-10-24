@@ -17,10 +17,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   to complete Gate C. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.5 ledger follow-up on
-  top of `c0471b9` ("M3.5: decode beat and downbeat candidates"); 117
-  commits at that implementation commit; the tree was clean before the
-  M3.5 work.
+- **Repository:** branch `main`; HEAD is the M3.6 ledger follow-up on
+  top of `bc49cf2` ("M3.6: publish immutable automatic results and
+  editable branches"); 118 commits at that implementation commit; the
+  tree was clean before the M3.6 work.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -145,8 +145,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `c0471b9` M3.5 decoded
-  candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
+- **Recent commits (full history in `git log`):** `bc49cf2` M3.6
+  automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
   status ledger and project docs; `9bcdd6c` final
@@ -4183,7 +4183,8 @@ commit `c0471b9`; this ledger update is the follow-up commit.
 ### M3.6 — Publish immutable automatic results and editable branches (complete)
 
 Spec: `milestone3.md` §8. Plan: `projectPlans/m3.6-plan.md`.
-Implementation commit recorded in the follow-up ledger entry.
+Implementation commit `bc49cf2`; this ledger update is the follow-up
+commit.
 
 - **Result model (§8.1–§8.2):** `domain/rhythm_result.py` defines
   `RhythmResultRecord` (result/project/run, activation artifact and
