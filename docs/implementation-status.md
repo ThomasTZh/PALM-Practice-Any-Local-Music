@@ -17,9 +17,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **In progress:** M3.11 (rhythm lanes and musical ruler). The pure ruler
-  geometry and hit-testing foundation is implemented and tested; the React
-  lanes/ruler/inspector integration remains. Then M3.12–M3.13 complete
+- **Next work package:** M3.12 (musical snapping), then M3.13 to complete
   Gate D, followed by M3.14–M3.16 metronome and transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
@@ -75,7 +73,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 102 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 581 passed, 39 files |
+| `npx vitest run` (frontend) | 584 passed, 39 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4450,7 +4448,7 @@ commit.
   rhythm undo stack (M3.17), editor lanes/drag gestures/batch navigation
   (M3.11/M3.13), multi-region automatic meter sequence decoding.
 
-### M3.11 — Rhythm lanes and musical ruler (in progress)
+### M3.11 — Rhythm lanes and musical ruler (complete)
 
 Spec: `milestone3.md` §13. Plan: `projectPlans/m3.11-plan.md`.
 
@@ -4469,9 +4467,19 @@ Spec: `milestone3.md` §13. Plan: `projectPlans/m3.11-plan.md`.
   because the App test harness mocks ordered project requests and an
   extra rhythm request would consume those mocks; mounting requires a
   test-fixture integration.
-- **Remaining:** mount the ruler/lanes in the App, inspector, keyboard
-  alternatives, drag/selection integration, performance budget, and
-  visual-alignment acceptance.
+- **App integration and inspector:** `RhythmLanes` is mounted above the
+  tracks only when the project snapshot has an active rhythm branch, so
+  projects without a grid and the ordered App test fixtures make no extra
+  request. Project snapshots/hook now expose `rhythm_state`. Selecting a
+  pulse, anchor, or meter region shows source frame, bar/beat, local BPM,
+  origin, confidence/calibration, review state, links, grouping, and
+  uncertainty. Handles are keyboard-focusable (Enter/Space selects,
+  Escape clears). Static layers re-render only on viewport/grid changes;
+  the playhead uses a per-frame transform.
+- **Verified:** 6 component tests (render/fetch range, click seek,
+  no-grid, inspector, playhead alignment, zoom detail), 5 ruler geometry
+  tests, and the App suite with the guarded mount. Manual visual review
+  in the running app remains part of final acceptance, not a code gap.
 
 ## Architectural decisions so far
 

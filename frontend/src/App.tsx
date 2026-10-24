@@ -34,6 +34,7 @@ import {
 import { formatTime } from './playback/pcm'
 import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
+import { RhythmLanes } from './rhythm/RhythmLanes'
 import type { View as EditorView } from './waveform/viewport'
 import { OpenProjectPanel } from './projects/OpenProjectPanel'
 import { useProjectCommands } from './projects/useProjectCommands'
@@ -1657,6 +1658,15 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
       />
+      {viewSource && commands.rhythmState?.active_branch_id ? (
+        <RhythmLanes
+          projectId={project.id}
+          viewSource={viewSource}
+          playheadSource={playheadSource ?? undefined}
+          onSeek={seekFn ?? undefined}
+          refreshKey={commands.revision}
+        />
+      ) : null}
       <TrackStack
         projectId={project.id}
         viewSource={viewSource}

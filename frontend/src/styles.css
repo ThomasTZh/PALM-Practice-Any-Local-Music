@@ -1752,3 +1752,32 @@ button:hover:not(:disabled) {
   left: 0;
   display: none;
 }
+
+.rhythm-rhythm {
+  display: block;
+}
+.rhythm-meter-label,
+.rhythm-anchor,
+.rhythm-pulse {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.rhythm-inspector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  padding: 4px 8px;
+  color: var(--text, #e5e7eb);
+  background: var(--panel-2, #20222a);
+  border-bottom: 1px solid var(--border, #33343a);
+  font-size: 11px;
+}
+.rhythm-inspector strong {
+  color: #fbbf24;
+  font-weight: 600;
+}
+.rhythm-inspector button {
+  margin-left: auto;
+  font-size: 11px;
+}

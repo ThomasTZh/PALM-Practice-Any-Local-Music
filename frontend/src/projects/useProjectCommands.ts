@@ -33,6 +33,7 @@ import {
   type CommandResult,
   type Marker,
   type PracticeState,
+  type ProjectRhythmState,
   type WorkingState,
 } from '../api/commands'
 
@@ -48,6 +49,8 @@ export interface ProjectCommands {
   practiceState: PracticeState | null
   /** Sid length in frames from the snapshot (M2.11 loop bounds); null unknown. */
   durationFrames: number | null
+  /** Musical-grid state from the snapshot (M3.11 ruler visibility). */
+  rhythmState: ProjectRhythmState | null
   canUndo: boolean
   canRedo: boolean
   /** Commands currently in flight. */
@@ -81,6 +84,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
   const [workingState, setWorkingState] = useState<WorkingState>(DEFAULT_WORKING_STATE)
   const [practiceState, setPracticeState] = useState<PracticeState | null>(null)
   const [durationFrames, setDurationFrames] = useState<number | null>(null)
+  const [rhythmState, setRhythmState] = useState<ProjectRhythmState | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
@@ -127,6 +131,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
       setWorkingState(snap.workingState)
       setPracticeState(snap.practiceState)
       setDurationFrames(snap.durationFrames)
+      setRhythmState(snap.rhythmState ?? null)
       setCanUndo(snap.canUndo)
       setCanRedo(snap.canRedo)
       setStaleNotice('Project changed elsewhere — reloaded.')
@@ -278,6 +283,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
         setWorkingState(snap.workingState)
         setPracticeState(snap.practiceState)
         setDurationFrames(snap.durationFrames)
+        setRhythmState(snap.rhythmState ?? null)
         setCanUndo(snap.canUndo)
         setCanRedo(snap.canRedo)
         setLoaded(true)
@@ -332,6 +338,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
     workingState,
     practiceState,
     durationFrames,
+    rhythmState,
     canUndo,
     canRedo,
     pendingCount,

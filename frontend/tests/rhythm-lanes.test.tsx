@@ -153,6 +153,38 @@ describe('rhythm lanes (M3.11)', () => {
     expect(onSeek).toHaveBeenCalledWith(57600)
   })
 
+  it('opens an inspector for a selected pulse or meter', async () => {
+    const { container } = render(<RhythmLanes projectId="project-1" viewSource={viewSource()} />)
+    await waitFor(() => expect(screen.getByText('4/4 (1+1+1+1)')).toBeInTheDocument())
+    fireEvent.click(container.querySelectorAll('.rhythm-pulse')[1])
+    expect(await screen.findByText('Beat pulse')).toBeInTheDocument()
+    expect(screen.getByText(/review unreviewed/)).toBeInTheDocument()
+    fireEvent.click(container.querySelector('.rhythm-meter-label') as HTMLElement)
+    expect(await screen.findByText(/grouping 1\+1\+1\+1/)).toBeInTheDocument()
+  })
+
+  it('aligns the playhead to the shared source-frame viewport', async () => {
+    const { container } = render(
+      <RhythmLanes
+        projectId="project-1"
+        viewSource={viewSource()}
+        playheadSource={{ getPosition: () => 48_000, isPlaying: () => true }}
+      />,
+    )
+    await waitFor(() => expect(screen.getByText('4/4 (1+1+1+1)')).toBeInTheDocument())
+    const playhead = container.querySelector('.rhythm-playhead') as HTMLElement
+    await waitFor(() => expect(playhead.style.transform).toBe('translateX(200px)'))
+  })
+
+  it('requests coarser detail when zoomed out', async () => {
+    const zoomedOut: ViewSource = {
+      get: () => ({ startFrame: 0, fpp: 6, widthCssPx: 600 }),
+    }
+    render(<RhythmLanes projectId="project-1" viewSource={zoomedOut} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(fetchMock.mock.calls[0][1].detail).toBe('quarter_beat')
+  })
+
   it('shows a no-grid state when the API has no active branch', async () => {
     fetchMock.mockResolvedValue(null)
     render(<RhythmLanes projectId="project-1" viewSource={viewSource()} />)

@@ -20,6 +20,7 @@ export type Marker = components['schemas']['MarkerRecord']
 export type WorkingState = components['schemas']['WorkingState']
 export type PracticeState = components['schemas']['PracticeState']
 export type PracticeLoop = components['schemas']['PracticeLoop']
+export type ProjectRhythmState = components['schemas']['ProjectRhythmState']
 
 /** The resulting project state after a command (§17.4.5). */
 export interface CommandResult {
@@ -42,6 +43,7 @@ export interface ProjectSnapshot {
   canRedo: boolean
   sampleRate: number | null
   durationFrames: number | null
+  rhythmState: ProjectRhythmState | null
 }
 
 /** Default working state (mirrors the server defaults, §17.5). */
@@ -192,5 +194,6 @@ export async function getProjectSnapshot(
     canRedo: data.can_redo ?? false,
     sampleRate: data.sample_rate ?? null,
     durationFrames: data.duration_frames ?? null,
+    rhythmState: data.rhythm_state ?? null,
   }
 }
