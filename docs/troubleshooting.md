@@ -482,3 +482,22 @@ every call and searched linearly, making a five-minute track take about
 **Fix:** segments and their search keys are cached, and segment lookup
 uses binary search. The same five-minute benchmark now takes about
 0.4 s. Restart the server and click **Re-analyze** to rebuild the branch.
+
+
+## Metronome clicks are doubled, rough, or seemingly absent
+
+**Symptom:** no clicks, then after a fix clicks sound doubled or rough
+over the music.
+
+**Cause (fixed 2026-10-24):** the App converted a source-frame distance
+to context frames as `contextTime + (sourceDistance / rate)` and then
+multiplied by the context rate, omitting the project sample rate. Click
+frames were ~48,000× too large and never rendered. After correcting the
+units, the overlapping two-second lookahead was also merged with the
+previous fetch, so every upcoming click was scheduled several times,
+producing doubled/rough attacks.
+
+**Fix:** divide by `project_sample_rate × playback_rate`, and replace
+the lookahead schedule instead of merging copies. Rebuild and hard-reload
+Firefox. The Firefox E2E now asserts that the worklet actually renders
+clicks (`metronome-rendered` count), not just that messages are sent.

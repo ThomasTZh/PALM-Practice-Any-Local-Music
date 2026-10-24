@@ -800,6 +800,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
       const contextRate = transport.contextRate
       if (contextTime == null || contextRate == null) return
       const rate = transport.playbackRate
+      const projectRate = info?.sampleRate ?? contextRate
       const previousFrame = lastReportedFrameRef.current
       const previousRate = lastPlaybackRateRef.current
       lastReportedFrameRef.current = frame
@@ -840,25 +841,25 @@ const PlaybackPanel = memo(function PlaybackPanel({
           const ready = (schedule.clicks ?? [])
             .map((click) => ({
               frame: Math.round(
-                (contextTime + (click.source_frame - current) / rate) * contextRate,
+                (contextTime + (click.source_frame - current) / (projectRate * rate)) * contextRate,
               ),
               strength: click.strength as 'downbeat' | 'beat' | 'grouping' | 'subdivision',
             }))
             .filter((click) => click.frame > nowRender + Math.round(0.03 * contextRate))
-          const kept = metronomePendingRef.current.filter(
-            (click) => click.frame > nowRender + Math.round(0.03 * contextRate),
-          )
-          const merged = [...kept, ...ready]
-            .sort((left, right) => left.frame - right.frame)
-            .slice(0, 512)
-          metronomePendingRef.current = merged
-          transport.scheduleMetronome(merged, settings.volume)
+          // Replace the lookahead instead of merging it with the previous
+          // fetch: the same source click appears in every overlapping
+          // window, and keeping both copies produced doubled/distorted
+          // clicks. The window is two seconds and refreshes every ~0.5 s,
+          // so a slow fetch still has ample lookahead.
+          const next = ready.sort((left, right) => left.frame - right.frame).slice(0, 512)
+          metronomePendingRef.current = next
+          transport.scheduleMetronome(next, settings.volume)
         })
         .catch(() => {
           // A missing/invalid grid leaves the metronome silent.
         })
     },
-    [info?.durationFrames, projectId],
+    [info?.durationFrames, info?.sampleRate, projectId],
   )
 
   // New project: drop any previous transport and source binding.

@@ -1648,6 +1648,8 @@ export class MetronomeClickMixer {
     this.schedule = []
     this.nextIndex = 0
     this.active = null
+    // Diagnostics: clicks actually started, not just scheduled.
+    this.renderedClicks = 0
   }
 
   setVolume(volume) {
@@ -1699,6 +1701,7 @@ export class MetronomeClickMixer {
       if (click.frame >= startFrame + frames) return
       this.nextIndex += 1
       this.active = { table: click.table, pos: 0 }
+      this.renderedClicks += 1
       offset = Math.max(offset, click.frame - startFrame)
     }
   }
@@ -1735,6 +1738,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         engine.configure(sampleRate, o.stretch.maxFrames ?? api.STRETCH_MAX_FRAMES)
       }
       this.metronome = new MetronomeClickMixer(sampleRate, o.metronomeVolume ?? 0.5)
+      this.lastMetronomeRendered = 0
       this.renderFrame = 0
       this.core = new MixState({
         sampleRate,
@@ -1842,10 +1846,20 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       const outputChannels = outputs[0] ?? []
       const res = this.core.process(time, outputChannels)
       const frames = outputChannels.length > 0 ? outputChannels[0].length : 128
-      const blockStart =
-        typeof globalThis.currentFrame === 'number' ? globalThis.currentFrame : this.renderFrame
+      // Derive the block's absolute render frame from the context clock.
+      // `currentFrame` is not reliable in every worklet implementation,
+      // and a zero-based fallback makes scheduled metronome clicks land
+      // far in the future (silent metronome).
+      const blockStart = Math.round(time * this.metronome.sampleRate)
       this.metronome.render(outputChannels, blockStart, frames)
       this.renderFrame = blockStart + frames
+      if (this.metronome.renderedClicks !== this.lastMetronomeRendered) {
+        this.lastMetronomeRendered = this.metronome.renderedClicks
+        this.port.postMessage({
+          type: 'metronome-rendered',
+          count: this.metronome.renderedClicks,
+        })
+      }
       if (res.anchor) {
         const msg = {
           type: 'anchor',

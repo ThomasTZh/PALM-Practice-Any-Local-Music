@@ -95,6 +95,18 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   search keys are now cached and lookup is binary-search; the benchmark
   is ~0.4 s for five minutes. `test_segments_are_cached_for_repeated_mapping`
   guards the regression.
+- **Metronome silence and doubling fix (2026-10-24):** the App's click
+  frame calculation was dimensionally wrong: it added a source-frame
+  distance divided only by the playback rate and then multiplied by the
+  context rate, omitting the project sample rate. Scheduled frames were
+  ~48,000× too large, so the worklet never reached a click. After fixing
+  the units the overlapping lookahead was still merged with the previous
+  fetch, duplicating every upcoming click (rough/doubled attacks); the
+  schedule now replaces rather than merges. The worklet's block start is
+  derived from the context clock, and it reports `metronome-rendered`
+  counts so the Firefox E2E proves clicks render, not merely that
+  messages are posted. Files: `App.tsx`, `worklet-processor.js`,
+  `e2e/m3-rhythm.spec.ts`.
 - **Firefox E2E (2026-10-24):** `frontend/e2e/m3-rhythm.spec.ts` imports
   a generated 12 s click track, runs the real final0 pipeline, checks the
   meter/branch/metronome/count-in/portable-save UI. Result: 1 passed in

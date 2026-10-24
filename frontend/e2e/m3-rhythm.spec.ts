@@ -128,6 +128,41 @@ test('M3 rhythm workflow (Firefox)', async ({ page }) => {
     if (message.type() === 'error') errors.push(message.text())
   })
 
+  await page.addInitScript(() => {
+    const log: unknown[] = []
+    Object.defineProperty(window, '__metronomeMessages', { value: log })
+    const original = MessagePort.prototype.postMessage
+    const onmessage = Object.getOwnPropertyDescriptor(MessagePort.prototype, 'onmessage')
+    if (onmessage?.set && onmessage.get) {
+      Object.defineProperty(MessagePort.prototype, 'onmessage', {
+        configurable: true,
+        get() {
+          return onmessage.get?.call(this)
+        },
+        set(handler) {
+          if (typeof handler !== 'function') {
+            onmessage.set?.call(this, handler)
+            return
+          }
+          onmessage.set?.call(this, (event: MessageEvent) => {
+            log.push(event.data)
+            handler.call(this, event)
+          })
+        },
+      })
+    }
+    MessagePort.prototype.postMessage = function (message: unknown, ...rest: never[]) {
+      if (
+        message &&
+        typeof message === 'object' &&
+        ['metronome', 'metronome-rendered'].includes((message as { type?: string }).type ?? '')
+      ) {
+        log.push(message)
+      }
+      return original.call(this, message, ...rest)
+    }
+  })
+
   await page.goto(`${BASE_URL}/#token=${token}`)
   await expect(page.getByText('Connected')).toBeVisible()
   await page.getByRole('button', { name: 'New project' }).click()
@@ -170,6 +205,29 @@ test('M3 rhythm workflow (Firefox)', async ({ page }) => {
   expect(scheduleResponse.ok()).toBeTruthy()
   expect((await scheduleResponse.json()).clicks.length).toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: 'Re-analyze' })).toBeVisible()
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await page.waitForTimeout(5_000)
+  const metronomeMessages = await page.evaluate(
+    () =>
+      (window as unknown as { __metronomeMessages: { clicks?: unknown[] }[] }).__metronomeMessages,
+  )
+  expect(
+    metronomeMessages.some(
+      (message) =>
+        message != null &&
+        (message as { type?: string }).type === 'metronome' &&
+        ((message as { clicks?: unknown[] }).clicks?.length ?? 0) > 0,
+    ),
+  ).toBe(true)
+  const rendered = await page.evaluate(
+    () =>
+      (
+        window as unknown as { __metronomeMessages: { type: string; count?: number }[] }
+      ).__metronomeMessages
+        .filter((message) => message != null && message.type === 'metronome-rendered')
+        .at(-1)?.count ?? 0,
+  )
+  expect(rendered).toBeGreaterThan(0)
   await page.getByLabel('Count-in length').selectOption('one_bar')
   await expect(page.getByLabel('Count-in length')).toHaveValue('one_bar', { timeout: 15_000 })
   await page.getByRole('button', { name: 'Save portable project' }).click()
