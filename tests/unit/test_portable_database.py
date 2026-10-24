@@ -23,6 +23,8 @@ from basseparate.domain.rhythm import (
     RhythmBranchRecord,
     RhythmInputRole,
 )
+from basseparate.domain.rhythm_decode import BEAT_THIS_DECODER_PROFILE
+from basseparate.domain.rhythm_result import RhythmResultRecord
 from basseparate.domain.separation import DeviceType
 from basseparate.portable.closure import PortableFormatError
 from basseparate.portable.database import build_portable_database
@@ -137,6 +139,7 @@ class TestPortableDatabase:
                 "export_artifacts",
                 "rhythm_analysis_runs",
                 "rhythm_activation_artifacts",
+                "rhythm_results",
                 "rhythm_branches",
             }
             assert expected <= tables
@@ -273,10 +276,23 @@ class TestPortableDatabase:
             repo.create_run(run)
             repo.create_artifact(project_id, manifest)
             repo.create_branch(branch)
-            return run, manifest, branch
+            result = RhythmResultRecord(
+                id=uuid.uuid4(),
+                project_id=project_id,
+                run_id=run.id,
+                activation_artifact_id=manifest.artifact_id,
+                decoded_content_hash=hash_a,
+                decoder_profile=BEAT_THIS_DECODER_PROFILE,
+                input_role="original_mix",
+                source_duration_frames=441_000,
+                created_at=now,
+                content_hash=hash_b,
+            )
+            repo.create_result(result)
+            return run, manifest, branch, result
 
-        run_a, manifest_a, branch_a = build(uuid.UUID(seed.project_a), seed.can_a)
-        run_b, manifest_b, branch_b = build(uuid.UUID(seed.project_b), seed.can_b)
+        run_a, manifest_a, branch_a, result_a = build(uuid.UUID(seed.project_a), seed.can_a)
+        run_b, manifest_b, branch_b, result_b = build(uuid.UUID(seed.project_b), seed.can_b)
         destination = tmp_path / "project.sqlite"
         build_portable_database(seed.db_path, seed.project_a, destination)
 
@@ -294,6 +310,7 @@ class TestPortableDatabase:
                 ("rhythm_analysis_runs", run_b.id),
                 ("rhythm_activation_artifacts", manifest_b.artifact_id),
                 ("rhythm_branches", branch_b.id),
+                ("rhythm_results", result_b.id),
             ):
                 assert (
                     conn.execute(

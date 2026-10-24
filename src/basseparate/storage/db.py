@@ -661,6 +661,49 @@ def _migration_12_to_13(conn: sqlite3.Connection) -> None:
 register_migration(13, _migration_12_to_13)
 
 
+#: M3.6 adds immutable automatic rhythm results. The stage/status columns
+#: mirror the record for listing and active-selection queries; the full
+#: record (pulses, decoder profile, references, hash) stays in record_json.
+_MIGRATION_14_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE rhythm_results (
+        id                     TEXT PRIMARY KEY,
+        project_id             TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        run_id                 TEXT NOT NULL
+                               REFERENCES rhythm_analysis_runs(id) ON DELETE CASCADE,
+        activation_artifact_id TEXT NOT NULL
+                               REFERENCES rhythm_activation_artifacts(id)
+                               ON DELETE CASCADE,
+        stage                  TEXT NOT NULL
+                               CHECK (stage IN ('activation', 'decoded', 'tempo_map',
+                                                'meter', 'complete')),
+        validation_status      TEXT NOT NULL
+                               CHECK (validation_status IN ('decoded', 'valid',
+                                                           'invalid')),
+        decoder_profile_id     TEXT NOT NULL,
+        decoded_content_hash   TEXT NOT NULL,
+        created_at             TEXT NOT NULL,
+        record_json            TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_results_project "
+    "ON rhythm_results(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_results_run ON rhythm_results(run_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_results_activation "
+    "ON rhythm_results(activation_artifact_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_results_decoded_hash "
+    "ON rhythm_results(decoded_content_hash)",
+)
+
+
+def _migration_13_to_14(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_14_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(14, _migration_13_to_14)
+
+
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
 

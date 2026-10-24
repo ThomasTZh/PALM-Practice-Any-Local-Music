@@ -50,6 +50,7 @@ _TABLE_PREDICATES: tuple[tuple[str, str, str], ...] = (
     ("media_jobs", "project_id", "project"),
     ("rhythm_analysis_runs", "project_id", "project"),
     ("rhythm_activation_artifacts", "project_id", "project"),
+    ("rhythm_results", "project_id", "project"),
     ("rhythm_branches", "project_id", "project"),
 )
 
@@ -65,6 +66,7 @@ _PROJECT_SCOPED_TABLES: tuple[str, ...] = (
     "export_artifacts",
     "rhythm_analysis_runs",
     "rhythm_activation_artifacts",
+    "rhythm_results",
     "rhythm_branches",
 )
 

@@ -13,8 +13,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   beat/downbeat candidates, `c0471b9`) complete on 2026-10-24. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.6 (publish immutable automatic rhythm
-  results and editable branches). Specification is
+- **Next work package:** M3.7 (build the tempo map), then M3.8–M3.9
+  to complete Gate C. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.5 ledger follow-up on
@@ -50,10 +50,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1526 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1535 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 91 files |
+| `mypy src/basseparate` | clean, 93 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4179,6 +4179,55 @@ commit `c0471b9`; this ledger update is the follow-up commit.
   branches (M3.6), tempo/meter (M3.7–M3.9), decoder persistence/API/UI
   (M3.17), and decoder cache identity (M3.18; the decoded hash already
   covers the decoder profile and activation identity).
+
+### M3.6 — Publish immutable automatic results and editable branches (complete)
+
+Spec: `milestone3.md` §8. Plan: `projectPlans/m3.6-plan.md`.
+Implementation commit recorded in the follow-up ledger entry.
+
+- **Result model (§8.1–§8.2):** `domain/rhythm_result.py` defines
+  `RhythmResultRecord` (result/project/run, activation artifact and
+  decoded hash, decoder profile, accepted and candidate pulses, optional
+  tempo-map/meter refs and bar-origin hypothesis, stage, status,
+  warnings, source duration, content hash) plus the versioned
+  stage/status enums and deterministic result hash. The decoded stage is
+  published now; grid stages arrive with M3.7–M3.9 without mutating this
+  record.
+- **Schema:** migration 13→14 adds the project-scoped `rhythm_results`
+  table (run/activation foreign keys, stage/status/decoder/hash columns,
+  record JSON, indexes); `DATABASE_SCHEMA_VERSION` 14. Portable save
+  copies result rows and includes them in the isolation proof; portable
+  **open** import remains M3.18. Existing v13 archives are
+  version-coupled and need M3.18 archive upgrades.
+- **Repository/service (§8.3–§8.4):**
+  `RhythmRepository` gains result create/get/list/get-by-run-stage.
+  `rhythm/results.py` publishes the decoded stage idempotently for
+  `(run, stage, decoded content)` and rejects conflicting content;
+  `create_branch_from_result` copies accepted+candidate pulses with the
+  branch as parent, preserves the parent result ID, starts at revision 0
+  with an explicit `unmapped` grid and origin bar hypothesis;
+  `activate_result`/`activate_branch` set Auto/Edited state through the
+  revisioned project rhythm state.
+- **Reruns (§8.5):** a second run publishes a second immutable result;
+  older results and all branches remain retrievable and unmodified. The
+  service never merges new automatic pulses into an existing branch.
+- **Real flow (2026-10-24):** the final0 CPU fixture now runs activation
+  → decode (11 accepted, 8 downbeats) → decoded result → editable branch
+  (11 copied pulses) → Auto/Edited activation; a second run publishes a
+  second result while preserving the first and the branch. Evidence:
+  `docs/evidence/m3.6-automatic-results.md`.
+- **Tests:** `tests/unit/test_rhythm_results.py` (8) covers publication,
+  idempotent replay, conflict rejection, incomplete run/mismatched
+  artifact, immutability, branch copy/parent, rerun preservation, and
+  activation. Migration tests cover direct v13→v14 preservation; the
+  portable test covers result-row project isolation. The real-model
+  integration test exercises the full result/branch/activation path
+  (skipped without the env checkpoint).
+- **Gate:** backend **1535 passed, 1 skipped**; ruff check clean; mypy
+  clean (93 files); contract in sync; frontend unchanged (569 passed).
+- **Deferred:** tempo-map/meter/complete stages (M3.7–M3.9), manual edit
+  commands/undo (M3.10), result/branch API and UI (M3.17), portable-open
+  rhythm rows and archive upgrades (M3.18), GPU qualification.
 
 ## Architectural decisions so far
 

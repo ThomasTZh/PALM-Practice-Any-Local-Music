@@ -209,6 +209,7 @@ def test_migration_preserves_m2_projects(tmp_path: Path) -> None:
             "rhythm_analysis_runs",
             "rhythm_activation_artifacts",
             "rhythm_branches",
+            "rhythm_results",
         } <= tables
 
         for key, project_id in ids.items():
@@ -271,3 +272,60 @@ def test_new_projects_carry_current_schema_version(tmp_path: Path) -> None:
     assert isinstance(project, ProjectRecord)
     assert project.schema_version == PROJECT_SCHEMA_VERSION
     assert project.rhythm_state == ProjectRhythmState()
+
+
+def test_migration_13_to_14_preserves_rhythm_rows(tmp_path: Path) -> None:
+    """A v13 database keeps its rhythm run/artifact/branch rows."""
+    path = tmp_path / "data" / "basseparate.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    project_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    artifact_id = str(uuid.uuid4())
+    branch_id = str(uuid.uuid4())
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("PRAGMA user_version = 0")
+        _apply_migrations(conn, 0, 13)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 13
+        conn.execute(
+            "INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (project_id, "Rhythm v13", NOW, NOW),
+        )
+        conn.execute(
+            "INSERT INTO rhythm_analysis_runs "
+            "(id, project_id, status, created_at, updated_at, record_json) "
+            "VALUES (?, ?, 'completed', ?, ?, '{}')",
+            (run_id, project_id, NOW, NOW),
+        )
+        conn.execute(
+            "INSERT INTO rhythm_activation_artifacts "
+            "(id, project_id, run_id, content_hash, created_at, record_json) "
+            "VALUES (?, ?, ?, ?, ?, '{}')",
+            (artifact_id, project_id, run_id, HASH, NOW),
+        )
+        conn.execute(
+            "INSERT INTO rhythm_branches "
+            "(id, project_id, parent_automatic_result_id, revision, created_at, "
+            "updated_at, record_json) VALUES (?, ?, NULL, 2, ?, ?, '{}')",
+            (branch_id, project_id, NOW, NOW),
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+    initialize_database(path)
+
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    try:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        tables = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "rhythm_results" in tables
+        assert conn.execute("SELECT COUNT(*) FROM rhythm_analysis_runs").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM rhythm_activation_artifacts").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM rhythm_branches").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM rhythm_results").fetchone()[0] == 0
+    finally:
+        conn.close()

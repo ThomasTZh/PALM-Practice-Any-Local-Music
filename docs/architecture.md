@@ -110,8 +110,14 @@ stream coordinate.
   half-up rounding of the exact model-to-project frame mapping. Accepted
   source frames are unique; collisions, endpoint failures, and
   low-confidence peaks stay as candidates with flags. Decoded results are
-  versioned by the decoder profile and a deterministic content hash; their
-  persistence and automatic-result publication are M3.6.
+  versioned by the decoder profile and a deterministic content hash.
+- Immutable automatic rhythm results live in `rhythm_results` with
+  project/run/activation references, accepted and candidate pulses, the
+  decoder profile, optional tempo-map/meter references, stage, status,
+  and a deterministic content hash. The decoded stage is published now;
+  the complete stage arrives with M3.7–M3.9. Editable branches reference
+  a result and copy its pulse evidence; Auto/Edited selection is project
+  rhythm state, revisioned like other project settings.
 - Staging for workers lives under `runtime/`; export and portable builds use
   the same staged, verify-then-rename discipline.
 

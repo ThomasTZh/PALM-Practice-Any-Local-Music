@@ -148,6 +148,12 @@ from basseparate.domain.rhythm_input import (
     RhythmInputPlan,
     RhythmInputProfile,
 )
+from basseparate.domain.rhythm_result import (
+    RhythmResultRecord,
+    RhythmResultStage,
+    RhythmResultStatus,
+    result_content_hash,
+)
 from basseparate.domain.separation import (
     MAX_ALIGNMENT_OFFSET_FRAMES,
     DeviceType,
@@ -253,6 +259,10 @@ __all__ = [
     "RHYTHM_INPUT_RECIPE",
     "RhythmInputPlan",
     "RhythmInputProfile",
+    "RhythmResultRecord",
+    "RhythmResultStage",
+    "RhythmResultStatus",
+    "result_content_hash",
     "ActivationArrayRef",
     "ActivationArtifactManifest",
     "ActivationFrameMapping",

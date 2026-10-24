@@ -82,6 +82,7 @@ class TestInitialization:
             "rhythm_analysis_runs",
             "rhythm_activation_artifacts",
             "rhythm_branches",
+            "rhythm_results",
         } <= tables
 
     def test_schema_version_is_current(self, db_path: Path) -> None:
@@ -128,7 +129,12 @@ class TestInitialization:
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 ).fetchall()
             }
-            assert {"markers", "project_history", "rhythm_branches"} <= tables
+            assert {
+                "markers",
+                "project_history",
+                "rhythm_branches",
+                "rhythm_results",
+            } <= tables
         finally:
             conn.close()
 

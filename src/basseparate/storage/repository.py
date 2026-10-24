@@ -66,6 +66,7 @@ from basseparate.domain.rhythm import (
     RhythmAnalysisRun,
     RhythmBranchRecord,
 )
+from basseparate.domain.rhythm_result import RhythmResultRecord, RhythmResultStage
 from basseparate.domain.separation import (
     SeparationResultSet,
     SeparationRun,
@@ -2985,6 +2986,81 @@ class RhythmRepository:
                 ActivationArtifactManifest.model_validate_json(row["record_json"])
                 for row in rows
             ]
+        finally:
+            conn.close()
+
+    # -- Immutable automatic results ----------------------------------------
+    def create_result(self, result: RhythmResultRecord) -> RhythmResultRecord:
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO rhythm_results (
+                    id, project_id, run_id, activation_artifact_id, stage,
+                    validation_status, decoder_profile_id, decoded_content_hash,
+                    created_at, record_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(result.id),
+                    str(result.project_id),
+                    str(result.run_id),
+                    str(result.activation_artifact_id),
+                    result.stage.value,
+                    result.status.value,
+                    result.decoder_profile.profile_id,
+                    result.decoded_content_hash,
+                    result.created_at.isoformat().replace("+00:00", "Z"),
+                    result.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot publish rhythm result: {exc}") from exc
+        finally:
+            conn.close()
+        return result
+
+    def get_result(self, result_id: uuid.UUID) -> RhythmResultRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM rhythm_results WHERE id = ?",
+                (str(result_id),),
+            ).fetchone()
+            return RhythmResultRecord.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def get_result_for_run_stage(
+        self, run_id: uuid.UUID, stage: RhythmResultStage
+    ) -> RhythmResultRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT record_json FROM rhythm_results
+                WHERE run_id = ? AND stage = ?
+                ORDER BY rowid LIMIT 1
+                """,
+                (str(run_id), stage.value),
+            ).fetchone()
+            return RhythmResultRecord.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_results_for_project(self, project_id: uuid.UUID) -> list[RhythmResultRecord]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT record_json FROM rhythm_results
+                WHERE project_id = ? ORDER BY rowid
+                """,
+                (str(project_id),),
+            ).fetchall()
+            return [RhythmResultRecord.model_validate_json(row["record_json"]) for row in rows]
         finally:
             conn.close()
 

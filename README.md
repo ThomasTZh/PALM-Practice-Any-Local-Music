@@ -11,8 +11,9 @@ review. Milestone 3 (musical grid) is in progress: M3.1 (rhythm domain and
 schema), M3.2 (isolated Beat This! runtime, verified model registry,
 explicit install boundary, CPU qualification), M3.3 (reproducible
 rhythm-analysis input), M3.4 (real Beat This! runs with retained
-framewise activations), and M3.5 (source-aligned beat/downbeat decoding)
-are complete. See
+framewise activations), M3.5 (source-aligned beat/downbeat decoding),
+and M3.6 (immutable automatic results and editable branches) are
+complete. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
 authoritative resume ledger and verified test results.
 
