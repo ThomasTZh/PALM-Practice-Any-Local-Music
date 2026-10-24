@@ -23,10 +23,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   Gate D, followed by M3.14–M3.16 metronome and transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.10 ledger follow-up on
-  top of `3f58b96` ("M3.10: transactional rhythm editing with undo/redo");
-  125 commits at that implementation commit; the M3.9 implementation is
-  `9d466b7`.
+- **Repository:** branch `main`; HEAD is the M3.11 foundation ledger
+  follow-up on top of `fb3a224` ("M3.11: add pure ruler geometry and hit
+  testing foundation"); 126 commits at that foundation; the M3.10
+  implementation is `3f58b96`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -173,8 +173,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `3f58b96` M3.10 rhythm
-  commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
+- **Recent commits (full history in `git log`):** `fb3a224` M3.11 ruler
+  foundation; `3f58b96` M3.10 rhythm commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
   vectors; `694a08a` M3.8 meter inference; `fbfdaf0` M3.7 tempo map; `98fc3a8` GPU diagnosis correction; `bc49cf2` M3.6 automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
@@ -4454,7 +4454,7 @@ commit.
 
 Spec: `milestone3.md` §13. Plan: `projectPlans/m3.11-plan.md`.
 
-- **Foundation:** `frontend/src/music/ruler.ts` provides zoom-dependent
+- **Foundation (`fb3a224`):** `frontend/src/music/ruler.ts` provides zoom-dependent
   detail, binary-search viewport culling, label-overlap suppression, and
   priority hit testing with a minimum handle width. It is React/DOM-free
   so static ruler primitives can be cached across playhead updates.
