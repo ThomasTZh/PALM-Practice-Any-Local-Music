@@ -1781,3 +1781,25 @@ button:hover:not(:disabled) {
   margin-left: auto;
   font-size: 11px;
 }
+
+.count-in-status {
+  padding: 2px 8px;
+  border: 1px solid var(--warn, #d97706);
+  border-radius: 4px;
+  color: var(--warn, #f59e0b);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rhythm-selection-highlights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rhythm-selection-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(244, 63, 94, 0.12);
+  border-left: 1px solid rgba(244, 63, 94, 0.45);
+}

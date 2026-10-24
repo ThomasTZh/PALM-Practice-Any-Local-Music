@@ -47,6 +47,7 @@ function setup(props: Partial<LoopsPanelProps> = {}) {
     onSelectActive: vi.fn(),
     onSetEnabled: vi.fn(),
     onConvert: vi.fn(),
+    onCreateMusicalFromSelection: vi.fn(),
   }
   render(
     <LoopsPanel
@@ -68,6 +69,12 @@ describe('LoopsPanel (M2.11 §13.2)', () => {
     setup({ loops: [], activeLoopId: null })
     expect(screen.getByText(/No loops yet/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Loop list')).not.toBeInTheDocument()
+  })
+
+  it('offers musical-loop creation when the grid callback exists', async () => {
+    const handlers = setup({ selection: { start: 0, end: 4800 } })
+    await userEvent.click(screen.getByRole('button', { name: 'Create musical loop' }))
+    expect(handlers.onCreateMusicalFromSelection).toHaveBeenCalled()
   })
 
   it('reports conversion from source to musical', async () => {

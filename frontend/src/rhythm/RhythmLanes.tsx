@@ -27,6 +27,8 @@ export interface RhythmLanesProps {
   onSeek?: (frame: number) => void
   /** Changes when branch revision/project revision changes, forcing a refetch. */
   refreshKey?: number
+  /** Source-frame selection highlighted on intersecting bars (M3.16 §18.7). */
+  selection?: { start: number; end: number } | null
 }
 
 function pixelsPerQuarter(data: RhythmGridData | null, fpp: number): number {
@@ -99,6 +101,7 @@ export function RhythmLanes({
   playheadSource,
   onSeek,
   refreshKey = 0,
+  selection,
 }: RhythmLanesProps) {
   const [view, setView] = useState<SharedView | null>(() => viewSource.get())
   const [data, setData] = useState<RhythmGridData | null>(null)
@@ -191,6 +194,24 @@ export function RhythmLanes({
       x: (event.source_frame - startFrame) / fpp,
     }))
   }, [labelEvents, startFrame, fpp, data])
+
+  const selectionBars = useMemo(() => {
+    if (!data || !selection) return []
+    const bars = data.grid.events
+      .filter((event) => event.kind === 'bar')
+      .slice()
+      .sort((left, right) => left.source_frame - right.source_frame)
+    return bars
+      .map((bar, index) => {
+        const end = bars[index + 1]?.source_frame ?? data.source_duration_frames
+        return {
+          start: bar.source_frame,
+          end,
+          label: bar.label,
+        }
+      })
+      .filter((bar) => bar.start < selection.end && bar.end > selection.start)
+  }, [data, selection])
 
   if (!view) return null
 
@@ -314,6 +335,18 @@ export function RhythmLanes({
                   />
                 )
               })}
+            </div>
+            <div className="rhythm-selection-highlights" aria-hidden="true">
+              {selectionBars.map((bar) => (
+                <span
+                  key={`selection-${bar.label}-${bar.start}`}
+                  className="rhythm-selection-bar"
+                  style={{
+                    left: `${(bar.start - startFrame) / fpp}px`,
+                    width: `${(bar.end - bar.start) / fpp}px`,
+                  }}
+                />
+              ))}
             </div>
             <div className="rhythm-lanes-bar-labels" aria-hidden="true">
               {barLabels.map((bar) => (

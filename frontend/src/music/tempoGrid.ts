@@ -220,3 +220,50 @@ export function barBeatLabel(
   }
   return { barNumber, beat, pickup: false, label: `${barNumber}.${beat}` }
 }
+export function barBeatPosition(
+  regions: MeterRegion[],
+  origin: BarOrigin,
+  musical: Fraction,
+): {
+  barNumber: number | null
+  beat: number | null
+  beatFraction: number | null
+  pickup: boolean
+  label: string
+} {
+  const base = barBeatLabel(regions, origin, musical)
+  if (base.pickup || base.barNumber === null) {
+    return { ...base, beatFraction: null }
+  }
+  const value = big(musical)
+  let containing = 0
+  for (let index = 0; index < regions.length; index += 1) {
+    if (compare(value, big(regions[index].start)) >= 0) containing = index
+  }
+  const region = regions[containing]
+  const length = barLength(region)
+  const within = div(sub(value, big(region.start)), length)
+  const barsInto = floorDiv(within.n, within.d)
+  const barStart = add(big(region.start), mul({ n: barsInto, d: 1n }, length))
+  let beatBoundary = barStart
+  let beat = 1
+  let pulseLength = length
+  let cumulative = { n: 0n, d: 1n }
+  for (let index = 0; index < region.grouping.length; index += 1) {
+    const part = region.grouping[index]
+    const next = normalize(4n * BigInt(part), BigInt(region.denominator))
+    const boundary = add(barStart, cumulative)
+    if (compare(value, boundary) >= 0) {
+      beat = index + 1
+      beatBoundary = boundary
+      pulseLength = next
+    }
+    cumulative = add(cumulative, next)
+  }
+  const fraction = div(sub(value, beatBoundary), pulseLength)
+  return {
+    ...base,
+    beat,
+    beatFraction: Number(fraction.n) / Number(fraction.d),
+  }
+}

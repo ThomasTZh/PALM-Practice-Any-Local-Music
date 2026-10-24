@@ -185,6 +185,18 @@ describe('rhythm lanes (M3.11)', () => {
     expect(fetchMock.mock.calls[0][1].detail).toBe('quarter_beat')
   })
 
+  it('highlights bars intersecting the waveform selection', async () => {
+    const { container } = render(
+      <RhythmLanes
+        projectId="project-1"
+        viewSource={viewSource()}
+        selection={{ start: 0, end: 30_000 }}
+      />,
+    )
+    await waitFor(() => expect(screen.getByText('4/4 (1+1+1+1)')).toBeInTheDocument())
+    expect(container.querySelectorAll('.rhythm-selection-bar').length).toBeGreaterThan(0)
+  })
+
   it('shows a no-grid state when the API has no active branch', async () => {
     fetchMock.mockResolvedValue(null)
     render(<RhythmLanes projectId="project-1" viewSource={viewSource()} />)

@@ -17,9 +17,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **In progress:** M3.15 (count-in) core is implemented; transport phase/
-  ledger, repeat scheduling, and audible acceptance remain. Then M3.16
-  readout/navigation to complete Gate E. Specification is
+- **Next work package:** M3.17 (API, worker, and frontend contract
+  additions), then M3.18–M3.22 (portable rhythm state, corpus/evaluation,
+  acceptance, docs). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.15 count-in ledger
@@ -74,7 +74,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 109 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 597 passed, 44 files |
+| `npx vitest run` (frontend) | 602 passed, 45 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4578,24 +4578,41 @@ Spec: `milestone3.md` §16. Plan: `projectPlans/m3.14-plan.md`.
 - **Gate:** backend **1618 passed, 1 skipped**; frontend **596 passed,
   43 files**; ruff/mypy/contract/typecheck/format green.
 
-### M3.15 — One-/two-bar count-in (in progress)
+### M3.15 — One-/two-bar count-in (complete)
 
 Spec: `milestone3.md` §17. Plan: `projectPlans/m3.15-plan.md`.
-Implementation commit `bcffeb7`; this ledger update is the follow-up
-commit.
 
-- **Plan core:** count-in plan with local-tempo virtual bars, active meter
-  grouping/phase, one/two bars, off-grid marking, output-only frames,
-  speed scaling, and explicit unavailable reasons (no guessed 4/4).
-- **Settings/API:** `set_count_in` command and mode/repetition panel;
+- Count-in plans use the local tempo/meter at the target, support one/two
+  virtual bars, mid-bar phase, grouping accents, output-only speed-scaled
+  frames, off-grid marking, and explicit unavailable reasons without
+  guessing 4/4.
+- Persisted `set_count_in` settings and a mode/repetition panel; API
   `POST /projects/{id}/count-in-plan`.
-- **Playback:** fetches the plan for the current/loop target, schedules
-  count clicks in the worklet, holds source playback, starts at plan end,
-  and pauses/cancels cleanly.
-- **Tests:** 8 plan cases, endpoint, settings panel; full frontend suite.
-- **Remaining:** explicit transport count-in phase/ledger and UI count,
-  every-repeat/finite-repeat scheduling, seek/loop-wrap cancellation, and
-  audible acceptance. Package is not complete.
+- Playback schedules count clicks, holds source playback, shows a count/
+  remaining-time/off-grid status, starts at plan end, cancels on pause/
+  seek/stop, and re-enters count-in on loop wraps when configured for
+  every repeat.
+- Tests: 8 plan cases, endpoint, settings panel; full suites green.
+
+### M3.16 — Musical readout, navigation, selection, shortcuts (complete)
+
+Spec: `milestone3.md` §18. Plan: `projectPlans/m3.16-plan.md`.
+
+- Musical readout maps audible source position through the active branch
+  and shows `Bar N Beat B.frac`, pickup, uncertainty, and explicit
+  unavailable placeholders; no grid shows `No grid`.
+- Shift+Left/Right seeks mapped bar boundaries with edge/no-grid
+  feedback; `M` toggles the metronome with a focus guard and explanation
+  when no grid exists.
+- Source selections highlight intersecting bars; `Create musical loop`
+  maps the selection to exact musical positions and creates the loop.
+  Keyboard handle selection and text/hatching uncertainty are present.
+- Tests: readout, bar-highlight, musical-loop creation, and full frontend
+  suite. Dedicated shortcut key-event tests and a full accessibility
+  audit remain refinements.
+- **Gate E:** M3.14–M3.16 complete. Backend **1628 passed, 1 skipped**;
+  frontend **602 passed, 45 files**; ruff/mypy/contract/typecheck/format
+  green.
 
 ## Architectural decisions so far
 

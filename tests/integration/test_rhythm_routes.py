@@ -363,3 +363,23 @@ def test_count_in_plan_endpoint(client: TestClient, app, headers) -> None:
     assert data["beats"] == 4
     assert data["total_frames"] == 96_000
     assert len(data["clicks"]) == 4
+
+
+def test_count_in_settings_command(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    project = app.state.repository.get_project(project_id)
+    assert project is not None
+    applied = client.post(
+        f"/api/v1/projects/{project_id}/commands",
+        json={
+            "command_id": str(uuid.uuid4()),
+            "idempotency_key": uuid.uuid4().hex,
+            "base_revision": project.revision,
+            "op": {"type": "set_count_in", "mode": "two_bars", "repetition": "every_repeat"},
+        },
+        headers=headers,
+    )
+    assert applied.status_code == 200, applied.text
+    count_in = applied.json()["rhythm_state"]["count_in"]
+    assert count_in["mode"] == "two_bars"
+    assert count_in["repetition"] == "every_repeat"

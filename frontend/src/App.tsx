@@ -37,6 +37,9 @@ import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform
 import { RhythmLanes } from './rhythm/RhythmLanes'
 import { fetchMetronomeSchedule } from './api/metronome'
 import { fetchCountInPlan } from './api/countIn'
+import { fetchRhythmGrid, type RhythmGridData } from './api/rhythm'
+import { musicalReadout } from './music/readout'
+import { musicalAtSource } from './music/tempoGrid'
 import type { View as EditorView } from './waveform/viewport'
 import { OpenProjectPanel } from './projects/OpenProjectPanel'
 import { useProjectCommands } from './projects/useProjectCommands'
@@ -533,6 +536,9 @@ const PlaybackPanel = memo(function PlaybackPanel({
   rhythmGridAvailable,
   countInEnabled,
   countInMode,
+  countInRepetition,
+  onToggleMetronome,
+  onRhythmGrid,
 }: {
   projectId: string
   createAudioContext?: (sampleRate?: number) => TransportContextLike
@@ -578,6 +584,9 @@ const PlaybackPanel = memo(function PlaybackPanel({
   rhythmGridAvailable?: boolean
   countInEnabled?: boolean
   countInMode?: 'off' | 'one_bar' | 'two_bars'
+  countInRepetition?: 'once' | 'every_repeat'
+  onToggleMetronome?: () => void
+  onRhythmGrid?: (grid: RhythmGridData | null) => void
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -606,9 +615,25 @@ const PlaybackPanel = memo(function PlaybackPanel({
     { frame: number; strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision' }[]
   >([])
   const metronomeFetchAtRef = useRef(0)
+  const onRhythmGridRef = useRef(onRhythmGrid)
+  onRhythmGridRef.current = onRhythmGrid
   const lastReportedFrameRef = useRef<number | null>(null)
   const lastPlaybackRateRef = useRef<number | null>(null)
   const countInTimerRef = useRef<number | null>(null)
+  const countInTickRef = useRef<number | null>(null)
+  const countInActiveRef = useRef(false)
+  const cancelCountInRef = useRef<(() => void) | null>(null)
+  const countInStartedAtRef = useRef(0)
+  const beginCountInRef = useRef<
+    ((transport: PcmTransport, targetFrame: number) => Promise<boolean>) | null
+  >(null)
+  const [rhythmGrid, setRhythmGrid] = useState<RhythmGridData | null>(null)
+  const [countInStatus, setCountInStatus] = useState<{
+    totalFrames: number
+    remainingFrames: number
+    label: string
+    offGrid: boolean
+  } | null>(null)
   metronomeSettingsRef.current = metronomeEnabled
     ? { enabled: true, volume: metronomeVolume ?? 0.5 }
     : null
@@ -713,6 +738,22 @@ const PlaybackPanel = memo(function PlaybackPanel({
         metronomePendingRef.current = []
         transport.scheduleMetronome([])
         metronomeFetchAtRef.current = 0
+        const loop = practiceStateRef.current?.loops?.find(
+          (item) => item.id === practiceStateRef.current?.active_loop_id,
+        )
+        if (
+          countInEnabled &&
+          countInRepetition === 'every_repeat' &&
+          practiceStateRef.current?.loop_enabled &&
+          loop &&
+          !countInActiveRef.current &&
+          previousFrame !== null &&
+          frame < previousFrame
+        ) {
+          transport.pause()
+          void beginCountInRef.current?.(transport, loop.start_frames)
+          return
+        }
       }
       const current = transport.getAudiblePosition()
       const duration = info?.durationFrames ?? null
@@ -778,6 +819,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
   // transport exists (source still loading) the playhead parks locally.
   const seekFn = useCallback(
     (frame: number) => {
+      cancelCountInRef.current?.()
       const transport = transportRef.current
       if (transport) {
         transport.seek(frame)
@@ -793,6 +835,62 @@ const PlaybackPanel = memo(function PlaybackPanel({
     registerSeek?.(seekFn)
     return () => registerSeek?.(null)
   }, [registerSeek, seekFn])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        const bars = rhythmGrid?.grid.events
+          .filter((item) => item.kind === 'bar')
+          .slice()
+          .sort((left, right) => left.source_frame - right.source_frame)
+        if (!bars || bars.length === 0) {
+          event.preventDefault()
+          setPlayError('No musical grid is available for bar navigation')
+          return
+        }
+        const current = transportRef.current?.getAudiblePosition() ?? 0
+        const targetBar =
+          event.key === 'ArrowRight'
+            ? bars.find((bar) => bar.source_frame > current)
+            : bars
+                .slice()
+                .reverse()
+                .find((bar) => bar.source_frame < current)
+        if (!targetBar) {
+          event.preventDefault()
+          setPlayError('No further mapped bar in that direction')
+          return
+        }
+        event.preventDefault()
+        transportRef.current?.seek(targetBar.source_frame)
+        reportPosition(targetBar.source_frame)
+      } else if (
+        event.key.toLowerCase() === 'm' &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        event.preventDefault()
+        if (!rhythmGrid) {
+          setPlayError('The metronome needs an active musical grid')
+          return
+        }
+        onToggleMetronome?.()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onToggleMetronome, reportPosition, rhythmGrid])
 
   // Expose the audible playhead to the waveform editor (M1.14 §16.5):
   // stable functions that read the transport on demand (display-only).
@@ -959,6 +1057,30 @@ const PlaybackPanel = memo(function PlaybackPanel({
     transportRef.current?.setOutputGain(clamped / 100)
   }, [initialVolume])
 
+  useEffect(() => {
+    if (!rhythmGridAvailable || !info) {
+      setRhythmGrid(null)
+      return
+    }
+    const controller = new AbortController()
+    fetchRhythmGrid(
+      projectId,
+      { startFrame: 0, endFrame: info.durationFrames, detail: 'bars' },
+      controller.signal,
+    )
+      .then((data) => {
+        setRhythmGrid(data)
+        onRhythmGridRef.current?.(data)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setRhythmGrid(null)
+          onRhythmGridRef.current?.(null)
+        }
+      })
+    return () => controller.abort()
+  }, [info, projectId, rhythmGridAvailable])
+
   // Park the playhead at the last saved position (M1.15 §17.6.4): once
   // the transport exists, seek there. Playback stays paused (§17.6.5);
   // the transport applies a pre-target park on first play. Declared
@@ -1010,7 +1132,99 @@ const PlaybackPanel = memo(function PlaybackPanel({
     }
   }, [importId, info, isStandard51, leftCh, loadInfo, projectId, rightCh])
 
+  const cancelCountIn = useCallback(() => {
+    countInActiveRef.current = false
+    if (countInTimerRef.current !== null) {
+      window.clearTimeout(countInTimerRef.current)
+      countInTimerRef.current = null
+    }
+    if (countInTickRef.current !== null) {
+      window.clearInterval(countInTickRef.current)
+      countInTickRef.current = null
+    }
+    setCountInStatus(null)
+    transportRef.current?.scheduleMetronome([])
+  }, [])
+  cancelCountInRef.current = cancelCountIn
+
+  const beginCountIn = useCallback(
+    async (transport: PcmTransport, targetFrame: number): Promise<boolean> => {
+      if (
+        !countInEnabled ||
+        countInMode === undefined ||
+        countInMode === 'off' ||
+        !rhythmGridAvailableRef.current
+      ) {
+        return false
+      }
+      try {
+        const plan = await fetchCountInPlan(
+          projectId,
+          Math.max(0, Math.floor(targetFrame)),
+          transport.playbackRate,
+        )
+        const contextTime = transport.contextTime
+        const sampleRate = transport.contextRate
+        if (
+          !plan.available ||
+          plan.total_frames <= 0 ||
+          contextTime == null ||
+          sampleRate == null
+        ) {
+          return false
+        }
+        const baseFrame = Math.round(contextTime * sampleRate)
+        transport.scheduleMetronome(
+          (plan.clicks ?? []).map((click) => ({
+            frame: baseFrame + click.offset_frames,
+            strength: click.strength,
+          })),
+          metronomeVolume ?? 0.5,
+        )
+        countInActiveRef.current = true
+        countInStartedAtRef.current = performance.now()
+        setCountInStatus({
+          totalFrames: plan.total_frames,
+          remainingFrames: plan.total_frames,
+          label: `${plan.bars} bar${plan.bars === 1 ? '' : 's'}`,
+          offGrid: plan.off_grid,
+        })
+        const update = () => {
+          const elapsedMs = performance.now() - countInStartedAtRef.current
+          const remaining = Math.max(0, plan.total_frames - (elapsedMs / 1000) * sampleRate)
+          setCountInStatus((current) =>
+            current ? { ...current, remainingFrames: remaining } : current,
+          )
+        }
+        countInTickRef.current = window.setInterval(update, 100)
+        countInTimerRef.current = window.setTimeout(
+          () => {
+            countInTimerRef.current = null
+            countInActiveRef.current = false
+            if (countInTickRef.current !== null) {
+              window.clearInterval(countInTickRef.current)
+              countInTickRef.current = null
+            }
+            setCountInStatus(null)
+            transport.seek(targetFrame)
+            void transport.play()
+          },
+          (plan.total_frames / sampleRate) * 1000,
+        )
+        return true
+      } catch {
+        return false
+      }
+    },
+    [countInEnabled, countInMode, metronomeVolume, projectId],
+  )
+  beginCountInRef.current = beginCountIn
+
   const handlePlayPause = useCallback(async () => {
+    if (countInActiveRef.current) {
+      cancelCountIn()
+      return
+    }
     const transport = transportRef.current
     if (!transport || !info) return
     setPlayError(null)
@@ -1070,6 +1284,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
       return
     } else if (transport.currentState === 'playing' || transport.currentState === 'buffering') {
       transport.pause()
+      cancelCountIn()
       return
     }
     if (countInTimerRef.current !== null) {
@@ -1105,49 +1320,14 @@ const PlaybackPanel = memo(function PlaybackPanel({
       }
     }
     let countInStarted = false
-    if (
-      countInEnabled &&
-      countInMode !== undefined &&
-      countInMode !== 'off' &&
-      rhythmGridAvailableRef.current
-    ) {
-      try {
-        const activeLoop = practiceState?.loops?.find(
-          (loop) => loop.id === practiceState.active_loop_id,
-        )
-        const targetFrame =
-          practiceState?.loop_enabled && activeLoop
-            ? activeLoop.start_frames
-            : transport.getAudiblePosition()
-        const plan = await fetchCountInPlan(
-          projectId,
-          Math.max(0, Math.floor(targetFrame)),
-          transport.playbackRate,
-        )
-        const contextTime = transport.contextTime
-        const sampleRate = transport.contextRate
-        if (plan.available && plan.total_frames > 0 && contextTime != null && sampleRate != null) {
-          const baseFrame = Math.round(contextTime * sampleRate)
-          transport.scheduleMetronome(
-            (plan.clicks ?? []).map((click) => ({
-              frame: baseFrame + click.offset_frames,
-              strength: click.strength,
-            })),
-            metronomeVolume ?? 0.5,
-          )
-          countInStarted = true
-          countInTimerRef.current = window.setTimeout(
-            () => {
-              countInTimerRef.current = null
-              void transport.play()
-            },
-            (plan.total_frames / sampleRate) * 1000,
-          )
-        }
-      } catch {
-        // A missing grid/meter falls back to immediate playback.
-      }
-    }
+    const activeLoop = practiceState?.loops?.find(
+      (loop) => loop.id === practiceState.active_loop_id,
+    )
+    const targetFrame =
+      practiceState?.loop_enabled && activeLoop
+        ? activeLoop.start_frames
+        : transport.getAudiblePosition()
+    countInStarted = await beginCountIn(transport, targetFrame)
     if (!countInStarted) {
       try {
         await transport.play()
@@ -1159,11 +1339,23 @@ const PlaybackPanel = memo(function PlaybackPanel({
     // The fresh graph starts at defaults: apply the current mixer state
     // (spec §10.3) now that the worklet node exists.
     applyMix()
-  }, [applyMix, createAudioContext, importId, info, projectId, suspended])
+  }, [
+    applyMix,
+    beginCountIn,
+    cancelCountIn,
+    createAudioContext,
+    importId,
+    info,
+    projectId,
+    suspended,
+  ])
+
+  useEffect(() => () => cancelCountIn(), [cancelCountIn])
 
   const handleStop = useCallback(() => {
+    cancelCountIn()
     transportRef.current?.stop()
-  }, [])
+  }, [cancelCountIn])
 
   const handleVolumeChange = useCallback(
     (value: number) => {
@@ -1297,9 +1489,19 @@ const PlaybackPanel = memo(function PlaybackPanel({
             Stop
           </button>
         </div>
+        {countInStatus ? (
+          <span className="count-in-status" role="status">
+            Count-in {countInStatus.label} ·{' '}
+            {(countInStatus.remainingFrames / info.sampleRate).toFixed(1)} s
+            {countInStatus.offGrid ? ' · off-grid start' : ''}
+          </span>
+        ) : null}
         <span className="time-readout">
           {formatTime(position, info.sampleRate)} /{' '}
           {formatTime(info.durationFrames, info.sampleRate)}
+        </span>
+        <span className="musical-readout" aria-live="off">
+          {musicalReadout(rhythmGrid, position)}
         </span>
         <div className="playback-volume">
           <label>
@@ -1398,6 +1600,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const [viewSource, setViewSource] = useState<ViewSource | null>(null)
   const handleRegisterView = useCallback((source: ViewSource | null) => setViewSource(source), [])
   const [peaks, setPeaks] = useState<MixPeaks | null>(null)
+  const [projectRhythmGrid, setProjectRhythmGrid] = useState<RhythmGridData | null>(null)
   const handlePeaks = useCallback((p: MixPeaks) => setPeaks(p), [])
 
   const commands = useProjectCommands(project.id)
@@ -1617,6 +1820,44 @@ function ProjectView({ project }: { project: ProjectSummary }) {
 
   // --- M2.11 loop commands (spec §13.2) ------------------------------------
 
+  const handleCreateMusicalLoopFromSelection = useCallback(() => {
+    const selection = selectionRef.current
+    if (!selection || !projectRhythmGrid) {
+      setLoopNotice('No active musical grid for the selection.')
+      return
+    }
+    try {
+      const anchors = projectRhythmGrid.tempo_anchors.map((anchor) => ({
+        sourceFrame: anchor.source_frame,
+        musical: anchor.musical_position,
+      }))
+      const start = musicalAtSource(anchors, selection.start)
+      const end = musicalAtSource(anchors, selection.end)
+      if (end.numerator * start.denominator <= start.numerator * end.denominator) {
+        setLoopNotice('The selection is too short for a musical loop.')
+        return
+      }
+      const known = new Set((practiceLiveRef.current?.loops ?? []).map((loop) => loop.id))
+      void (async () => {
+        const res = await sendRef.current({
+          type: 'add_musical_loop',
+          start_musical: start,
+          end_musical: end,
+          boundary_fade: true,
+        })
+        if (!res) {
+          setLoopNotice('Could not create the musical loop.')
+          return
+        }
+        setLoopNotice(null)
+        const created = (res.practiceState?.loops ?? []).find((loop) => !known.has(loop.id))
+        if (created) void sendRef.current({ type: 'set_active_loop', loop_id: created.id })
+      })()
+    } catch {
+      setLoopNotice('The selection is outside the active musical grid.')
+    }
+  }, [projectRhythmGrid])
+
   const handleCreateLoopFromSelection = useCallback(() => {
     const sel = selectionRef.current
     if (!sel) return
@@ -1669,6 +1910,11 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const handleCountInChange = useCallback((patch: CountInPatch) => {
     void sendRef.current({ type: 'set_count_in', ...patch })
   }, [])
+
+  const handleToggleMetronome = useCallback(() => {
+    const enabled = commands.rhythmState?.metronome?.enabled ?? false
+    void sendRef.current({ type: 'set_metronome', enabled: !enabled })
+  }, [commands.rhythmState?.metronome?.enabled])
 
   const handleLoopUpdate = useCallback((id: string, patch: LoopPatch) => {
     const op: {
@@ -1827,6 +2073,9 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         rhythmGridAvailable={Boolean(commands.rhythmState?.active_branch_id)}
         countInEnabled={(commands.rhythmState?.count_in?.mode ?? 'off') !== 'off'}
         countInMode={commands.rhythmState?.count_in?.mode ?? 'off'}
+        countInRepetition={commands.rhythmState?.count_in?.repetition ?? 'once'}
+        onToggleMetronome={handleToggleMetronome}
+        onRhythmGrid={setProjectRhythmGrid}
         stemSources={stemSources}
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
@@ -1838,6 +2087,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
           playheadSource={playheadSource ?? undefined}
           onSeek={seekFn ?? undefined}
           refreshKey={commands.revision}
+          selection={liveSelection}
         />
       ) : null}
       <TrackStack
@@ -1875,6 +2125,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         durationFrames={commands.durationFrames ?? 0}
         notice={loopNotice}
         onCreateFromSelection={handleCreateLoopFromSelection}
+        onCreateMusicalFromSelection={handleCreateMusicalLoopFromSelection}
         onUpdate={handleLoopUpdate}
         onDuplicate={handleLoopDuplicate}
         onDelete={handleLoopDelete}

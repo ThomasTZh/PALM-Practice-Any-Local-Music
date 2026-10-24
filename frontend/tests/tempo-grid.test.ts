@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import fixture from './golden/rhythm-grid.json'
 import {
   barBeatLabel,
+  barBeatPosition,
   musicalAtSource,
   roundHalfUp,
   sourceAtMusical,
@@ -33,6 +34,21 @@ interface FixtureShape {
 const data = fixture as FixtureShape
 
 describe('shared tempo/grid golden vectors (M3.9 §11.3)', () => {
+  it('computes fractional primary-beat positions', () => {
+    expect(
+      barBeatPosition(data.meterRegions, data.barOrigin, {
+        numerator: 3,
+        denominator: 2,
+      }),
+    ).toMatchObject({ barNumber: 1, beat: 2, beatFraction: 0.5 })
+    expect(
+      barBeatPosition(data.meterRegions, data.barOrigin, {
+        numerator: 21,
+        denominator: 2,
+      }),
+    ).toMatchObject({ barNumber: 3, beat: 3, beatFraction: 0.5 })
+  })
+
   it('maps musical positions to exact fractional sources and rounded frames', () => {
     for (const query of data.mappingQueries) {
       const mapped = sourceAtMusical(data.tempoAnchors, query.musical)

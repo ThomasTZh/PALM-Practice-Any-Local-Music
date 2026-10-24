@@ -55,6 +55,8 @@ export interface LoopsPanelProps {
   /** Notices (e.g. the 100 ms minimum explanation); null → none. */
   notice: string | null
   onCreateFromSelection: () => void
+  /** Create a musical-grid loop from the same selection (M3.16 §18.8). */
+  onCreateMusicalFromSelection?: () => void
   onUpdate: (id: string, patch: LoopPatch) => void
   onDuplicate: (id: string) => void
   onDelete: (id: string) => void
@@ -78,6 +80,7 @@ export function LoopsPanel({
   durationFrames,
   notice,
   onCreateFromSelection,
+  onCreateMusicalFromSelection,
   onUpdate,
   onDuplicate,
   onDelete,
@@ -141,6 +144,21 @@ export function LoopsPanel({
         >
           Create from selection
         </button>
+        {onCreateMusicalFromSelection ? (
+          <button
+            type="button"
+            className="loops-create-musical"
+            onClick={onCreateMusicalFromSelection}
+            disabled={!selection}
+            title={
+              selection
+                ? 'Create a loop anchored to the active musical grid'
+                : 'Select a range on the waveform first'
+            }
+          >
+            Create musical loop
+          </button>
+        ) : null}
         <label className="loops-enable" title="Loops must be at least 100 ms to repeat">
           <input
             type="checkbox"
