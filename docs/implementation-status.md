@@ -87,7 +87,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 113 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 613 passed, 49 files |
+| `npx vitest run` (frontend) | 615 passed, 50 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4666,7 +4666,7 @@ commit.
 - **Tests:** pipeline entry tests (unknown project, uninstalled model,
   manifest identity), rhythm-run route tests, branch-store and transport
   tests, and Analyze panel tests. Backend **1681 passed, 1 skipped**;
-  frontend **613 passed, 49 files**; ruff/mypy/contract green.
+  frontend **615 passed, 50 files**; ruff/mypy/contract green.
 
 ### M3.18 — Cache identity, persistence, autosave, portable projects (complete)
 
