@@ -3482,7 +3482,7 @@
             "type": "boolean"
           },
           "snap_mode": {
-            "$ref": "#/components/schemas/SnapMode",
+            "$ref": "#/components/schemas/basseparate__domain__rhythm__SnapMode",
             "default": "beat"
           }
         },
@@ -4430,8 +4430,25 @@
         "title": "SetViewportOp",
         "type": "object"
       },
-      "SnapMode": {
-        "description": "Musical snapping modes (milestone3.md \u00a714.1).",
+      "SnapEventCandidate": {
+        "properties": {
+          "frame": {
+            "title": "Frame",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame",
+          "label"
+        ],
+        "title": "SnapEventCandidate",
+        "type": "object"
+      },
+      "SnapMode-Input": {
         "enum": [
           "off",
           "beat",
@@ -4441,6 +4458,114 @@
           "event"
         ],
         "title": "SnapMode",
+        "type": "string"
+      },
+      "SnapRequest": {
+        "properties": {
+          "event_candidates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SnapEventCandidate"
+            },
+            "title": "Event Candidates",
+            "type": "array"
+          },
+          "frames_per_pixel": {
+            "title": "Frames Per Pixel",
+            "type": "number"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/SnapMode-Input"
+          },
+          "position_frames": {
+            "title": "Position Frames",
+            "type": "integer"
+          },
+          "radius_css_px": {
+            "default": 8.0,
+            "title": "Radius Css Px",
+            "type": "number"
+          }
+        },
+        "required": [
+          "position_frames",
+          "mode",
+          "frames_per_pixel"
+        ],
+        "title": "SnapRequest",
+        "type": "object"
+      },
+      "SnapResult": {
+        "description": "One edit-time snap decision; ``position_frames`` is always echoed.",
+        "properties": {
+          "distance_frames": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Distance Frames",
+            "type": "number"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/basseparate__domain__snapping__SnapMode"
+          },
+          "position_frames": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Position Frames",
+            "type": "integer"
+          },
+          "radius_frames": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Radius Frames",
+            "type": "number"
+          },
+          "snapped": {
+            "title": "Snapped",
+            "type": "boolean"
+          },
+          "snapped_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Snapped Frame",
+            "type": "integer"
+          },
+          "target_kind": {
+            "$ref": "#/components/schemas/SnapTargetKind",
+            "default": "none"
+          },
+          "target_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Label"
+          }
+        },
+        "required": [
+          "mode",
+          "position_frames",
+          "snapped_frame",
+          "snapped"
+        ],
+        "title": "SnapResult",
+        "type": "object"
+      },
+      "SnapTargetKind": {
+        "enum": [
+          "none",
+          "bar",
+          "primary",
+          "half_beat",
+          "quarter_beat",
+          "event"
+        ],
+        "title": "SnapTargetKind",
         "type": "string"
       },
       "SourceFrameFraction": {
@@ -5175,6 +5300,31 @@
         },
         "title": "WorkingState",
         "type": "object"
+      },
+      "basseparate__domain__rhythm__SnapMode": {
+        "description": "Musical snapping modes (milestone3.md \u00a714.1).",
+        "enum": [
+          "off",
+          "beat",
+          "half_beat",
+          "quarter_beat",
+          "bar",
+          "event"
+        ],
+        "title": "SnapMode",
+        "type": "string"
+      },
+      "basseparate__domain__snapping__SnapMode": {
+        "enum": [
+          "off",
+          "beat",
+          "half_beat",
+          "quarter_beat",
+          "bar",
+          "event"
+        ],
+        "title": "SnapMode",
+        "type": "string"
       }
     }
   },
@@ -6981,6 +7131,56 @@
           }
         },
         "summary": "Get Rhythm Grid"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-snap": {
+      "post": {
+        "operationId": "snap_rhythm_position_api_v1_projects__project_id__rhythm_snap_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Snap Rhythm Position"
       }
     },
     "/api/v1/projects/{project_id}/runs": {

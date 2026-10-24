@@ -179,3 +179,37 @@ def test_invalid_range_is_422(client: TestClient, app, headers) -> None:
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "RHYTHM_GRID_RANGE_INVALID"
+
+
+def test_snap_endpoint_uses_visual_radius(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/rhythm-snap",
+        json={
+            "position_frames": 23_500,
+            "mode": "beat",
+            "frames_per_pixel": 100.0,
+            "radius_css_px": 8,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["snapped"] is True
+    assert data["snapped_frame"] == 24_000
+    assert data["target_kind"] == "primary"
+
+
+def test_snap_endpoint_rejects_out_of_range(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/rhythm-snap",
+        json={
+            "position_frames": 400_000,
+            "mode": "bar",
+            "frames_per_pixel": 100.0,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "RHYTHM_SNAP_INVALID"

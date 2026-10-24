@@ -17,7 +17,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.12 (musical snapping), then M3.13 to complete
+- **Next work package:** M3.13 (musical/beat-anchored loops) to complete
   Gate D, followed by M3.14–M3.16 metronome and transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
@@ -68,12 +68,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1580 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1592 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 102 files |
+| `mypy src/basseparate` | clean, 104 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 584 passed, 39 files |
+| `npx vitest run` (frontend) | 588 passed, 40 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4481,6 +4481,33 @@ Spec: `milestone3.md` §13. Plan: `projectPlans/m3.11-plan.md`.
   no-grid, inspector, playhead alignment, zoom detail), 5 ruler geometry
   tests, and the App suite with the guarded mount. Manual visual review
   in the running app remains part of final acceptance, not a code gap.
+
+### M3.12 — Musical snapping (complete)
+
+Spec: `milestone3.md` §14. Plan: `projectPlans/m3.12-plan.md`.
+Implementation commit recorded in the follow-up ledger entry.
+
+- **Modes (§14.1–§14.6):** `domain/snapping.py` defines off, beat,
+  half-beat, quarter-beat, bar, and event modes/results. Beat targets are
+  primary grouping boundaries; half/quarter targets subdivide the exact
+  musical primary interval and map through the tempo map; bar targets
+  exist only on derived bar boundaries; event targets accept markers/
+  loops/selection/pulses. No target in an unmapped span.
+- **Radius (§14.2):** `rhythm/snapping.py` converts the default 8 CSS
+  pixels through the viewport scale, considers only nearby candidates,
+  snaps to the nearest inside the radius, and otherwise preserves the
+  input frame exactly. A modifier temporarily inverts the mode.
+- **Validation (§14.9):** `POST /api/v1/projects/{id}/rhythm-snap`
+  resolves through the active branch, rejects out-of-range positions and
+  invalid scale/radius with 422, and never mutates stored objects.
+- **No retroactive quantization (§14.8):** snapping is a pure function;
+  changing modes never moves existing markers, loops, pulses, or events.
+- **Tests:** `tests/unit/test_snapping.py` (10), 2 new endpoint tests,
+  and 4 TypeScript snap tests.
+- **Gate:** backend **1592 passed, 1 skipped**; frontend **588 passed,
+  40 files**; ruff/mypy/contract/typecheck/format green.
+- **Deferred:** drag-handler integration and final modifier key binding
+  (editor interaction); no retroactive quantization by design.
 
 ## Architectural decisions so far
 

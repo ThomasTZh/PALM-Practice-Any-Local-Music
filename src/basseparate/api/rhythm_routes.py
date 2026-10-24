@@ -24,8 +24,10 @@ from basseparate.domain.rhythm import (
     RhythmPulse,
     TempoAnchor,
 )
+from basseparate.domain.snapping import SNAP_RADIUS_CSS_PX, SnapMode, SnapResult
 from basseparate.rhythm.commands import meter_map_for_branch, tempo_map_for_branch
 from basseparate.rhythm.grid import GridError, derive_grid
+from basseparate.rhythm.snapping import SnapError, snap_to_grid
 from basseparate.storage import ProjectRepository, RhythmRepository
 
 router = APIRouter(prefix="/api/v1")
@@ -52,6 +54,19 @@ def _projects(request: Request) -> ProjectRepository:
 
 def _rhythm(request: Request) -> RhythmRepository:
     return cast(RhythmRepository, request.app.state.rhythm_repository)
+
+
+class SnapEventCandidate(BaseModel):
+    frame: int
+    label: str
+
+
+class SnapRequest(BaseModel):
+    position_frames: int
+    mode: SnapMode
+    frames_per_pixel: float
+    radius_css_px: float = SNAP_RADIUS_CSS_PX
+    event_candidates: list[SnapEventCandidate] = []
 
 
 class RhythmGridUnavailableError(ApiError):
@@ -138,3 +153,54 @@ async def get_rhythm_grid(
         pulses=pulses,
         grid=grid,
     )
+
+
+@router.post(
+    "/projects/{project_id}/rhythm-snap",
+    response_model=SnapResult,
+)
+async def snap_rhythm_position(
+    project_id: uuid.UUID,
+    body: SnapRequest,
+    request: Request,
+) -> SnapResult:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    if project.sample_rate is None:
+        raise RhythmGridUnavailableError(project_id)
+    branch_id = project.rhythm_state.active_branch_id
+    if branch_id is None:
+        raise RhythmGridUnavailableError(project_id)
+    branch: RhythmBranchRecord | None = await asyncio.to_thread(
+        _rhythm(request).get_branch, branch_id
+    )
+    if branch is None or branch.project_id != project_id:
+        raise RhythmGridUnavailableError(project_id)
+    if body.position_frames > branch.source_duration_frames:
+        raise ApiError(
+            code="RHYTHM_SNAP_INVALID",
+            message="position lies beyond the project duration",
+            status_code=422,
+        )
+    try:
+        tempo_map = tempo_map_for_branch(branch, project.sample_rate)
+        meter_map = meter_map_for_branch(branch)
+        return snap_to_grid(
+            body.position_frames,
+            mode=body.mode,
+            tempo_map=tempo_map,
+            meter_map=meter_map,
+            bar_origin=branch.bar_origin,
+            frames_per_pixel=body.frames_per_pixel,
+            radius_css_px=body.radius_css_px,
+            event_candidates=[
+                (candidate.frame, candidate.label) for candidate in body.event_candidates
+            ],
+        )
+    except (SnapError, ValueError, GridError) as exc:
+        raise ApiError(
+            code="RHYTHM_SNAP_INVALID",
+            message=str(exc),
+            status_code=422,
+        ) from exc

@@ -17,7 +17,7 @@ M3.6 (immutable automatic results and editable branches), M3.7
 inference, and manual regions), and M3.9 (bars, beats, pickups, and
 shared Python/TypeScript golden vectors), and M3.10 (transactional rhythm
 editing with undo/redo) are complete; M3.11 (musical ruler and
-rhythm lanes) is complete. See
+rhythm lanes) and M3.12 (musical snapping) are complete. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
 authoritative resume ledger and verified test results.
 

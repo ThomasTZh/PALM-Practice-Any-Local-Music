@@ -752,6 +752,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/rhythm-snap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Snap Rhythm Position */
+        post: operations["snap_rhythm_position_api_v1_projects__project_id__rhythm_snap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/runs": {
         parameters: {
             query?: never;
@@ -2354,7 +2371,7 @@ export interface components {
              */
             ruler_visible: boolean;
             /** @default beat */
-            snap_mode: components["schemas"]["SnapMode"];
+            snap_mode: components["schemas"]["basseparate__domain__rhythm__SnapMode"];
         };
         /**
          * ProjectStatus
@@ -2820,12 +2837,74 @@ export interface components {
             type: "set_viewport";
             viewport?: components["schemas"]["ViewportState"] | null;
         };
+        /** SnapEventCandidate */
+        SnapEventCandidate: {
+            /** Frame */
+            frame: number;
+            /** Label */
+            label: string;
+        };
         /**
          * SnapMode
-         * @description Musical snapping modes (milestone3.md §14.1).
          * @enum {string}
          */
-        SnapMode: "off" | "beat" | "half_beat" | "quarter_beat" | "bar" | "event";
+        "SnapMode-Input": "off" | "beat" | "half_beat" | "quarter_beat" | "bar" | "event";
+        /** SnapRequest */
+        SnapRequest: {
+            /**
+             * Event Candidates
+             * @default []
+             */
+            event_candidates: components["schemas"]["SnapEventCandidate"][];
+            /** Frames Per Pixel */
+            frames_per_pixel: number;
+            mode: components["schemas"]["SnapMode-Input"];
+            /** Position Frames */
+            position_frames: number;
+            /**
+             * Radius Css Px
+             * @default 8
+             */
+            radius_css_px: number;
+        };
+        /**
+         * SnapResult
+         * @description One edit-time snap decision; ``position_frames`` is always echoed.
+         */
+        SnapResult: {
+            /**
+             * Distance Frames
+             * @default 0
+             */
+            distance_frames: number;
+            mode: components["schemas"]["basseparate__domain__snapping__SnapMode"];
+            /**
+             * Position Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            position_frames: number;
+            /**
+             * Radius Frames
+             * @default 0
+             */
+            radius_frames: number;
+            /** Snapped */
+            snapped: boolean;
+            /**
+             * Snapped Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            snapped_frame: number;
+            /** @default none */
+            target_kind: components["schemas"]["SnapTargetKind"];
+            /** Target Label */
+            target_label?: string | null;
+        };
+        /**
+         * SnapTargetKind
+         * @enum {string}
+         */
+        SnapTargetKind: "none" | "bar" | "primary" | "half_beat" | "quarter_beat" | "event";
         /**
          * SourceFrameFraction
          * @description Exact fractional project source frame before final rounding.
@@ -3172,6 +3251,17 @@ export interface components {
             selection?: components["schemas"]["SelectionRange"] | null;
             viewport?: components["schemas"]["ViewportState"] | null;
         };
+        /**
+         * SnapMode
+         * @description Musical snapping modes (milestone3.md §14.1).
+         * @enum {string}
+         */
+        basseparate__domain__rhythm__SnapMode: "off" | "beat" | "half_beat" | "quarter_beat" | "bar" | "event";
+        /**
+         * SnapMode
+         * @enum {string}
+         */
+        basseparate__domain__snapping__SnapMode: "off" | "beat" | "half_beat" | "quarter_beat" | "bar" | "event";
     };
     responses: never;
     parameters: never;
@@ -4497,6 +4587,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RhythmGridResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snap_rhythm_position_api_v1_projects__project_id__rhythm_snap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapResult"];
                 };
             };
             /** @description Validation Error */
