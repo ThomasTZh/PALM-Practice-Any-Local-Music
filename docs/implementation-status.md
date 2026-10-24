@@ -23,10 +23,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   eviction remain. Then M3.19–M3.22. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.15/M3.16 completion
-  ledger follow-up on top of `eba49ab` ("Complete M3.15 count-in and
-  M3.16 musical readout/navigation"); 133 commits at that implementation;
-  the M3.14 implementation is `76a7756`.
+- **Repository:** branch `main`; HEAD is the M3.18 cache ledger follow-up
+  on top of `e0abed3` ("M3.18: add rhythm analysis cache identities");
+  134 commits at that implementation; the M3.17 implementation is
+  `c99fd95`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -173,8 +173,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `eba49ab` M3.15/M3.16
-  completion; `bcffeb7` M3.15 count-in; `76a7756` M3.14 metronome; `fec7a84` M3.13 musical loops; `15baa05` M3.12 snapping; `d1e9e07` M3.11 mount/inspector; `f845286` M3.11 grid API and read-only lanes; `fb3a224` M3.11 ruler foundation; `3f58b96` M3.10 rhythm commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
+- **Recent commits (full history in `git log`):** `e0abed3` M3.18 cache
+  identities; `c99fd95` M3.17 APIs; `eba49ab` M3.15/M3.16 completion; `bcffeb7` M3.15 count-in; `76a7756` M3.14 metronome; `fec7a84` M3.13 musical loops; `15baa05` M3.12 snapping; `d1e9e07` M3.11 mount/inspector; `f845286` M3.11 grid API and read-only lanes; `fb3a224` M3.11 ruler foundation; `3f58b96` M3.10 rhythm commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
   vectors; `694a08a` M3.8 meter inference; `fbfdaf0` M3.7 tempo map; `98fc3a8` GPU diagnosis correction; `bc49cf2` M3.6 automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
@@ -4642,7 +4642,7 @@ Implementation commit `c99fd95`; this ledger update records it.
 
 Spec: `milestone3.md` §20. Plan pending.
 
-- **Cache identities:** `rhythm/cache.py` adds deterministic SHA-256 keys
+- **Cache identities (`e0abed3`):** `rhythm/cache.py` adds deterministic SHA-256 keys
   for activation (source/downmix/model/adapter/preprocessing/precision/
   interval), decoder (activation hash/profile), tempo map (decoded hash/
   algorithm/pulse-unit/meter evidence), and meter (decoded hash/tempo
