@@ -9,15 +9,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   schema, `3d3c307`), M3.2 (Beat This! runtime, registry, install
   boundary, CPU qualification, `be2bb1b`), and M3.3 (reproducible
   rhythm input preparation, `09d83ae`), and M3.4 (real Beat This! runs
-  with retained framewise activations) complete on 2026-10-24. M2.21 final separation-app acceptance was
+  with retained framewise activations, `5266d9e`) complete on 2026-10-24. M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
 - **Next work package:** M3.5 (decode beat and downbeat candidates). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.3 ledger follow-up on
-  top of `09d83ae` ("M3.3: prepare rhythm-analysis input reproducibly");
-  115 commits at that implementation commit; the tree was clean before
-  the M3.3 work.
+- **Repository:** branch `main`; HEAD is the M3.4 ledger follow-up on
+  top of `5266d9e` ("M3.4: run Beat This! and retain framewise
+  activations"); 116 commits at that implementation commit; the tree was
+  clean before the M3.4 work.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -142,8 +142,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `09d83ae` M3.3
-  reproducible rhythm input; `be2bb1b` M3.2 Beat
+- **Recent commits (full history in `git log`):** `5266d9e` M3.4
+  activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
   status ledger and project docs; `9bcdd6c` final
@@ -4074,7 +4074,7 @@ commit `09d83ae`; this ledger update is the follow-up commit.
 ### M3.4 — Run Beat This! and retain frame activations (complete)
 
 Spec: `milestone3.md` §6. Plan: `projectPlans/m3.4-plan.md`. Implementation
-commit recorded in the follow-up ledger entry.
+commit `5266d9e`; this ledger update is the follow-up commit.
 
 - **Worker (§6.1–§6.2, §6.5–§6.6):** `rhythm/worker.py` speaks protocol v2,
   declares `rhythm.activation.v1` (input roles, model IDs, devices, memory
