@@ -598,6 +598,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/metronome-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Metronome Schedule */
+        post: operations["get_metronome_schedule_api_v1_projects__project_id__metronome_schedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/monitoring-channels": {
         parameters: {
             query?: never;
@@ -1077,6 +1094,29 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** ClickEvent */
+        ClickEvent: {
+            /** Bar Number */
+            bar_number?: number | null;
+            /** Beat */
+            beat?: number | null;
+            /** Loop Iteration */
+            loop_iteration?: number | null;
+            musical_position: components["schemas"]["MusicalPosition"];
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            strength: components["schemas"]["ClickStrength"];
+            /** @default primary */
+            subdivision: components["schemas"]["MetronomeSubdivision"];
+        };
+        /**
+         * ClickStrength
+         * @enum {string}
+         */
+        ClickStrength: "downbeat" | "beat" | "grouping" | "subdivision";
         /** CommandRequest */
         CommandRequest: {
             /**
@@ -1916,6 +1956,26 @@ export interface components {
          * @enum {string}
          */
         MeterTempoUnit: "whole" | "half" | "quarter" | "eighth" | "sixteenth" | "dotted_whole" | "dotted_half" | "dotted_quarter" | "dotted_eighth" | "dotted_sixteenth";
+        /** MetronomeSchedule */
+        MetronomeSchedule: {
+            /** Clicks */
+            clicks?: components["schemas"]["ClickEvent"][];
+            end: components["schemas"]["MusicalPosition"];
+            start: components["schemas"]["MusicalPosition"];
+            subdivision: components["schemas"]["MetronomeSubdivision"];
+            /**
+             * Unmapped Gap Detected
+             * @default false
+             */
+            unmapped_gap_detected: boolean;
+        };
+        /** MetronomeScheduleRequest */
+        MetronomeScheduleRequest: {
+            /** End Frame */
+            end_frame?: number | null;
+            /** Start Frame */
+            start_frame?: number | null;
+        };
         /**
          * MetronomeSettings
          * @description Metronome preferences; audio behavior is implemented in M3.14.
@@ -4359,6 +4419,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_metronome_schedule_api_v1_projects__project_id__metronome_schedule_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetronomeScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetronomeSchedule"];
                 };
             };
             /** @description Validation Error */

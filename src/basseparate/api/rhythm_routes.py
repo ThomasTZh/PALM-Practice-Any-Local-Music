@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from basseparate.api.errors import ApiError, ProjectNotFoundError
 from basseparate.domain.grid import GridDetail, GridResult
+from basseparate.domain.metronome import MetronomeSchedule
 from basseparate.domain.rhythm import (
     BarOriginState,
     GridValidity,
@@ -27,6 +28,7 @@ from basseparate.domain.rhythm import (
 from basseparate.domain.snapping import SNAP_RADIUS_CSS_PX, SnapMode, SnapResult
 from basseparate.rhythm.commands import meter_map_for_branch, tempo_map_for_branch
 from basseparate.rhythm.grid import GridError, derive_grid
+from basseparate.rhythm.metronome import MetronomeError, build_metronome_schedule
 from basseparate.rhythm.snapping import SnapError, snap_to_grid
 from basseparate.storage import ProjectRepository, RhythmRepository
 
@@ -54,6 +56,11 @@ def _projects(request: Request) -> ProjectRepository:
 
 def _rhythm(request: Request) -> RhythmRepository:
     return cast(RhythmRepository, request.app.state.rhythm_repository)
+
+
+class MetronomeScheduleRequest(BaseModel):
+    start_frame: int | None = None
+    end_frame: int | None = None
 
 
 class SnapEventCandidate(BaseModel):
@@ -201,6 +208,55 @@ async def snap_rhythm_position(
     except (SnapError, ValueError, GridError) as exc:
         raise ApiError(
             code="RHYTHM_SNAP_INVALID",
+            message=str(exc),
+            status_code=422,
+        ) from exc
+
+
+@router.post(
+    "/projects/{project_id}/metronome-schedule",
+    response_model=MetronomeSchedule,
+)
+async def get_metronome_schedule(
+    project_id: uuid.UUID,
+    body: MetronomeScheduleRequest,
+    request: Request,
+) -> MetronomeSchedule:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    if project.sample_rate is None:
+        raise RhythmGridUnavailableError(project_id)
+    branch_id = project.rhythm_state.active_branch_id
+    if branch_id is None:
+        raise RhythmGridUnavailableError(project_id)
+    branch: RhythmBranchRecord | None = await asyncio.to_thread(
+        _rhythm(request).get_branch, branch_id
+    )
+    if branch is None or branch.project_id != project_id:
+        raise RhythmGridUnavailableError(project_id)
+    try:
+        tempo_map = tempo_map_for_branch(branch, project.sample_rate)
+        meter_map = meter_map_for_branch(branch)
+        start = (
+            tempo_map.map_source_to_musical(body.start_frame)
+            if body.start_frame is not None
+            else None
+        )
+        end = (
+            tempo_map.map_source_to_musical(body.end_frame) if body.end_frame is not None else None
+        )
+        return build_metronome_schedule(
+            tempo_map,
+            meter_map,
+            branch.bar_origin,
+            project.rhythm_state.metronome,
+            start=start,
+            end=end,
+        )
+    except (MetronomeError, ValueError, GridError) as exc:
+        raise ApiError(
+            code="METRONOME_SCHEDULE_INVALID",
             message=str(exc),
             status_code=422,
         ) from exc

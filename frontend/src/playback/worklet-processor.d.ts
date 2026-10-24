@@ -241,3 +241,14 @@ export class MixState {
    */
   process(time: number, outputChannels: Float32Array[]): ProcessResult
 }
+
+/** Procedural metronome click mixer (M3.14 §16.3). */
+export class MetronomeClickMixer {
+  constructor(sampleRate: number, volume?: number)
+  setVolume(volume: number): void
+  scheduleClicks(
+    clicks: { frame: number; strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision' }[],
+    volume?: number,
+  ): void
+  render(channels: Float32Array[], startFrame: number, frames: number): void
+}

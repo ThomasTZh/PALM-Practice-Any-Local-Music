@@ -101,6 +101,12 @@ export interface TransportLoopSpec {
   boundaryFade: boolean
 }
 
+/** One metronome click in absolute worklet render frames (M3.14). */
+export interface MetronomeClickSpec {
+  frame: number
+  strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision'
+}
+
 /** Underrun accounting surfaced to the panel (spec §15.4). */
 export interface TransportDiagnostics {
   underruns: number
@@ -585,6 +591,16 @@ export class PcmTransport {
 
   get currentState(): TransportState {
     return this.state
+  }
+
+  /** Context render clock in seconds; null before the graph exists. */
+  get contextTime(): number | null {
+    return this.context ? this.context.currentTime : null
+  }
+
+  /** Current playback speed (1 = source speed). */
+  get playbackRate(): number {
+    return this.speed
   }
 
   get currentError(): string | null {
@@ -1311,6 +1327,15 @@ export class PcmTransport {
    * Applied in the worklet mixer — never to the stored samples.
    * Remembered and applied to a fresh graph on `play`.
    */
+  /**
+   * Replace the upcoming metronome schedule. Clicks are absolute render
+   * frames (context time × sample rate); the worklet keeps only the
+   * bounded lookahead it receives.
+   */
+  scheduleMetronome(clicks: MetronomeClickSpec[], volume?: number): void {
+    this.node?.port.postMessage({ type: 'metronome', clicks, volume })
+  }
+
   setMasterGain(gain: number): void {
     const clamped = Math.max(0, Number.isFinite(gain) ? gain : 0)
     this.pendingMasterGain = clamped

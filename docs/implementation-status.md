@@ -17,8 +17,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.14 (synchronized metronome), then M3.15–
-  M3.16 count-in and transport. Specification is
+- **In progress:** M3.14 (synchronized metronome) schedule core is done;
+  audio-worklet/transport integration remains. Then M3.15–M3.16 count-in
+  and transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.13 loops ledger follow-up
@@ -68,12 +69,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1608 passed, 1 skipped (real-model integration without the env checkpoint); one load-sensitive analysis-worker test that passes alone |
+| `pytest tests/ -q` | 1617 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 105 files |
+| `mypy src/basseparate` | clean, 107 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 589 passed, 40 files |
+| `npx vitest run` (frontend) | 595 passed, 42 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4543,6 +4544,30 @@ Gate D with M3.10–M3.12.
 - **Deferred:** direct ruler-range musical-loop creation UI; transport
   rebuffer orchestration on live grid changes; batch conversion is
   prohibited by design.
+
+### M3.14 — Synchronized metronome (in progress)
+
+Spec: `milestone3.md` §16. Plan: `projectPlans/m3.14-plan.md`.
+
+- **Schedule core:** `domain/metronome.py` and `rhythm/metronome.py`
+  derive bounded clicks from the active grid at the configured
+  subdivision, with downbeat/beat/grouping/subdivision strengths,
+  duplicate-frame collapse, exact source→render mapping, and loop-pass
+  mapping with no cumulative rounding drift.
+- **API:** `POST /projects/{id}/metronome-schedule` uses persisted
+  metronome settings and a source-frame range; invalid ranges are 422.
+- **Tests:** 7 Python schedule/mapping cases, 1 endpoint, 3 TypeScript
+  cases (loop bases, rate mapping, invalid inputs).
+- **Audio path:** worklet `MetronomeClickMixer` precomputes procedural
+  click tables, renders after the stretcher/mixer before master
+  gain/limiter, and accepts bounded absolute-frame schedules. Transport
+  exposes `scheduleMetronome`, `contextTime`, and `playbackRate`; the
+  playback panel schedules a two-second lookahead while playing and
+  clears on pause/disable.
+- **Tests:** 3 worklet mixer tests in addition to schedule/API/TS tests.
+- **Remaining:** settings command/UI, loop-wrap/seek/rate invalidation of
+  committed near-term clicks, uncertain/unmetered UI policy, and audible
+  acceptance. Package is not complete.
 
 ## Architectural decisions so far
 

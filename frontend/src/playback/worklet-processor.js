@@ -1623,10 +1623,92 @@ export class MixState {
   }
 }
 
+/** Procedural metronome click tables and one-voice renderer (M3.14 §16.3). */
+function makeClickTable(sampleRate, frequency, durationSeconds, amplitude) {
+  const length = Math.max(1, Math.round(sampleRate * durationSeconds))
+  const table = new Float32Array(length)
+  for (let i = 0; i < length; i += 1) {
+    const t = i / sampleRate
+    const envelope = Math.exp(-t / 0.008)
+    table[i] = amplitude * envelope * Math.sin(2 * Math.PI * frequency * t)
+  }
+  return table
+}
+
+export class MetronomeClickMixer {
+  constructor(sampleRate, volume = 0.5) {
+    this.sampleRate = sampleRate
+    this.volume = volume
+    this.tables = {
+      downbeat: makeClickTable(sampleRate, 1500, 0.04, 0.9),
+      beat: makeClickTable(sampleRate, 1000, 0.03, 0.6),
+      grouping: makeClickTable(sampleRate, 1250, 0.035, 0.75),
+      subdivision: makeClickTable(sampleRate, 800, 0.02, 0.3),
+    }
+    this.schedule = []
+    this.nextIndex = 0
+    this.active = null
+  }
+
+  setVolume(volume) {
+    this.volume = Math.max(0, Math.min(1, volume))
+  }
+
+  /** Replace the upcoming schedule; frames are absolute render frames. */
+  scheduleClicks(clicks, volume) {
+    if (typeof volume === 'number') this.setVolume(volume)
+    this.schedule = (clicks || [])
+      .filter((click) => click && Number.isFinite(click.frame) && click.frame >= 0)
+      .map((click) => ({
+        frame: Math.round(click.frame),
+        table: this.tables[click.strength] || this.tables.beat,
+      }))
+      .sort((a, b) => a.frame - b.frame)
+    this.nextIndex = 0
+    this.active = null
+  }
+
+  /** Mix scheduled clicks into output channels for [startFrame, +frames). */
+  render(channels, startFrame, frames) {
+    if (!channels.length || frames <= 0) return
+    let offset = 0
+    while (offset < frames) {
+      if (this.active) {
+        const table = this.active.table
+        const remaining = table.length - this.active.pos
+        const take = Math.min(remaining, frames - offset)
+        for (let channel = 0; channel < channels.length; channel += 1) {
+          const out = channels[channel]
+          for (let i = 0; i < take; i += 1) {
+            out[offset + i] += table[this.active.pos + i] * this.volume
+          }
+        }
+        this.active.pos += take
+        offset += take
+        if (this.active.pos >= table.length) this.active = null
+        continue
+      }
+      while (
+        this.nextIndex < this.schedule.length &&
+        this.schedule[this.nextIndex].frame < startFrame + offset
+      ) {
+        this.nextIndex += 1
+      }
+      if (this.nextIndex >= this.schedule.length) return
+      const click = this.schedule[this.nextIndex]
+      if (click.frame >= startFrame + frames) return
+      this.nextIndex += 1
+      this.active = { table: click.table, pos: 0 }
+      offset = Math.max(offset, click.frame - startFrame)
+    }
+  }
+}
+
 // The adapter only exists in the worklet scope, where
 // `AudioWorkletProcessor` is a global; main-thread imports (tests) skip it.
 if (typeof AudioWorkletProcessor !== 'undefined') {
   /** Thin adapter wiring the state machine to the worklet port. */
+
   class PcmProcessor extends AudioWorkletProcessor {
     constructor(options) {
       super()
@@ -1652,6 +1734,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         engine = api.instantiateStretch(o.stretch.wasmBytes)
         engine.configure(sampleRate, o.stretch.maxFrames ?? api.STRETCH_MAX_FRAMES)
       }
+      this.metronome = new MetronomeClickMixer(sampleRate, o.metronomeVolume ?? 0.5)
+      this.renderFrame = 0
       this.core = new MixState({
         sampleRate,
         frameCount: o.frameCount ?? 0,
@@ -1707,6 +1791,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         } else if (m.type === 'rate') {
           // The wrapper owns the ≈50 ms rate ramp (spec §11.7).
           this.core.setRate(m.value)
+        } else if (m.type === 'metronome') {
+          this.metronome.scheduleClicks(m.clicks, m.volume)
         } else if (m.type === 'loop') {
           // Install/clear the practice loop mid-stream (M2.11 §13.4.3):
           // enabling inside the loop continues without a re-seek.
@@ -1753,7 +1839,13 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
      */
     process(_inputs, outputs) {
       const time = typeof globalThis.currentTime === 'number' ? globalThis.currentTime : 0
-      const res = this.core.process(time, outputs[0] ?? [])
+      const outputChannels = outputs[0] ?? []
+      const res = this.core.process(time, outputChannels)
+      const frames = outputChannels.length > 0 ? outputChannels[0].length : 128
+      const blockStart =
+        typeof globalThis.currentFrame === 'number' ? globalThis.currentFrame : this.renderFrame
+      this.metronome.render(outputChannels, blockStart, frames)
+      this.renderFrame = blockStart + frames
       if (res.anchor) {
         const msg = {
           type: 'anchor',

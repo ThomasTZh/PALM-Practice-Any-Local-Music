@@ -487,6 +487,78 @@
         "title": "ChunkAckResponse",
         "type": "object"
       },
+      "ClickEvent": {
+        "properties": {
+          "bar_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bar Number"
+          },
+          "beat": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat"
+          },
+          "loop_iteration": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loop Iteration"
+          },
+          "musical_position": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/ClickStrength"
+          },
+          "subdivision": {
+            "$ref": "#/components/schemas/MetronomeSubdivision",
+            "default": "primary"
+          }
+        },
+        "required": [
+          "musical_position",
+          "source_frame",
+          "strength"
+        ],
+        "title": "ClickEvent",
+        "type": "object"
+      },
+      "ClickStrength": {
+        "enum": [
+          "downbeat",
+          "beat",
+          "grouping",
+          "subdivision"
+        ],
+        "title": "ClickStrength",
+        "type": "string"
+      },
       "CommandRequest": {
         "properties": {
           "base_revision": {
@@ -2436,6 +2508,67 @@
         ],
         "title": "MeterTempoUnit",
         "type": "string"
+      },
+      "MetronomeSchedule": {
+        "properties": {
+          "clicks": {
+            "items": {
+              "$ref": "#/components/schemas/ClickEvent"
+            },
+            "maxItems": 20000,
+            "title": "Clicks",
+            "type": "array"
+          },
+          "end": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "start": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "subdivision": {
+            "$ref": "#/components/schemas/MetronomeSubdivision"
+          },
+          "unmapped_gap_detected": {
+            "default": false,
+            "title": "Unmapped Gap Detected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "subdivision"
+        ],
+        "title": "MetronomeSchedule",
+        "type": "object"
+      },
+      "MetronomeScheduleRequest": {
+        "properties": {
+          "end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frame"
+          },
+          "start_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Frame"
+          }
+        },
+        "title": "MetronomeScheduleRequest",
+        "type": "object"
       },
       "MetronomeSettings": {
         "description": "Metronome preferences; audio behavior is implemented in M3.14.",
@@ -6868,6 +7001,56 @@
           }
         },
         "summary": "Create Job"
+      }
+    },
+    "/api/v1/projects/{project_id}/metronome-schedule": {
+      "post": {
+        "operationId": "get_metronome_schedule_api_v1_projects__project_id__metronome_schedule_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetronomeScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetronomeSchedule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Metronome Schedule"
       }
     },
     "/api/v1/projects/{project_id}/monitoring-channels": {

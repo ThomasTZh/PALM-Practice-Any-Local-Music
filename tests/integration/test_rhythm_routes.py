@@ -278,3 +278,28 @@ def test_musical_loop_conversion_endpoint(client: TestClient, app, headers) -> N
     )
     assert converted.status_code == 200, converted.text
     assert converted.json()["practice_state"]["loops"][0]["anchor_mode"] == "source"
+
+
+def test_metronome_schedule_endpoint(client: TestClient, app, headers) -> None:
+    from basseparate.domain.rhythm import MetronomeSettings
+
+    project_id = _seed(app)
+    projects = ProjectRepository(app.state.repository._db_path)
+    project = projects.get_project(project_id)
+    assert project is not None
+    projects.set_rhythm_state(
+        project_id,
+        project.rhythm_state.model_copy(
+            update={"metronome": MetronomeSettings(enabled=True, volume=0.4, accent_downbeats=True)}
+        ),
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/metronome-schedule",
+        json={"start_frame": 0, "end_frame": 48_000},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["clicks"]
+    assert data["clicks"][0]["strength"] == "downbeat"
+    assert any(click["strength"] == "beat" for click in data["clicks"])

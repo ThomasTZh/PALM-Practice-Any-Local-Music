@@ -35,6 +35,7 @@ import { formatTime } from './playback/pcm'
 import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import { RhythmLanes } from './rhythm/RhythmLanes'
+import { fetchMetronomeSchedule } from './api/metronome'
 import type { View as EditorView } from './waveform/viewport'
 import { OpenProjectPanel } from './projects/OpenProjectPanel'
 import { useProjectCommands } from './projects/useProjectCommands'
@@ -524,6 +525,9 @@ const PlaybackPanel = memo(function PlaybackPanel({
   stemSources,
   onPeaks,
   onLoopDisabled,
+  metronomeEnabled,
+  metronomeVolume,
+  rhythmGridAvailable,
 }: {
   projectId: string
   createAudioContext?: (sampleRate?: number) => TransportContextLike
@@ -564,6 +568,9 @@ const PlaybackPanel = memo(function PlaybackPanel({
    * (M2.11 §13.4.5): the caller persists `loop_enabled = false`.
    */
   onLoopDisabled?: () => void
+  metronomeEnabled?: boolean
+  metronomeVolume?: number
+  rhythmGridAvailable?: boolean
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -586,6 +593,16 @@ const PlaybackPanel = memo(function PlaybackPanel({
   // is open (it only mounts for an open project).
   const runtime = useSystemRuntime(true)
   const transportRef = useRef<PcmTransport | null>(null)
+  const metronomeSettingsRef = useRef<{ enabled: boolean; volume: number } | null>(null)
+  const rhythmGridAvailableRef = useRef(false)
+  const metronomePendingRef = useRef<
+    { frame: number; strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision' }[]
+  >([])
+  const metronomeFetchAtRef = useRef(0)
+  metronomeSettingsRef.current = metronomeEnabled
+    ? { enabled: true, volume: metronomeVolume ?? 0.5 }
+    : null
+  rhythmGridAvailableRef.current = Boolean(rhythmGridAvailable)
   const assetIdRef = useRef<string | null>(null)
   const pendingContextRef = useRef<TransportContextLike | null>(null)
   const volumeRef = useRef(100)
@@ -650,14 +667,63 @@ const PlaybackPanel = memo(function PlaybackPanel({
     loadInfo()
   }, [loadInfo])
 
-  const reportPosition = useCallback((frame: number) => {
-    setPosition(frame)
-    // The transport reports on pause too (preserved position); the playing
-    // flag lets the caller pick the autosave cadence (M1.15 §17.5.3).
-    const state = transportRef.current?.currentState
-    const playing = state === 'playing' || state === 'seeking' || state === 'buffering'
-    onPositionReportRef.current?.(frame, playing)
-  }, [])
+  const reportPosition = useCallback(
+    (frame: number) => {
+      setPosition(frame)
+      // The transport reports on pause too (preserved position); the playing
+      // flag lets the caller pick the autosave cadence (M1.15 §17.5.3).
+      const transport = transportRef.current
+      const state = transport?.currentState
+      const playing = state === 'playing' || state === 'seeking' || state === 'buffering'
+      onPositionReportRef.current?.(frame, playing)
+      if (!transport) return
+      const settings = metronomeSettingsRef.current
+      if (!playing || !settings?.enabled || !rhythmGridAvailableRef.current) {
+        if (metronomePendingRef.current.length > 0) {
+          metronomePendingRef.current = []
+          transport.scheduleMetronome([])
+        }
+        return
+      }
+      const now = performance.now()
+      if (now - metronomeFetchAtRef.current < 500) return
+      metronomeFetchAtRef.current = now
+      const contextTime = transport.contextTime
+      const contextRate = transport.contextRate
+      if (contextTime == null || contextRate == null) return
+      const rate = transport.playbackRate
+      const current = transport.getAudiblePosition()
+      const duration = info?.durationFrames ?? null
+      const windowEnd = Math.min(
+        duration ?? frame + rate * 2 * contextRate,
+        frame + Math.max(contextRate, rate * 2 * contextRate),
+      )
+      fetchMetronomeSchedule(projectId, Math.max(0, Math.floor(current)), Math.ceil(windowEnd))
+        .then((schedule) => {
+          const nowRender = Math.round((transport.contextTime ?? contextTime) * contextRate)
+          const ready = (schedule.clicks ?? [])
+            .map((click) => ({
+              frame: Math.round(
+                (contextTime + (click.source_frame - current) / rate) * contextRate,
+              ),
+              strength: click.strength as 'downbeat' | 'beat' | 'grouping' | 'subdivision',
+            }))
+            .filter((click) => click.frame > nowRender + Math.round(0.03 * contextRate))
+          const kept = metronomePendingRef.current.filter(
+            (click) => click.frame > nowRender + Math.round(0.03 * contextRate),
+          )
+          const merged = [...kept, ...ready]
+            .sort((left, right) => left.frame - right.frame)
+            .slice(0, 512)
+          metronomePendingRef.current = merged
+          transport.scheduleMetronome(merged, settings.volume)
+        })
+        .catch(() => {
+          // A missing/invalid grid leaves the metronome silent.
+        })
+    },
+    [info?.durationFrames, projectId],
+  )
 
   // New project: drop any previous transport and source binding.
   useEffect(() => {
@@ -1675,6 +1741,9 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onPositionReport={handlePositionReport}
         parkPosition={parkPosition}
         practiceState={practiceState}
+        metronomeEnabled={commands.rhythmState?.metronome?.enabled ?? false}
+        metronomeVolume={commands.rhythmState?.metronome?.volume ?? 0.5}
+        rhythmGridAvailable={Boolean(commands.rhythmState?.active_branch_id)}
         stemSources={stemSources}
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
