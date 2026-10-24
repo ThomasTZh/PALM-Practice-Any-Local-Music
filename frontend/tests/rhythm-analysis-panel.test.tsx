@@ -39,7 +39,7 @@ describe('RhythmAnalysisPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Analyze rhythm' }))
 
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
-    expect(startRhythmRun).toHaveBeenCalledWith('project-1')
+    expect(startRhythmRun).toHaveBeenCalledWith('project-1', { force_rerun: false })
     expect(getRhythmRun).toHaveBeenCalledWith('project-1', 'run-1')
     expect(screen.getByRole('status').textContent).toContain('completed')
   })

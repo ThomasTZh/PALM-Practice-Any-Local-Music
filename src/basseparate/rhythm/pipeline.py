@@ -24,6 +24,7 @@ from basseparate.domain.asset import AssetRecord
 from basseparate.domain.meter import ManualMeterRegion, build_meter_map
 from basseparate.domain.project import ProjectRecord
 from basseparate.domain.rhythm import (
+    BarOriginState,
     RhythmAnalysisRun,
     RhythmAnalysisStatus,
     RhythmDisplayMode,
@@ -69,6 +70,19 @@ class RhythmPipelineError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def automatic_bar_origin(meter_map: object | None) -> BarOriginState:
+    """Number the first bar at the first meter region (M3.20 correction).
+
+    The automatic meter selection can start after musical zero. Using
+    zero as the bar origin then fails the grid/metronome boundary check.
+    """
+    from basseparate.domain.meter import MeterMap
+
+    if isinstance(meter_map, MeterMap) and meter_map.regions:
+        return BarOriginState(first_numbered_bar_position=meter_map.regions[0].start)
+    return default_bar_origin()
 
 
 @dataclass(frozen=True)
@@ -333,12 +347,17 @@ class RhythmPipelineService:
                 except Exception as exc:  # noqa: BLE001 - keep the decoded grid
                     warnings.append(f"meter inference unavailable: {exc}")
 
+            # The automatic meter selection may start after musical zero
+            # (the first pulses are phase evidence). The numbered bar must
+            # begin at the first region, otherwise the grid and metronome
+            # reject the branch as not starting on a bar boundary.
+            origin = automatic_bar_origin(meter_map)
             branch = create_branch_from_result(
                 result,
                 self._rhythm,
                 tempo_map=tempo_map,
                 meter_map=meter_map,
-                bar_origin=default_bar_origin(),
+                bar_origin=origin,
             )
             activate_branch(self._projects, self._rhythm, branch.id)
             state = self._projects.get_project(running.project_id)

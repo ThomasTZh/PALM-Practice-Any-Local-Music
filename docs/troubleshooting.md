@@ -449,3 +449,21 @@ cd frontend && npm run build
 The import now creates and waits for the decode job. A previously
 completed import has no canonical asset, so re-upload the file (a new
 session is created).
+
+
+## Metronome is silent
+
+**Symptom:** the Metronome checkbox is on and the volume is up, but no
+clicks are audible; the ruler may show no bar lines.
+
+**Cause (fixed 2026-10-24):** the automatic meter selection can start
+after musical zero. The first branch used musical zero as the bar origin,
+so grid/metronome construction failed with
+`the first numbered bar must start on a bar boundary`; the UI swallowed
+the schedule error.
+
+**Fix:** restart the server, hard-reload Firefox, and click
+**Re-analyze** (not Analyze rhythm, which reuses the cached completed
+run). The new branch numbers bar 1 at the first meter region. The
+metronome schedule endpoint now also clamps a viewport before the first
+mapped pulse instead of rejecting it.

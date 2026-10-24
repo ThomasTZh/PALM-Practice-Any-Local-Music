@@ -75,6 +75,18 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   Analyze panel now polls for a non-null `decoded_result_id` before
   refreshing, so the selector/lanes no longer disappear when activation
   is done. Covered by the panel test and the Firefox E2E.
+- **Metronome silence root cause (2026-10-24):** automatic meter
+  inference can place the first region after musical zero (the first
+  pulses are phase evidence). The pipeline numbered bar 1 at zero, so
+  `derive_grid` rejected the branch with "the first numbered bar must
+  start on a bar boundary"; the metronome schedule route then errored and
+  the UI silently left the metronome silent. `automatic_bar_origin` now
+  uses the first meter region, the metronome route clamps a viewport
+  before the first mapped pulse, and the Analyze panel exposes
+  **Re-analyze** (force) so a pre-fix cached branch can be rebuilt.
+  Regression: `test_bar_origin_starts_at_the_first_meter_region`; the
+  Firefox E2E now asserts non-empty bar lines and a non-empty metronome
+  schedule.
 - **Firefox E2E (2026-10-24):** `frontend/e2e/m3-rhythm.spec.ts` imports
   a generated 12 s click track, runs the real final0 pipeline, checks the
   meter/branch/metronome/count-in/portable-save UI. Result: 1 passed in
@@ -115,7 +127,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1684 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1685 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 113 files |
@@ -4698,7 +4710,7 @@ commit.
   `scripts/check_contract.py` (§19.10).
 - **Tests:** pipeline entry tests (unknown project, uninstalled model,
   manifest identity), rhythm-run route tests, branch-store and transport
-  tests, and Analyze panel tests. Backend **1684 passed, 1 skipped**;
+  tests, and Analyze panel tests. Backend **1685 passed, 1 skipped**;
   frontend **617 passed, 51 files**; ruff/mypy/contract green.
 
 ### M3.18 — Cache identity, persistence, autosave, portable projects (complete)

@@ -22,6 +22,7 @@ from basseparate.domain.rhythm import (
     BarOriginState,
     GridValidity,
     MeterRegion,
+    MusicalPosition,
     RhythmAnalysisRun,
     RhythmBranchRecord,
     RhythmPulse,
@@ -306,14 +307,18 @@ async def get_metronome_schedule(
     try:
         tempo_map = tempo_map_for_branch(branch, project.sample_rate)
         meter_map = meter_map_for_branch(branch)
-        start = (
-            tempo_map.map_source_to_musical(body.start_frame)
-            if body.start_frame is not None
-            else None
-        )
-        end = (
-            tempo_map.map_source_to_musical(body.end_frame) if body.end_frame is not None else None
-        )
+        first_source = tempo_map.anchors[0].source_frame
+        last_source = tempo_map.anchors[-1].source_frame
+
+        def _musical(frame: int) -> MusicalPosition:
+            if frame < first_source:
+                return tempo_map.musical_start
+            if frame > last_source:
+                return tempo_map.musical_end
+            return tempo_map.map_source_to_musical(frame)
+
+        start = _musical(body.start_frame) if body.start_frame is not None else None
+        end = _musical(body.end_frame) if body.end_frame is not None else None
         return build_metronome_schedule(
             tempo_map,
             meter_map,

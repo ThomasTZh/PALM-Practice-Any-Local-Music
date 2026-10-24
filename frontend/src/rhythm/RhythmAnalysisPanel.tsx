@@ -65,28 +65,37 @@ export function RhythmAnalysisPanel({ projectId, refresh }: RhythmAnalysisPanelP
     [projectId, refresh],
   )
 
-  const start = useCallback(async () => {
-    setBusy(true)
-    setError(null)
-    setRun(null)
-    try {
-      const started = await startRhythmRun(projectId)
-      setRun(started)
-      poll(started.id)
-    } catch (caught) {
-      setBusy(false)
-      setError(caught instanceof Error ? caught.message : 'Rhythm analysis could not start')
-    }
-  }, [poll, projectId])
+  const start = useCallback(
+    async (force = false) => {
+      setBusy(true)
+      setError(null)
+      setRun(null)
+      try {
+        const started = await startRhythmRun(projectId, { force_rerun: force })
+        setRun(started)
+        poll(started.id)
+      } catch (caught) {
+        setBusy(false)
+        setError(caught instanceof Error ? caught.message : 'Rhythm analysis could not start')
+      }
+    },
+    [poll, projectId],
+  )
 
   const status =
     run?.status === 'completed' && !run.decoded_result_id ? 'finalizing' : (run?.status ?? 'idle')
   return (
     <section className="rhythm-analysis" aria-label="Rhythm analysis">
       <h2>Musical analysis</h2>
-      <button type="button" onClick={() => void start()} disabled={busy}>
+      <button type="button" onClick={() => void start(false)} disabled={busy}>
         Analyze rhythm
       </button>
+      <button type="button" onClick={() => void start(true)} disabled={busy}>
+        Re-analyze
+      </button>
+      <p className="rhythm-analysis-hint muted">
+        Re-analyze rebuilds the tempo/meter grid after an algorithm fix.
+      </p>
       <p className="rhythm-analysis-status" role="status">
         {status === 'idle' ? 'No automatic analysis started' : `Status: ${status}`}
       </p>

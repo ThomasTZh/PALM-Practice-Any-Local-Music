@@ -26,6 +26,11 @@ click **Prepare audio** once. Wait until the waveform and **Play** button
 appear. Then click **Analyze rhythm** and wait for `Status: completed`
 and the **Automatic** / **Edited** selectors.
 
+If the ruler has no bar lines, or the metronome is silent, click
+**Re-analyze**. That discards the cached pre-fix branch and rebuilds the
+grid with bar 1 at the first meter region. Analyze rhythm alone reuses the
+cached run and will not repair an old branch.
+
 ## 1. Set the listening baseline
 
 1. Use **Original** playback mode (there is no separation control in this

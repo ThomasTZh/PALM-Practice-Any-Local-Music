@@ -147,11 +147,29 @@ test('M3 rhythm workflow (Firefox)', async ({ page }) => {
   await expect(page.locator('.rhythm-analysis-status')).toContainText('completed')
   await expect(page.locator('.rhythm-lanes')).toBeVisible()
   await expect(page.locator('.rhythm-lanes-meter')).toContainText('4/4')
+  await expect(page.locator('.rhythm-grid-bar')).not.toHaveCount(0)
   await expect(page.getByLabel('Active editable rhythm branch')).not.toHaveValue('')
 
   const metronome = page.getByRole('checkbox', { name: 'Metronome', exact: true })
   await metronome.click()
   await expect(metronome).toBeChecked({ timeout: 15_000 })
+
+  const projectsAfter = await (
+    await page.request.get(`${BASE_URL}/api/v1/projects`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json()
+  const readyProject = projectsAfter.projects.find((p: { name: string }) => p.name === 'M3 E2E')
+  const scheduleResponse = await page.request.post(
+    `${BASE_URL}/api/v1/projects/${readyProject.id}/metronome-schedule`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { start_frame: 30_000, end_frame: 60_000 },
+    },
+  )
+  expect(scheduleResponse.ok()).toBeTruthy()
+  expect((await scheduleResponse.json()).clicks.length).toBeGreaterThan(0)
+  await expect(page.getByRole('button', { name: 'Re-analyze' })).toBeVisible()
   await page.getByLabel('Count-in length').selectOption('one_bar')
   await expect(page.getByLabel('Count-in length')).toHaveValue('one_bar', { timeout: 15_000 })
   await page.getByRole('button', { name: 'Save portable project' }).click()
