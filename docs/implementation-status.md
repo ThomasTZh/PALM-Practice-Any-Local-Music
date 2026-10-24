@@ -13,8 +13,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   beat/downbeat candidates, `c0471b9`) complete on 2026-10-24. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.8 (infer and edit meter regions), then M3.9
-  (bars/beats/pickups) to complete Gate C. Specification is
+- **Next work package:** M3.9 (bars, beats, subdivisions, first downbeat,
+  pickups, and shared Python/TypeScript mapping) to complete Gate C. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.7 ledger follow-up on
@@ -57,10 +57,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1547 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1556 passed, 1 skipped (real-model integration without the env checkpoint); one load-sensitive job-manager flake that passes alone |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 95 files |
+| `mypy src/basseparate` | clean, 97 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4299,6 +4299,49 @@ commit `fbfdaf0`; this ledger update is the follow-up commit.
   (M3.9), revisioned edit commands/undo (M3.10), frontend musical-map
   service plus Python/TS golden fixtures (Gate C; M3.9/M3.17), and
   metronome scheduling from local BPM (M3.14).
+
+### M3.8 — Infer and edit meter regions (complete)
+
+Spec: `milestone3.md` §10. Plan: `projectPlans/m3.8-plan.md`.
+Implementation commit recorded in the follow-up ledger entry.
+
+- **Feature evidence (§10.2):** `domain/meter.py` defines the versioned
+  `meter-features-v1` profile and `MeterFeatureArtifact`; `rhythm/meter.py`
+  extracts a 50 fps accent envelope and positive spectral-flux onset
+  strength from prepared 22,050 Hz PCM in bounded chunks, normalizes by
+  the 95th percentile, and publishes compact float32 arrays plus a
+  manifest under `data/rhythm/features/<artifact_id>/`. Evidence is
+  separate from Beat This! activations and is not an instrument label.
+- **Candidates and scoring (§10.3–§10.6):** explicit candidates for
+  2/4, 3/4, 4/4, 6/8, 9/8, 12/8, 5/4 (2+3, 3+2), and 7/8 (2+2+3,
+  2+3+2, 3+2+2), each with grouping, display tempo unit, and label.
+  Scoring components (downbeat, pulse confidence, accent agreement,
+  subdivision onset, bar-duration stability, missing-pulse residual) and
+  weights are retained; the total is uncalibrated. Runner-ups, phase,
+  score margin, alternatives, `uncertain`, and `unmetered` states are
+  stored in `AutomaticMeterResult`. The real fixture selected 4/4 with a
+  0.0025 margin and was correctly marked uncertain.
+- **Manual regions (§10.7–§10.8):** `MeterMap`/`ManualMeterRegion`
+  accept arbitrary positive numerators/denominators and groupings,
+  validate grouping sums, require each region to start on a whole bar of
+  the preceding interpretation, derive ends from the next region, and
+  expose uncertain validity. `manual_candidate` provides arbitrary meter
+  entry.
+- **Evidence:** deterministic feature hashes; real 250-frame extraction;
+  4/4 phase 2 in 2 bars with six alternatives; manual 5/16 and
+  boundary-validation tests. See
+  `docs/evidence/m3.8-meter-inference.md`.
+- **Tests:** `tests/unit/test_meter.py` (10) plus the real final0
+  extraction/inference path in the model integration test.
+- **Gate:** backend **1556 passed, 1 skipped** plus one load-sensitive
+  job-manager timing test that failed once in the full run and passed
+  alone (same known flake as M3.4); ruff check clean; mypy clean (97
+  files); contract in sync; frontend unchanged (569 passed).
+- **Deferred:** multi-region automatic meter changes and the full
+  Viterbi/transition decoder (M3.10 editing/sequence work; manual regions
+  already support changes), meter persistence into branches/results
+  (M3.9), meter UI/hatching/alternative selection (M3.17), calibrated
+  meter confidence, and GPU-specific feature extraction.
 
 ## Architectural decisions so far
 

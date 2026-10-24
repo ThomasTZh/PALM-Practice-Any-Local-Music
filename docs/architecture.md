@@ -105,6 +105,13 @@ stream coordinate.
   `manifest.json`). Raw framewise logits are retained unmodified; the
   manifest records array hashes, source identity, model/adapter identity,
   frame mapping, and output semantics.
+- Meter evidence is a separate, versioned 50 fps accent/onset artifact
+  extracted from the prepared reference mix with bounded memory. Meter
+  candidates are scored against those features, accepted pulses, and the
+  tempo map; runner-ups, score components, an uncertainty margin, and an
+  explicit unmetered state are retained. Manual `MeterMap` regions accept
+  arbitrary positive numerators/denominators/groupings and must start on
+  a whole bar of the preceding interpretation.
 - A `TempoMap` is a strictly monotonic piecewise-linear source-frame ↔
   exact-rational musical-position map with one anchor per accepted pulse
   for automatic maps or explicit anchors for manual maps. Pulse-unit

@@ -29,6 +29,13 @@ from basseparate.rhythm.decoder import (
     decode_artifact,
     decoded_content_hash,
 )
+from basseparate.rhythm.meter import (
+    MeterFeatureError,
+    MeterFeatureStore,
+    MeterInferenceError,
+    extract_meter_features,
+    infer_meter,
+)
 from basseparate.rhythm.results import (
     RhythmResultError,
     activate_branch,
@@ -79,4 +86,9 @@ __all__ = [
     "build_manual_tempo_map",
     "map_round_trip_error_frames",
     "reinterpret_tempo_map",
+    "MeterFeatureError",
+    "MeterFeatureStore",
+    "MeterInferenceError",
+    "extract_meter_features",
+    "infer_meter",
 ]
