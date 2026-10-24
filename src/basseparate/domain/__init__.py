@@ -126,6 +126,15 @@ from basseparate.domain.rhythm import (
     compare_musical_positions,
     tempo_unit_quarter_length,
 )
+from basseparate.domain.rhythm_decode import (
+    BEAT_THIS_DECODER_PROFILE,
+    DECODER_PROFILE_ID,
+    DECODER_PROFILE_VERSION,
+    BeatDecoderProfile,
+    DecodedPulse,
+    DecodedRhythmResult,
+    SourceFrameFraction,
+)
 from basseparate.domain.rhythm_input import (
     BEAT_THIS_FRAME_HOP,
     BEAT_THIS_FRAME_RATE,
@@ -226,7 +235,14 @@ __all__ = [
     "StemRole",
     "ValidationStatus",
     "ACTIVATION_FORMAT_VERSION",
+    "BEAT_THIS_DECODER_PROFILE",
     "BEAT_THIS_FRAME_HOP",
+    "DECODER_PROFILE_ID",
+    "DECODER_PROFILE_VERSION",
+    "BeatDecoderProfile",
+    "DecodedPulse",
+    "DecodedRhythmResult",
+    "SourceFrameFraction",
     "BEAT_THIS_FRAME_RATE",
     "BEAT_THIS_INPUT_PROFILE",
     "BEAT_THIS_INPUT_SAMPLE_RATE",

@@ -8,10 +8,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
   schema, `3d3c307`), M3.2 (Beat This! runtime, registry, install
   boundary, CPU qualification, `be2bb1b`), and M3.3 (reproducible
-  rhythm input preparation, `09d83ae`), and M3.4 (real Beat This! runs
-  with retained framewise activations, `5266d9e`) complete on 2026-10-24. M2.21 final separation-app acceptance was
+  rhythm input preparation, `09d83ae`), M3.4 (real Beat This! runs
+  with retained framewise activations, `5266d9e`), and M3.5 (decoded
+  beat/downbeat candidates) complete on 2026-10-24. M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
-- **Next work package:** M3.5 (decode beat and downbeat candidates). Specification is
+- **Next work package:** M3.6 (publish immutable automatic rhythm
+  results and editable branches). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.4 ledger follow-up on
@@ -47,10 +49,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1511 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1526 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 89 files |
+| `mypy src/basseparate` | clean, 91 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4125,6 +4127,57 @@ commit `5266d9e`; this ledger update is the follow-up commit.
   publication/branches (M3.6), tempo/meter (M3.7–M3.9), durable rhythm
   jobs/API/UI (M3.17), portable activation files (M3.18), GPU
   qualification (no driver).
+
+### M3.5 — Decode beat and downbeat candidates (complete)
+
+Spec: `milestone3.md` §7. Plan: `projectPlans/m3.5-plan.md`. Implementation
+commit recorded in the follow-up ledger entry.
+
+- **Decoder profile (§7.1):** `domain/rhythm_decode.py` defines
+  `BeatDecoderProfile` and `BEAT_THIS_DECODER_PROFILE`
+  (`beat-this-minimal-v1`, version 1): 7-frame local maxima, accepted
+  logit threshold 0.0, candidate threshold −2.0, downbeats snapped to
+  the nearest beat, half-up rounding, 1-frame endpoint tolerance, and
+  versioned parameters. Raw activations are never regenerated or
+  modified.
+- **Decoding (§7.2–§7.6):** `rhythm/decoder.py` is a torch-free
+  reimplementation of the pinned minimal postprocessor. It validates
+  float32 arrays, deduplicates adjacent peaks by their exact mean frame,
+  stores the pre-round source fraction, rounds once, keeps accepted
+  source frames unique (collisions retain the stronger event and the
+  loser as a `source_collision` candidate), moves outside-duration
+  events to candidates, and clamps legitimate endpoint rounding.
+  Downbeats merge with their snapped beat into one pulse carrying both
+  logits; existence of downbeats never implies a meter. Confidence is
+  `kind=heuristic`, `calibrated=false`, value = sigmoid(logit).
+- **Two layers (§7.4):** accepted pulses seed tempo-map construction;
+  candidate pulses retain low-confidence peaks (strict local-max
+  detection above −2.0), collision losers, and endpoint failures with
+  flags. Plausibility flags cover tiny intervals, long gaps, tempo
+  instability, weak downbeats, downbeats without beats, and candidate
+  presence; flags never delete evidence.
+- **Identity (§7.7):** `DecodedRhythmResult` carries the activation
+  artifact/content identity, decoder profile, project geometry,
+  accepted/candidate pulses, flags, diagnostics, and a deterministic
+  content hash over all evidence (random IDs excluded).
+- **Real decode (2026-10-24):** the real final0 activation artifact
+  decoded to 11 accepted pulses (8 downbeats, median interval 0.5 s,
+  `weak_downbeat`) with decoded hash `fd386f51...`; a second decode of
+  the same artifact produced the same hash. Evidence:
+  `docs/evidence/m3.5-decoded-pulses.md`.
+- **Tests:** `tests/unit/test_rhythm_decoder.py` (15) covers accepted
+  beats/downbeats, exact rounding, snapping, candidates, collisions,
+  outside/endpoint handling, empty input, downbeats without beats,
+  plausibility flags, identity determinism, profile-version sensitivity,
+  and invalid arrays. The real final0 integration test now also decodes
+  the published artifact and checks hash agreement (skipped without the
+  env checkpoint).
+- **Gate:** backend **1526 passed, 1 skipped**; ruff check clean; mypy
+  clean (91 files); contract in sync; frontend unchanged (569 passed).
+- **Deferred:** automatic `RhythmResult` publication and editable
+  branches (M3.6), tempo/meter (M3.7–M3.9), decoder persistence/API/UI
+  (M3.17), and decoder cache identity (M3.18; the decoded hash already
+  covers the decoder profile and activation identity).
 
 ## Architectural decisions so far
 

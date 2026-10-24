@@ -24,6 +24,7 @@ from basseparate.rhythm import (
     RhythmActivationStore,
     run_and_publish,
 )
+from basseparate.rhythm.decoder import decode_artifact
 from basseparate.storage.db import initialize_database
 from basseparate.storage.repository import ProjectRepository, RhythmRepository
 
@@ -148,3 +149,22 @@ def test_real_final0_activation_determinism(tmp_path: Path) -> None:
     assert first.frame_mapping.project_sample_rate == 48_000
     assert first_run.peak_host_memory_bytes is not None
     assert first_run.peak_host_memory_bytes > 0
+
+    store = RhythmActivationStore(tmp_path / "rhythm")
+    decoded = decode_artifact(
+        store,
+        first,  # type: ignore[arg-type]
+        project_sample_rate=sample_rate,
+        source_duration_frames=5 * sample_rate,
+    )
+    assert decoded.accepted_pulses
+    assert len(decoded.accepted_pulses) < 40
+    assert (
+        decoded.content_hash
+        == decode_artifact(
+            store,
+            second,  # type: ignore[arg-type]
+            project_sample_rate=sample_rate,
+            source_duration_frames=5 * sample_rate,
+        ).content_hash
+    )

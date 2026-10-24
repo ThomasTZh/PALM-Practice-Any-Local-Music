@@ -22,6 +22,13 @@ from basseparate.rhythm.activations import (
     run_and_publish,
     validate_activation_array,
 )
+from basseparate.rhythm.decoder import (
+    DecodeInput,
+    RhythmDecodeError,
+    decode_arrays,
+    decode_artifact,
+    decoded_content_hash,
+)
 
 __all__ = [
     "BEAT_FILE",
@@ -39,4 +46,9 @@ __all__ = [
     "run_activation_worker",
     "run_and_publish",
     "validate_activation_array",
+    "DecodeInput",
+    "RhythmDecodeError",
+    "decode_arrays",
+    "decode_artifact",
+    "decoded_content_hash",
 ]

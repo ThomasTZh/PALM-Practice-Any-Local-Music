@@ -105,6 +105,13 @@ stream coordinate.
   `manifest.json`). Raw framewise logits are retained unmodified; the
   manifest records array hashes, source identity, model/adapter identity,
   frame mapping, and output semantics.
+- The `beat-this-minimal-v1` decoder reads an activation artifact without
+  torch and produces accepted and candidate pulses, source-aligned by one
+  half-up rounding of the exact model-to-project frame mapping. Accepted
+  source frames are unique; collisions, endpoint failures, and
+  low-confidence peaks stay as candidates with flags. Decoded results are
+  versioned by the decoder profile and a deterministic content hash; their
+  persistence and automatic-result publication are M3.6.
 - Staging for workers lives under `runtime/`; export and portable builds use
   the same staged, verify-then-rename discipline.
 
