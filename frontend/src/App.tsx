@@ -36,11 +36,13 @@ import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import { RhythmLanes } from './rhythm/RhythmLanes'
 import { fetchMetronomeSchedule } from './api/metronome'
+import { fetchCountInPlan } from './api/countIn'
 import type { View as EditorView } from './waveform/viewport'
 import { OpenProjectPanel } from './projects/OpenProjectPanel'
 import { useProjectCommands } from './projects/useProjectCommands'
 import { LoopsPanel, MIN_REPEATABLE_LOOP_SECONDS, type LoopPatch } from './practice/LoopsPanel'
 import { MetronomePanel, type MetronomePatch } from './practice/MetronomePanel'
+import { CountInPanel, type CountInPatch } from './practice/CountInPanel'
 import { PortableSavePanel } from './tracks/PortableSavePanel'
 import type { ConnectionState, ProjectSummary } from './types'
 import {
@@ -529,6 +531,8 @@ const PlaybackPanel = memo(function PlaybackPanel({
   metronomeEnabled,
   metronomeVolume,
   rhythmGridAvailable,
+  countInEnabled,
+  countInMode,
 }: {
   projectId: string
   createAudioContext?: (sampleRate?: number) => TransportContextLike
@@ -572,6 +576,8 @@ const PlaybackPanel = memo(function PlaybackPanel({
   metronomeEnabled?: boolean
   metronomeVolume?: number
   rhythmGridAvailable?: boolean
+  countInEnabled?: boolean
+  countInMode?: 'off' | 'one_bar' | 'two_bars'
 }) {
   const [info, setInfo] = useState<SourceInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
@@ -602,6 +608,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const metronomeFetchAtRef = useRef(0)
   const lastReportedFrameRef = useRef<number | null>(null)
   const lastPlaybackRateRef = useRef<number | null>(null)
+  const countInTimerRef = useRef<number | null>(null)
   metronomeSettingsRef.current = metronomeEnabled
     ? { enabled: true, volume: metronomeVolume ?? 0.5 }
     : null
@@ -1065,6 +1072,11 @@ const PlaybackPanel = memo(function PlaybackPanel({
       transport.pause()
       return
     }
+    if (countInTimerRef.current !== null) {
+      window.clearTimeout(countInTimerRef.current)
+      countInTimerRef.current = null
+      transport.scheduleMetronome([])
+    }
     if (!sourceLoadedRef.current) {
       try {
         const context = await makeContext()
@@ -1092,11 +1104,57 @@ const PlaybackPanel = memo(function PlaybackPanel({
         return
       }
     }
-    try {
-      await transport.play()
-    } catch (err) {
-      setPlayError(err instanceof Error ? err.message : String(err))
-      return
+    let countInStarted = false
+    if (
+      countInEnabled &&
+      countInMode !== undefined &&
+      countInMode !== 'off' &&
+      rhythmGridAvailableRef.current
+    ) {
+      try {
+        const activeLoop = practiceState?.loops?.find(
+          (loop) => loop.id === practiceState.active_loop_id,
+        )
+        const targetFrame =
+          practiceState?.loop_enabled && activeLoop
+            ? activeLoop.start_frames
+            : transport.getAudiblePosition()
+        const plan = await fetchCountInPlan(
+          projectId,
+          Math.max(0, Math.floor(targetFrame)),
+          transport.playbackRate,
+        )
+        const contextTime = transport.contextTime
+        const sampleRate = transport.contextRate
+        if (plan.available && plan.total_frames > 0 && contextTime != null && sampleRate != null) {
+          const baseFrame = Math.round(contextTime * sampleRate)
+          transport.scheduleMetronome(
+            (plan.clicks ?? []).map((click) => ({
+              frame: baseFrame + click.offset_frames,
+              strength: click.strength,
+            })),
+            metronomeVolume ?? 0.5,
+          )
+          countInStarted = true
+          countInTimerRef.current = window.setTimeout(
+            () => {
+              countInTimerRef.current = null
+              void transport.play()
+            },
+            (plan.total_frames / sampleRate) * 1000,
+          )
+        }
+      } catch {
+        // A missing grid/meter falls back to immediate playback.
+      }
+    }
+    if (!countInStarted) {
+      try {
+        await transport.play()
+      } catch (err) {
+        setPlayError(err instanceof Error ? err.message : String(err))
+        return
+      }
     }
     // The fresh graph starts at defaults: apply the current mixer state
     // (spec §10.3) now that the worklet node exists.
@@ -1608,6 +1666,10 @@ function ProjectView({ project }: { project: ProjectSummary }) {
     void sendRef.current({ type: 'set_metronome', ...patch })
   }, [])
 
+  const handleCountInChange = useCallback((patch: CountInPatch) => {
+    void sendRef.current({ type: 'set_count_in', ...patch })
+  }, [])
+
   const handleLoopUpdate = useCallback((id: string, patch: LoopPatch) => {
     const op: {
       type: 'update_loop'
@@ -1763,6 +1825,8 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         metronomeEnabled={commands.rhythmState?.metronome?.enabled ?? false}
         metronomeVolume={commands.rhythmState?.metronome?.volume ?? 0.5}
         rhythmGridAvailable={Boolean(commands.rhythmState?.active_branch_id)}
+        countInEnabled={(commands.rhythmState?.count_in?.mode ?? 'off') !== 'off'}
+        countInMode={commands.rhythmState?.count_in?.mode ?? 'off'}
         stemSources={stemSources}
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
@@ -1789,6 +1853,11 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onMode={handleMode}
         onSelectSet={handleSelectSet}
         onPlaybackSpeed={handlePlaybackSpeed}
+      />
+      <CountInPanel
+        mode={commands.rhythmState?.count_in?.mode ?? 'off'}
+        repetition={commands.rhythmState?.count_in?.repetition ?? 'once'}
+        onChange={handleCountInChange}
       />
       <MetronomePanel
         enabled={commands.rhythmState?.metronome?.enabled ?? false}

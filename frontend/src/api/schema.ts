@@ -539,6 +539,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/count-in-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Count In Plan */
+        post: operations["get_count_in_plan_api_v1_projects__project_id__count_in_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/exports": {
         parameters: {
             query?: never;
@@ -1133,7 +1150,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["SetCountInOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
         };
         /**
          * CommandResult
@@ -1254,12 +1271,85 @@ export interface components {
              */
             type: "convert_loop";
         };
+        /** CountInClick */
+        CountInClick: {
+            /** Label */
+            label: string;
+            /** Offset Frames */
+            offset_frames: number;
+            /** Phase */
+            phase: number;
+            strength: components["schemas"]["ClickStrength"];
+        };
         /**
          * CountInMode
          * @description Count-in length (milestone3.md §17.1).
          * @enum {string}
          */
         CountInMode: "off" | "one_bar" | "two_bars";
+        /** CountInPlan */
+        CountInPlan: {
+            /** Available */
+            available: boolean;
+            /**
+             * Bars
+             * @default 0
+             */
+            bars: number;
+            /**
+             * Beats
+             * @default 0
+             */
+            beats: number;
+            /** Clicks */
+            clicks?: components["schemas"]["CountInClick"][];
+            /** Grouping */
+            grouping?: number[];
+            /** Local Quarter Bpm */
+            local_quarter_bpm?: number | null;
+            /** Meter Label */
+            meter_label?: string | null;
+            mode: components["schemas"]["CountInMode"];
+            /**
+             * Off Grid
+             * @default false
+             */
+            off_grid: boolean;
+            /**
+             * Playback Rate
+             * @default 1
+             */
+            playback_rate: number;
+            /** Reason */
+            reason?: string | null;
+            repetition: components["schemas"]["CountInRepetition"];
+            target_musical: components["schemas"]["MusicalPosition"];
+            /**
+             * Target Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            target_source_frame: number;
+            /**
+             * Total Frames
+             * @default 0
+             */
+            total_frames: number;
+            /**
+             * Virtual Pre Roll
+             * @default true
+             */
+            virtual_pre_roll: boolean;
+        };
+        /** CountInPlanRequest */
+        CountInPlanRequest: {
+            /**
+             * Playback Rate
+             * @default 1
+             */
+            playback_rate: number;
+            /** Start Frame */
+            start_frame: number;
+        };
         /**
          * CountInRepetition
          * @description Whether count-in repeats with every loop pass (milestone3.md §17.9).
@@ -2789,6 +2879,19 @@ export interface components {
              */
             type: "set_active_result_set";
         };
+        /**
+         * SetCountInOp
+         * @description Patch persisted count-in preferences (M3.15 §17.1).
+         */
+        SetCountInOp: {
+            mode?: components["schemas"]["CountInMode"] | null;
+            repetition?: components["schemas"]["CountInRepetition"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_count_in";
+        };
         /** SetDisplayOp */
         SetDisplayOp: {
             channel_display: components["schemas"]["ChannelDisplay"];
@@ -4275,6 +4378,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_count_in_plan_api_v1_projects__project_id__count_in_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CountInPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CountInPlan"];
                 };
             };
             /** @description Validation Error */

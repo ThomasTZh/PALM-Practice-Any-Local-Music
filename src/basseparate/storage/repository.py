@@ -23,6 +23,7 @@ from basseparate.domain.commands import (
     CommandResult,
     ConvertLoopOp,
     ProjectCommandOp,
+    SetCountInOp,
     SetMetronomeOp,
 )
 from basseparate.domain.export import ExportArtifact
@@ -1368,7 +1369,21 @@ class ProjectRepository:
             )
             now = _now()
             new_rhythm_state = project.rhythm_state
-            if isinstance(op, SetMetronomeOp):
+            if isinstance(op, SetCountInOp):
+                patch = {
+                    name: getattr(op, name)
+                    for name in ("mode", "repetition")
+                    if getattr(op, name) is not None
+                }
+                new_rhythm_state = project.rhythm_state.model_copy(
+                    update={"count_in": project.rhythm_state.count_in.model_copy(update=patch)}
+                )
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    project.practice_state,
+                )
+            elif isinstance(op, SetMetronomeOp):
                 patch = {
                     name: getattr(op, name)
                     for name in ("enabled", "volume", "accent_downbeats", "subdivision")

@@ -28,6 +28,8 @@ from basseparate.domain.practice import (
 )
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
 from basseparate.domain.rhythm import (
+    CountInMode,
+    CountInRepetition,
     LoopAnchorMode,
     MetronomeSubdivision,
     MusicalPosition,
@@ -218,6 +220,20 @@ class SetMetronomeOp(BaseModel):
             raise ValueError("set_metronome requires at least one field to change")
 
 
+class SetCountInOp(BaseModel):
+    """Patch persisted count-in preferences (M3.15 §17.1)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_count_in"] = "set_count_in"
+    mode: CountInMode | None = None
+    repetition: CountInRepetition | None = None
+
+    def model_post_init(self, __context: object) -> None:
+        if self.mode is None and self.repetition is None:
+            raise ValueError("set_count_in requires at least one field to change")
+
+
 class SetPlaybackSpeedOp(BaseModel):
     """Set the pitch-preserving playback speed (M2.9, spec §11).
 
@@ -390,6 +406,7 @@ ProjectCommandOp = Annotated[
         | SetMonitoringLimiterOp
         | SetPlaybackSpeedOp
         | SetMetronomeOp
+        | SetCountInOp
         | AddLoopOp
         | AddMusicalLoopOp
         | ConvertLoopOp

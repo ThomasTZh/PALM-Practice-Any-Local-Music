@@ -591,6 +591,7 @@
                 "duplicate_loop": "#/components/schemas/DuplicateLoopOp",
                 "set_active_loop": "#/components/schemas/SetActiveLoopOp",
                 "set_active_result_set": "#/components/schemas/SetActiveResultSetOp",
+                "set_count_in": "#/components/schemas/SetCountInOp",
                 "set_display": "#/components/schemas/SetDisplayOp",
                 "set_follow_playhead": "#/components/schemas/SetFollowPlayheadOp",
                 "set_loop_enabled": "#/components/schemas/SetLoopEnabledOp",
@@ -657,6 +658,9 @@
               },
               {
                 "$ref": "#/components/schemas/SetMetronomeOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetCountInOp"
               },
               {
                 "$ref": "#/components/schemas/AddLoopOp"
@@ -943,6 +947,35 @@
         "title": "ConvertLoopOp",
         "type": "object"
       },
+      "CountInClick": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "offset_frames": {
+            "minimum": 0.0,
+            "title": "Offset Frames",
+            "type": "integer"
+          },
+          "phase": {
+            "minimum": 0.0,
+            "title": "Phase",
+            "type": "integer"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/ClickStrength"
+          }
+        },
+        "required": [
+          "offset_frames",
+          "strength",
+          "phase",
+          "label"
+        ],
+        "title": "CountInClick",
+        "type": "object"
+      },
       "CountInMode": {
         "description": "Count-in length (milestone3.md \u00a717.1).",
         "enum": [
@@ -952,6 +985,140 @@
         ],
         "title": "CountInMode",
         "type": "string"
+      },
+      "CountInPlan": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bars": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Bars",
+            "type": "integer"
+          },
+          "beats": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Beats",
+            "type": "integer"
+          },
+          "clicks": {
+            "items": {
+              "$ref": "#/components/schemas/CountInClick"
+            },
+            "maxItems": 64,
+            "title": "Clicks",
+            "type": "array"
+          },
+          "grouping": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Grouping",
+            "type": "array"
+          },
+          "local_quarter_bpm": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Quarter Bpm"
+          },
+          "meter_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meter Label"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CountInMode"
+          },
+          "off_grid": {
+            "default": false,
+            "title": "Off Grid",
+            "type": "boolean"
+          },
+          "playback_rate": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Playback Rate",
+            "type": "number"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "repetition": {
+            "$ref": "#/components/schemas/CountInRepetition"
+          },
+          "target_musical": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "target_source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Target Source Frame",
+            "type": "integer"
+          },
+          "total_frames": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Total Frames",
+            "type": "integer"
+          },
+          "virtual_pre_roll": {
+            "default": true,
+            "title": "Virtual Pre Roll",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "repetition",
+          "available",
+          "target_source_frame",
+          "target_musical"
+        ],
+        "title": "CountInPlan",
+        "type": "object"
+      },
+      "CountInPlanRequest": {
+        "properties": {
+          "playback_rate": {
+            "default": 1.0,
+            "title": "Playback Rate",
+            "type": "number"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_frame"
+        ],
+        "title": "CountInPlanRequest",
+        "type": "object"
       },
       "CountInRepetition": {
         "description": "Whether count-in repeats with every loop pass (milestone3.md \u00a717.9).",
@@ -4416,6 +4583,39 @@
         "title": "SetActiveResultSetOp",
         "type": "object"
       },
+      "SetCountInOp": {
+        "description": "Patch persisted count-in preferences (M3.15 \u00a717.1).",
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CountInMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repetition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CountInRepetition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "set_count_in",
+            "default": "set_count_in",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SetCountInOp",
+        "type": "object"
+      },
       "SetDisplayOp": {
         "properties": {
           "channel_display": {
@@ -6849,6 +7049,56 @@
           }
         },
         "summary": "Apply Command"
+      }
+    },
+    "/api/v1/projects/{project_id}/count-in-plan": {
+      "post": {
+        "operationId": "get_count_in_plan_api_v1_projects__project_id__count_in_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CountInPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountInPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Count In Plan"
       }
     },
     "/api/v1/projects/{project_id}/exports": {

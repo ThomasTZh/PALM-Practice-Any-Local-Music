@@ -17,7 +17,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.15 (one-/two-bar count-in), then M3.16
+- **In progress:** M3.15 (count-in) core is implemented; transport phase/
+  ledger, repeat scheduling, and audible acceptance remain. Then M3.16
   readout/navigation to complete Gate E. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
@@ -68,12 +69,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1618 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1627 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 107 files |
+| `mypy src/basseparate` | clean, 109 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 596 passed, 43 files |
+| `npx vitest run` (frontend) | 597 passed, 44 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4576,6 +4577,23 @@ Spec: `milestone3.md` §16. Plan: `projectPlans/m3.14-plan.md`.
   uncertain/unmetered policy UI are future refinements.
 - **Gate:** backend **1618 passed, 1 skipped**; frontend **596 passed,
   43 files**; ruff/mypy/contract/typecheck/format green.
+
+### M3.15 — One-/two-bar count-in (in progress)
+
+Spec: `milestone3.md` §17. Plan: `projectPlans/m3.15-plan.md`.
+
+- **Plan core:** count-in plan with local-tempo virtual bars, active meter
+  grouping/phase, one/two bars, off-grid marking, output-only frames,
+  speed scaling, and explicit unavailable reasons (no guessed 4/4).
+- **Settings/API:** `set_count_in` command and mode/repetition panel;
+  `POST /projects/{id}/count-in-plan`.
+- **Playback:** fetches the plan for the current/loop target, schedules
+  count clicks in the worklet, holds source playback, starts at plan end,
+  and pauses/cancels cleanly.
+- **Tests:** 8 plan cases, endpoint, settings panel; full frontend suite.
+- **Remaining:** explicit transport count-in phase/ledger and UI count,
+  every-repeat/finite-repeat scheduling, seek/loop-wrap cancellation, and
+  audible acceptance. Package is not complete.
 
 ## Architectural decisions so far
 

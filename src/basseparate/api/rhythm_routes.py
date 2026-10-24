@@ -15,6 +15,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from basseparate.api.errors import ApiError, ProjectNotFoundError
+from basseparate.domain.count_in import CountInPlan
 from basseparate.domain.grid import GridDetail, GridResult
 from basseparate.domain.metronome import MetronomeSchedule
 from basseparate.domain.rhythm import (
@@ -27,6 +28,7 @@ from basseparate.domain.rhythm import (
 )
 from basseparate.domain.snapping import SNAP_RADIUS_CSS_PX, SnapMode, SnapResult
 from basseparate.rhythm.commands import meter_map_for_branch, tempo_map_for_branch
+from basseparate.rhythm.count_in import CountInError, build_count_in_plan
 from basseparate.rhythm.grid import GridError, derive_grid
 from basseparate.rhythm.metronome import MetronomeError, build_metronome_schedule
 from basseparate.rhythm.snapping import SnapError, snap_to_grid
@@ -56,6 +58,11 @@ def _projects(request: Request) -> ProjectRepository:
 
 def _rhythm(request: Request) -> RhythmRepository:
     return cast(RhythmRepository, request.app.state.rhythm_repository)
+
+
+class CountInPlanRequest(BaseModel):
+    start_frame: int
+    playback_rate: float = 1.0
 
 
 class MetronomeScheduleRequest(BaseModel):
@@ -257,6 +264,45 @@ async def get_metronome_schedule(
     except (MetronomeError, ValueError, GridError) as exc:
         raise ApiError(
             code="METRONOME_SCHEDULE_INVALID",
+            message=str(exc),
+            status_code=422,
+        ) from exc
+
+
+@router.post(
+    "/projects/{project_id}/count-in-plan",
+    response_model=CountInPlan,
+)
+async def get_count_in_plan(
+    project_id: uuid.UUID,
+    body: CountInPlanRequest,
+    request: Request,
+) -> CountInPlan:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    if project.sample_rate is None:
+        raise RhythmGridUnavailableError(project_id)
+    branch_id = project.rhythm_state.active_branch_id
+    if branch_id is None:
+        raise RhythmGridUnavailableError(project_id)
+    branch: RhythmBranchRecord | None = await asyncio.to_thread(
+        _rhythm(request).get_branch, branch_id
+    )
+    if branch is None or branch.project_id != project_id:
+        raise RhythmGridUnavailableError(project_id)
+    try:
+        return build_count_in_plan(
+            tempo_map_for_branch(branch, project.sample_rate),
+            meter_map_for_branch(branch),
+            project.rhythm_state.count_in,
+            target_source_frame=body.start_frame,
+            playback_rate=body.playback_rate,
+            source_sample_rate=project.sample_rate,
+        )
+    except (CountInError, ValueError, GridError) as exc:
+        raise ApiError(
+            code="COUNT_IN_PLAN_INVALID",
             message=str(exc),
             status_code=422,
         ) from exc

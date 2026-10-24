@@ -336,3 +336,30 @@ def test_metronome_settings_command_and_undo(client: TestClient, app, headers) -
     )
     assert undone.status_code == 200, undone.text
     assert undone.json()["rhythm_state"]["metronome"]["enabled"] is False
+
+
+def test_count_in_plan_endpoint(client: TestClient, app, headers) -> None:
+    from basseparate.domain.rhythm import CountInMode, CountInSettings
+
+    project_id = _seed(app)
+    projects = ProjectRepository(app.state.repository._db_path)
+    project = projects.get_project(project_id)
+    assert project is not None
+    projects.set_rhythm_state(
+        project_id,
+        project.rhythm_state.model_copy(
+            update={"count_in": CountInSettings(mode=CountInMode.ONE_BAR)}
+        ),
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/count-in-plan",
+        json={"start_frame": 0, "playback_rate": 1.0},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["available"] is True
+    assert data["bars"] == 1
+    assert data["beats"] == 4
+    assert data["total_frames"] == 96_000
+    assert len(data["clicks"]) == 4
