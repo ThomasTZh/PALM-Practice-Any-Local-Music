@@ -409,3 +409,23 @@ version-coupled and is rejected or lacks rhythm rows.
 **Fix:** open it with the matching application version, export a current
 portable archive, and reopen. Archive upgrade is a deferred compatibility
 task, not silent data loss in the current format.
+
+
+## Import fails at offset 0 with CHUNK_CONFLICT
+
+**Symptom:** the first chunk upload returns `409` with
+`The chunk at offset 0 does not match the already acknowledged bytes`,
+and `runtime/uploads/<id>.part` stays at zero bytes.
+
+**Cause (fixed 2026-10-24):** the browser sent a JSON placeholder instead
+of the binary chunk. The chunk clients now set a raw body serializer; if
+an older frontend build is cached, hard-reload the page.
+
+**Fix:** rebuild and reload:
+
+```sh
+cd frontend && npm run build
+```
+
+Then retry the import in the existing empty project. The failed session
+contains no acknowledged bytes, so a new import is safe.

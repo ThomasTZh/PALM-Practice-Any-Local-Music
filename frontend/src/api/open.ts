@@ -153,6 +153,9 @@ export async function uploadOpenChunk(
   const res = await client.PUT('/api/v1/projects/open/{session_id}/chunks', {
     params: { path: { session_id: sessionId }, query: { offset } },
     body: chunk as unknown as undefined,
+    // Keep the raw Blob; openapi-fetch would otherwise JSON-serialize it
+    // to "{}" before the request reaches the server.
+    bodySerializer: (value) => value as unknown as BodyInit,
     headers: {
       'X-Chunk-SHA256': chunkSha256,
       'Content-Type': 'application/octet-stream',

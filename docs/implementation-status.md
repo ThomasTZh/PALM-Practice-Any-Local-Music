@@ -45,6 +45,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   regenerated with `scripts/export_openapi.py` and `pnpm contracts`;
   `check_contract.py` is green. Earlier "contract in sync" claims before
   this correction were inaccurate.
+- **Import chunk regression fix (2026-10-24):** media and portable
+  archive uploads passed a `Blob` through `openapi-fetch` without a body
+  serializer. openapi-fetch JSON-serializes object bodies by default, so
+  the server received the two bytes `{}` for the first 8 MiB chunk and
+  rejected it as `CHUNK_CONFLICT` at offset 0. Both chunk clients now set
+  `bodySerializer: value => value`, and
+  `frontend/tests/uploader-raw-body.test.ts` asserts the request body is
+  the original `Blob`. The frontend was rebuilt after the fix. Earlier
+  manual import attempts in `storage/m3-ff-acceptance` left only an empty
+  `.part` file and a zero-offset manifest; retrying the import creates a
+  new session and is safe.
 - **GPU availability correction (2026-10-24):** earlier notes in this
   file and the evidence said "no NVIDIA driver". The accurate diagnosis
   is that the host has NVIDIA 595.104.02 loaded and both GPUs bound, but
