@@ -139,7 +139,14 @@ Stop playback before switching projects. Use **Stop**, not only pause.
 6. Stop the server and restart it once more with the same offline root.
    Reopen the project and verify the grid and loop state persisted.
 
-## 3. Expected results
+## 3. Audible judgement
+
+Listening-only steps, pass criteria, expected count-in click counts, and
+the per-recording checklist are in
+[m3-audible-judgement.md](m3-audible-judgement.md). Run those after the
+workflow above is green.
+
+## 4. Expected results
 
 | Check | Pass condition |
 |---|---|
@@ -157,7 +164,7 @@ Record any mismatch with the exact recording, bar number, speed, and
 whether the metronome, audio, or readout disagreed. Screenshots are
 useful but the textual record is required.
 
-## 4. Manual review checklist
+## 5. Manual review checklist
 
 Create `docs/evidence/m3.21-listening-review.md` with one block per
 recording:
