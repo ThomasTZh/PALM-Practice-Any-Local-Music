@@ -151,6 +151,20 @@ export async function createJob(
   return toJobState(res.data)
 }
 
+/**
+ * Decode one completed import into the project's canonical audio and wait
+ * for the durable job. This is the step that turns a finished upload into
+ * a ready project; the upload API alone only records the transfer.
+ */
+export async function decodeCanonicalImport(
+  projectId: string,
+  importId: string,
+  signal?: AbortSignal,
+): Promise<JobState> {
+  const job = await createJob(projectId, importId, 'canonical_decode', undefined, signal)
+  return waitForJob(job.id, { signal, timeoutMs: 600_000 })
+}
+
 export async function getJob(jobId: string, signal?: AbortSignal): Promise<JobState> {
   const res = await client.GET('/api/v1/jobs/{job_id}', {
     params: { path: { job_id: jobId } },

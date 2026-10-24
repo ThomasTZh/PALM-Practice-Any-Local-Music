@@ -56,6 +56,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   manual import attempts in `storage/m3-ff-acceptance` left only an empty
   `.part` file and a zero-offset manifest; retrying the import creates a
   new session and is safe.
+- **Import completion wiring fix (2026-10-24):** `POST /imports/{id}/complete`
+  only records the completed transfer; the UI never created the
+  `canonical_decode` job, so a successful upload left the project empty.
+  `ImportPanel` now calls `decodeCanonicalImport` after completion (and
+  after stream selection), waits for the durable job, then refreshes the
+  project list. `frontend/tests/canonical-import.test.ts` asserts the job
+  request and completion wait; the frontend was rebuilt. A completed
+  import can be re-uploaded; existing zero-ready projects contain no
+  canonical asset to recover from.
 - **GPU availability correction (2026-10-24):** earlier notes in this
   file and the evidence said "no NVIDIA driver". The accurate diagnosis
   is that the host has NVIDIA 595.104.02 loaded and both GPUs bound, but
@@ -87,7 +96,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 113 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 615 passed, 50 files |
+| `npx vitest run` (frontend) | 616 passed, 51 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4666,7 +4675,7 @@ commit.
 - **Tests:** pipeline entry tests (unknown project, uninstalled model,
   manifest identity), rhythm-run route tests, branch-store and transport
   tests, and Analyze panel tests. Backend **1681 passed, 1 skipped**;
-  frontend **615 passed, 50 files**; ruff/mypy/contract green.
+  frontend **616 passed, 51 files**; ruff/mypy/contract green.
 
 ### M3.18 — Cache identity, persistence, autosave, portable projects (complete)
 

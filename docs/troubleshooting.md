@@ -429,3 +429,23 @@ cd frontend && npm run build
 
 Then retry the import in the existing empty project. The failed session
 contains no acknowledged bytes, so a new import is safe.
+
+
+## Import finishes but the project stays empty
+
+**Symptom:** the progress bar reaches 100%, the project list still shows
+an empty project, and no waveform appears.
+
+**Cause (fixed 2026-10-24):** the transfer completed, but the browser did
+not create the `canonical_decode` job that turns the import into the
+project's canonical audio.
+
+**Fix:** rebuild and reload the frontend, then import the file again:
+
+```sh
+cd frontend && npm run build
+```
+
+The import now creates and waits for the decode job. A previously
+completed import has no canonical asset, so re-upload the file (a new
+session is created).

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-
 /**
  * openapi-fetch JSON-serializes object bodies by default. A Blob/File is
  * an object, so without an explicit raw serializer the server receives

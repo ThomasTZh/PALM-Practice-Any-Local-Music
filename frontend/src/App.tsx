@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createApiClient, errorMessage } from './api/client'
 import {
   createJob,
+  decodeCanonicalImport,
   ensurePlaybackTarget,
   fetchAssetBytes,
   getSourceInfo,
@@ -232,6 +233,32 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
     loadIncomplete()
   }, [loadIncomplete])
 
+  /**
+   * Decode the completed transfer into the project's canonical audio.
+   * The upload alone only creates a complete import row; without this
+   * durable job the project stays empty and no waveform/playback panel
+   * can load.
+   */
+  const finalizeImport = useCallback(
+    async (importId: string, controller: AbortController) => {
+      setUploadState({ kind: 'completing' })
+      try {
+        await decodeCanonicalImport(projectId, importId, controller.signal)
+        onImported()
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setUploadState({ kind: 'cancelled' })
+        } else {
+          setUploadState({
+            kind: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+    },
+    [projectId, onImported],
+  )
+
   const startUpload = useCallback(
     async (file: File) => {
       const controller = new AbortController()
@@ -250,7 +277,7 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
         if (result.selectedStreamIndex === null && result.audioStreams.length > 1) {
           setStreamChoice({ importId: result.importId, streams: result.audioStreams })
         } else {
-          onImported()
+          await finalizeImport(result.importId, controller)
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -263,7 +290,7 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
         }
       }
     },
-    [projectId, onImported],
+    [projectId, finalizeImport],
   )
 
   const handleFiles = useCallback(
@@ -301,8 +328,9 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
       setSelecting(true)
       try {
         await selectStream(streamChoice.importId, streamIndex)
+        const controller = abortRef.current ?? new AbortController()
         setStreamChoice(null)
-        onImported()
+        await finalizeImport(streamChoice.importId, controller)
       } catch (err) {
         setStreamChoice(null)
         setUploadState({
@@ -313,7 +341,7 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
         setSelecting(false)
       }
     },
-    [streamChoice, onImported],
+    [streamChoice, finalizeImport],
   )
 
   const progress =
