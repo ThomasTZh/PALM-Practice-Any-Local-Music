@@ -222,3 +222,50 @@ def test_rhythm_state_and_rows_survive_reopen(archive, tmp_path: Path) -> None:
     assert result.stage is RhythmResultStage.DECODED
     assert result.status is RhythmResultStatus.DECODED
     assert result.decoder_profile.profile_id == BEAT_THIS_DECODER_PROFILE.profile_id
+
+
+def _strip_activation_members(source: Path, destination: Path) -> None:
+    import json
+    import zipfile
+
+    with zipfile.ZipFile(source) as archive:
+        members = {info.filename: archive.read(info.filename) for info in archive.infolist()}
+    manifest = json.loads(members["manifest.json"])
+    keep = [
+        entry
+        for entry in manifest["members"]
+        if not entry["name"].startswith("caches/rhythm/activations/")
+    ]
+    manifest["members"] = keep
+    members["manifest.json"] = json.dumps(manifest, sort_keys=True).encode()
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as output:
+        for name, data in members.items():
+            if name.startswith("caches/rhythm/activations/"):
+                continue
+            output.writestr(name, data)
+
+
+def test_missing_optional_activations_still_reopen(archive, tmp_path: Path) -> None:
+    stripped = tmp_path / "stripped.basseparate"
+    _strip_activation_members(archive["archive"], stripped)
+    paths, repo, db = _new_store(tmp_path)
+    opened = open_portable_archive(
+        stripped,
+        paths=paths,
+        repository=repo,
+        max_uncompressed_bytes=2_000_000_000,
+        max_member_count=100_000,
+        source_filename="song.basseparate",
+    )
+    assert opened.rhythm_state.active_branch_id is not None
+    conn = sqlite3.connect(db)
+    try:
+        branch = conn.execute("SELECT id, record_json FROM rhythm_branches").fetchone()
+        artifact = conn.execute("SELECT id FROM rhythm_activation_artifacts").fetchone()
+    finally:
+        conn.close()
+    assert branch is not None and artifact is not None
+    # The corrected grid remains; only raw re-decoding material is absent.
+    assert not (paths.data / "rhythm" / "activations" / artifact[0] / "beat.npy").exists()
+    restored = RhythmRepository(db).get_branch(uuid.UUID(branch[0]))
+    assert restored is not None and restored.pulses

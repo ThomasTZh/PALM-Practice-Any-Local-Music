@@ -7,22 +7,22 @@ Local music-analysis and bass practice application.
 Milestones 0, 1, and 2 are complete (foundation, media pipeline and
 waveform editor, separation-based bass practice workflow). Milestone 2
 final acceptance passed on 2026-10-23, including the human listening
-review. Milestone 3 (musical grid) is in progress: M3.1 (rhythm domain and
-schema), M3.2 (isolated Beat This! runtime, verified model registry,
-explicit install boundary, CPU qualification), M3.3 (reproducible
-rhythm-analysis input), M3.4 (real Beat This! runs with retained
-framewise activations), M3.5 (source-aligned beat/downbeat decoding),
-M3.6 (immutable automatic results and editable branches), M3.7
-(tempo-map construction and reinterpretation), M3.8 (meter features,
-inference, and manual regions), and M3.9 (bars, beats, pickups, and
-shared Python/TypeScript golden vectors), and M3.10 (transactional rhythm
-editing with undo/redo) are complete; M3.11 (musical ruler and
-rhythm lanes), M3.12 (musical snapping), and M3.13 (musical loops), M3.14
-(synchronized metronome), M3.15 (count-in), and M3.16 (musical readout
-and navigation) are complete; M3.17 shared rhythm APIs/contracts are in
-progress. See
+review.
+
+Milestone 3 (musical grid) implements M3.1-M3.20 and M3.22: rhythm domain
+and schema, the isolated Beat This! runtime and explicit model install,
+reproducible input preparation, real activation runs, pulse decoding,
+immutable automatic results and editable branches, tempo maps, meter
+inference and editing, bars/beats/pickups, transactional rhythm editing
+with undo/redo, the musical ruler and lanes, snapping, musical loops, the
+synchronized metronome, count-in, musical readout and navigation, the
+Analyze Rhythm run graph and generated contracts, cache identity and
+portable rhythm persistence, the deterministic rhythm corpus and quality
+metrics, and the updated documentation. M3.21 automated acceptance is
+implemented; browser-listening and the five-recording human review remain
+to be performed. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
-authoritative resume ledger and verified test results.
+authoritative ledger and verified test results.
 
 ## Implemented features
 
@@ -43,17 +43,22 @@ authoritative resume ledger and verified test results.
 - WAV stem export and self-contained portable project save/open.
 - Autosaved working state (markers, viewport, selection, volume,
   position, loops) with server-side revision checks and recovery.
-- Rhythm analysis foundation (Milestone 3): exact rational musical
-  positions, rhythm branch/pulse/anchor/meter persistence, and a
-  verified, separately installed Beat This! runtime. Beat/downbeat
-  decoding and the musical editor are implemented in later M3 packages.
+- Rhythm analysis (Milestone 3): Beat This! activations, decoded
+  beats/downbeats, tempo maps, meter inference, editable branches,
+  bars/beats/pickups, the musical ruler and lanes, snapping, loops,
+  metronome, count-in, and a durable Analyze Rhythm run graph.
+- Rhythm persistence and portability: rhythm results, branches, command
+  history, project rhythm state, and optional activation arrays travel in
+  portable projects and reopen offline.
+- Deterministic rhythm corpus (21 synthetic cases plus a generated
+  60-minute variable-tempo case) and auditable beat/downbeat, rate, meter,
+  and tempo metrics.
 
 ## Not implemented yet
 
-- Remaining Milestone 3 work: beat/downbeat decoding, tempo map, meter
-  regions, musical ruler and snapping, metronome, and count-in. The M3.1
-  domain/schema and M3.2 runtime/install/qualification foundation are in
-  place.
+- Remaining Milestone 3 human acceptance: browser listening on Chromium
+  and Firefox, and the five-recording listening/correction review
+  (M3.21). Automated rhythm tests and metrics are in place.
 - Milestone 4: harmony analysis and editing.
 - Milestone 5: bass transcription.
 - Milestones 6-8: complete persistence/workflow, quality models and

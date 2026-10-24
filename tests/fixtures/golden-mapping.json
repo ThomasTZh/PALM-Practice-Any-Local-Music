@@ -1,0 +1,86 @@
+{
+  "anchors": [
+    {
+      "musical_position": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "source_frame": 0
+    },
+    {
+      "musical_position": {
+        "denominator": 1,
+        "numerator": 1
+      },
+      "source_frame": 24000
+    },
+    {
+      "musical_position": {
+        "denominator": 1,
+        "numerator": 2
+      },
+      "source_frame": 48000
+    },
+    {
+      "musical_position": {
+        "denominator": 1,
+        "numerator": 3
+      },
+      "source_frame": 72000
+    },
+    {
+      "musical_position": {
+        "denominator": 1,
+        "numerator": 4
+      },
+      "source_frame": 96000
+    }
+  ],
+  "first_bar": {
+    "denominator": 4,
+    "grouping": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "numerator": 4
+  },
+  "pulse_count": 32,
+  "sample_rate": 48000,
+  "samples": [
+    {
+      "back_to_source": 12000,
+      "musical_position": {
+        "denominator": 2,
+        "numerator": 1
+      },
+      "source_frame": 12000
+    },
+    {
+      "back_to_source": 36000,
+      "musical_position": {
+        "denominator": 2,
+        "numerator": 3
+      },
+      "source_frame": 36000
+    },
+    {
+      "back_to_source": 60000,
+      "musical_position": {
+        "denominator": 2,
+        "numerator": 5
+      },
+      "source_frame": 60000
+    },
+    {
+      "back_to_source": 84000,
+      "musical_position": {
+        "denominator": 2,
+        "numerator": 7
+      },
+      "source_frame": 84000
+    }
+  ],
+  "source_duration_frames": 816000
+}

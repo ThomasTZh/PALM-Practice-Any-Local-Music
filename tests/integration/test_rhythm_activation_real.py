@@ -158,6 +158,30 @@ def test_real_final0_activation_determinism(tmp_path: Path) -> None:
         source_duration_frames=5 * sample_rate,
     )
     assert decoded.accepted_pulses
+
+    from basseparate.domain.rhythm import PulseRole
+    from basseparate.rhythm.evaluation import EventSet, match_events
+
+    sample_rate = 48_000
+    reference_beats = EventSet(tuple(index * 0.5 for index in range(10)))
+    predicted_beats = EventSet(
+        tuple(pulse.source_frame / sample_rate for pulse in decoded.accepted_pulses)
+    )
+    report = match_events(reference_beats, predicted_beats, tolerance_seconds=0.05)
+    assert report.f1 >= 0.8, report
+    reference_downbeats = EventSet((0.0, 2.0, 4.0, 6.0, 8.0))
+    predicted_downbeats = EventSet(
+        tuple(
+            pulse.source_frame / sample_rate
+            for pulse in decoded.accepted_pulses
+            if pulse.role is PulseRole.DOWNBEAT
+        )
+    )
+    downbeat_report = match_events(reference_downbeats, predicted_downbeats, tolerance_seconds=0.05)
+    # Synthetic click accents are not real downbeat evidence: final0 finds
+    # every true downbeat but also adds spurious ones (precision < 0.5).
+    # Record the measured behavior rather than masking it in one F1.
+    assert downbeat_report.recall >= 0.6, downbeat_report
     assert len(decoded.accepted_pulses) < 40
     assert (
         decoded.content_hash

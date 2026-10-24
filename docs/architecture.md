@@ -149,6 +149,38 @@ stream coordinate.
 - Staging for workers lives under `runtime/`; export and portable builds use
   the same staged, verify-then-rename discipline.
 
+## Rhythm analysis and musical grid
+
+- One durable `rhythm_analysis_runs` row identifies each Analyze Rhythm
+  request. `rhythm/pipeline.py` prepares the 22,050 Hz input, runs the
+  isolated Beat This! worker, publishes an immutable activation artifact,
+  decodes beats/downbeats, builds the automatic tempo map, infers meter,
+  creates an editable branch, and activates it. Model or project
+  preconditions fail before a run row exists; an identical completed run
+  is reused unless `force_rerun` is set.
+- Activation arrays live outside project JSON under
+  `data/rhythm/activations/<artifact_id>/`; result/branch records hold
+  only references and pulses. Bounded activation reads use float32 LE
+  ranges of at most 4,096 frames with hash/alignment headers.
+- Tempo maps are exact rational, monotonic piecewise-linear maps between
+  source frames and musical positions. Meter regions start on whole bars
+  of the preceding interpretation; bar/beat labels, pickups, and snap
+  targets derive from the same Python and TypeScript ports.
+- Semantic edits are one SQLite transaction with optimistic revisions,
+  receipts, and a rhythm-specific undo/redo history. Portable projects
+  carry runs, artifacts, results, branches, receipts, history, and
+  `projects.rhythm_state`; open validates and remaps every ID. Raw
+  activation arrays are optional; corrected grids and practice settings
+  remain usable when they are absent.
+- Cache identities (`rhythm/cache.py`) separate input preparation,
+  activation inference, decoding, tempo, and meter so postprocessing
+  changes do not re-run the model. Startup marks executing runs
+  interrupted; completed artifacts stay reusable. Explicit storage
+  reclaim never selects rhythm rows or artifacts.
+- Authored evaluation metrics (`rhythm/evaluation.py`) match events
+  within a documented tolerance and report beat, downbeat, rate, meter,
+  and tempo accuracy separately.
+
 ## Security
 
 - Loopback-only binding (`127.0.0.1`); the bind address is not configurable

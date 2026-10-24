@@ -360,3 +360,52 @@ rhythm/.venv/bin/python rhythm/qualify.py \
 
 The rhythm environment is separate from the application and Demucs
 environments; installing one does not create the others.
+
+
+## Rhythm run interrupted or stuck
+
+**Symptom:** `GET /api/v1/projects/{id}/rhythm-runs` reports
+`interrupted`, or analysis does not resume after a restart.
+
+**Cause:** The application stopped while a run was executing. Completed
+activation/decode/tempo stages remain reusable; only the executing run is
+marked interrupted.
+
+**Fix:** Start Analyze Rhythm again. The completed runs are not deleted;
+`force_rerun` is only needed to repeat an identical completed run.
+
+## No editable grid after analysis
+
+**Symptom:** the grid endpoint returns `RHYTHM_GRID_UNAVAILABLE`, or the
+ruler shows `No grid`.
+
+**Cause:** the run completed with too few accepted pulses for a tempo map
+or meter inference failed; the automatic decoded result still exists.
+
+**Fix:** inspect the run warnings, review the decoded pulses, or set
+manual tempo anchors/meter regions through the rhythm commands. The
+automatic result is never silently replaced.
+
+## Missing optional activation arrays
+
+**Symptom:** re-decoding or the activation diagnostic endpoint reports a
+missing artifact, but the ruler, loops, metronome, and playback work.
+
+**Cause:** portable projects classify raw activation arrays as optional
+(rebuildable) and may omit them; they are also outside explicit cache
+reclaim.
+
+**Fix:** re-run Analyze Rhythm to regenerate activations. Do not expect a
+missing array to be reconstructed without the model; earlier corrected
+grid edits are preserved.
+
+## Portable rhythm project missing after open
+
+**Symptom:** a `.basseparate` archive opens but shows no rhythm branch.
+
+**Cause:** an archive produced before M3.18 (database schema 12-14) is
+version-coupled and is rejected or lacks rhythm rows.
+
+**Fix:** open it with the matching application version, export a current
+portable archive, and reopen. Archive upgrade is a deferred compatibility
+task, not silent data loss in the current format.

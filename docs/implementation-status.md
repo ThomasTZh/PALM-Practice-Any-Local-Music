@@ -17,12 +17,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **In progress:** M3.17 (Analyze Rhythm run graph, contracts, branch
-  store, transport interface) and M3.18 (cache identity, portable open,
-  restart recovery, offline reopen) are complete. Gate G remains
-  M3.19–M3.22: corpus/automated verification, quality evaluation, final
-  acceptance, and documentation. Specification is
-  `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
+- **In progress:** M3.21 human/browser acceptance only. M3.17–M3.20 and
+  M3.22 are complete; M3.21 automated acceptance is complete. Remaining:
+  Chromium/Firefox listening and the five-recording review. Specification
+  is `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is this M3.17/M3.18 completion
   commit on top of `48d64a7`; earlier M3.17 API work is `c99fd95`, M3.18
@@ -70,12 +68,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1640 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1681 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 112 files |
+| `mypy src/basseparate` | clean, 113 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 611 passed, 48 files |
+| `npx vitest run` (frontend) | 613 passed, 49 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4650,8 +4648,8 @@ commit.
   `scripts/check_contract.py` (§19.10).
 - **Tests:** pipeline entry tests (unknown project, uninstalled model,
   manifest identity), rhythm-run route tests, branch-store and transport
-  tests, and Analyze panel tests. Backend **1640 passed, 1 skipped**;
-  frontend **611 passed, 48 files**; ruff/mypy/contract green.
+  tests, and Analyze panel tests. Backend **1681 passed, 1 skipped**;
+  frontend **613 passed, 49 files**; ruff/mypy/contract green.
 
 ### M3.18 — Cache identity, persistence, autosave, portable projects (complete)
 
@@ -4688,6 +4686,69 @@ Spec: `milestone3.md` §20.
   asserts the remapped grid survives; `test_rhythm_persistence.py`
   covers restart recovery and durable artifacts. Offline reopen uses no
   network or model access.
+
+### M3.19 — Rhythm test corpus and automated verification (complete)
+
+Spec: `milestone3.md` §21. Evidence:
+`docs/evidence/m3.19-rhythm-corpus.md`.
+
+- `tests/unit/rhythm_corpus.py` defines 24 deterministic cases covering
+  the §21.1 list (constant meters, compound/irregular groupings, tempo
+  ramp/jump, humanized timing, half-time, pickup, mid-bar start, meter
+  changes, silence, syncopation, missing/extra transients, and pure
+  silence), plus a 60-minute variable-tempo case generated during the
+  test (1,800 bars, 7,200 pulses; bounded 400-anchor grid window).
+- Shared fixtures: `tests/fixtures/rhythm-corpus.json` and
+  `tests/fixtures/golden-mapping.json` — metadata and mapping vectors
+  only, no committed audio.
+- `tests/unit/test_rhythm_corpus.py` (30 tests) checks deterministic bar
+  grids, pickup/mid-bar labelling, meter changes, tempo segments, fixture
+  parity, and golden round-trips. `frontend/tests/rhythm-corpus.test.ts`
+  checks the same anchors through the TypeScript port.
+
+### M3.20 — Rhythm quality evaluation and model acceptance (complete)
+
+Spec: `milestone3.md` §22. Evidence:
+`docs/evidence/m3.20-rhythm-evaluation.md`.
+
+- `src/basseparate/rhythm/evaluation.py`: explicit-tolerance beat and
+  downbeat matching, timing-error summary, half/double rate
+  classification, duration-weighted meter label/grouping/boundary
+  accuracy, and tempo anchor accuracy; 7 unit tests.
+- Real final0 synthetic-click measurement: 251 frames, beat F1 0.952
+  (11 predicted, 10 matched, exact timing), downbeat F1 0.462 (8
+  predicted, 3 of 5 matched, exact timing). The downbeat over-labelling
+  is reported separately rather than folded into the beat score.
+- Not measured: `small0` comparison, manually annotated excerpts,
+  confidence-usefulness and correction-time studies.
+
+### M3.21 — Performance, browser, playback, and listening acceptance (automated complete, human pending)
+
+Spec: `milestone3.md` §23. Evidence:
+`docs/evidence/m3.21-acceptance.md`.
+
+- Automated coverage: metronome schedule/ledger, count-in, snapping,
+  readout/navigation, portable offline reopen with and without optional
+  activation arrays, missing-model/optional-artifact failures, and
+  restart recovery.
+- Pending human/browser: Chromium and Firefox listening for
+  metronome/count-in alignment through tempo ramps and 1× bypass, the
+  five-recording analysis/correction/practice review, and a
+  network-blocked browser session. Chromium is not installed for
+  Playwright; the existing E2E server-spawn bug is pre-existing.
+
+### M3.22 — Documentation, diagnostics, and troubleshooting (complete)
+
+Spec: `milestone3.md` §24. Evidence:
+`docs/evidence/m3.22-documentation.md`.
+
+- README, `docs/architecture.md` (rhythm run graph, storage, portable
+  optional artifacts, recovery, evaluation), and
+  `docs/troubleshooting.md` (interrupted runs, missing grid, missing
+  optional activations, pre-M3.18 archives) updated.
+- M3.17/M3.18–M3.22 plan files record delivered scope and the one
+  intentional gap (no lane-size UI, so view-state debounce is not
+  exercised).
 
 ## Architectural decisions so far
 
