@@ -2,30 +2,49 @@
 
 Local music-analysis and bass practice application.
 
-## What Milestone 0 does
+## Status
 
-- Loopback-only HTTP service (127.0.0.1, no external network)
-- Browser shell with project management (create, list, open)
-- Persistent empty projects (SQLite, WAL mode)
-- Bearer-token authentication with session bootstrap via URL fragment
-- Worker process protocol (newline-delimited JSON) with model-free probe
-- Structured logging (console + rotating file)
-- Reproducible environments (uv.lock, pnpm-lock.yaml)
-- Contract generation (OpenAPI → TypeScript)
-- Diagnostics (`doctor`, `version`, `worker-probe`)
+Milestones 0, 1, and 2 are complete (foundation, media pipeline and
+waveform editor, separation-based bass practice workflow). Milestone 2
+final acceptance passed on 2026-10-23, including the human listening
+review. Milestone 3 (musical grid) has not started. See
+[docs/implementation-status.md](docs/implementation-status.md) for the
+authoritative resume ledger and verified test results.
 
-## What is not implemented yet
+## Implemented features
 
-- Audio import and analysis
-- Machine-learning models (no model weights are bundled)
-- GPU inference
-- Multi-user support
-- Mobile or non-Linux platforms
+- Local audio/video import with chunked upload, ffprobe inspection,
+  stream selection, and canonical PCM decode.
+- Waveform pyramid generation and a source waveform editor with zoom,
+  pan, selection, markers, follow-playhead, and undo/redo.
+- Monitoring downmix for multichannel sources and playback-rate
+  representations, so 44.1 kHz and 48 kHz material plays at the correct
+  pitch and duration at any browser output rate.
+- AudioWorklet transport with bounded buffering, underrun diagnostics,
+  suspension handling, and audio-device recovery.
+- Stem separation with the bundled Demucs `htdemucs_ft` baseline (GPU or
+  explicit CPU), progress, cancellation, immutable versioned result
+  sets, and analysis caching.
+- Aligned stem tracks with mute, solo, gain, pan, time stretching
+  (0.25x-2x), and source-anchored practice loops.
+- WAV stem export and self-contained portable project save/open.
+- Autosaved working state (markers, viewport, selection, volume,
+  position, loops) with server-side revision checks and recovery.
+
+## Not implemented yet
+
+- Milestone 3: musical grid (Beat This! beat/downbeat analysis, tempo
+  map, meter regions, musical ruler and snapping, metronome, count-in).
+- Milestone 4: harmony analysis and editing.
+- Milestone 5: bass transcription.
+- Milestones 6-8: complete persistence/workflow, quality models and
+  YouTube, browser validation and release.
+- Multi-user support, LAN exposure, mobile, and non-Linux platforms.
 
 ## Supported platform
 
 Linux (initial target: Nobara). Other POSIX systems may work but are not
-tested.
+tested. The service binds loopback only.
 
 ## Requirements
 
@@ -33,19 +52,33 @@ tested.
 |-----------|---------|-------|
 | Python | 3.11.15 | Managed by uv; system Python is not used |
 | Node | 22.22.2 | Frontend build and tests only |
-| pnpm | 12.8.1 | Frontend package manager |
+| pnpm | 12.8.1 | Pinned in the root `packageManager` field |
 | FFmpeg | 8.x | System package (`ffmpeg`, `ffprobe`) |
 | uv | 0.12+ | Python environment manager |
+| Analysis environment | Python 3.11, demucs 4.1.0, torch 2.9.1+cu128 | Separate `analysis/` environment and lockfile; GPU optional |
+| Model bundle | `htdemucs_ft` (hash-pinned) | `models/htdemucs_ft`; not in source control |
 
 ## Setup
+
+Application and frontend dependencies (network access required for this
+step):
 
 ```sh
 uv run --locked python scripts/dev.py setup
 ```
 
-This installs locked Python dependencies (`uv sync --locked`) and frontend
-dependencies (`pnpm install --frozen-lockfile`). Network access is required
-for this step only.
+Analysis environment, needed for separation and media-model jobs:
+
+```sh
+cd analysis && uv sync --locked
+```
+
+Then place the verified `htdemucs_ft` bundle (four checkpoint files and
+the preset YAML) in `models/htdemucs_ft`. The runner verifies every
+artifact's size and SHA-256 against
+`src/basseparate/models/registry.py` before loading it, and runs with
+the Hugging Face/Transformers offline flags set. `basseparate doctor`
+reports whether the bundle is available.
 
 ## Build
 
@@ -61,11 +94,17 @@ Builds the frontend (`frontend/dist`) and the Python wheel (`dist/`).
 uv run --locked basseparate serve
 ```
 
+Or, from an already-synced checkout:
+
+```sh
+.venv/bin/basseparate serve
+```
+
 Starts the service on `127.0.0.1:8765` and opens a browser tab. Use
 `--no-browser` to skip the browser and print the bootstrap URL instead:
 
 ```sh
-uv run --locked basseparate serve --no-browser
+.venv/bin/basseparate serve --no-browser
 ```
 
 Optional flags: `--port N`, `--storage-root /path`.
@@ -85,32 +124,49 @@ Press **Ctrl-C** (SIGINT) or send SIGTERM. The service:
 | Category | Default path | Override |
 |----------|-------------|----------|
 | Config | `~/.config/basseparate` | `--storage-root` |
-| Data (database) | `~/.local/share/basseparate` | `--storage-root` |
-| Cache | `~/.cache/basseparate` | `--storage-root` |
+| Data (database, assets, portable archives) | `~/.local/share/basseparate` | `--storage-root` |
+| Cache (waveform and analysis caches) | `~/.cache/basseparate` | `--storage-root` |
 | State | `~/.local/state/basseparate` | `--storage-root` |
-| Runtime (locks) | `~/.local/state/basseparate/runtime` | `--storage-root` |
+| Runtime (locks, staging) | `~/.local/state/basseparate/runtime` | `--storage-root` |
 
 With `--storage-root /path`, all categories are placed under `/path/`.
 
 ## Tests
 
 ```sh
-# All checks (format, lint, types, contracts, frontend):
+# Formatting, lint, types, contracts, frontend build checks:
 uv run --locked python scripts/dev.py check
 
-# Python + frontend unit tests:
+# Python and frontend unit tests:
 uv run --locked python scripts/dev.py test
 
-# Playwright browser tests (requires system deps):
+# Playwright browser tests (requires system dependencies):
 uv run --locked python scripts/dev.py test-browser
 ```
+
+Direct commands used in the resume ledger:
+
+```sh
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m ruff check src/ tests/
+.venv/bin/python -m mypy src/basseparate
+.venv/bin/python scripts/check_contract.py
+cd frontend && npx vitest run
+```
+
+Known pre-existing gate noise: `ruff format --check` would reformat 90
+files under the locked ruff 0.16.9, and ESLint reports 131 errors in older
+test harnesses. `ruff check`, mypy, the contract check, the unit and
+integration tests, the production build, and the frontend test suite are
+otherwise clean. See `docs/implementation-status.md` for the exact current
+results.
 
 ## Diagnostics
 
 ```sh
-uv run --locked basseparate version
-uv run --locked basseparate doctor
-uv run --locked basseparate worker-probe
+.venv/bin/basseparate version
+.venv/bin/basseparate doctor
+.venv/bin/basseparate worker-probe
 ```
 
 ## Development workflow
@@ -125,6 +181,9 @@ Starts the Vite dev server and the backend together. Stop both with Ctrl-C.
 
 - [Main project plan](basseparate_project_plan.md)
 - [Milestone 0 specification](projectPlans/milestone0.md)
+- [Milestone 1 specification](projectPlans/milestone1.md)
+- [Milestone 2 specification](projectPlans/milestone2.md)
+- [Milestone 3 specification](projectPlans/milestone3.md)
 - [Architecture notes](docs/architecture.md)
 - [Troubleshooting guide](docs/troubleshooting.md)
 - [Implementation status](docs/implementation-status.md)
@@ -134,4 +193,6 @@ Starts the Vite dev server and the backend together. Stop both with Ctrl-C.
 
 Private and unpublished. No public license is claimed. See
 [licenses/NOTICES.md](licenses/NOTICES.md) for third-party component
-notices. Milestone 0 bundles no model weights.
+notices. The application environment installs no machine-learning
+packages; model weights used by the isolated analysis environment are
+described in the notices and in the model registry.

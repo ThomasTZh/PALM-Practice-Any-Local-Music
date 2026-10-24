@@ -236,12 +236,7 @@ function hitbox(): HTMLElement {
   return document.querySelector('.wave-lane-hitarea') as HTMLElement
 }
 
-function pointer(
-  type: string,
-  el: Element,
-  clientX: number,
-  init: MouseEventInit = {},
-): void {
+function pointer(type: string, el: Element, clientX: number, init: MouseEventInit = {}): void {
   act(() => {
     el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, ...init }))
   })
@@ -1119,9 +1114,7 @@ describe('WaveformEditor practice loops (M2.11 §13.2)', () => {
     pointer('pointermove', hit, 160, { clientY: 24 })
     pointer('pointerup', hit, 160, { clientY: 24 })
     expect(onLoopRangeChange).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('Selection')).toHaveTextContent(
-      '0:00.200 – 0:00.213 · 0:00.013',
-    )
+    expect(screen.getByLabelText('Selection')).toHaveTextContent('0:00.200 – 0:00.213 · 0:00.013')
   })
 
   it('a click inside the loop body seeks; a handle click does not', async () => {

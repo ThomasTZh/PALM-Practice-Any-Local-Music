@@ -15,6 +15,7 @@ coverage/
 
 # Node / frontend
 node_modules/
+/.pnpm-store/
 frontend/dist/
 frontend/coverage/
 playwright-report/

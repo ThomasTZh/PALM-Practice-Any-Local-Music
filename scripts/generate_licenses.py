@@ -51,40 +51,80 @@ def _parse_uv_lock(path: Path) -> list[dict[str, str]]:
 def _parse_pnpm_lock(path: Path) -> list[dict[str, str]]:
     """Parse pnpm-lock.yaml and return a list of package entries.
 
-    Uses a simple line-based parser to extract package names and versions
-    from the ``packages:`` section without requiring a YAML dependency.
+    The lockfile can contain multiple YAML documents: pnpm writes its own
+    package-manager dependency graph first and the project workspace after a
+    ``---`` separator. Select the document that contains the ``frontend``
+    importer, then read only the two-space-indented keys of its ``packages:``
+    section (nested fields are indented further and must not be treated as
+    packages).
     """
     if not path.exists():
         return []
+    documents = re.split(r"^---\s*$", path.read_text(encoding="utf-8"), flags=re.MULTILINE)
+    chosen = next(
+        (doc for doc in documents if re.search(r"^  frontend:\s*$", doc, re.MULTILINE)),
+        max(documents, key=len) if documents else "",
+    )
     packages: list[dict[str, str]] = []
     seen: set[str] = set()
     in_packages = False
-    package_re = re.compile(r"^\s{2}['\"]?([^'\":@]+)(?:@([^'\":]+))?['\"]?:")
+    key_re = re.compile(r"^  (['\"]?)(.+?)\1:\s*$")
 
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            stripped = line.rstrip()
-            if stripped.startswith("packages:"):
-                in_packages = True
-                continue
-            if in_packages:
-                if stripped and not stripped.startswith("  ") and not stripped.startswith("\t"):
-                    break
-                m = package_re.match(stripped)
-                if m:
-                    name = m.group(1)
-                    version = m.group(2) or ""
-                    key = f"{name}@{version}"
-                    if key not in seen:
-                        seen.add(key)
-                        packages.append(
-                            {
-                                "name": name,
-                                "version": version,
-                                "ecosystem": "javascript",
-                            }
-                        )
+    for line in chosen.splitlines():
+        if line.startswith("packages:"):
+            in_packages = True
+            continue
+        if not in_packages:
+            continue
+        if line and not line.startswith("  "):
+            break  # next top-level section, e.g. snapshots:
+        if line.startswith("    "):
+            continue  # nested field under a package key
+        m = key_re.match(line)
+        if not m:
+            continue
+        key = m.group(2).strip()
+        if "@" not in key:
+            continue
+        name, _, version = key.rpartition("@")
+        version = version.split("(", 1)[0]
+        name = name.strip("'\"")
+        if not name or not version:
+            continue
+        entry_key = f"{name}@{version}"
+        if entry_key in seen:
+            continue
+        seen.add(entry_key)
+        packages.append(
+            {
+                "name": name,
+                "version": version,
+                "ecosystem": "javascript",
+            }
+        )
     return packages
+
+
+def _model_inventory() -> list[dict[str, object]]:
+    """Describe the bundled model weights from the checked-in registry."""
+    from basseparate.models.registry import REGISTRY
+
+    inventory: list[dict[str, object]] = []
+    for manifest in REGISTRY.values():
+        inventory.append(
+            {
+                "model_id": manifest.model_id,
+                "display_name": manifest.display_name,
+                "bundle_prefix": manifest.bundle_prefix,
+                "engine_requirement": manifest.engine_requirement,
+                "upstream_revision": manifest.upstream_revision,
+                "artifact_count": len(manifest.artifacts),
+                "total_bytes": sum(artifact.size_bytes for artifact in manifest.artifacts),
+                "license_notice": manifest.license_notice,
+                "notices": list(manifest.notices),
+            }
+        )
+    return inventory
 
 
 def _get_python_license(name: str, version: str) -> tuple[str, str]:
@@ -102,6 +142,11 @@ def _get_python_license(name: str, version: str) -> tuple[str, str]:
         license_value = metadata.get("License") or metadata.get("License-Expression", "")
         if license_value:
             license_str = license_value.strip()
+    if not license_str:
+        for classifier in (metadata.get_all("Classifier") or []) if metadata else []:
+            if classifier.startswith("License ::"):
+                license_str = classifier.rsplit("::", 1)[-1].strip()
+                break
     if not license_str:
         licenses_files = dist.read_text("LICENSE") or dist.read_text("LICENSE.txt") or ""
         if licenses_files:
@@ -124,6 +169,37 @@ def _get_js_homepage(name: str) -> str:
         scope, pkg = name.split("/", 1)
         return f"https://github.com/{scope}/{pkg}"
     return f"https://www.npmjs.com/package/{name}"
+
+
+def _get_js_license(name: str, version: str) -> str:
+    """Read the license declaration from the installed package.json.
+
+    Works with pnpm's virtual store (``node_modules/.pnpm``), whose directory
+    names escape scopes as ``@scope+name`` and may carry a peer suffix after
+    the version. Falls back to the direct dependency link and then to
+    "unresolved".
+    """
+    escaped = name.replace("/", "+") if name.startswith("@") else name
+    candidates = [
+        ROOT / "frontend" / "node_modules" / name / "package.json",
+        ROOT / "node_modules" / name / "package.json",
+    ]
+    store = ROOT / "node_modules" / ".pnpm"
+    if store.is_dir():
+        candidates.extend(
+            sorted(store.glob(f"{escaped}@{version}*/node_modules/{name}/package.json"))
+        )
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        value = data.get("license")
+        if isinstance(value, dict):
+            value = value.get("type")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "unresolved"
 
 
 def _classify_role(name: str, ecosystem: str, direct_names: set[str]) -> str:
@@ -182,6 +258,7 @@ def main() -> int:
 
     for pkg in js_pkgs:
         homepage = _get_js_homepage(pkg["name"])
+        license_str = _get_js_license(pkg["name"], pkg["version"])
         components.append(
             {
                 "name": pkg["name"],
@@ -189,12 +266,12 @@ def main() -> int:
                 "ecosystem": "javascript",
                 "role": _classify_role(pkg["name"], "javascript", direct_js),
                 "homepage": homepage,
-                "license": "unresolved",
+                "license": license_str,
                 "notice_location": "",
                 "runtime_or_dev": "runtime" if pkg["name"] in {
                     "react", "react-dom",
                 } else "development",
-                "verification": "unresolved",
+                "verification": "ok" if license_str != "unresolved" else "unresolved",
             }
         )
 
@@ -203,12 +280,14 @@ def main() -> int:
     manifest = {
         "generated": datetime.now(UTC).isoformat(),
         "project": "basseparate",
-        "milestone": "0",
+        "milestone": "2",
         "note": (
-            "Milestone 0 bundles no model weights. "
-            "No public license is claimed for the application itself; "
-            "it is private and unpublished."
+            "The application environment installs no machine-learning packages. "
+            "The isolated analysis environment uses the bundled model weights "
+            "listed under model_weights. No public license is claimed for the "
+            "application itself; it is private and unpublished."
         ),
+        "model_weights": _model_inventory(),
         "components": components,
     }
 
@@ -223,8 +302,9 @@ def main() -> int:
         "",
         f"Generated: {manifest['generated']}",
         "",
-        "Milestone 0 bundles **no model weights**.",
-        "The application itself is **private and unpublished**.",
+        "The application environment installs no machine-learning packages.",
+        "The isolated analysis environment uses the bundled model weights",
+        "listed below. The application itself is **private and unpublished**.",
         "",
         "## Python",
         "",
@@ -250,6 +330,39 @@ def main() -> int:
                 f"| {c['name']} | {c['version']} | {c['license']} | {c['role']} |"
             )
 
+    model_weights = manifest["model_weights"]
+    if model_weights:
+        lines.extend([
+            "",
+            "## Bundled Model Weights",
+            "",
+            "These weights are not Python packages and are not installed from a",
+            "package index. The runner verifies every artifact against the",
+            "checked-in registry before loading it.",
+            "",
+            "| Model | Display name | Artifacts | Total bytes | Bundle path |",
+            "|-------|--------------|-----------|-------------|-------------|",
+        ])
+        for model in model_weights:
+            lines.append(
+                f"| `{model['model_id']}` | {model['display_name']} | "
+                f"{model['artifact_count']} | {model['total_bytes']:,} | "
+                f"`{model['bundle_prefix']}` |"
+            )
+        for model in model_weights:
+            lines.extend([
+                "",
+                f"### `{model['model_id']}` provenance and license",
+                "",
+                f"- Upstream: {model['upstream_revision']}",
+                f"- Engine: {model['engine_requirement']}",
+                f"- License notice: {model['license_notice']}",
+            ])
+            if model["notices"]:
+                lines.append("- Notes:")
+                for notice in model["notices"]:
+                    lines.append(f"  - {notice}")
+
     lines.extend([
         "",
         "## Unresolved Licenses",
@@ -271,7 +384,7 @@ def main() -> int:
         f.write("\n".join(lines))
 
     print(f"licenses/components.json: {len(components)} components")
-    print(f"licenses/NOTICES.md: written")
+    print("licenses/NOTICES.md: written")
     print(f"unresolved: {len(unresolved)}")
     return 0
 

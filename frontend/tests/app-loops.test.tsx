@@ -602,11 +602,23 @@ describe('app practice loops (M2.11 §13)', () => {
     expect(commandBodies('set_active_loop')[0].op).toMatchObject({ loop_id: 'loop-1' })
 
     // The new loop shows in the panel and as the waveform overlay:
-    // [9600, 19200) at the fit view (64 frames/px) -> x 150..300.
+    // [9600, 19200) at the fit view (64 frames/px) -> x 150..300. Since
+    // `2e1c2f0` the selection is drawn first and the active loop last,
+    // with a 2 px top border, boundary handles, and a top-center grip.
     expect(await screen.findByDisplayValue('Loop 1')).toBeInTheDocument()
     const sel = ctxOf(canvasById('lane:0:selection'))
-    await waitFor(() => expect(sel.rects[0]).toEqual([150, 0, 150, 48]))
-    expect(sel.rects[1]).toEqual([148.5, 0, 153, 1])
+    await waitFor(() =>
+      expect(sel.rects).toEqual([
+        [150, 0, 150, 48], // restored selection tint
+        [148.5, 0, 3, 48], // selection handle left
+        [298.5, 0, 3, 48], // selection handle right
+        [150, 0, 150, 48], // active loop tint, drawn above the selection
+        [148.5, 0, 153, 2], // loop top border
+        [148.5, 0, 3, 48], // loop handle left
+        [298.5, 0, 3, 48], // loop handle right
+        [215, 2, 20, 4], // top-center grip
+      ]),
+    )
   })
 
   it('sends one update_loop when a loop boundary drag is released', async () => {

@@ -1,7 +1,7 @@
 
 # Milestone 1 — Import, waveform, and original playback: detailed implementation specification
 
-This expands Milestone 1 in Section 13 of [basseparate_project_plan.md](/home/thomas/Documents/localLLM playground/opencodetest/basseparate/projectPlans/basseparate_project_plan.md). It builds on the foundation specified in [milestone0.md](/home/thomas/Documents/localLLM playground/opencodetest/basseparate/projectPlans/milestone0.md).
+This expands Milestone 1 in Section 13 of [basseparate_project_plan.md](../basseparate_project_plan.md). It builds on the foundation specified in [milestone0.md](milestone0.md).
 
 The implementation sequence below covers media import, local storage, audio decoding, waveform rendering, original-track playback, basic annotations, persistence, and validation.
 

@@ -5,232 +5,154 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Current position
 
-- **Milestone:** 2 (Bass practice workflow) — **complete and accepted
-  (2026-10-23)**.
-- **Gate:** Milestone 1 exit complete — all of M1.1–M1.16 committed; §18
-  test corpus green (748 py + 307 frontend); contract in sync. M2.20–M2.21
-  final acceptance (objective + human) complete; see the handover
+- **Milestones:** 0, 1, and 2 complete. M2.21 (final separation-app
+  acceptance) is **complete and accepted on 2026-10-23**: objective
+  checks passed, and the human listening steps 6-10 all passed. No
+  functional work is pending in Milestone 2.
+- **Next milestone:** Milestone 3 (musical grid: Beat This! beat and
+  downbeat analysis, tempo map, meter regions, musical ruler and
+  snapping, metronome, count-in). **Not started:** there is no M3 code
+  and no `m3.*-plan.md` yet. Specification is
+  `projectPlans/milestone3.md` (work packages M3.1-M3.22); start with
+  M3.1. CONTRIBUTING requires implementing the earliest incomplete
+  milestone, so M3 is the next work item, not optional polish.
+- **Repository:** branch `main`; HEAD `9bcdd6c` ("Ledger: record final
+  M2.21 acceptance hash (33162c5)"); 110 commits; the tree was clean at
+  the start of the 2026-10-24 session.
+- **Workspace relocation (2026-10-24):** the checkout moved from
+  `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
+  to `/home/thomas/Documents/basseparate`. The venv's editable-install
+  `.pth` still pointed at the deleted source directory, so every test
+  module failed to import `PROJECT_SCHEMA_VERSION`; the path was
+  repointed to `<workspace>/src`, the 24 `.venv/bin` scripts (including
+  `basseparate`, `pytest`, `ruff`, `mypy`, and the `activate*` files)
+  that embedded the old prefix were rewritten, and the stale
+  `__pycache__` trees under `src/` and `tests/` were removed.
+  `basseparate doctor` now reports the foundation ready (GPU warning
+  only, as expected). Run all commands from the new root.
+- **Documentation refresh (2026-10-24):** README, architecture,
+  toolchain, troubleshooting, the milestone 1/2 specification links, the
+  M2.19 evidence, and the generated license notices were brought up to
+  the Milestone 2 state. `licenses/NOTICES.md` now lists the bundled
+  model weights and resolves JS licenses from installed package
+  metadata; 27 entries stay unresolved (optional platform bindings that
+  are not installed on this host, plus colorama/tomli, which are
+  conditional and not installed). The `generate_licenses.py` pnpm parser
+  was fixed to read the project YAML document instead of pnpm's own
+  package-manager graph, and its JS license lookup now reads installed
+  package metadata. All 2026-10-24 work (docs, license regeneration, the
+  `app-loops` expectation fix, and the Prettier normalization) is
+  uncommitted as of this writing.
+
+**Verified gates (2026-10-24, current tree):**
+
+| Gate | Result |
+|---|---|
+| `pytest tests/ -q` | 1414 passed, 2 failed (both load-sensitive timing tests; each passes in isolation) |
+| `ruff check src/ tests/` | clean |
+| `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
+| `mypy src/basseparate` | clean, 82 files |
+| `scripts/check_contract.py` | in sync |
+| `npx vitest run` (frontend) | 569 passed, 36 files |
+| `npx tsc -b --force` | clean |
+| `npm run format:check` | clean |
+| `npm run build` | OK |
+| `npm run lint` | 131 errors + 1 warning; all pre-existing |
+
+The two intermittent pytest failures are
+`tests/integration/test_analysis_job_manager.py::TestAnalysisJobClass::test_separation_completes_on_the_analysis_worker`
+and
+`tests/integration/test_job_manager.py::TestProbeCompletion::test_probe_job_completes_and_publishes`.
+Both are timing-sensitive under full-suite load; do not treat them as
+regressions until they fail alone. The frontend baseline was 567
+before the two M2.21 loop regression tests; it is now 569. One stale
+overlay assertion in `frontend/tests/app-loops.test.tsx` still
+expected the pre-`2e1c2f0` draw order and sizes, so the full suite was
+red until 2026-10-24; it now asserts the selection-first order, the
+2 px loop border, the boundary handles, and the top-center grip.
+`frontend/tests/WaveformEditor.test.tsx` also needed Prettier
+normalization after `2e1c2f0`.
+A smoke start of the repaired install on an isolated port and temporary
+storage root returned `health: ready` and HTTP 200 for `/`, applying
+migrations 0 to 12; the acceptance storage was not touched. `uv run`
+itself fails inside the agent sandbox (read-only uv cache), so use the
+`.venv/bin/...` commands here; `uv run --locked` still works in a normal
+shell.
+
+- **Acceptance summary (2026-10-22/23):** GPU separation on the RTX
+  4080 took 72.5 s and published four valid 48 kHz stems at 14,133,913
+  frames; WAV24 export had a zero-lag four-stem sum (corr 0.9927, RMS
+  ratio 1.0008); the portable save/reopen round trip matched geometry
+  and archive hash (702,266,762 bytes, 380 members); the 60-minute
+  whole-track loop playback recorded 12 resets, 11 full periods of
+  293.88-294.91 s (mean 294.468 s vs expected 294.4565 s), one startup
+  underrun and none later, with bounded memory. Human steps 6-10 all
+  pass. Evidence:
+  `docs/evidence/m2.20-performance-and-acceptance.md`,
+  `docs/evidence/m2.21-listening-review.md`, and
   `docs/evidence/session-2026-10-23-handover.md`.
-- **Work package:** M2.1 (Confirm prerequisites and extend the domain) —
-  **complete** (800 py + 307 frontend green; `ba0b151`).
-- **M2.2:** complete — `42d8726` (842 py + 307 frontend green; all 3
-  devices qualified in the locked analysis env).
-- **M2.3:** complete — `cd2ca9e` (hash-pinned `htdemucs_ft` baseline;
-  registry + bundle service + offline qualification; 884 py green).
-- **M2.4:** complete — `ebd58aa` (reference-mix resolution, one-shot
-  resample to the model rate, prepared-input identity, versioned global
-  normalization profile; 936 py green).
-- **M2.5:** complete — `18ace92` (bounded windowed adapter, whole-track
-  reference runner + §7.3 comparison gate, TF32 pinned off; 960 py
-  green).
-- **M2.6:** complete — `a088363` (validate and publish stems; 1000 py
-  green: 808 unit + 192 integration).
-  Staged Demucs runs now publish as validated project-rate stem assets
-  + immutable result sets with the Bass + Others residual,
-  reconstruction diagnostics, and per-stem waveform queueing.
-- **M2.7:** complete — `ac12159` (analysis caching and version
-  retention; 1064 py green: 840 unit + 224 integration). Deterministic
-  versioned cache key per separation request, cache lookup +
-  coalescing primitives, effective-parameter keying, undoable
-  active-result-set selection, and the 50 GiB configurable storage
-  policy (pinning, reclaimable-size report, explicit LRU reclaim;
-  records never deleted).
-- **M2.15:** complete — `8fc239d` + this ledger-hash follow-up
-  (safely save portable projects, spec §17; synchronous save
-  pipeline: project-only DB with exclusions, deterministic staged
-  ZIP64 archive with per-member SHA-256, verify-then-publish to
-  `data/portable/<project_id>/<revision>-<sha12>.basseparate`,
-  retain one previous, atomic publish; routes + PortableSavePanel;
-  24 new backend tests, 13 new frontend tests; backend 1321 pytest
-  green, frontend 550 Vitest green).
-- **Pause point (2026-10-18):** all functional work packages
-  (M2.1–M2.18) are complete and the five-recording GPU analysis
-  acceptance passed (M2.19). Paused for the human listening review;
-  materials in `/tmp/opencode/listening-review/` (24-bit WAV: reference,
-  four stems, Others sum, Bass+Others) and the checklist in
-  `docs/evidence/m2.21-listening-review.md`. Session record:
-  `docs/evidence/session-2026-10-18-handover.md`. Remaining after the
-  review: the 60-minute playback/latency measurement; the objective
-  playback passed on 2026-10-23 and audible latency remains human-only.
-- **M2.20–M2.21:** complete and accepted — `a24357f` + ledger
-  follow-ups (performance targets §21.1–21.3 and final checklist
-  §21.4/§22 evidence; measured CPU RTF plus explicit unverified/
-  human-only items). The human listening review passed **all steps
-  6–10** on 2026-10-23; M2.21 is complete. The only open item is an
-  optional, non-blocking future improvement to make the loop join
-  seamless without the 5 ms fade notch.
-- **M2.21 app-level acceptance (2026-10-22/23):** objective and human
-  pass on Carousel Theory. The detached app served `storage/m2.21/` on
-  port 18796; GPU separation on the RTX 4080 took 72.5 s and published
-  four valid 48 kHz stems. WAV24 export: exactly 14,133,913 frames per
-  stem, zero-lag four-stem sum (corr 0.9927, RMS ratio 1.0008).
-  Portable save: 702,266,762 bytes, 380 members; reopened ready with
-  matching geometry, one valid set, matching stems and archive hash.
-  The final 60-minute whole-track loop playback passed on 2026-10-23:
-  12 resets, 11 full periods of 293.88–294.91 s (mean 294.468 s vs
-  expected 294.4565 s), one startup underrun and none later, with
-  bounded backend/media/browser memory.
-  Fixed blockers: 48 kHz endpoint rounding and duplicate-content asset
-  reuse (`42655c4`), null export target rate (`094eeb7`), the frontend
-  `audioAssetId` playback wiring plus clean-build typing (`10b183f`),
-  the 5 s autosave loop-playhead mapping bug (`b2e244c`), the
-  active-loop selection gesture (`53d2e32`), and the loop overlay /
-  plain-drag UX (`2e1c2f0`). Human steps 6–10 all pass: speeds,
-  exports, reopen repeat, loop boundary timing, and in-app stereo
-  image. See `docs/evidence/m2.21-listening-review.md` and the final
-  handover `docs/evidence/session-2026-10-23-handover.md`.
-- **M2.19:** complete — `ac40bc1` + `ba28fa2` + `99f06f1` + this ledger-hash follow-up (real offline
-  CPU inference evidence; GPU/five-recording acceptance remains open
-  because the environment has no NVIDIA driver).
-- **M2.18:** complete — `aa77677` + this ledger-hash follow-up (test matrix,
-  spec §20; mapping evidence doc + 3 gap tests; backend 1412 pytest
-  green, frontend 566 Vitest green).
-- **M2.17:** complete — `76b8f06` + this ledger-hash follow-up (analysis
-  interfaces and separation scheduling, spec §19; dedicated analysis
-  worker + two job classes, runs/hardware/models routes, migration 12;
-  41 new backend tests; backend 1409 pytest green, frontend 566 Vitest
-  green).
-- **M2.16:** complete — `4027815` + this ledger-hash follow-up (open
-  portable projects, spec §18; `portable/open.py` + errors/bundle,
-  archive upload routes, single-transaction import, frontend
-  `OpenProjectPanel`; 47 new backend tests (38 open + 9 routes), 16 new
-  frontend tests; backend 1368 pytest green, frontend 566 Vitest green).
-- **M2.14:** complete — `ec0b1eb` + this ledger-hash follow-up
-  (portable project format definition, spec §16; `portable/`
-  package: format constants/manifest schema, dependency closure,
-  project-only database builder; 43 new tests; backend 1297 pytest
-  green, frontend 537 Vitest green).
-- **M2.13:** complete — `ff350c8` + this ledger-hash follow-up
-  (WAV stem export, spec §15; backend 1254 pytest green, frontend
-  537 Vitest green).
-- **M2.12:** complete — `0e88c7a` + ledger-hash follow-up `1b79846`
-  (extended buffering and resource limits, spec §14; backend 1180
-  pytest green, frontend 530 Vitest green; the local acceptance run
-  added the browser-path fixes).
-- **M2.11:** complete — `f65370a` + ledger-hash follow-up `ce94136`
-  (saved practice loops, spec §13; backend 1147 pytest green,
-  frontend 495 Vitest green).
-- **M2.10:** complete — `f46baaf` + ledger-hash follow-up `cfa3223`
-  (rolling-seek wrapper + rebuilt artifacts, worklet warm-up/exact
-  anchors/1× bypass, transport pre-roll + `anchorRate` ledger +
-  `controlResponseLatencySeconds`; backend 1108 pytest green, frontend
-  438 Vitest green; spec §12 closed).
-- **M2.9:** complete — `3e12570` + ledger-hash follow-up `37e1eeb`
-  (34 files incl. committed WASM artifacts; backend 1108 pytest green,
-  frontend 419 Vitest green; spec §11 closed).
-- **Last work commits:** `2e1c2f0` — show and drag the active loop
-  overlay (final loop UX fix); `424b46b` — ledger for `2e1c2f0`;
-  `33162c5` — finalize the M2.21 human acceptance and handover. Earlier
-  acceptance fixes: `53d2e32` — select
-  on waveform drags inside active loops; `c531488` — record the M2.21
-  60-minute playback acceptance; `b2e244c` — keep the looped playhead
-  stable when the rate is re-applied; `10b183f` — play four stems from
-  the mapped audio asset ids; `094eeb7` — accept a null export target
-  rate; `42655c4` — correct stem endpoints and reuse existing assets.
-  `e296795` — accept minor blend dip (Carousel
-  listening
-  review); `346dea5` — blend-dip
-  investigation (level match ruled
-  out); `4eb6ce7` — Carousel listening
-  findings and blend-dip analysis; `d88171c` (ledger: Carousel findings
-  hash) on top. `4eb6ce7` — Carousel
-  listening results and review clarifications; `9f71c96` (ledger:
-  Carousel review hash) on top. `795fb9b` — session
-  handover and listening-review setup; `b882274` (ledger: pause docs hash)
-  on top. `99f06f1` — M2.19
-  (five-recording GPU acceptance evidence); `2f03ac1` (ledger: M2.19 GPU
-  hash) on top. `ba28fa2` — M2.19
-  (backend end-to-end acceptance and publisher fix); `ede851f` (ledger:
-  M2.19 follow-up hash) on top. `a24357f` — M2.20–M2.21
-  (performance targets and final acceptance evidence); `ce47d12` (ledger:
-  M2.20–M2.21 hash) on top. `ac40bc1` —
-  M2.19 (real separator acceptance, partial); `44ea328` (ledger: M2.19
-  hash) on top. `aa77677` — M2.18 (test matrix);
-  `01e3b6d` (ledger: M2.18 hash) on top. `76b8f06` — M2.17 (analysis interfaces and
-  separation scheduling); `59f7f09` (ledger: M2.17 hash) on top.
-  `4027815` — M2.16
-  (open portable projects); `cb45811` (ledger: M2.16 hash) on top.
-  `8fc239d` — M2.15 (safely save portable
-  projects); `5fbb6ff` (ledger: M2.15 hash) on top. `ec0b1eb` — M2.14
-  (portable project format); `744e165` (ledger: M2.14 hash) on top.
-  `ff350c8` — M2.13
-  (WAV stem export); `4cdf9fc` (ledger: M2.13 hash) on top. `0e88c7a` — M2.12 (extended buffering
-  and resource limits); `1b79846` (ledger: M2.12 hash) on top;
-  `f65370a` — M2.11 (saved practice loops);
-  `cfa3223` (ledger: M2.10 hash) on top of `f46baaf` — M2.10
-  (latency, bypass, and transport
-  mapping); `37e1eeb` (ledger: M2.9 hash) on top of `3e12570` —
-  M2.9 (integrate the time-stretch
-  engine); `79d898e` — M2.8 (add aligned tracks and the stem
-  mixer); `ac12159` — M2.7 (analysis caching and version
-  retention); `a088363` — M2.6 (validate and publish stems);
-  `18ace92` — M2.5 (implement bounded Demucs
-  separation); `ebd58aa` — M2.4 (prepare separation input consistently);
-  `cd2ca9e` — M2.3 (pin and provision the bundled Demucs baseline);
-  `42d8726` — M2.2 (isolated Demucs runtime); `ba0b151` — M2.1 (confirm
-  prerequisites and extend the domain); `9510656` (ledger M1.16 hash);
-  `af51265` — M1.16 (test
-  corpus and automated verification); `ede3d26` — M1.15 (markers, persistence, and
-  undo/redo); `934d6c1` — M1.14 (synchronized readout and
-  follow-playhead); `c7d78ef` — M1.13 (buffering and browser
-  compatibility); `bccd7b5` — M1.12 (AudioWorklet transport);
-  `fd3468f` — M1.11 (navigation, zoom, selection);
-  `62513ce` — M1.10 (waveform editor);
-  `ffa0142` — chore: prettier normalization of pre-existing sources
-  (baseline was not prettier-clean);
-  `72cd2e5` — M1.9 ledger hash;
-  `06c2cb3` — M1.9 (media HTTP interfaces);
-  `fe2b815` — M1.8 ledger hash;
-  `4a6004a` — M1.8 (waveform pyramid);
-  `825e884` — M1.7 ledger hash;
-  `af6ad7f` — M1.7 (monitoring + playback rate);
-  `4098c58` — M1.6 (disk budget + acceptance tests);
-  `ae11417` — M1.6 ledger hash; `d5be576` — M1.4 (durable media jobs).
-- **Next action:** none. M2.21 is complete and accepted; all human
-  steps 6–10 pass. No functional work is pending. Optional future work
-  only: make the loop join seamless without the 5 ms fade notch (for
-  example a short crossfade) and continue loop UX polish. The e2e
-  `app.spec.ts` harness bug (spawns the Python server via
-  `process.execPath`) is pre-existing and out of scope; address it
-  if/when the e2e suite is re-run in a full environment. For a new
-  session, read this file and `docs/evidence/session-2026-10-23-handover.md`.
-- **Resume procedure:** read this file and the 2026-10-23 handover; HEAD
-  is the final M2.21 acceptance ledger on top of `2e1c2f0`; the tree is
-  clean. Baseline re-established 2026-10-22:
-  `.venv/bin/python -m pytest tests/ -q` (1416 passed; the
-  job-manager timing test and `test_stderr_does_not_corrupt_protocol`
-  are occasionally flaky under load),
-  `.venv/bin/python -m ruff check src/ tests/` (clean),
-  `.venv/bin/python -m mypy src/basseparate` (82 files clean),
-  `cd frontend && npx vitest run` (567 passed),
-  `cd frontend && npx tsc -b --force` (clean; the earlier
-  `tsc --noEmit` did not check the referenced app project),
-  `cd frontend && npm run format:check` (clean),
-  `cd frontend && npm run build` (OK),
-  `.venv/bin/python scripts/check_contract.py` (OK).
-  Focused regression after the 2026-10-23 loop fixes:
-  `cd frontend && npx vitest run tests/WaveformEditor.test.tsx`
-  (59 passed after `2e1c2f0`). The 567-pass full baseline predates the
-  two added loop regression tests; the full suite was not rerun after
-  them. `cd frontend && npm run build` passed after `2e1c2f0`.
-  `cd frontend && npm run lint` still reports 131 pre-existing issues
-  (mostly node/no-this-alias in older tests); the changed files are
-  clean under targeted eslint except the pre-existing `offset`
-  initializer in `src/api/open.ts`.
-  **App resume:** the app was left running at
-  `http://127.0.0.1:18796/` with `storage/m2.21` (current token in
-  `.m2.21-acceptance/server.log`). If it is down, relaunch with
-  `.venv/bin/basseparate serve --no-browser --port 18796 --storage-root
-  storage/m2.21` and use the new token. Project
+- **Current environment limits:** no NVIDIA driver (`nvidia-smi` fails;
+  `torch.cuda.is_available()` is false), so do not attempt a new
+  separation here. The acceptance stems, result set, and portable
+  archive are preserved, and playback is CPU-side. The application
+  environment is torch-free; inference runs only in `analysis/.venv`
+  (Python 3.11.15, demucs 4.1.0, torch 2.9.1+cu128, soundfile 0.14.0)
+  against the hash-pinned `models/htdemucs_ft` bundle. pnpm is installed
+  as 12.15.0 at `~/.local/share/pnpm/bin/pnpm`; `package.json` pins
+  12.8.1, and the installed pnpm cannot switch to the pinned engine in
+  this sandbox (read-only package-manager store). The existing
+  `frontend/node_modules` still works, so this does not block the
+  frontend gates.
+- **App state:** the acceptance app is **not running**. It was left
+  running on 2026-10-23 and shut down at 22:55
+  (`.m2.21-acceptance/server.log`). `storage/m2.21/` and
+  `.m2.21-acceptance/` are preserved (both are gitignored). Relaunch
+  with
+  `.venv/bin/basseparate serve --no-browser --port 18796 --storage-root storage/m2.21`;
+  the new token is printed in `.m2.21-acceptance/server.log`. Project
   `923d1e34-8141-495d-847d-6bb6aae3c114`, result set
-  `5299022f-4495-4839-95c2-6358f7199735`; project position 2,592,000
-  frames (54.0 s), selection 3,202,809–4,956,380 frames, one active
-  loop `929a5978-15ff-4b1d-aa45-db1ce44761e8` at 2,400,000–2,832,000
-  frames (50.0–59.0 s), `Fade` off, `Looping` enabled (snapshot at
-  revision 1861; the position may advance if playback was left running).
-  The NVIDIA driver is unavailable, so do not attempt a new separation;
-  the four stems and result set are preserved and playback is CPU-side.
-  **Recovery note:** if working-tree files appear reverted, versions
+  `5299022f-4495-4839-95c2-6358f7199735`; position 2,592,000 frames
+  (54.0 s), selection 3,202,809-4,956,380 frames, one active loop
+  `929a5978-15ff-4b1d-aa45-db1ce44761e8` at 2,400,000-2,832,000 frames
+  (50.0-59.0 s), `Fade` off, `Looping` enabled, snapshot revision 1861
+  (the position may advance if playback was left running).
+- **Optional, non-blocking work:** make the loop join seamless without
+  the 5 ms fade notch (for example a short crossfade); continue loop UX
+  polish; rename or remove the residual 9 s test loop if desired. The
+  e2e `app.spec.ts` harness bug (it spawns the Python server through
+  `process.execPath`) is pre-existing and out of scope until the e2e
+  suite is re-run in a full environment.
+
+**Resume procedure:** read this file and the 2026-10-23 handover,
+including its 2026-10-24 correction. From the workspace root:
+
+```sh
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m ruff check src/ tests/
+.venv/bin/python -m mypy src/basseparate
+.venv/bin/python scripts/check_contract.py
+cd frontend && npx vitest run
+cd frontend && npx tsc -b --force
+cd frontend && npm run format:check
+cd frontend && npm run build
+```
+
+For the next milestone, read `projectPlans/milestone3.md` and start at
+M3.1. The Beat This! model install is a deliberate network operation
+(`milestone3.md` section 4); GPU-dependent acceptance runs will need
+the NVIDIA driver restored (the M2.19 runs used approved escalated
+device access).
+
+- **Recent commits (full history in `git log`):** `9bcdd6c` final
+  ledger hash; `33162c5` finalize M2.21 acceptance and handover;
+  `424b46b` ledger for the loop overlay fix; `2e1c2f0` show and drag
+  the active loop overlay; `9a48c90` ledger for the selection fix;
+  `53d2e32` select on waveform drags inside active loops; `c531488`
+  ledger for the 60-minute playback acceptance; `b2e244c` keep the
+  looped playhead stable; `10b183f` play stems from the mapped audio
+  asset ids; `094eeb7` accept a null export target rate;
+  `42655c4` correct stem endpoints and reuse existing published assets.
+- **Recovery note:** if working-tree files appear reverted, versions
   are recoverable from the OpenCode snapshot store
   (`~/.local/share/opencode/snapshot/<workspace>/<repo>/objects`, read
   with `git cat-file` inside that repository).
@@ -948,7 +870,7 @@ hook rework → 4 component navigation → 5 selection → 6 vertical zoom
 ### M1.10 — Waveform editor (complete)
 
 Spec: `projectPlans/milestone1.md` §12. Plan:
-`projectPlans/m1.10-plan.md` (written, uncommitted with the plan
+`projectPlans/m1.10-plan.md` (written with the plan
 document itself). Frontend-only: editor layout, canvas layers,
 resolution selection, channel/amplitude display, empty/pending
 states. Interactive zoom/pan/selection is M1.11; AudioWorklet
@@ -1155,7 +1077,7 @@ with correct pitch and duration at either browser output rate.
   dither_method=0` profile v1; 19 engine tests.
 - `worker/media_worker.py`: derived runs + dispatch; `TestDerivedJobs`.
 
-**Phase 5 (complete this session, uncommitted):**
+**Phase 5 (complete):**
 - `storage/paths.py`: `resolve_asset_path()` (data/ runtime/ state/
   prefixes for both XDG and `--storage-root` layouts).
 - `storage/repository.py`: `ProjectRepository.get_asset()`;
@@ -1255,9 +1177,10 @@ with correct pitch and duration at either browser output rate.
 - Full verification: 538 py tests pass (524 + 14); `ruff check
   src/ tests/` clean; `mypy` clean (43 files); 47 js tests, lint /
   typecheck / build clean.
-- Note: `ruff check scripts/` has 2 pre-existing findings from
-  M0.10/M0.11 (RET504 in `dev.py`, F541 in `generate_licenses.py`);
-  unchanged by M1.7, left for a later cleanup.
+- Note: `ruff check scripts/` had 2 pre-existing findings from
+  M0.10/M0.11 (RET504 in `dev.py`, F541 in `generate_licenses.py`).
+  The F541 was fixed during the 2026-10-24 doc refresh; the RET504 in
+  `dev.py` remains for a later cleanup.
 
 **Commit:** `af6ad7f` (implementation); ledger hash in the following
 commit.
@@ -1529,9 +1452,9 @@ Plan: `projectPlans/m1.5-plan.md` (9 phases, written 2026-10-03).
 **Commit:** `b1d92d1` (implementation); ledger hash in the following
 commit.
 
-### M1.4 — Durable media jobs (complete)
+### M1.4 research notes (FFmpeg 8.1.2 experiments, 2026-10-03)
 
-**Research notes (FFmpeg 8.1.2 experiments, /tmp/opencode/gaptest):**
+**Experiments in /tmp/opencode/gaptest; the implementation section follows.**
 - Production decode command verified: `ffmpeg -hide_banner -nostdin
   -v warning -threads N -i src -map 0:<global_index> -af aresample=async=1
   -c:a pcm_f32le -f f32le -progress pipe:2 out.pcm`. Explicit global-index
@@ -3729,7 +3652,12 @@ here. Final gates: backend 1412 pytest green (one flaky supervisor test
 passes on rerun); ruff clean; mypy 82 files clean; frontend 566 Vitest
 green; tsc/prettier/Vite build/contract unchanged and green.
 
-## M2.19 — Real separation acceptance (partial)
+## M2.19 — Real separation acceptance (initial CPU run, 2026-10-18)
+
+**Superseded by later acceptance:** the five-recording GPU matrix passed
+on 2026-10-18 (section below), and the app-level acceptance plus human
+review passed on 2026-10-23 (M2.20-M2.21 sections). This section records
+the first partial CPU run and what was open at that point.
 
 **2026-10-18:** `docs/evidence/m2.19-separation-acceptance.md`. The
 environment has no usable NVIDIA driver (`nvidia-smi` fails;
@@ -3961,23 +3889,68 @@ these are the listener's own confirmations. Audible control-response
 latency was not separately re-tested; the M2.10 objective latency/bypass
 evidence stands.
 
+## Milestone 3 progress
+
+**Not started.** No M3 code, migration, route, or plan document exists.
+The specification is `projectPlans/milestone3.md` (work packages
+M3.1-M3.22; section 25 gives the implementation order and gates). First
+work package: M3.1, verify prerequisites and extend the domain. M3
+requires an explicit Beat This! model install (a deliberate network
+operation), and GPU-dependent acceptance runs will need the NVIDIA
+driver restored. Re-run the gate commands in "Current position" before
+starting.
+
 ## Architectural decisions so far
 
-- Python 3.11.15 via uv, `>=3.11,<3.12`, Hatchling, src layout, console script `basseparate`.
-- pnpm to be installed via npm global package (no corepack on system); exact version pinned
-  in root `packageManager` field. (Recorded when version resolved.)
-- Git is a development aid only; generated-artifact checks must work without it (filesystem comparison).
+- Python 3.11.15 via uv, `>=3.11,<3.12`, Hatchling, src layout, console
+  script `basseparate`.
+- pnpm is installed in the user prefix; `package.json` pins 12.8.1
+  (no corepack on the system). On 2026-10-24 the installed pnpm was
+  12.15.0 at `~/.local/share/pnpm/bin/pnpm`, and the pinned-engine
+  switch failed in this sandbox (read-only store); frontend commands use
+  the existing `frontend/node_modules`.
+- Inference runs only in the isolated `analysis/.venv` (torch, demucs);
+  the application environment never imports torch.
+- Git is a development aid only; generated-artifact checks must work
+  without it (filesystem comparison).
 - App storage via platformdirs (XDG), overridable with `--storage-root`.
+- Project time is integer source sample frames; model rates, playback
+  rates, and stream positions are derived coordinates.
+- Audio assets are content-addressed (`data/assets/<sha256>.pcm`) with a
+  transformation key; waveform pyramids are cached per source hash.
 
 ## Commands run / results
+
+Milestone 0 setup (2026-09-29):
 
 | Command | Result |
 |---|---|
 | `sha256sum audio2test/*.wav` | 5 hashes recorded in baseline report |
 | `uv python list --only-installed` | 3.14.7 (system), 3.13.14, 3.11.15 (uv) |
-| `nvidia-smi -L` | 2 GPUs listed (see above) |
+| `nvidia-smi -L` | 2 GPUs listed at setup time (driver unavailable on 2026-10-24) |
 | `git init -b main` | OK |
+
+Current gates (2026-10-24): see the table in "Current position". All
+listed commands were run from `/home/thomas/Documents/basseparate`.
 
 ## Known failures / blockers
 
-- None. (pnpm absence is handled by explicit install in M0.2, not a blocker.)
+- No functional blockers. Two timing-sensitive pytest integration tests
+  fail intermittently under full-suite load and pass in isolation:
+  `tests/integration/test_analysis_job_manager.py::TestAnalysisJobClass::test_separation_completes_on_the_analysis_worker`
+  and
+  `tests/integration/test_job_manager.py::TestProbeCompletion::test_probe_job_completes_and_publishes`.
+- `npm run lint` reports 131 pre-existing errors (mostly
+  `@typescript-eslint/no-this-alias` in older test harnesses) plus one
+  warning; no gate depends on it.
+- `ruff format --check src/ tests/` reports 90 of 170 files would be
+  reformatted (locked ruff 0.16.9). This is pre-existing formatting drift,
+  not a lint failure; `scripts/dev.py check` runs this command, so that
+  aggregate check is red until the tree is reformatted in a dedicated
+  change. `ruff check` and `mypy` are clean.
+- The NVIDIA driver is unavailable on this host (`nvidia-smi` fails), so
+  GPU separation cannot be re-run here; the accepted results are
+  preserved and playback is CPU-side.
+- The workspace moved on 2026-10-24; the venv editable install and stale
+  bytecode caches were repaired (see "Current position"). For a fresh
+  checkout, run `uv sync --locked` instead of reusing a moved `.venv`.

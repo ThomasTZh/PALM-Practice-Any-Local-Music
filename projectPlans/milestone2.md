@@ -1,9 +1,9 @@
 
 # Milestone 2 — Bass practice workflow: detailed implementation specification
 
-This expands Milestone 2 in Section 13 of [basseparate_project_plan.md](/home/thomas/Documents/localLLM playground/opencodetest/basseparate/projectPlans/basseparate_project_plan.md).
+This expands Milestone 2 in Section 13 of [basseparate_project_plan.md](../basseparate_project_plan.md).
 
-It builds on [milestone0.md](/home/thomas/Documents/localLLM playground/opencodetest/basseparate/projectPlans/milestone0.md) and [milestone1.md](/home/thomas/Documents/localLLM playground/opencodetest/basseparate/projectPlans/milestone1.md). Those documents currently describe planned foundations; their implementation must pass its acceptance gates before dependent Milestone 2 work is considered complete.
+It builds on [milestone0.md](milestone0.md) and [milestone1.md](milestone1.md). Milestone 1 is complete (see `docs/implementation-status.md`); Milestone 2 extends that implemented foundation.
 
 ## 1. Required outcome and milestone boundaries
 

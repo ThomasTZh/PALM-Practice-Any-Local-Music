@@ -1,7 +1,9 @@
 # Troubleshooting
 
-Common failures and their resolutions for the basseparate foundation
-(Milestone 0).
+Common failures and their resolutions. The application is at Milestone 2
+(import, waveform editing, separation, practice playback, export, and
+portable projects); see `docs/implementation-status.md` for the current
+status.
 
 ## Port already in use
 
@@ -86,12 +88,20 @@ npm install -g pnpm@12.8.1
 pnpm --version   # should print 12.8.1
 ```
 
-If pnpm is installed in a non-standard location (e.g. `~/.npm-global/bin`),
-ensure that directory is on `PATH`:
+If pnpm is installed in a non-standard location (for example
+`~/.npm-global/bin` or `~/.local/share/pnpm/bin`), ensure that directory
+is on `PATH`:
 
 ```sh
-export PATH="$HOME/.npm-global/bin:$PATH"
+export PATH="$HOME/.local/share/pnpm/bin:$HOME/.npm-global/bin:$PATH"
 ```
+
+On this workspace (2026-10-24) the installed pnpm is 12.15.0 at
+`~/.local/share/pnpm/bin/pnpm`, while the repository pins 12.8.1.
+pnpm normally switches to the pinned engine automatically. If that
+switch fails because the package-manager store is read-only (as in the
+agent sandbox), keep using the existing `frontend/node_modules`; do not
+delete it just to reinstall.
 
 ## Locked dependency mismatch
 
@@ -157,15 +167,21 @@ upgrade basseparate or delete the database to start fresh:
 mv ~/.local/share/basseparate/basseparate.db ~/.local/share/basseparate/basseparate.db.bak
 ```
 
-## GPU unavailable but foundation still usable
+## GPU unavailable
 
-**Symptom:** `doctor` reports no GPU detected.
+**Symptom:** `doctor` reports `gpu (optional): nvidia-smi present but
+driver query failed`, or separation is configured for a GPU device that
+cannot be used.
 
-**Cause:** No NVIDIA/AMD GPU is present, or drivers are not installed.
+**Cause:** No NVIDIA driver is loaded, the GPU is absent, or the sandbox
+hides `/dev/nvidia*`.
 
-**Fix:** Milestone 0 does not require a GPU. The worker probe, browser
-shell, and project management all function without one. GPU is only needed
-for later milestones (model inference). No action required.
+**Fix:** Import, waveform editing, playback, export, and portable
+projects work without a GPU. Separation can run on the explicit `cpu`
+device in the isolated analysis environment, but it is several times
+slower than real time. Select the GPU only when `torch.cuda.is_available()`
+is true in `analysis/.venv`. GPU acceptance runs may need approved
+escalated device access outside the sandbox.
 
 ## Playwright browser dependencies unavailable on Nobara
 
@@ -213,3 +229,64 @@ git commit -m "initial commit"
 If the placeholder is a submodule reference in a parent repository, remove
 it from the parent's `.gitmodules` and `git rm` the entry before
 re-initializing.
+
+## ImportError after moving the project directory
+
+**Symptom:** Python imports fail with `cannot import name
+'PROJECT_SCHEMA_VERSION' from 'basseparate' (unknown location)`, every
+test module errors during collection, or `.venv/bin/basseparate` exits with
+"No such file or directory" naming an old checkout path.
+
+**Cause:** A virtual environment is not relocatable. The editable install
+stores an absolute source path in
+`.venv/lib/python3.11/site-packages/_editable_impl_basseparate.pth`, and
+the console scripts (`basseparate`, `pytest`, `ruff`, `mypy`) plus the
+`activate*` files embed the interpreter prefix. After moving or copying the
+checkout, those paths are stale even though the packages are still
+installed.
+
+**Fix (preferred):** recreate the environment from the lockfile:
+
+```sh
+rm -rf .venv
+uv sync --locked
+```
+
+If recreating is not possible, repoint the old absolute prefix in the text
+files under `.venv` and remove stale bytecode:
+
+```sh
+grep -rIl '/old/checkout/path' .venv
+# after checking the list, rewrite it (text files only):
+grep -rIl '/old/checkout/path' .venv | xargs sed -i 's#/old/checkout/path#/new/checkout/path#g'
+find src tests -type d -name __pycache__ -prune -exec rm -rf {} +
+```
+
+Verify with `.venv/bin/basseparate doctor` and a single test module before
+re-running the full suite.
+
+## Separation fails: analysis runtime or model bundle
+
+**Symptom:** A separation job fails, the job error mentions
+`ANALYSIS_RUNTIME_UNAVAILABLE`, or the worker reports that the prepared
+input, normalization profile, or model bundle does not exist. `doctor`
+shows `model-baseline` as unavailable.
+
+**Cause:** The isolated analysis environment `analysis/.venv` is missing or
+incomplete, or the bundled `htdemucs_ft` directory is absent or corrupted.
+The application environment cannot run inference itself.
+
+**Fix:**
+
+```sh
+cd analysis && uv sync --locked && cd ..
+.venv/bin/basseparate doctor
+analysis/.venv/bin/python analysis/qualify_bundled.py --device cpu
+```
+
+Re-provision `models/htdemucs_ft` from the release bundle if needed: four
+checkpoint files plus `htdemucs_ft.yaml`, 336,565,233 bytes in total. The
+runner verifies every size and SHA-256 against
+`src/basseparate/models/registry.py` before loading; there is no remote
+fallback. For a non-default analysis location, set
+`BASSEPARATE_ANALYSIS_ROOT`.
