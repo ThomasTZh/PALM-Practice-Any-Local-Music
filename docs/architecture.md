@@ -26,9 +26,11 @@ later milestones extend it. The authoritative product specification is
    application environment never imports torch.
 5. **Rhythm runtime**: a second isolated environment, `rhythm/.venv`
    (beat-this, torch, torchaudio), launched by explicit interpreter path for
-   Beat This! qualification and, from M3.4, rhythm inference. The backend
-   never imports it. Model checkpoints are installed explicitly into the
-   managed store; there is no inference-time download.
+   Beat This! qualification and framewise activation inference. The backend
+   supervises `rhythm/worker.py`, validates the returned float32 arrays, and
+   publishes them; the backend itself never imports torch. Model checkpoints
+   are installed explicitly into the managed store; there is no
+   inference-time download.
 6. **Browser**: React/TypeScript. Talks to the API through a generated client
    (openapi-fetch over generated types). Waveform rendering is canvas-based.
    Playback runs in an AudioWorklet: a fetch worker produces PCM into shared
@@ -98,6 +100,11 @@ stream coordinate.
   (source, license notice, adapter version, checkpoint hash). Installation
   streams to a staging file, verifies size and SHA-256 against the checked-in
   rhythm registry, and publishes atomically.
+- Immutable activation artifacts live under
+  `data/rhythm/activations/<artifact_id>/` (`beat.npy`, `downbeat.npy`,
+  `manifest.json`). Raw framewise logits are retained unmodified; the
+  manifest records array hashes, source identity, model/adapter identity,
+  frame mapping, and output semantics.
 - Staging for workers lives under `runtime/`; export and portable builds use
   the same staged, verify-then-rename discipline.
 

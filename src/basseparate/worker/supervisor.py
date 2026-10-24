@@ -130,6 +130,29 @@ def analysis_worker_command() -> list[str]:
     return [str(root / ".venv" / "bin" / "python"), str(root / "worker.py")]
 
 
+def rhythm_root() -> Path:
+    """The isolated Beat This! environment root (M3.2/M3.4).
+
+    ``BASSEPARATE_RHYTHM_ROOT`` overrides the repository-relative default.
+    """
+
+    override = os.environ.get("BASSEPARATE_RHYTHM_ROOT")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[3] / "rhythm"
+
+
+def rhythm_worker_command() -> list[str]:
+    """Argument array for the isolated rhythm worker (M3.4 §6.1).
+
+    The worker runs through the rhythm environment's explicit interpreter;
+    the application environment never imports torch or beat_this.
+    """
+
+    root = rhythm_root()
+    return [str(root / ".venv" / "bin" / "python"), str(root / "worker.py")]
+
+
 class WorkerSupervisor:
     """Owns one worker subprocess and its protocol exchange."""
 

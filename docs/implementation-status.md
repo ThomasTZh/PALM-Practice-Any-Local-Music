@@ -8,10 +8,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
   schema, `3d3c307`), M3.2 (Beat This! runtime, registry, install
   boundary, CPU qualification, `be2bb1b`), and M3.3 (reproducible
-  rhythm input preparation, `09d83ae`) complete on 2026-10-24. M2.21 final separation-app acceptance was
+  rhythm input preparation, `09d83ae`), and M3.4 (real Beat This! runs
+  with retained framewise activations) complete on 2026-10-24. M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
-- **Next work package:** M3.4 (run Beat This! and retain frame
-  activations). Specification is
+- **Next work package:** M3.5 (decode beat and downbeat candidates). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.3 ledger follow-up on
@@ -47,10 +47,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1500 passed |
+| `pytest tests/ -q` | 1511 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 87 files |
+| `mypy src/basseparate` | clean, 89 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4070,6 +4070,61 @@ commit `09d83ae`; this ledger update is the follow-up commit.
 - **Deferred:** inference/activation publication (M3.4), decoder/tempo/
   meter (M3.5–M3.9), durable job/API wiring (M3.17), and partial analysis
   intervals (the identity will add the interval when enabled).
+
+### M3.4 — Run Beat This! and retain frame activations (complete)
+
+Spec: `milestone3.md` §6. Plan: `projectPlans/m3.4-plan.md`. Implementation
+commit recorded in the follow-up ledger entry.
+
+- **Worker (§6.1–§6.2, §6.5–§6.6):** `rhythm/worker.py` speaks protocol v2,
+  declares `rhythm.activation.v1` (input roles, model IDs, devices, memory
+  class, cancellation, determinism limits, artifact schema, confidence
+  semantics, license), accepts an explicit local checkpoint plus prepared
+  22,050 Hz stereo PCM, imports torch/numpy only in the job thread, runs
+  Beat This!, writes staged `beat.npy`/`downbeat.npy`, and reports stages
+  `preparing_input`/`loading_model`/`running_inference`/
+  `writing_activations`/`validating_artifact`. Cancellation is checked
+  before load and after inference; staged arrays are removed and no
+  artifact is published.
+- **Backend (§6.2–§6.4, §6.7):**
+  `src/basseparate/rhythm/activations.py` validates the request and local
+  checkpoint, supervises the worker, validates arrays (float32,
+  one-dimensional, exact frame count, finite), builds the M3.1
+  `ActivationArtifactManifest` with an exact frame mapping and
+  deterministic content hash, publishes
+  `data/rhythm/activations/<artifact_id>/{beat.npy,downbeat.npy,
+  manifest.json}` atomically, records the artifact through
+  `RhythmRepository`, and updates the durable run (completed/failed/
+  cancelled) with timings and peak memory. Failed/cancelled runs clean
+  their staging and never create an artifact.
+- **Shared vocabulary:** `JobStage` gains `loading_model`,
+  `running_inference`, `writing_activations`, `validating_artifact`, and
+  `decoding_pulses`. These stages are protocol-level only until M3.17
+  wires durable rhythm jobs; that package must extend the database stage
+  constraint.
+- **Real acceptance (2026-10-24):** two independent final0 CPU runs on
+  the 5 s prepared fixture both completed with 251 frames; identical
+  array hashes (`beat` `64a64078...`, `downbeat` `c63d8ed9...`) and
+  content hash (`02cc2e9a...`), distinct immutable artifact IDs, model
+  load 0.220–0.236 s, inference 0.084–0.202 s, peak host RSS about
+  740–744 MB. Frame mapping: 22,050 Hz model rate, 48,000 Hz project
+  rate, hop 441. Evidence:
+  `docs/evidence/m3.4-activation-retention.md`.
+- **Tests:** `tests/unit/test_rhythm_activations.py` (11: array
+  validation, store publish/verify, fake-worker success/failure/
+  cancellation and run updates); `tests/integration/
+  test_rhythm_activation_real.py` (real worker, skipped unless
+  `BASSEPARATE_RHYTHM_TEST_CHECKPOINT` is set; run for the acceptance
+  evidence).
+- **Gate:** backend **1511 passed, 1 skipped** (the real-model test; it
+  passed when run with the checkpoint); one load-sensitive job-manager
+  timing test failed once in a full run and passed alone, then a clean
+  full rerun passed. ruff check clean; mypy clean (89 files); contract in
+  sync; frontend unchanged (569 passed).
+- **Deferred:** pulse decoding/confidence (M3.5), automatic result
+  publication/branches (M3.6), tempo/meter (M3.7–M3.9), durable rhythm
+  jobs/API/UI (M3.17), portable activation files (M3.18), GPU
+  qualification (no driver).
 
 ## Architectural decisions so far
 

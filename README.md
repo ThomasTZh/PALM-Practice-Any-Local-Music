@@ -9,8 +9,9 @@ waveform editor, separation-based bass practice workflow). Milestone 2
 final acceptance passed on 2026-10-23, including the human listening
 review. Milestone 3 (musical grid) is in progress: M3.1 (rhythm domain and
 schema), M3.2 (isolated Beat This! runtime, verified model registry,
-explicit install boundary, CPU qualification), and M3.3 (reproducible
-rhythm-analysis input) are complete. See
+explicit install boundary, CPU qualification), M3.3 (reproducible
+rhythm-analysis input), and M3.4 (real Beat This! runs with retained
+framewise activations) are complete. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
 authoritative resume ledger and verified test results.
 

@@ -60,6 +60,8 @@ from basseparate.worker.supervisor import (
     assert_protocol_version,
     media_worker_command,
     probe_command,
+    rhythm_root,
+    rhythm_worker_command,
 )
 
 __all__ = [
@@ -100,6 +102,8 @@ __all__ = [
     "WorkerTimeoutError",
     "analysis_root",
     "analysis_worker_command",
+    "rhythm_root",
+    "rhythm_worker_command",
     "assert_no_leftover",
     "assert_protocol_version",
     "decode_message",

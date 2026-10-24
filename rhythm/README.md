@@ -56,6 +56,20 @@ explicit local checkpoint, runs the deterministic fixture twice, and
 writes a JSON report next to the checkpoint. Exit code 0 means
 qualified.
 
+## Worker
+
+`worker.py` is the protocol-v2 activation worker launched by the backend:
+
+```sh
+rhythm/.venv/bin/python rhythm/worker.py
+```
+
+It accepts one `rhythm_activation` run at a time, writes `beat.npy` and
+`downbeat.npy` into the assigned staging directory, and reports progress
+and peak memory. The backend validates and publishes the artifact; the
+worker never touches the database or the final artifact store. It is not
+a standalone CLI.
+
 ## Notes
 
 - The application never downloads on startup, project open, or
