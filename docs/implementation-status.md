@@ -16,9 +16,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `projectPlans/milestone3.md` (work packages M3.1-M3.22); start with
   M3.1. CONTRIBUTING requires implementing the earliest incomplete
   milestone, so M3 is the next work item, not optional polish.
-- **Repository:** branch `main`; HEAD `9bcdd6c` ("Ledger: record final
-  M2.21 acceptance hash (33162c5)"); 110 commits; the tree was clean at
-  the start of the 2026-10-24 session.
+- **Repository:** branch `main`; HEAD `ba37ffc` ("Chore: refresh the
+  status ledger and project docs for the M2 closeout"), the docs/license
+  commit described below; 111 commits before the ledger follow-up; the
+  tree was clean at the start of the 2026-10-24 session.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -42,7 +43,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   package-manager graph, and its JS license lookup now reads installed
   package metadata. All 2026-10-24 work (docs, license regeneration, the
   `app-loops` expectation fix, and the Prettier normalization) is
-  uncommitted as of this writing.
+  committed as `ba37ffc`; this ledger update is the follow-up commit.
 
 **Verified gates (2026-10-24, current tree):**
 
@@ -143,7 +144,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `9bcdd6c` final
+- **Recent commits (full history in `git log`):** `ba37ffc` refresh the
+  status ledger and project docs; `9bcdd6c` final
   ledger hash; `33162c5` finalize M2.21 acceptance and handover;
   `424b46b` ledger for the loop overlay fix; `2e1c2f0` show and drag
   the active loop overlay; `9a48c90` ledger for the selection fix;
