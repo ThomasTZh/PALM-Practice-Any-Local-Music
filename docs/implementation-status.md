@@ -19,7 +19,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   human steps 6-10).
 - **In progress:** M3.17 shared APIs/contracts are in place; unified run
   graph, branch store, transport convenience APIs, and selector UI
-  remain. Then M3.18–M3.22. Specification is
+  remain. M3.18 cache identities are added; portable open/autosave/
+  eviction remain. Then M3.19–M3.22. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.15/M3.16 completion
@@ -72,7 +73,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `pytest tests/ -q` | 1627 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 110 files |
+| `mypy src/basseparate` | clean, 111 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 602 passed, 45 files |
 | `npx tsc -b --force` | clean |
@@ -4617,6 +4618,7 @@ Spec: `milestone3.md` §18. Plan: `projectPlans/m3.16-plan.md`.
 ### M3.17 — API, worker, and frontend contract additions (in progress)
 
 Spec: `milestone3.md` §19. Plan: `projectPlans/m3.17-plan.md`.
+Implementation commit `c99fd95`; this ledger update records it.
 
 - **APIs:** rhythm command/undo/redo endpoints, result and branch
   list/detail summaries, bounded activation-range binary access (≤4096
@@ -4635,6 +4637,24 @@ Spec: `milestone3.md` §19. Plan: `projectPlans/m3.17-plan.md`.
   Schema/worker schema checks, frontend RhythmBranchStore/unified state,
   transport grid/count-in convenience APIs, and selector UI. Package is
   not complete.
+
+### M3.18 — Cache identity, persistence, autosave, portable projects (in progress)
+
+Spec: `milestone3.md` §20. Plan pending.
+
+- **Cache identities:** `rhythm/cache.py` adds deterministic SHA-256 keys
+  for activation (source/downmix/model/adapter/preprocessing/precision/
+  interval), decoder (activation hash/profile), tempo map (decoded hash/
+  algorithm/pulse-unit/meter evidence), and meter (decoded hash/tempo
+  identity/feature hash/candidate/transition profiles). Three unit tests
+  cover stability and dependency sensitivity.
+- **Existing persistence:** manual branch/result rows, command history,
+  musical loops, active selections, and metronome/count-in settings are
+  stored as project state and copied by portable save; rhythm feature/
+  activation file inclusion and portable **open** remain to be extended.
+- **Remaining:** portable open of rhythm rows/files with essential vs
+  optional classification, autosave/debounce rules, interrupted-stage
+  recovery, cache eviction protection, and offline reopen acceptance.
 
 ## Architectural decisions so far
 
