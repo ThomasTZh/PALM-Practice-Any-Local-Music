@@ -50,3 +50,54 @@ export async function fetchRhythmGrid(
   }
   return res.data
 }
+
+export interface RhythmResultSummary {
+  id: string
+  run_id: string
+  activation_artifact_id: string
+  stage: string
+  status: string
+  decoder_profile_id: string
+  accepted_count: number
+  candidate_count: number
+  created_at: string
+}
+
+export interface RhythmBranchSummary {
+  id: string
+  revision: number
+  parent_automatic_result_id: string | null
+  grid_validity: string
+  pulse_count: number
+  tempo_anchor_count: number
+  meter_region_count: number
+  updated_at: string
+}
+
+export async function listRhythmResults(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<RhythmResultSummary[]> {
+  const res = await client.GET('/api/v1/projects/{project_id}/rhythm-results', {
+    params: { path: { project_id: projectId } },
+    signal,
+  })
+  if (!res.response.ok || !res.data) {
+    throw new Error(errorMessage(res.error, `Rhythm results failed (${res.response.status})`))
+  }
+  return res.data as RhythmResultSummary[]
+}
+
+export async function listRhythmBranches(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<RhythmBranchSummary[]> {
+  const res = await client.GET('/api/v1/projects/{project_id}/rhythm-branches', {
+    params: { path: { project_id: projectId } },
+    signal,
+  })
+  if (!res.response.ok || !res.data) {
+    throw new Error(errorMessage(res.error, `Rhythm branches failed (${res.response.status})`))
+  }
+  return res.data as RhythmBranchSummary[]
+}

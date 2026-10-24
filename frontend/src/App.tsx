@@ -35,6 +35,7 @@ import { formatTime } from './playback/pcm'
 import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
 import { RhythmLanes } from './rhythm/RhythmLanes'
+import { RhythmVersionSelector } from './rhythm/RhythmVersionSelector'
 import { fetchMetronomeSchedule } from './api/metronome'
 import { fetchCountInPlan } from './api/countIn'
 import { fetchRhythmGrid, type RhythmGridData } from './api/rhythm'
@@ -2080,6 +2081,21 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
       />
+      {commands.rhythmState?.active_branch_id ||
+      commands.rhythmState?.active_automatic_result_id ? (
+        <RhythmVersionSelector
+          projectId={project.id}
+          activeResultId={commands.rhythmState?.active_automatic_result_id ?? null}
+          activeBranchId={commands.rhythmState?.active_branch_id ?? null}
+          refreshKey={commands.revision}
+          onSelectResult={(id) =>
+            void sendRef.current({ type: 'select_rhythm_result', result_id: id })
+          }
+          onSelectBranch={(id) =>
+            void sendRef.current({ type: 'select_rhythm_branch', branch_id: id })
+          }
+        />
+      ) : null}
       {viewSource && commands.rhythmState?.active_branch_id ? (
         <RhythmLanes
           projectId={project.id}

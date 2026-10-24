@@ -23,10 +23,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   eviction remain. Then M3.19–M3.22. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.18 cache ledger follow-up
-  on top of `e0abed3` ("M3.18: add rhythm analysis cache identities");
-  134 commits at that implementation; the M3.17 implementation is
-  `c99fd95`.
+- **Repository:** branch `main`; HEAD is the M3.17/M3.18 API/selector
+  checkpoint on top of the cache commit; the M3.17 API implementation is
+  `c99fd95`, M3.18 cache identity is `e0abed3`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -75,7 +74,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 111 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 602 passed, 45 files |
+| `npx vitest run` (frontend) | 603 passed, 46 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4627,7 +4626,9 @@ Implementation commit `c99fd95`; this ledger update records it.
   endpoints remain.
 - **Commands:** select automatic result, select/clear editable branch
   (Auto/Edited), and set snap mode; rhythm edits use the dedicated
-  transactional endpoint with 409/422 mapping.
+  transactional endpoint with 409/422 mapping. A version selector lists
+  automatic results and editable branches and dispatches selection
+  commands when a rhythm state exists.
 - **Contracts:** OpenAPI and generated TypeScript types regenerated and
   verified; Python/TS mapping/snap/metronome/readout services already
   exist.
@@ -4642,7 +4643,7 @@ Implementation commit `c99fd95`; this ledger update records it.
 
 Spec: `milestone3.md` §20. Plan pending.
 
-- **Cache identities (`e0abed3`):** `rhythm/cache.py` adds deterministic SHA-256 keys
+- **Cache identities (`e0abed3`, selector/API checkpoint):** `rhythm/cache.py` adds deterministic SHA-256 keys
   for activation (source/downmix/model/adapter/preprocessing/precision/
   interval), decoder (activation hash/profile), tempo map (decoded hash/
   algorithm/pulse-unit/meter evidence), and meter (decoded hash/tempo
