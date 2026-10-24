@@ -207,8 +207,17 @@ function ProjectListItem({
   )
 }
 
-function ImportPanel({ projectId, onImported }: { projectId: string; onImported: () => void }) {
+function ImportPanel({
+  projectId,
+  hasCanonicalAudio,
+  onImported,
+}: {
+  projectId: string
+  hasCanonicalAudio: boolean
+  onImported: () => void
+}) {
   const [uploadState, setUploadState] = useState<UploadState>({ kind: 'idle' })
+  const [pendingDecode, setPendingDecode] = useState<string | null>(null)
   const [incomplete, setIncomplete] = useState<IncompleteImport[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [multiFilePrompt, setMultiFilePrompt] = useState<File[] | null>(null)
@@ -232,6 +241,24 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
   useEffect(() => {
     loadIncomplete()
   }, [loadIncomplete])
+
+  useEffect(() => {
+    if (hasCanonicalAudio) {
+      setPendingDecode(null)
+      return
+    }
+    let cancelled = false
+    latestCompletedImportId(projectId)
+      .then((importId) => {
+        if (!cancelled) setPendingDecode(importId)
+      })
+      .catch(() => {
+        if (!cancelled) setPendingDecode(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, hasCanonicalAudio, uploadState.kind])
 
   /**
    * Decode the completed transfer into the project's canonical audio.
@@ -365,6 +392,22 @@ function ImportPanel({ projectId, onImported }: { projectId: string; onImported:
             ))}
           </ul>
           <p className="muted">Select the same file to resume, or start a new import.</p>
+        </div>
+      )}
+
+      {pendingDecode && uploadState.kind === 'idle' && !hasCanonicalAudio && (
+        <div className="import-recovery" role="status">
+          <p>An uploaded file is waiting to be prepared as project audio.</p>
+          <button
+            type="button"
+            onClick={() => {
+              const controller = new AbortController()
+              abortRef.current = controller
+              void finalizeImport(pendingDecode, controller)
+            }}
+          >
+            Prepare audio
+          </button>
         </div>
       )}
 
@@ -2414,7 +2457,11 @@ export default function App() {
               </button>
               <h2>{view.project.name}</h2>
               {view.project.status === 'empty' ? (
-                <ImportPanel projectId={view.project.id} onImported={loadProjects} />
+                <ImportPanel
+                  projectId={view.project.id}
+                  hasCanonicalAudio={view.project.canonical_asset_id != null}
+                  onImported={loadProjects}
+                />
               ) : (
                 <ProjectView project={view.project} />
               )}

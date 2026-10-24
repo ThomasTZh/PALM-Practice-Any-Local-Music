@@ -63,8 +63,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   after stream selection), waits for the durable job, then refreshes the
   project list. `frontend/tests/canonical-import.test.ts` asserts the job
   request and completion wait; the frontend was rebuilt. A completed
-  import can be re-uploaded; existing zero-ready projects contain no
-  canonical asset to recover from.
+  import can be re-uploaded. The empty-project view also detects a
+  completed import without canonical audio and offers **Prepare audio**,
+  so an already-uploaded file can be decoded without re-uploading.
 - **GPU availability correction (2026-10-24):** earlier notes in this
   file and the evidence said "no NVIDIA driver". The accurate diagnosis
   is that the host has NVIDIA 595.104.02 loaded and both GPUs bound, but
