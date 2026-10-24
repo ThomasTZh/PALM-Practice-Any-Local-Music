@@ -21,10 +21,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   readout/navigation to complete Gate E. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.13 loops ledger follow-up
-  on top of `fec7a84` ("M3.13: add musical/beat-anchored practice loops");
-  130 commits at that implementation; the M3.12 implementation is
-  `15baa05`.
+- **Repository:** branch `main`; HEAD is the M3.14 metronome ledger
+  follow-up on top of `76a7756` ("M3.14: add metronome settings, worklet
+  playback, and seek/rate resets"); 131 commits at that implementation;
+  the M3.13 implementation is `fec7a84`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -171,8 +171,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `fec7a84` M3.13
-  musical loops; `15baa05` M3.12 snapping; `d1e9e07` M3.11 mount/inspector; `f845286` M3.11 grid API and read-only lanes; `fb3a224` M3.11 ruler foundation; `3f58b96` M3.10 rhythm commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
+- **Recent commits (full history in `git log`):** `76a7756` M3.14
+  metronome; `fec7a84` M3.13 musical loops; `15baa05` M3.12 snapping; `d1e9e07` M3.11 mount/inspector; `f845286` M3.11 grid API and read-only lanes; `fb3a224` M3.11 ruler foundation; `3f58b96` M3.10 rhythm commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
   vectors; `694a08a` M3.8 meter inference; `fbfdaf0` M3.7 tempo map; `98fc3a8` GPU diagnosis correction; `bc49cf2` M3.6 automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
@@ -4548,7 +4548,7 @@ Gate D with M3.10–M3.12.
 
 Spec: `milestone3.md` §16. Plan: `projectPlans/m3.14-plan.md`.
 
-- **Schedule core:** `domain/metronome.py` and `rhythm/metronome.py`
+- **Implementation (`76a7756`):** `domain/metronome.py` and `rhythm/metronome.py`
   derive bounded clicks from the active grid at the configured
   subdivision, with downbeat/beat/grouping/subdivision strengths,
   duplicate-frame collapse, exact source→render mapping, and loop-pass
