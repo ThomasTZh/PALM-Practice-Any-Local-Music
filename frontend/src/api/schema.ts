@@ -769,6 +769,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/rhythm-branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rhythm Branches */
+        get: operations["list_rhythm_branches_api_v1_projects__project_id__rhythm_branches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-branches/{branch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rhythm Branch */
+        get: operations["get_rhythm_branch_api_v1_projects__project_id__rhythm_branches__branch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Rhythm Command */
+        post: operations["apply_rhythm_command_api_v1_projects__project_id__rhythm_commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/rhythm-grid": {
         parameters: {
             query?: never;
@@ -778,6 +829,57 @@ export interface paths {
         };
         /** Get Rhythm Grid */
         get: operations["get_rhythm_grid_api_v1_projects__project_id__rhythm_grid_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-redo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redo Rhythm Command */
+        post: operations["redo_rhythm_command_api_v1_projects__project_id__rhythm_redo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rhythm Results */
+        get: operations["list_rhythm_results_api_v1_projects__project_id__rhythm_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-results/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rhythm Result */
+        get: operations["get_rhythm_result_api_v1_projects__project_id__rhythm_results__result_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -797,6 +899,23 @@ export interface paths {
         put?: never;
         /** Snap Rhythm Position */
         post: operations["snap_rhythm_position_api_v1_projects__project_id__rhythm_snap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Rhythm Command */
+        post: operations["undo_rhythm_command_api_v1_projects__project_id__rhythm_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -875,6 +994,40 @@ export interface paths {
         put?: never;
         /** Undo */
         post: operations["undo_api_v1_projects__project_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rhythm-activations/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rhythm Activation Range */
+        get: operations["get_rhythm_activation_range_api_v1_rhythm_activations__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rhythm-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rhythm Modules */
+        get: operations["list_rhythm_modules_api_v1_rhythm_modules_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -962,6 +1115,29 @@ export interface components {
              */
             type: "add_marker";
         };
+        /** AddMeterRegionOp */
+        AddMeterRegionOp: {
+            /**
+             * Denominator
+             * @description Positive meter denominator
+             */
+            denominator: number;
+            /** @default quarter */
+            display_tempo_unit: components["schemas"]["MeterTempoUnit"];
+            /** Grouping */
+            grouping: number[];
+            /**
+             * Numerator
+             * @description Positive meter numerator
+             */
+            numerator: number;
+            start: components["schemas"]["MusicalPosition"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_meter_region";
+        };
         /**
          * AddMusicalLoopOp
          * @description Create a loop anchored to exact musical positions (M3.13 §15.3).
@@ -985,6 +1161,40 @@ export interface components {
              * @enum {string}
              */
             type: "add_musical_loop";
+        };
+        /** AddPulseOp */
+        AddPulseOp: {
+            /**
+             * Link Anchor
+             * @default true
+             */
+            link_anchor: boolean;
+            /** @default beat */
+            role: components["schemas"]["PulseRole"];
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_pulse";
+        };
+        /** AddTempoAnchorOp */
+        AddTempoAnchorOp: {
+            musical_position: components["schemas"]["MusicalPosition"];
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_tempo_anchor";
         };
         /**
          * AnchorLockState
@@ -1150,7 +1360,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["SetCountInOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["SetCountInOp"] | components["schemas"]["SelectRhythmResultOp"] | components["schemas"]["SelectRhythmBranchOp"] | components["schemas"]["SetSnapModeOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
         };
         /**
          * CommandResult
@@ -1544,6 +1754,58 @@ export interface components {
              */
             type: "delete_marker";
         };
+        /** DeleteMeterRegionOp */
+        DeleteMeterRegionOp: {
+            /**
+             * Region Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            region_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_meter_region";
+        };
+        /** DeletePulseOp */
+        DeletePulseOp: {
+            /**
+             * Force Locked
+             * @default false
+             */
+            force_locked: boolean;
+            /**
+             * Pulse Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            pulse_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_pulse";
+        };
+        /** DeleteTempoAnchorOp */
+        DeleteTempoAnchorOp: {
+            /**
+             * Anchor Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            anchor_id: string;
+            /**
+             * Force Locked
+             * @default false
+             */
+            force_locked: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_tempo_anchor";
+        };
         /**
          * DeviceKind
          * @description Kind of analysis device.
@@ -1794,11 +2056,6 @@ export interface components {
             api_version: number;
             /** Status */
             status: string;
-        };
-        /** HistoryRequest */
-        HistoryRequest: {
-            /** Base Revision */
-            base_revision: number;
         };
         /** ImportListResponse */
         ImportListResponse: {
@@ -2176,6 +2433,57 @@ export interface components {
             mode: string;
             /** Right Channel */
             right_channel: number;
+        };
+        /** MovePulseOp */
+        MovePulseOp: {
+            /**
+             * Force Locked
+             * @default false
+             */
+            force_locked: boolean;
+            /**
+             * Pulse Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            pulse_id: string;
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "move_pulse";
+        };
+        /** MoveTempoAnchorOp */
+        MoveTempoAnchorOp: {
+            /**
+             * Anchor Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            anchor_id: string;
+            /**
+             * Axis
+             * @enum {string}
+             */
+            axis: "source" | "musical";
+            /**
+             * Force Locked
+             * @default false
+             */
+            force_locked: boolean;
+            musical_position?: components["schemas"]["MusicalPosition"] | null;
+            /** Source Frame */
+            source_frame?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "move_tempo_anchor";
         };
         /**
          * MusicalInterval
@@ -2624,6 +2932,31 @@ export interface components {
          * @enum {string}
          */
         QualificationStatus: "untested" | "qualified" | "failed";
+        /** ReinterpretTempoOp */
+        ReinterpretTempoOp: {
+            /**
+             * End Anchor Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            end_anchor_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "half_time" | "double_time";
+            /**
+             * Start Anchor Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            start_anchor_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reinterpret_tempo";
+        };
         /**
          * ResultSetDetail
          * @description A result set with its stems and run provenance (spec §10.1.6).
@@ -2703,6 +3036,114 @@ export interface components {
          */
         ReviewState: "unreviewed" | "accepted" | "corrected";
         /**
+         * RhythmBranchRecord
+         * @description An editable rhythm grid derived from an automatic result (§3.9).
+         *
+         *     The complete branch (pulses, anchors, meter regions) is persisted as
+         *     one record. Source frames remain authoritative for audio; this record
+         *     only adds the musical mapping and notation state.
+         */
+        RhythmBranchRecord: {
+            bar_origin: components["schemas"]["BarOriginState"];
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            grid_validity: components["schemas"]["GridValidity"];
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** Meter Regions */
+            meter_regions?: components["schemas"]["MeterRegion"][];
+            /** Parent Automatic Result Id */
+            parent_automatic_result_id?: string | null;
+            /**
+             * Project Id
+             * @description UUID identifier, serialized as a string
+             */
+            project_id: string;
+            /** Pulses */
+            pulses?: components["schemas"]["RhythmPulse"][];
+            /** Review Summary */
+            review_summary?: {
+                [key: string]: number;
+            };
+            /**
+             * Revision
+             * @description Nonnegative integer revision
+             * @default 0
+             */
+            revision: number;
+            /**
+             * Source Duration Frames
+             * @description Project duration used to bound tempo anchors
+             */
+            source_duration_frames: number;
+            /** Tempo Anchors */
+            tempo_anchors?: components["schemas"]["TempoAnchor"][];
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
+        };
+        /** RhythmBranchSummary */
+        RhythmBranchSummary: {
+            /** Grid Validity */
+            grid_validity: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Meter Region Count */
+            meter_region_count: number;
+            /** Parent Automatic Result Id */
+            parent_automatic_result_id: string | null;
+            /** Pulse Count */
+            pulse_count: number;
+            /** Revision */
+            revision: number;
+            /** Tempo Anchor Count */
+            tempo_anchor_count: number;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** RhythmCommandRequest */
+        RhythmCommandRequest: {
+            /**
+             * Base Revision
+             * @description Nonnegative integer revision
+             */
+            base_revision: number;
+            /**
+             * Command Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            command_id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Op */
+            op: components["schemas"]["AddPulseOp"] | components["schemas"]["MovePulseOp"] | components["schemas"]["DeletePulseOp"] | components["schemas"]["SetDownbeatOp"] | components["schemas"]["AddTempoAnchorOp"] | components["schemas"]["MoveTempoAnchorOp"] | components["schemas"]["DeleteTempoAnchorOp"] | components["schemas"]["SetAnchorLockOp"] | components["schemas"]["AddMeterRegionOp"] | components["schemas"]["UpdateMeterRegionOp"] | components["schemas"]["DeleteMeterRegionOp"] | components["schemas"]["SetReviewStateOp"] | components["schemas"]["SetBarOriginOp"] | components["schemas"]["ReinterpretTempoOp"];
+        };
+        /** RhythmCommandResult */
+        RhythmCommandResult: {
+            branch: components["schemas"]["RhythmBranchRecord"];
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /**
+             * Revision
+             * @description Nonnegative integer revision
+             */
+            revision: number;
+        };
+        /**
          * RhythmDisplayMode
          * @description Whether the project shows the automatic result or an edited branch.
          * @enum {string}
@@ -2739,11 +3180,24 @@ export interface components {
             tempo_anchors: components["schemas"]["TempoAnchor"][];
         };
         /**
+         * RhythmModuleId
+         * @enum {string}
+         */
+        RhythmModuleId: "rhythm.activation_inference.v1" | "rhythm.pulse_decoding.v1" | "rhythm.tempo_map.v1" | "rhythm.meter_inference.v1" | "rhythm.analyze.v1";
+        /**
          * RhythmOrigin
          * @description Provenance of an editable rhythm object.
          * @enum {string}
          */
         RhythmOrigin: "automatic" | "manual";
+        /** RhythmPipelineStage */
+        RhythmPipelineStage: {
+            /** Description */
+            description: string;
+            module_id: components["schemas"]["RhythmModuleId"];
+            /** Requires */
+            requires?: components["schemas"]["RhythmModuleId"][];
+        };
         /**
          * RhythmPulse
          * @description One beat/downbeat-like event in source time (§3.5).
@@ -2775,6 +3229,36 @@ export interface components {
             /** Tempo Anchor Id */
             tempo_anchor_id?: string | null;
         };
+        /** RhythmResultSummary */
+        RhythmResultSummary: {
+            /** Accepted Count */
+            accepted_count: number;
+            /**
+             * Activation Artifact Id
+             * Format: uuid
+             */
+            activation_artifact_id: string;
+            /** Candidate Count */
+            candidate_count: number;
+            /** Created At */
+            created_at: string;
+            /** Decoder Profile Id */
+            decoder_profile_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Stage */
+            stage: string;
+            /** Status */
+            status: string;
+        };
         /**
          * RuntimeJobResponse
          * @description The media job in flight (or the queue depth when only queued work exists).
@@ -2805,6 +3289,32 @@ export interface components {
             media_worker?: components["schemas"]["ProcessStatsResponse"] | null;
             /** Separation Elapsed Seconds */
             separation_elapsed_seconds?: number | null;
+        };
+        /**
+         * SelectRhythmBranchOp
+         * @description Select the active editable branch / Auto vs Edited (M3.17 §19.6).
+         */
+        SelectRhythmBranchOp: {
+            /** Branch Id */
+            branch_id?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "select_rhythm_branch";
+        };
+        /**
+         * SelectRhythmResultOp
+         * @description Select the active automatic rhythm result (M3.17 §19.6).
+         */
+        SelectRhythmResultOp: {
+            /** Result Id */
+            result_id?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "select_rhythm_result";
         };
         /** SelectStreamRequest */
         SelectStreamRequest: {
@@ -2879,6 +3389,40 @@ export interface components {
              */
             type: "set_active_result_set";
         };
+        /** SetAnchorLockOp */
+        SetAnchorLockOp: {
+            /**
+             * Anchor Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            anchor_id: string;
+            lock_state: components["schemas"]["AnchorLockState"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_anchor_lock";
+        };
+        /** SetBarOriginOp */
+        SetBarOriginOp: {
+            /**
+             * Clear Pickup
+             * @default false
+             */
+            clear_pickup: boolean;
+            /** First Bar Number */
+            first_bar_number?: number | null;
+            /** First Downbeat Source */
+            first_downbeat_source?: number | null;
+            /** Pickup Start Source */
+            pickup_start_source?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_bar_origin";
+        };
         /**
          * SetCountInOp
          * @description Patch persisted count-in preferences (M3.15 §17.1).
@@ -2900,6 +3444,22 @@ export interface components {
              * @enum {string}
              */
             type: "set_display";
+        };
+        /** SetDownbeatOp */
+        SetDownbeatOp: {
+            /** Is Downbeat */
+            is_downbeat: boolean;
+            /**
+             * Pulse Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            pulse_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_downbeat";
         };
         /** SetFollowPlayheadOp */
         SetFollowPlayheadOp: {
@@ -3033,6 +3593,26 @@ export interface components {
              */
             type: "set_position";
         };
+        /** SetReviewStateOp */
+        SetReviewStateOp: {
+            review_state: components["schemas"]["ReviewState"];
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "pulse" | "meter_region";
+            /**
+             * Target Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            target_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_review_state";
+        };
         /**
          * SetSelectionOp
          * @description Both null clears the selection; present together otherwise.
@@ -3047,6 +3627,15 @@ export interface components {
              * @enum {string}
              */
             type: "set_selection";
+        };
+        /** SetSnapModeOp */
+        SetSnapModeOp: {
+            mode: components["schemas"]["SnapMode-Input"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_snap_mode";
         };
         /**
          * SetTrackSettingsOp
@@ -3347,6 +3936,27 @@ export interface components {
              */
             type: "update_marker";
         };
+        /** UpdateMeterRegionOp */
+        UpdateMeterRegionOp: {
+            /** Denominator */
+            denominator?: number | null;
+            display_tempo_unit?: components["schemas"]["MeterTempoUnit"] | null;
+            /** Grouping */
+            grouping?: number[] | null;
+            /** Numerator */
+            numerator?: number | null;
+            /**
+             * Region Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            region_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update_meter_region";
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -3502,6 +4112,16 @@ export interface components {
             monitoring_volume: number;
             selection?: components["schemas"]["SelectionRange"] | null;
             viewport?: components["schemas"]["ViewportState"] | null;
+        };
+        /** HistoryRequest */
+        basseparate__api__command_routes__HistoryRequest: {
+            /** Base Revision */
+            base_revision: number;
+        };
+        /** HistoryRequest */
+        basseparate__api__rhythm_routes__HistoryRequest: {
+            /** Base Revision */
+            base_revision: number;
         };
         /**
          * SnapMode
@@ -4800,7 +5420,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["HistoryRequest"];
+                "application/json": components["schemas"]["basseparate__api__command_routes__HistoryRequest"];
             };
         };
         responses: {
@@ -4887,6 +5507,104 @@ export interface operations {
             };
         };
     };
+    list_rhythm_branches_api_v1_projects__project_id__rhythm_branches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmBranchSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rhythm_branch_api_v1_projects__project_id__rhythm_branches__branch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmBranchRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_rhythm_command_api_v1_projects__project_id__rhythm_commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RhythmCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmCommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_rhythm_grid_api_v1_projects__project_id__rhythm_grid_get: {
         parameters: {
             query?: {
@@ -4922,6 +5640,104 @@ export interface operations {
             };
         };
     };
+    redo_rhythm_command_api_v1_projects__project_id__rhythm_redo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["basseparate__api__rhythm_routes__HistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmCommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rhythm_results_api_v1_projects__project_id__rhythm_results_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmResultSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rhythm_result_api_v1_projects__project_id__rhythm_results__result_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmResultSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     snap_rhythm_position_api_v1_projects__project_id__rhythm_snap_post: {
         parameters: {
             query?: never;
@@ -4944,6 +5760,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SnapResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_rhythm_command_api_v1_projects__project_id__rhythm_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["basseparate__api__rhythm_routes__HistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmCommandResult"];
                 };
             };
             /** @description Validation Error */
@@ -5065,7 +5916,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["HistoryRequest"];
+                "application/json": components["schemas"]["basseparate__api__command_routes__HistoryRequest"];
             };
         };
         responses: {
@@ -5085,6 +5936,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rhythm_activation_range_api_v1_rhythm_activations__artifact_id__get: {
+        parameters: {
+            query?: {
+                kind?: string;
+                start_frame?: number;
+                count?: number;
+            };
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rhythm_modules_api_v1_rhythm_modules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmPipelineStage"][];
                 };
             };
         };

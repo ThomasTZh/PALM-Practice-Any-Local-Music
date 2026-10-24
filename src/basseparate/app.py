@@ -604,6 +604,9 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.repository = ProjectRepository(paths.database_path)
         app.state.import_repository = ImportRepository(paths.database_path)
         app.state.rhythm_repository = RhythmRepository(paths.database_path)
+        from basseparate.rhythm.commands import RhythmCommandService
+
+        app.state.rhythm_command_service = RhythmCommandService(paths.database_path)
         app.state.upload_manager = UploadManager(
             uploads_dir=paths.runtime / "uploads",
             chunk_size=config.import_chunk_bytes,

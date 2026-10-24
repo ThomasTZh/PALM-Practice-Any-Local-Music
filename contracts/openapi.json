@@ -109,6 +109,54 @@
         "title": "AddMarkerOp",
         "type": "object"
       },
+      "AddMeterRegionOp": {
+        "properties": {
+          "denominator": {
+            "description": "Positive meter denominator",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Denominator",
+            "type": "integer"
+          },
+          "display_tempo_unit": {
+            "$ref": "#/components/schemas/MeterTempoUnit",
+            "default": "quarter"
+          },
+          "grouping": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Grouping",
+            "type": "array"
+          },
+          "numerator": {
+            "description": "Positive meter numerator",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Numerator",
+            "type": "integer"
+          },
+          "start": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "type": {
+            "const": "add_meter_region",
+            "default": "add_meter_region",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "numerator",
+          "denominator",
+          "grouping"
+        ],
+        "title": "AddMeterRegionOp",
+        "type": "object"
+      },
       "AddMusicalLoopOp": {
         "description": "Create a loop anchored to exact musical positions (M3.13 \u00a715.3).",
         "properties": {
@@ -173,6 +221,63 @@
           "end_musical"
         ],
         "title": "AddMusicalLoopOp",
+        "type": "object"
+      },
+      "AddPulseOp": {
+        "properties": {
+          "link_anchor": {
+            "default": true,
+            "title": "Link Anchor",
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/PulseRole",
+            "default": "beat"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "type": {
+            "const": "add_pulse",
+            "default": "add_pulse",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_frame"
+        ],
+        "title": "AddPulseOp",
+        "type": "object"
+      },
+      "AddTempoAnchorOp": {
+        "properties": {
+          "musical_position": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "type": {
+            "const": "add_tempo_anchor",
+            "default": "add_tempo_anchor",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_frame",
+          "musical_position"
+        ],
+        "title": "AddTempoAnchorOp",
         "type": "object"
       },
       "AnchorLockState": {
@@ -589,6 +694,8 @@
                 "delete_loop": "#/components/schemas/DeleteLoopOp",
                 "delete_marker": "#/components/schemas/DeleteMarkerOp",
                 "duplicate_loop": "#/components/schemas/DuplicateLoopOp",
+                "select_rhythm_branch": "#/components/schemas/SelectRhythmBranchOp",
+                "select_rhythm_result": "#/components/schemas/SelectRhythmResultOp",
                 "set_active_loop": "#/components/schemas/SetActiveLoopOp",
                 "set_active_result_set": "#/components/schemas/SetActiveResultSetOp",
                 "set_count_in": "#/components/schemas/SetCountInOp",
@@ -603,6 +710,7 @@
                 "set_playback_speed": "#/components/schemas/SetPlaybackSpeedOp",
                 "set_position": "#/components/schemas/SetPositionOp",
                 "set_selection": "#/components/schemas/SetSelectionOp",
+                "set_snap_mode": "#/components/schemas/SetSnapModeOp",
                 "set_track_settings": "#/components/schemas/SetTrackSettingsOp",
                 "set_viewport": "#/components/schemas/SetViewportOp",
                 "update_loop": "#/components/schemas/UpdateLoopOp",
@@ -661,6 +769,15 @@
               },
               {
                 "$ref": "#/components/schemas/SetCountInOp"
+              },
+              {
+                "$ref": "#/components/schemas/SelectRhythmResultOp"
+              },
+              {
+                "$ref": "#/components/schemas/SelectRhythmBranchOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetSnapModeOp"
               },
               {
                 "$ref": "#/components/schemas/AddLoopOp"
@@ -1527,6 +1644,79 @@
         "title": "DeleteMarkerOp",
         "type": "object"
       },
+      "DeleteMeterRegionOp": {
+        "properties": {
+          "region_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Region Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "delete_meter_region",
+            "default": "delete_meter_region",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "region_id"
+        ],
+        "title": "DeleteMeterRegionOp",
+        "type": "object"
+      },
+      "DeletePulseOp": {
+        "properties": {
+          "force_locked": {
+            "default": false,
+            "title": "Force Locked",
+            "type": "boolean"
+          },
+          "pulse_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Pulse Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "delete_pulse",
+            "default": "delete_pulse",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pulse_id"
+        ],
+        "title": "DeletePulseOp",
+        "type": "object"
+      },
+      "DeleteTempoAnchorOp": {
+        "properties": {
+          "anchor_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Anchor Id",
+            "type": "string"
+          },
+          "force_locked": {
+            "default": false,
+            "title": "Force Locked",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "delete_tempo_anchor",
+            "default": "delete_tempo_anchor",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor_id"
+        ],
+        "title": "DeleteTempoAnchorOp",
+        "type": "object"
+      },
       "DeviceKind": {
         "description": "Kind of analysis device.",
         "enum": [
@@ -2116,20 +2306,6 @@
           "api_version"
         ],
         "title": "HealthResponse",
-        "type": "object"
-      },
-      "HistoryRequest": {
-        "properties": {
-          "base_revision": {
-            "minimum": 0.0,
-            "title": "Base Revision",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "base_revision"
-        ],
-        "title": "HistoryRequest",
         "type": "object"
       },
       "ImportListResponse": {
@@ -3009,6 +3185,99 @@
           "right_channel"
         ],
         "title": "MonitoringInfo",
+        "type": "object"
+      },
+      "MovePulseOp": {
+        "properties": {
+          "force_locked": {
+            "default": false,
+            "title": "Force Locked",
+            "type": "boolean"
+          },
+          "pulse_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Pulse Id",
+            "type": "string"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "type": {
+            "const": "move_pulse",
+            "default": "move_pulse",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pulse_id",
+          "source_frame"
+        ],
+        "title": "MovePulseOp",
+        "type": "object"
+      },
+      "MoveTempoAnchorOp": {
+        "properties": {
+          "anchor_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Anchor Id",
+            "type": "string"
+          },
+          "axis": {
+            "enum": [
+              "source",
+              "musical"
+            ],
+            "title": "Axis",
+            "type": "string"
+          },
+          "force_locked": {
+            "default": false,
+            "title": "Force Locked",
+            "type": "boolean"
+          },
+          "musical_position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MusicalPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_frame": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Frame"
+          },
+          "type": {
+            "const": "move_tempo_anchor",
+            "default": "move_tempo_anchor",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor_id",
+          "axis"
+        ],
+        "title": "MoveTempoAnchorOp",
         "type": "object"
       },
       "MusicalInterval": {
@@ -4032,6 +4301,43 @@
         "title": "QualificationStatus",
         "type": "string"
       },
+      "ReinterpretTempoOp": {
+        "properties": {
+          "end_anchor_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "End Anchor Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "half_time",
+              "double_time"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "start_anchor_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Start Anchor Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "reinterpret_tempo",
+            "default": "reinterpret_tempo",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_anchor_id",
+          "end_anchor_id",
+          "mode"
+        ],
+        "title": "ReinterpretTempoOp",
+        "type": "object"
+      },
       "ResultSetDetail": {
         "description": "A result set with its stems and run provenance (spec \u00a710.1.6).",
         "properties": {
@@ -4186,6 +4492,287 @@
         "title": "ReviewState",
         "type": "string"
       },
+      "RhythmBranchRecord": {
+        "description": "An editable rhythm grid derived from an automatic result (\u00a73.9).\n\nThe complete branch (pulses, anchors, meter regions) is persisted as\none record. Source frames remain authoritative for audio; this record\nonly adds the musical mapping and notation state.",
+        "properties": {
+          "bar_origin": {
+            "$ref": "#/components/schemas/BarOriginState"
+          },
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "grid_validity": {
+            "$ref": "#/components/schemas/GridValidity"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "meter_regions": {
+            "items": {
+              "$ref": "#/components/schemas/MeterRegion"
+            },
+            "maxItems": 1000,
+            "title": "Meter Regions",
+            "type": "array"
+          },
+          "parent_automatic_result_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Automatic Result Id"
+          },
+          "project_id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "pulses": {
+            "items": {
+              "$ref": "#/components/schemas/RhythmPulse"
+            },
+            "maxItems": 50000,
+            "title": "Pulses",
+            "type": "array"
+          },
+          "review_summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Review Summary",
+            "type": "object"
+          },
+          "revision": {
+            "default": 0,
+            "description": "Nonnegative integer revision",
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_duration_frames": {
+            "description": "Project duration used to bound tempo anchors",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Duration Frames",
+            "type": "integer"
+          },
+          "tempo_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/TempoAnchor"
+            },
+            "maxItems": 10000,
+            "title": "Tempo Anchors",
+            "type": "array"
+          },
+          "updated_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "source_duration_frames",
+          "bar_origin",
+          "grid_validity",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RhythmBranchRecord",
+        "type": "object"
+      },
+      "RhythmBranchSummary": {
+        "properties": {
+          "grid_validity": {
+            "title": "Grid Validity",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "meter_region_count": {
+            "title": "Meter Region Count",
+            "type": "integer"
+          },
+          "parent_automatic_result_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Automatic Result Id"
+          },
+          "pulse_count": {
+            "title": "Pulse Count",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "tempo_anchor_count": {
+            "title": "Tempo Anchor Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "parent_automatic_result_id",
+          "grid_validity",
+          "pulse_count",
+          "tempo_anchor_count",
+          "meter_region_count",
+          "updated_at"
+        ],
+        "title": "RhythmBranchSummary",
+        "type": "object"
+      },
+      "RhythmCommandRequest": {
+        "properties": {
+          "base_revision": {
+            "description": "Nonnegative integer revision",
+            "minimum": 0.0,
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "command_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "op": {
+            "discriminator": {
+              "mapping": {
+                "add_meter_region": "#/components/schemas/AddMeterRegionOp",
+                "add_pulse": "#/components/schemas/AddPulseOp",
+                "add_tempo_anchor": "#/components/schemas/AddTempoAnchorOp",
+                "delete_meter_region": "#/components/schemas/DeleteMeterRegionOp",
+                "delete_pulse": "#/components/schemas/DeletePulseOp",
+                "delete_tempo_anchor": "#/components/schemas/DeleteTempoAnchorOp",
+                "move_pulse": "#/components/schemas/MovePulseOp",
+                "move_tempo_anchor": "#/components/schemas/MoveTempoAnchorOp",
+                "reinterpret_tempo": "#/components/schemas/ReinterpretTempoOp",
+                "set_anchor_lock": "#/components/schemas/SetAnchorLockOp",
+                "set_bar_origin": "#/components/schemas/SetBarOriginOp",
+                "set_downbeat": "#/components/schemas/SetDownbeatOp",
+                "set_review_state": "#/components/schemas/SetReviewStateOp",
+                "update_meter_region": "#/components/schemas/UpdateMeterRegionOp"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AddPulseOp"
+              },
+              {
+                "$ref": "#/components/schemas/MovePulseOp"
+              },
+              {
+                "$ref": "#/components/schemas/DeletePulseOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetDownbeatOp"
+              },
+              {
+                "$ref": "#/components/schemas/AddTempoAnchorOp"
+              },
+              {
+                "$ref": "#/components/schemas/MoveTempoAnchorOp"
+              },
+              {
+                "$ref": "#/components/schemas/DeleteTempoAnchorOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetAnchorLockOp"
+              },
+              {
+                "$ref": "#/components/schemas/AddMeterRegionOp"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateMeterRegionOp"
+              },
+              {
+                "$ref": "#/components/schemas/DeleteMeterRegionOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetReviewStateOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetBarOriginOp"
+              },
+              {
+                "$ref": "#/components/schemas/ReinterpretTempoOp"
+              }
+            ],
+            "title": "Op"
+          }
+        },
+        "required": [
+          "command_id",
+          "idempotency_key",
+          "base_revision",
+          "op"
+        ],
+        "title": "RhythmCommandRequest",
+        "type": "object"
+      },
+      "RhythmCommandResult": {
+        "properties": {
+          "branch": {
+            "$ref": "#/components/schemas/RhythmBranchRecord"
+          },
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "revision": {
+            "description": "Nonnegative integer revision",
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "branch",
+          "can_undo",
+          "can_redo"
+        ],
+        "title": "RhythmCommandResult",
+        "type": "object"
+      },
       "RhythmDisplayMode": {
         "description": "Whether the project shows the automatic result or an edited branch.",
         "enum": [
@@ -4271,6 +4858,17 @@
         "title": "RhythmGridResponse",
         "type": "object"
       },
+      "RhythmModuleId": {
+        "enum": [
+          "rhythm.activation_inference.v1",
+          "rhythm.pulse_decoding.v1",
+          "rhythm.tempo_map.v1",
+          "rhythm.meter_inference.v1",
+          "rhythm.analyze.v1"
+        ],
+        "title": "RhythmModuleId",
+        "type": "string"
+      },
       "RhythmOrigin": {
         "description": "Provenance of an editable rhythm object.",
         "enum": [
@@ -4279,6 +4877,30 @@
         ],
         "title": "RhythmOrigin",
         "type": "string"
+      },
+      "RhythmPipelineStage": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "module_id": {
+            "$ref": "#/components/schemas/RhythmModuleId"
+          },
+          "requires": {
+            "items": {
+              "$ref": "#/components/schemas/RhythmModuleId"
+            },
+            "title": "Requires",
+            "type": "array"
+          }
+        },
+        "required": [
+          "module_id",
+          "description"
+        ],
+        "title": "RhythmPipelineStage",
+        "type": "object"
       },
       "RhythmPulse": {
         "description": "One beat/downbeat-like event in source time (\u00a73.5).",
@@ -4351,6 +4973,62 @@
           "origin"
         ],
         "title": "RhythmPulse",
+        "type": "object"
+      },
+      "RhythmResultSummary": {
+        "properties": {
+          "accepted_count": {
+            "title": "Accepted Count",
+            "type": "integer"
+          },
+          "activation_artifact_id": {
+            "format": "uuid",
+            "title": "Activation Artifact Id",
+            "type": "string"
+          },
+          "candidate_count": {
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decoder_profile_id": {
+            "title": "Decoder Profile Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "activation_artifact_id",
+          "stage",
+          "status",
+          "decoder_profile_id",
+          "accepted_count",
+          "candidate_count",
+          "created_at"
+        ],
+        "title": "RhythmResultSummary",
         "type": "object"
       },
       "RuntimeJobResponse": {
@@ -4461,6 +5139,58 @@
           "api"
         ],
         "title": "RuntimeStatusResponse",
+        "type": "object"
+      },
+      "SelectRhythmBranchOp": {
+        "description": "Select the active editable branch / Auto vs Edited (M3.17 \u00a719.6).",
+        "properties": {
+          "branch_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "type": {
+            "const": "select_rhythm_branch",
+            "default": "select_rhythm_branch",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SelectRhythmBranchOp",
+        "type": "object"
+      },
+      "SelectRhythmResultOp": {
+        "description": "Select the active automatic rhythm result (M3.17 \u00a719.6).",
+        "properties": {
+          "result_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Id"
+          },
+          "type": {
+            "const": "select_rhythm_result",
+            "default": "select_rhythm_result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SelectRhythmResultOp",
         "type": "object"
       },
       "SelectStreamRequest": {
@@ -4583,6 +5313,88 @@
         "title": "SetActiveResultSetOp",
         "type": "object"
       },
+      "SetAnchorLockOp": {
+        "properties": {
+          "anchor_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Anchor Id",
+            "type": "string"
+          },
+          "lock_state": {
+            "$ref": "#/components/schemas/AnchorLockState"
+          },
+          "type": {
+            "const": "set_anchor_lock",
+            "default": "set_anchor_lock",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor_id",
+          "lock_state"
+        ],
+        "title": "SetAnchorLockOp",
+        "type": "object"
+      },
+      "SetBarOriginOp": {
+        "properties": {
+          "clear_pickup": {
+            "default": false,
+            "title": "Clear Pickup",
+            "type": "boolean"
+          },
+          "first_bar_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Bar Number"
+          },
+          "first_downbeat_source": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Downbeat Source"
+          },
+          "pickup_start_source": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pickup Start Source"
+          },
+          "type": {
+            "const": "set_bar_origin",
+            "default": "set_bar_origin",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SetBarOriginOp",
+        "type": "object"
+      },
       "SetCountInOp": {
         "description": "Patch persisted count-in preferences (M3.15 \u00a717.1).",
         "properties": {
@@ -4632,6 +5444,32 @@
           "channel_display"
         ],
         "title": "SetDisplayOp",
+        "type": "object"
+      },
+      "SetDownbeatOp": {
+        "properties": {
+          "is_downbeat": {
+            "title": "Is Downbeat",
+            "type": "boolean"
+          },
+          "pulse_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Pulse Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "set_downbeat",
+            "default": "set_downbeat",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pulse_id",
+          "is_downbeat"
+        ],
+        "title": "SetDownbeatOp",
         "type": "object"
       },
       "SetFollowPlayheadOp": {
@@ -4858,6 +5696,40 @@
         "title": "SetPositionOp",
         "type": "object"
       },
+      "SetReviewStateOp": {
+        "properties": {
+          "review_state": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
+          "target": {
+            "enum": [
+              "pulse",
+              "meter_region"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "set_review_state",
+            "default": "set_review_state",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "target_id",
+          "review_state"
+        ],
+        "title": "SetReviewStateOp",
+        "type": "object"
+      },
       "SetSelectionOp": {
         "description": "Both null clears the selection; present together otherwise.",
         "properties": {
@@ -4897,6 +5769,24 @@
           }
         },
         "title": "SetSelectionOp",
+        "type": "object"
+      },
+      "SetSnapModeOp": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/SnapMode-Input"
+          },
+          "type": {
+            "const": "set_snap_mode",
+            "default": "set_snap_mode",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "SetSnapModeOp",
         "type": "object"
       },
       "SetTrackSettingsOp": {
@@ -5593,6 +6483,81 @@
         "title": "UpdateMarkerOp",
         "type": "object"
       },
+      "UpdateMeterRegionOp": {
+        "properties": {
+          "denominator": {
+            "anyOf": [
+              {
+                "description": "Positive meter denominator",
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denominator"
+          },
+          "display_tempo_unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeterTempoUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grouping": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grouping"
+          },
+          "numerator": {
+            "anyOf": [
+              {
+                "description": "Positive meter numerator",
+                "maximum": 256.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numerator"
+          },
+          "region_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Region Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "update_meter_region",
+            "default": "update_meter_region",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "region_id"
+        ],
+        "title": "UpdateMeterRegionOp",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -5894,6 +6859,33 @@
           }
         },
         "title": "WorkingState",
+        "type": "object"
+      },
+      "basseparate__api__command_routes__HistoryRequest": {
+        "properties": {
+          "base_revision": {
+            "minimum": 0.0,
+            "title": "Base Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_revision"
+        ],
+        "title": "HistoryRequest",
+        "type": "object"
+      },
+      "basseparate__api__rhythm_routes__HistoryRequest": {
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_revision"
+        ],
+        "title": "HistoryRequest",
         "type": "object"
       },
       "basseparate__domain__rhythm__SnapMode": {
@@ -7620,7 +8612,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/HistoryRequest"
+                "$ref": "#/components/schemas/basseparate__api__command_routes__HistoryRequest"
               }
             }
           },
@@ -7745,6 +8737,150 @@
         "summary": "Get Result Set Detail"
       }
     },
+    "/api/v1/projects/{project_id}/rhythm-branches": {
+      "get": {
+        "operationId": "list_rhythm_branches_api_v1_projects__project_id__rhythm_branches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RhythmBranchSummary"
+                  },
+                  "title": "Response List Rhythm Branches Api V1 Projects  Project Id  Rhythm Branches Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rhythm Branches"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-branches/{branch_id}": {
+      "get": {
+        "operationId": "get_rhythm_branch_api_v1_projects__project_id__rhythm_branches__branch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "branch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Branch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RhythmBranchRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rhythm Branch"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-commands": {
+      "post": {
+        "operationId": "apply_rhythm_command_api_v1_projects__project_id__rhythm_commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RhythmCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RhythmCommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Rhythm Command"
+      }
+    },
     "/api/v1/projects/{project_id}/rhythm-grid": {
       "get": {
         "operationId": "get_rhythm_grid_api_v1_projects__project_id__rhythm_grid_get",
@@ -7828,6 +8964,150 @@
         "summary": "Get Rhythm Grid"
       }
     },
+    "/api/v1/projects/{project_id}/rhythm-redo": {
+      "post": {
+        "operationId": "redo_rhythm_command_api_v1_projects__project_id__rhythm_redo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/basseparate__api__rhythm_routes__HistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RhythmCommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redo Rhythm Command"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-results": {
+      "get": {
+        "operationId": "list_rhythm_results_api_v1_projects__project_id__rhythm_results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RhythmResultSummary"
+                  },
+                  "title": "Response List Rhythm Results Api V1 Projects  Project Id  Rhythm Results Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rhythm Results"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-results/{result_id}": {
+      "get": {
+        "operationId": "get_rhythm_result_api_v1_projects__project_id__rhythm_results__result_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "result_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Result Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RhythmResultSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rhythm Result"
+      }
+    },
     "/api/v1/projects/{project_id}/rhythm-snap": {
       "post": {
         "operationId": "snap_rhythm_position_api_v1_projects__project_id__rhythm_snap_post",
@@ -7876,6 +9156,56 @@
           }
         },
         "summary": "Snap Rhythm Position"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-undo": {
+      "post": {
+        "operationId": "undo_rhythm_command_api_v1_projects__project_id__rhythm_undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/basseparate__api__rhythm_routes__HistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RhythmCommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Rhythm Command"
       }
     },
     "/api/v1/projects/{project_id}/runs": {
@@ -8033,7 +9363,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/HistoryRequest"
+                "$ref": "#/components/schemas/basseparate__api__command_routes__HistoryRequest"
               }
             }
           },
@@ -8062,6 +9392,100 @@
           }
         },
         "summary": "Undo"
+      }
+    },
+    "/api/v1/rhythm-activations/{artifact_id}": {
+      "get": {
+        "operationId": "get_rhythm_activation_range_api_v1_rhythm_activations__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "beat",
+              "pattern": "^(beat|downbeat)$",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_frame",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Start Frame",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 128,
+              "exclusiveMinimum": 0,
+              "maximum": 4096,
+              "title": "Count",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rhythm Activation Range"
+      }
+    },
+    "/api/v1/rhythm-modules": {
+      "get": {
+        "operationId": "list_rhythm_modules_api_v1_rhythm_modules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RhythmPipelineStage"
+                  },
+                  "title": "Response List Rhythm Modules Api V1 Rhythm Modules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Rhythm Modules"
       }
     },
     "/api/v1/system": {

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Annotated, cast
+from typing import Annotated, NoReturn, cast
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
 
 from basseparate.api.errors import ApiError, ProjectNotFoundError
@@ -26,13 +26,22 @@ from basseparate.domain.rhythm import (
     RhythmPulse,
     TempoAnchor,
 )
+from basseparate.domain.rhythm_commands import RhythmCommandRequest, RhythmCommandResult
+from basseparate.domain.rhythm_pipeline import RhythmPipelineStage, module_catalog
 from basseparate.domain.snapping import SNAP_RADIUS_CSS_PX, SnapMode, SnapResult
-from basseparate.rhythm.commands import meter_map_for_branch, tempo_map_for_branch
+from basseparate.rhythm.commands import (
+    RhythmCommandConflict,
+    RhythmCommandError,
+    RhythmCommandService,
+    meter_map_for_branch,
+    tempo_map_for_branch,
+)
 from basseparate.rhythm.count_in import CountInError, build_count_in_plan
 from basseparate.rhythm.grid import GridError, derive_grid
 from basseparate.rhythm.metronome import MetronomeError, build_metronome_schedule
 from basseparate.rhythm.snapping import SnapError, snap_to_grid
 from basseparate.storage import ProjectRepository, RhythmRepository
+from basseparate.storage.repository import StaleRevisionError
 
 router = APIRouter(prefix="/api/v1")
 
@@ -58,6 +67,33 @@ def _projects(request: Request) -> ProjectRepository:
 
 def _rhythm(request: Request) -> RhythmRepository:
     return cast(RhythmRepository, request.app.state.rhythm_repository)
+
+
+class HistoryRequest(BaseModel):
+    base_revision: int
+
+
+class RhythmResultSummary(BaseModel):
+    id: uuid.UUID
+    run_id: uuid.UUID
+    activation_artifact_id: uuid.UUID
+    stage: str
+    status: str
+    decoder_profile_id: str
+    accepted_count: int
+    candidate_count: int
+    created_at: str
+
+
+class RhythmBranchSummary(BaseModel):
+    id: uuid.UUID
+    revision: int
+    parent_automatic_result_id: uuid.UUID | None
+    grid_validity: str
+    pulse_count: int
+    tempo_anchor_count: int
+    meter_region_count: int
+    updated_at: str
 
 
 class CountInPlanRequest(BaseModel):
@@ -306,3 +342,234 @@ async def get_count_in_plan(
             message=str(exc),
             status_code=422,
         ) from exc
+
+
+def _commands(request: Request) -> RhythmCommandService:
+    return cast(RhythmCommandService, request.app.state.rhythm_command_service)
+
+
+def _raise_rhythm_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, StaleRevisionError):
+        raise ApiError(
+            code="STALE_REVISION",
+            message="The project was modified elsewhere; reload it and retry",
+            status_code=409,
+            details={"current_revision": exc.current_revision},
+        ) from exc
+    if isinstance(exc, RhythmCommandConflict):
+        raise ApiError(
+            code="RHYTHM_COMMAND_CONFLICT",
+            message=str(exc),
+            status_code=409,
+            details={"current_revision": exc.current_revision}
+            if exc.current_revision is not None
+            else {},
+        ) from exc
+    if isinstance(exc, RhythmCommandError):
+        raise ApiError(
+            code="RHYTHM_COMMAND_INVALID",
+            message=str(exc),
+            status_code=422,
+        ) from exc
+    raise exc
+
+
+@router.post(
+    "/projects/{project_id}/rhythm-commands",
+    response_model=RhythmCommandResult,
+)
+async def apply_rhythm_command(
+    project_id: uuid.UUID, body: RhythmCommandRequest, request: Request
+) -> RhythmCommandResult:
+    try:
+        return await asyncio.to_thread(_commands(request).apply, project_id, body)
+    except Exception as exc:  # noqa: BLE001 - mapped to a typed API error
+        _raise_rhythm_error(exc)
+
+
+@router.post(
+    "/projects/{project_id}/rhythm-undo",
+    response_model=RhythmCommandResult,
+)
+async def undo_rhythm_command(
+    project_id: uuid.UUID, body: HistoryRequest, request: Request
+) -> RhythmCommandResult:
+    try:
+        return await asyncio.to_thread(_commands(request).undo, project_id, body.base_revision)
+    except Exception as exc:  # noqa: BLE001
+        _raise_rhythm_error(exc)
+
+
+@router.post(
+    "/projects/{project_id}/rhythm-redo",
+    response_model=RhythmCommandResult,
+)
+async def redo_rhythm_command(
+    project_id: uuid.UUID, body: HistoryRequest, request: Request
+) -> RhythmCommandResult:
+    try:
+        return await asyncio.to_thread(_commands(request).redo, project_id, body.base_revision)
+    except Exception as exc:  # noqa: BLE001
+        _raise_rhythm_error(exc)
+
+
+@router.get(
+    "/projects/{project_id}/rhythm-results",
+    response_model=list[RhythmResultSummary],
+)
+async def list_rhythm_results(project_id: uuid.UUID, request: Request) -> list[RhythmResultSummary]:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    results = await asyncio.to_thread(_rhythm(request).list_results_for_project, project_id)
+    return [
+        RhythmResultSummary(
+            id=result.id,
+            run_id=result.run_id,
+            activation_artifact_id=result.activation_artifact_id,
+            stage=result.stage.value,
+            status=result.status.value,
+            decoder_profile_id=result.decoder_profile.profile_id,
+            accepted_count=len(result.accepted_pulses),
+            candidate_count=len(result.candidate_pulses),
+            created_at=result.created_at.isoformat().replace("+00:00", "Z"),
+        )
+        for result in results
+    ]
+
+
+@router.get(
+    "/projects/{project_id}/rhythm-results/{result_id}",
+    response_model=RhythmResultSummary,
+)
+async def get_rhythm_result(
+    project_id: uuid.UUID, result_id: uuid.UUID, request: Request
+) -> RhythmResultSummary:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    result = await asyncio.to_thread(_rhythm(request).get_result, result_id)
+    if result is None or result.project_id != project_id:
+        raise ApiError(
+            code="RHYTHM_RESULT_NOT_FOUND",
+            message="The requested rhythm result does not exist",
+            status_code=404,
+        )
+    return RhythmResultSummary(
+        id=result.id,
+        run_id=result.run_id,
+        activation_artifact_id=result.activation_artifact_id,
+        stage=result.stage.value,
+        status=result.status.value,
+        decoder_profile_id=result.decoder_profile.profile_id,
+        accepted_count=len(result.accepted_pulses),
+        candidate_count=len(result.candidate_pulses),
+        created_at=result.created_at.isoformat().replace("+00:00", "Z"),
+    )
+
+
+@router.get(
+    "/projects/{project_id}/rhythm-branches",
+    response_model=list[RhythmBranchSummary],
+)
+async def list_rhythm_branches(
+    project_id: uuid.UUID, request: Request
+) -> list[RhythmBranchSummary]:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    branches = await asyncio.to_thread(_rhythm(request).list_branches_for_project, project_id)
+    return [
+        RhythmBranchSummary(
+            id=branch.id,
+            revision=branch.revision,
+            parent_automatic_result_id=branch.parent_automatic_result_id,
+            grid_validity=branch.grid_validity.value,
+            pulse_count=len(branch.pulses),
+            tempo_anchor_count=len(branch.tempo_anchors),
+            meter_region_count=len(branch.meter_regions),
+            updated_at=branch.updated_at.isoformat().replace("+00:00", "Z"),
+        )
+        for branch in branches
+    ]
+
+
+@router.get(
+    "/projects/{project_id}/rhythm-branches/{branch_id}",
+    response_model=RhythmBranchRecord,
+)
+async def get_rhythm_branch(
+    project_id: uuid.UUID, branch_id: uuid.UUID, request: Request
+) -> RhythmBranchRecord:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    branch = await asyncio.to_thread(_rhythm(request).get_branch, branch_id)
+    if branch is None or branch.project_id != project_id:
+        raise ApiError(
+            code="RHYTHM_BRANCH_NOT_FOUND",
+            message="The requested rhythm branch does not exist",
+            status_code=404,
+        )
+    return branch
+
+
+@router.get("/rhythm-activations/{artifact_id}")
+async def get_rhythm_activation_range(
+    artifact_id: uuid.UUID,
+    request: Request,
+    kind: Annotated[str, Query(pattern="^(beat|downbeat)$")] = "beat",
+    start_frame: Annotated[int, Query(ge=0)] = 0,
+    count: Annotated[int, Query(gt=0, le=4096)] = 128,
+) -> Response:
+    import numpy as np
+
+    from basseparate.rhythm.activations import RhythmActivationStore
+    from basseparate.storage.paths import resolve_storage_paths
+
+    paths = resolve_storage_paths(request.app.state.storage_paths.root)
+    artifact = await asyncio.to_thread(_rhythm(request).get_artifact, artifact_id)
+    if artifact is None:
+        raise ApiError(
+            code="RHYTHM_ACTIVATION_NOT_FOUND",
+            message="The requested activation artifact does not exist",
+            status_code=404,
+        )
+    store = RhythmActivationStore(paths.data / "rhythm")
+    directory = store.artifact_dir(artifact_id)
+    filename = "beat.npy" if kind == "beat" else "downbeat.npy"
+    path = directory / filename
+    if not path.is_file():
+        raise ApiError(
+            code="RHYTHM_ACTIVATION_MISSING",
+            message="The activation array is missing",
+            status_code=404,
+        )
+    try:
+        array = np.load(path, mmap_mode="r", allow_pickle=False)
+    except (OSError, ValueError) as exc:
+        raise ApiError(
+            code="RHYTHM_ACTIVATION_INVALID",
+            message=str(exc),
+            status_code=422,
+        ) from exc
+    start = min(start_frame, int(array.size))
+    stop = min(int(array.size), start + count)
+    chunk = np.asarray(array[start:stop], dtype="<f4")
+    return Response(
+        content=chunk.tobytes(),
+        media_type="application/octet-stream",
+        headers={
+            "X-Activation-Kind": kind,
+            "X-Start-Frame": str(start),
+            "X-Frame-Count": str(max(0, stop - start)),
+            "X-Total-Frames": str(int(array.size)),
+            "X-Content-Hash": artifact.content_hash,
+            "X-Frame-Rate": "50",
+        },
+    )
+
+
+@router.get("/rhythm-modules", response_model=list[RhythmPipelineStage])
+async def list_rhythm_modules() -> list[RhythmPipelineStage]:
+    return module_catalog()

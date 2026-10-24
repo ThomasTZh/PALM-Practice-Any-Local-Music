@@ -17,9 +17,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.17 (API, worker, and frontend contract
-  additions), then M3.18–M3.22 (portable rhythm state, corpus/evaluation,
-  acceptance, docs). Specification is
+- **In progress:** M3.17 shared APIs/contracts are in place; unified run
+  graph, branch store, transport convenience APIs, and selector UI
+  remain. Then M3.18–M3.22. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.15/M3.16 completion
@@ -72,7 +72,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `pytest tests/ -q` | 1627 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 109 files |
+| `mypy src/basseparate` | clean, 110 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 602 passed, 45 files |
 | `npx tsc -b --force` | clean |
@@ -4613,6 +4613,28 @@ Spec: `milestone3.md` §18. Plan: `projectPlans/m3.16-plan.md`.
 - **Gate E:** M3.14–M3.16 complete. Backend **1628 passed, 1 skipped**;
   frontend **602 passed, 45 files**; ruff/mypy/contract/typecheck/format
   green.
+
+### M3.17 — API, worker, and frontend contract additions (in progress)
+
+Spec: `milestone3.md` §19. Plan: `projectPlans/m3.17-plan.md`.
+
+- **APIs:** rhythm command/undo/redo endpoints, result and branch
+  list/detail summaries, bounded activation-range binary access (≤4096
+  frames, float32 LE with alignment/hash headers), and a module catalog
+  with the default pipeline graph. Existing grid/snap/metronome/count-in
+  endpoints remain.
+- **Commands:** select automatic result, select/clear editable branch
+  (Auto/Edited), and set snap mode; rhythm edits use the dedicated
+  transactional endpoint with 409/422 mapping.
+- **Contracts:** OpenAPI and generated TypeScript types regenerated and
+  verified; Python/TS mapping/snap/metronome/readout services already
+  exist.
+- **Tests:** route suite additions; backend **1631 passed, 1 skipped**;
+  frontend **602 passed, 45 files**; ruff/mypy/contract green.
+- **Remaining:** unified Analyze Rhythm run-graph execution, project JSON
+  Schema/worker schema checks, frontend RhythmBranchStore/unified state,
+  transport grid/count-in convenience APIs, and selector UI. Package is
+  not complete.
 
 ## Architectural decisions so far
 

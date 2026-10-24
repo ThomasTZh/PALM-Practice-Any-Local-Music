@@ -383,3 +383,55 @@ def test_count_in_settings_command(client: TestClient, app, headers) -> None:
     count_in = applied.json()["rhythm_state"]["count_in"]
     assert count_in["mode"] == "two_bars"
     assert count_in["repetition"] == "every_repeat"
+
+
+def test_rhythm_command_and_undo_endpoints(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    project = app.state.repository.get_project(project_id)
+    assert project is not None
+    applied = client.post(
+        f"/api/v1/projects/{project_id}/rhythm-commands",
+        json={
+            "command_id": str(uuid.uuid4()),
+            "idempotency_key": uuid.uuid4().hex,
+            "base_revision": project.revision,
+            "op": {"type": "add_pulse", "source_frame": 24_000},
+        },
+        headers=headers,
+    )
+    assert applied.status_code == 200, applied.text
+    body = applied.json()
+    assert body["branch"]["revision"] == 4
+    assert len(body["branch"]["pulses"]) == 4
+    undone = client.post(
+        f"/api/v1/projects/{project_id}/rhythm-undo",
+        json={"base_revision": body["revision"]},
+        headers=headers,
+    )
+    assert undone.status_code == 200, undone.text
+    assert len(undone.json()["branch"]["pulses"]) == 3
+
+
+def test_rhythm_branches_and_results_endpoints(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    branches = client.get(f"/api/v1/projects/{project_id}/rhythm-branches", headers=headers)
+    assert branches.status_code == 200, branches.text
+    assert len(branches.json()) == 1
+    branch_id = branches.json()[0]["id"]
+    detail = client.get(
+        f"/api/v1/projects/{project_id}/rhythm-branches/{branch_id}", headers=headers
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["id"] == branch_id
+    results = client.get(f"/api/v1/projects/{project_id}/rhythm-results", headers=headers)
+    assert results.status_code == 200
+    assert results.json() == []
+
+
+def test_rhythm_module_catalog(client: TestClient, headers) -> None:
+    response = client.get("/api/v1/rhythm-modules", headers=headers)
+    assert response.status_code == 200, response.text
+    modules = response.json()
+    ids = [module["module_id"] for module in modules]
+    assert "rhythm.activation_inference.v1" in ids
+    assert "rhythm.analyze.v1" in ids

@@ -36,6 +36,7 @@ from basseparate.domain.rhythm import (
     ProjectRhythmState,
 )
 from basseparate.domain.separation import StemRole
+from basseparate.domain.snapping import SnapMode
 
 DEFAULT_MARKER_LABEL = "Marker"
 DEFAULT_MARKER_COLOR = "#e11d48"
@@ -234,6 +235,31 @@ class SetCountInOp(BaseModel):
             raise ValueError("set_count_in requires at least one field to change")
 
 
+class SelectRhythmResultOp(BaseModel):
+    """Select the active automatic rhythm result (M3.17 §19.6)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["select_rhythm_result"] = "select_rhythm_result"
+    result_id: Uuid | None = None
+
+
+class SelectRhythmBranchOp(BaseModel):
+    """Select the active editable branch / Auto vs Edited (M3.17 §19.6)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["select_rhythm_branch"] = "select_rhythm_branch"
+    branch_id: Uuid | None = None
+
+
+class SetSnapModeOp(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_snap_mode"] = "set_snap_mode"
+    mode: SnapMode
+
+
 class SetPlaybackSpeedOp(BaseModel):
     """Set the pitch-preserving playback speed (M2.9, spec §11).
 
@@ -407,6 +433,9 @@ ProjectCommandOp = Annotated[
         | SetPlaybackSpeedOp
         | SetMetronomeOp
         | SetCountInOp
+        | SelectRhythmResultOp
+        | SelectRhythmBranchOp
+        | SetSnapModeOp
         | AddLoopOp
         | AddMusicalLoopOp
         | ConvertLoopOp

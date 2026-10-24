@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from basseparate.api.errors import (
+    ApiError,
     IdempotencyConflictError,
     InvalidCommandError,
     LoopAlignmentConfirmationRequiredError,
@@ -77,6 +78,9 @@ from basseparate.storage.repository import (
     ResultSetNotFoundError as RepoResultSetNotFoundError,
 )
 from basseparate.storage.repository import (
+    RhythmSelectionError as RepoRhythmSelectionError,
+)
+from basseparate.storage.repository import (
     StaleRevisionError as RepoStaleRevisionError,
 )
 
@@ -117,6 +121,12 @@ def _raise_mapped(exc: Exception) -> NoReturn:
         raise LoopRangeInvalidError(exc.start, exc.end, exc.duration) from exc
     if isinstance(exc, RepoLoopGridUnavailableError):
         raise LoopGridUnavailableError(str(exc)) from exc
+    if isinstance(exc, RepoRhythmSelectionError):
+        raise ApiError(
+            code="RHYTHM_SELECTION_INVALID",
+            message=str(exc),
+            status_code=422,
+        ) from exc
     if isinstance(exc, RepoLoopAlignmentConfirmationRequiredError):
         raise LoopAlignmentConfirmationRequiredError(exc.warnings) from exc
     if isinstance(exc, RepoNoActiveLoopError):

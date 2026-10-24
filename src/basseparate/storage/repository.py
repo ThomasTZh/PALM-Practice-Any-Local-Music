@@ -23,8 +23,11 @@ from basseparate.domain.commands import (
     CommandResult,
     ConvertLoopOp,
     ProjectCommandOp,
+    SelectRhythmBranchOp,
+    SelectRhythmResultOp,
     SetCountInOp,
     SetMetronomeOp,
+    SetSnapModeOp,
 )
 from basseparate.domain.export import ExportArtifact
 from basseparate.domain.import_record import (
@@ -71,6 +74,7 @@ from basseparate.domain.rhythm import (
     ProjectRhythmState,
     RhythmAnalysisRun,
     RhythmBranchRecord,
+    RhythmDisplayMode,
 )
 from basseparate.domain.rhythm_result import RhythmResultRecord, RhythmResultStage
 from basseparate.domain.separation import (
@@ -348,6 +352,10 @@ class LoopRangeInvalidError(Exception):
         self.start = start
         self.end = end
         self.duration = duration
+
+
+class RhythmSelectionError(Exception):
+    """A selected rhythm result/branch does not belong to the project."""
 
 
 class LoopGridUnavailableError(Exception):
@@ -1369,7 +1377,56 @@ class ProjectRepository:
             )
             now = _now()
             new_rhythm_state = project.rhythm_state
-            if isinstance(op, SetCountInOp):
+            if isinstance(op, SelectRhythmBranchOp):
+                if op.branch_id is not None:
+                    found = conn.execute(
+                        "SELECT 1 FROM rhythm_branches WHERE id = ? AND project_id = ?",
+                        (str(op.branch_id), str(project_id)),
+                    ).fetchone()
+                    if found is None:
+                        raise RhythmSelectionError("the selected rhythm branch does not exist")
+                new_rhythm_state = project.rhythm_state.model_copy(
+                    update={
+                        "active_branch_id": op.branch_id,
+                        "display_mode": (
+                            RhythmDisplayMode.EDITED
+                            if op.branch_id is not None
+                            else RhythmDisplayMode.AUTOMATIC
+                        ),
+                    }
+                )
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    project.practice_state,
+                )
+            elif isinstance(op, SelectRhythmResultOp):
+                if op.result_id is not None:
+                    found = conn.execute(
+                        "SELECT 1 FROM rhythm_results WHERE id = ? AND project_id = ?",
+                        (str(op.result_id), str(project_id)),
+                    ).fetchone()
+                    if found is None:
+                        raise RhythmSelectionError("the selected rhythm result does not exist")
+                new_rhythm_state = project.rhythm_state.model_copy(
+                    update={
+                        "active_automatic_result_id": op.result_id,
+                        "display_mode": RhythmDisplayMode.AUTOMATIC,
+                    }
+                )
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    project.practice_state,
+                )
+            elif isinstance(op, SetSnapModeOp):
+                new_rhythm_state = project.rhythm_state.model_copy(update={"snap_mode": op.mode})
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    project.practice_state,
+                )
+            elif isinstance(op, SetCountInOp):
                 patch = {
                     name: getattr(op, name)
                     for name in ("mode", "repetition")
