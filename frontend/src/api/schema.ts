@@ -735,6 +735,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/rhythm-grid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rhythm Grid */
+        get: operations["get_rhythm_grid_api_v1_projects__project_id__rhythm_grid_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/runs": {
         parameters: {
             query?: never;
@@ -894,6 +911,12 @@ export interface components {
              */
             type: "add_marker";
         };
+        /**
+         * AnchorLockState
+         * @description Whether a tempo anchor may be moved by automatic re-derivation.
+         * @enum {string}
+         */
+        AnchorLockState: "unlocked" | "locked";
         /** AssetMetadataResponse */
         AssetMetadataResponse: {
             /**
@@ -946,6 +969,24 @@ export interface components {
             start_timestamp_seconds?: number | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * BarOriginState
+         * @description Bar numbering origin and pickup/leading-unmapped state (§3.8).
+         */
+        BarOriginState: {
+            /**
+             * First Bar Number
+             * @description Signed bar display number
+             * @default 1
+             */
+            first_bar_number: number;
+            /** @description Musical position of the first numbered bar's downbeat */
+            first_numbered_bar_position: components["schemas"]["MusicalPosition"];
+            /** @description Source interval before a usable musical mapping */
+            leading_unmapped_interval?: components["schemas"]["HalfOpenInterval"] | null;
+            /** @description Pickup material immediately before the first numbered bar */
+            pickup?: components["schemas"]["MusicalInterval"] | null;
         };
         /** CancelImportResponse */
         CancelImportResponse: {
@@ -1061,6 +1102,53 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * Confidence
+         * @description Structured confidence attached to every automatic result.
+         *
+         *     - ``value`` is null when ``kind`` is ``unavailable``.
+         *     - ``calibrated`` indicates whether the score has been calibrated.
+         *     - ``alternatives`` carries runner-up candidates.
+         *     - ``review_state`` tracks human review without overwriting
+         *       the machine score.
+         */
+        Confidence: {
+            /** Alternatives */
+            alternatives?: components["schemas"]["ConfidenceAlternative"][] | null;
+            /**
+             * Calibrated
+             * @default false
+             */
+            calibrated: boolean;
+            kind: components["schemas"]["ConfidenceKind"];
+            /**
+             * Method
+             * @description Method identifier and version, e.g. 'cnn-v2'
+             */
+            method?: string | null;
+            /** @default unreviewed */
+            review_state: components["schemas"]["ReviewState"];
+            /** Value */
+            value?: number | null;
+        };
+        /**
+         * ConfidenceAlternative
+         * @description An alternative candidate with its own score.
+         */
+        ConfidenceAlternative: {
+            /** Label */
+            label: string;
+            /**
+             * Score
+             * @description Normalized score in [0, 1]
+             */
+            score: number;
+        };
+        /**
+         * ConfidenceKind
+         * @enum {string}
+         */
+        ConfidenceKind: "probability" | "periodicity" | "heuristic" | "agreement" | "unavailable";
         /**
          * CountInMode
          * @description Count-in length (milestone3.md §17.1).
@@ -1396,10 +1484,101 @@ export interface components {
             /** Total Bytes */
             total_bytes?: number | null;
         };
+        /**
+         * GridDetail
+         * @description Zoom/detail level for derived grid events (§11.9).
+         * @enum {string}
+         */
+        GridDetail: "bars" | "primary" | "denominator" | "half_beat" | "quarter_beat";
+        /**
+         * GridEvent
+         * @description One derived musical event with exact and rounded source positions.
+         */
+        GridEvent: {
+            /** Bar Number */
+            bar_number?: number | null;
+            /** Beat */
+            beat?: number | null;
+            kind: components["schemas"]["GridEventKind"];
+            /** Label */
+            label: string;
+            musical_position: components["schemas"]["MusicalPosition"];
+            /**
+             * Pickup
+             * @default false
+             */
+            pickup: boolean;
+            source_fraction: components["schemas"]["SourceFrameFraction"];
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            /** Subdivision */
+            subdivision?: number | null;
+        };
+        /**
+         * GridEventKind
+         * @enum {string}
+         */
+        GridEventKind: "bar" | "primary" | "denominator" | "half_beat" | "quarter_beat";
+        /**
+         * GridGap
+         * @description An unmapped musical interval; no grid/snaps/metronome may appear.
+         */
+        GridGap: {
+            end: components["schemas"]["MusicalPosition"];
+            start: components["schemas"]["MusicalPosition"];
+        };
+        /**
+         * GridResult
+         * @description Derived grid for one visible range (§11.1, §11.8-§11.9).
+         */
+        GridResult: {
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            detail: components["schemas"]["GridDetail"];
+            end: components["schemas"]["MusicalPosition"];
+            /** Events */
+            events: components["schemas"]["GridEvent"][];
+            /** Gaps */
+            gaps?: components["schemas"]["GridGap"][];
+            start: components["schemas"]["MusicalPosition"];
+            /**
+             * Unmapped Gap Detected
+             * @default false
+             */
+            unmapped_gap_detected: boolean;
+        };
+        /**
+         * GridValidity
+         * @description Explicit validity of a rhythm branch over its mapped region.
+         * @enum {string}
+         */
+        GridValidity: "valid" | "uncertain" | "unmetered" | "unmapped";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HalfOpenInterval
+         * @description Half-open interval ``[start_sample, end_sample)`` in source samples.
+         */
+        HalfOpenInterval: {
+            /**
+             * End Sample
+             * @description Integer source sample position (never milliseconds)
+             */
+            end_sample: number;
+            /**
+             * Start Sample
+             * @description Integer source sample position (never milliseconds)
+             */
+            start_sample: number;
         };
         /** HardwareResponse */
         HardwareResponse: {
@@ -1593,6 +1772,81 @@ export interface components {
             updated_at: string;
         };
         /**
+         * MeterHypothesis
+         * @description One candidate meter interpretation for an automatic region (§3.7).
+         */
+        MeterHypothesis: {
+            confidence: components["schemas"]["Confidence"];
+            /**
+             * Denominator
+             * @description Positive meter denominator
+             */
+            denominator: number;
+            /**
+             * Grouping
+             * @description Ordered grouping parts; their sum equals the numerator
+             */
+            grouping: number[];
+            /**
+             * Numerator
+             * @description Positive meter numerator
+             */
+            numerator: number;
+        };
+        /**
+         * MeterRegion
+         * @description A time-signature region anchored in musical position (§3.7).
+         *
+         *     ``grouping`` defines the bar's primary pulses: each part is one
+         *     primary-pulse span in denominator units. The ``primary_pulse_starts``
+         *     property derives their offsets instead of storing a second copy.
+         */
+        MeterRegion: {
+            /** Alternatives */
+            alternatives?: components["schemas"]["MeterHypothesis"][];
+            /**
+             * Branch Id
+             * @description UUID identifier, serialized as a string
+             */
+            branch_id: string;
+            confidence?: components["schemas"]["Confidence"] | null;
+            /**
+             * Denominator
+             * @description Positive meter denominator
+             */
+            denominator: number;
+            display_tempo_unit: components["schemas"]["MeterTempoUnit"];
+            /** @description End position; normally derived from the next region */
+            end?: components["schemas"]["MusicalPosition"] | null;
+            /** @default valid */
+            grid_validity: components["schemas"]["GridValidity"];
+            /**
+             * Grouping
+             * @description Ordered grouping parts; their sum equals the numerator
+             */
+            grouping: number[];
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /**
+             * Numerator
+             * @description Positive meter numerator
+             */
+            numerator: number;
+            origin: components["schemas"]["RhythmOrigin"];
+            /** @default unreviewed */
+            review_state: components["schemas"]["ReviewState"];
+            start: components["schemas"]["MusicalPosition"];
+        };
+        /**
+         * MeterTempoUnit
+         * @description Note value used to display the local tempo (milestone3.md §9.6).
+         * @enum {string}
+         */
+        MeterTempoUnit: "whole" | "half" | "quarter" | "eighth" | "sixteenth" | "dotted_whole" | "dotted_half" | "dotted_quarter" | "dotted_eighth" | "dotted_sixteenth";
+        /**
          * MetronomeSettings
          * @description Metronome preferences; audio behavior is implemented in M3.14.
          */
@@ -1701,6 +1955,35 @@ export interface components {
             mode: string;
             /** Right Channel */
             right_channel: number;
+        };
+        /**
+         * MusicalInterval
+         * @description Half-open interval ``[start, end)`` in musical positions.
+         */
+        MusicalInterval: {
+            end: components["schemas"]["MusicalPosition"];
+            start: components["schemas"]["MusicalPosition"];
+        };
+        /**
+         * MusicalPosition
+         * @description Exact reduced rational musical position in quarter-note units.
+         *
+         *     The denominator is always positive; the sign lives on the numerator.
+         *     Zero is always ``0/1``. Normalized components stay within the
+         *     JavaScript safe-integer range so the browser never receives a value
+         *     it cannot represent exactly.
+         */
+        MusicalPosition: {
+            /**
+             * Denominator
+             * @description Positive denominator
+             */
+            denominator: number;
+            /**
+             * Numerator
+             * @description Signed quarter-note numerator
+             */
+            numerator: number;
         };
         /** OpenChunkAckResponse */
         OpenChunkAckResponse: {
@@ -2079,6 +2362,18 @@ export interface components {
          */
         ProjectStatus: "empty" | "ready";
         /**
+         * PulseAcceptance
+         * @description Whether a pulse currently contributes to the grid.
+         * @enum {string}
+         */
+        PulseAcceptance: "accepted" | "rejected" | "candidate";
+        /**
+         * PulseRole
+         * @description Evidence class of a rhythm pulse, independent of meter.
+         * @enum {string}
+         */
+        PulseRole: "beat" | "downbeat" | "candidate" | "unknown";
+        /**
          * QualificationStatus
          * @description Qualification state of a device for the analysis runtime.
          *
@@ -2165,11 +2460,83 @@ export interface components {
             validation_status: string;
         };
         /**
+         * ReviewState
+         * @enum {string}
+         */
+        ReviewState: "unreviewed" | "accepted" | "corrected";
+        /**
          * RhythmDisplayMode
          * @description Whether the project shows the automatic result or an edited branch.
          * @enum {string}
          */
         RhythmDisplayMode: "automatic" | "edited";
+        /** RhythmGridResponse */
+        RhythmGridResponse: {
+            bar_origin: components["schemas"]["BarOriginState"];
+            /**
+             * Branch Id
+             * Format: uuid
+             */
+            branch_id: string;
+            /** Branch Revision */
+            branch_revision: number;
+            branch_validity: components["schemas"]["GridValidity"];
+            grid: components["schemas"]["GridResult"];
+            /** Meter Regions */
+            meter_regions: components["schemas"]["MeterRegion"][];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Pulses */
+            pulses: components["schemas"]["RhythmPulse"][];
+            /** Revision */
+            revision: number;
+            /** Source Duration Frames */
+            source_duration_frames: number;
+            /** Source Sample Rate */
+            source_sample_rate: number;
+            /** Tempo Anchors */
+            tempo_anchors: components["schemas"]["TempoAnchor"][];
+        };
+        /**
+         * RhythmOrigin
+         * @description Provenance of an editable rhythm object.
+         * @enum {string}
+         */
+        RhythmOrigin: "automatic" | "manual";
+        /**
+         * RhythmPulse
+         * @description One beat/downbeat-like event in source time (§3.5).
+         */
+        RhythmPulse: {
+            acceptance: components["schemas"]["PulseAcceptance"];
+            confidence: components["schemas"]["Confidence"];
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** Model Frame Index */
+            model_frame_index?: number | null;
+            origin: components["schemas"]["RhythmOrigin"];
+            /**
+             * Parent Id
+             * @description Automatic result ID or edited branch ID that owns this pulse
+             */
+            parent_id: string;
+            /** @default unreviewed */
+            review_state: components["schemas"]["ReviewState"];
+            role: components["schemas"]["PulseRole"];
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            /** Tempo Anchor Id */
+            tempo_anchor_id?: string | null;
+        };
         /**
          * RuntimeJobResponse
          * @description The media job in flight (or the queue depth when only queued work exists).
@@ -2459,6 +2826,16 @@ export interface components {
          * @enum {string}
          */
         SnapMode: "off" | "beat" | "half_beat" | "quarter_beat" | "bar" | "event";
+        /**
+         * SourceFrameFraction
+         * @description Exact fractional project source frame before final rounding.
+         */
+        SourceFrameFraction: {
+            /** Denominator */
+            denominator: number;
+            /** Numerator */
+            numerator: number;
+        };
         /** SourceInfoResponse */
         SourceInfoResponse: {
             /** Channel Count */
@@ -2498,6 +2875,44 @@ export interface components {
             /** Ready */
             ready: boolean;
             runtime?: components["schemas"]["RuntimeStatusResponse"] | null;
+        };
+        /**
+         * TempoAnchor
+         * @description A control point between source frames and musical positions (§3.6).
+         */
+        TempoAnchor: {
+            /**
+             * Branch Id
+             * @description UUID identifier, serialized as a string
+             */
+            branch_id: string;
+            confidence?: components["schemas"]["Confidence"] | null;
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** @default unlocked */
+            lock_state: components["schemas"]["AnchorLockState"];
+            musical_position: components["schemas"]["MusicalPosition"];
+            origin: components["schemas"]["RhythmOrigin"];
+            /** Pulse Id */
+            pulse_id?: string | null;
+            /**
+             * Source Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            source_frame: number;
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
         };
         /**
          * TrackSettings
@@ -4047,6 +4462,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultSetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rhythm_grid_api_v1_projects__project_id__rhythm_grid_get: {
+        parameters: {
+            query?: {
+                start_frame?: number | null;
+                end_frame?: number | null;
+                detail?: components["schemas"]["GridDetail"];
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmGridResponse"];
                 };
             };
             /** @description Validation Error */

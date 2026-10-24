@@ -1617,3 +1617,138 @@ button:hover:not(:disabled) {
 .open-panel .list-header {
   margin-bottom: 0.75rem;
 }
+
+/* M3.11 rhythm ruler/lanes above the waveform tracks. */
+.rhythm-lanes {
+  position: relative;
+  height: 74px;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  background: var(--panel, #17181c);
+  border-bottom: 1px solid var(--border, #33343a);
+  cursor: crosshair;
+  user-select: none;
+}
+.rhythm-lanes-empty {
+  padding: 24px 12px;
+  color: var(--muted, #8b8d96);
+  font-size: 12px;
+}
+.rhythm-lanes-bars,
+.rhythm-lanes-pulses,
+.rhythm-playhead {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rhythm-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.rhythm-grid-bar {
+  background: rgba(255, 255, 255, 0.35);
+}
+.rhythm-grid-primary {
+  background: rgba(255, 255, 255, 0.18);
+}
+.rhythm-grid-denominator,
+.rhythm-grid-half_beat,
+.rhythm-grid-quarter_beat {
+  background: rgba(255, 255, 255, 0.07);
+}
+.rhythm-lanes-bar-labels {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 16px;
+  pointer-events: none;
+}
+.rhythm-lanes-bar-labels span {
+  position: absolute;
+  top: 1px;
+  padding-left: 3px;
+  color: var(--muted, #a6a8b3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rhythm-lanes-meter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  height: 16px;
+  pointer-events: none;
+}
+.rhythm-meter-label {
+  position: absolute;
+  padding: 0 4px;
+  color: #d8d9e0;
+  background: rgba(64, 92, 160, 0.35);
+  border-left: 1px solid #7d9cff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.rhythm-meter-label.meter-uncertain {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(180, 140, 40, 0.35),
+    rgba(180, 140, 40, 0.35) 4px,
+    rgba(120, 90, 20, 0.25) 4px,
+    rgba(120, 90, 20, 0.25) 8px
+  );
+}
+.rhythm-lanes-tempo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 36px;
+  height: 16px;
+  pointer-events: none;
+}
+.rhythm-anchor {
+  position: absolute;
+  top: 2px;
+  width: 2px;
+  height: 12px;
+  background: #6ee7b7;
+}
+.rhythm-anchor.locked {
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  color: #101216;
+  background: #fbbf24;
+  font-size: 8px;
+  line-height: 10px;
+  text-align: center;
+}
+.rhythm-pulse {
+  position: absolute;
+  bottom: 2px;
+  width: 3px;
+  height: 10px;
+  margin-left: -1px;
+  background: #93c5fd;
+}
+.rhythm-pulse.downbeat {
+  height: 16px;
+  background: #f97316;
+}
+.rhythm-pulse.candidate {
+  opacity: 0.35;
+}
+.rhythm-pulse.manual {
+  border-radius: 2px 2px 0 0;
+  background: #c084fc;
+}
+.rhythm-playhead {
+  width: 1px;
+  background: #f43f5e;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: none;
+}

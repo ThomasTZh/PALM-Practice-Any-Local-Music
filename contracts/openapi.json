@@ -109,6 +109,15 @@
         "title": "AddMarkerOp",
         "type": "object"
       },
+      "AnchorLockState": {
+        "description": "Whether a tempo anchor may be moved by automatic re-derivation.",
+        "enum": [
+          "unlocked",
+          "locked"
+        ],
+        "title": "AnchorLockState",
+        "type": "string"
+      },
       "AssetMetadataResponse": {
         "properties": {
           "asset_id": {
@@ -285,6 +294,50 @@
           "channel_count"
         ],
         "title": "AudioStreamInfo",
+        "type": "object"
+      },
+      "BarOriginState": {
+        "description": "Bar numbering origin and pickup/leading-unmapped state (\u00a73.8).",
+        "properties": {
+          "first_bar_number": {
+            "default": 1,
+            "description": "Signed bar display number",
+            "maximum": 99999.0,
+            "minimum": -9999.0,
+            "title": "First Bar Number",
+            "type": "integer"
+          },
+          "first_numbered_bar_position": {
+            "$ref": "#/components/schemas/MusicalPosition",
+            "description": "Musical position of the first numbered bar's downbeat"
+          },
+          "leading_unmapped_interval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HalfOpenInterval"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source interval before a usable musical mapping"
+          },
+          "pickup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MusicalInterval"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pickup material immediately before the first numbered bar"
+          }
+        },
+        "required": [
+          "first_numbered_bar_position"
+        ],
+        "title": "BarOriginState",
         "type": "object"
       },
       "CancelImportResponse": {
@@ -607,6 +660,103 @@
         ],
         "title": "CompleteOpenSessionResponse",
         "type": "object"
+      },
+      "Confidence": {
+        "description": "Structured confidence attached to every automatic result.\n\n- ``value`` is null when ``kind`` is ``unavailable``.\n- ``calibrated`` indicates whether the score has been calibrated.\n- ``alternatives`` carries runner-up candidates.\n- ``review_state`` tracks human review without overwriting\n  the machine score.",
+        "properties": {
+          "alternatives": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ConfidenceAlternative"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alternatives"
+          },
+          "calibrated": {
+            "default": false,
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConfidenceKind"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Method identifier and version, e.g. 'cnn-v2'",
+            "title": "Method"
+          },
+          "review_state": {
+            "$ref": "#/components/schemas/ReviewState",
+            "default": "unreviewed"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "description": "Normalized score in [0, 1]",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "Confidence",
+        "type": "object"
+      },
+      "ConfidenceAlternative": {
+        "description": "An alternative candidate with its own score.",
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "score": {
+            "description": "Normalized score in [0, 1]",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "score"
+        ],
+        "title": "ConfidenceAlternative",
+        "type": "object"
+      },
+      "ConfidenceKind": {
+        "enum": [
+          "probability",
+          "periodicity",
+          "heuristic",
+          "agreement",
+          "unavailable"
+        ],
+        "title": "ConfidenceKind",
+        "type": "string"
       },
       "CountInMode": {
         "description": "Count-in length (milestone3.md \u00a717.1).",
@@ -1341,6 +1491,183 @@
         "title": "GpuStatsResponse",
         "type": "object"
       },
+      "GridDetail": {
+        "description": "Zoom/detail level for derived grid events (\u00a711.9).",
+        "enum": [
+          "bars",
+          "primary",
+          "denominator",
+          "half_beat",
+          "quarter_beat"
+        ],
+        "title": "GridDetail",
+        "type": "string"
+      },
+      "GridEvent": {
+        "description": "One derived musical event with exact and rounded source positions.",
+        "properties": {
+          "bar_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bar Number"
+          },
+          "beat": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GridEventKind"
+          },
+          "label": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "musical_position": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "pickup": {
+            "default": false,
+            "title": "Pickup",
+            "type": "boolean"
+          },
+          "source_fraction": {
+            "$ref": "#/components/schemas/SourceFrameFraction"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "subdivision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdivision"
+          }
+        },
+        "required": [
+          "kind",
+          "musical_position",
+          "source_fraction",
+          "source_frame",
+          "label"
+        ],
+        "title": "GridEvent",
+        "type": "object"
+      },
+      "GridEventKind": {
+        "enum": [
+          "bar",
+          "primary",
+          "denominator",
+          "half_beat",
+          "quarter_beat"
+        ],
+        "title": "GridEventKind",
+        "type": "string"
+      },
+      "GridGap": {
+        "description": "An unmapped musical interval; no grid/snaps/metronome may appear.",
+        "properties": {
+          "end": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "start": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "GridGap",
+        "type": "object"
+      },
+      "GridResult": {
+        "description": "Derived grid for one visible range (\u00a711.1, \u00a711.8-\u00a711.9).",
+        "properties": {
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/GridDetail"
+          },
+          "end": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/GridEvent"
+            },
+            "maxItems": 100000,
+            "title": "Events",
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/GridGap"
+            },
+            "maxItems": 64,
+            "title": "Gaps",
+            "type": "array"
+          },
+          "start": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "unmapped_gap_detected": {
+            "default": false,
+            "title": "Unmapped Gap Detected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "detail",
+          "start",
+          "end",
+          "events",
+          "created_at"
+        ],
+        "title": "GridResult",
+        "type": "object"
+      },
+      "GridValidity": {
+        "description": "Explicit validity of a rhythm branch over its mapped region.",
+        "enum": [
+          "valid",
+          "uncertain",
+          "unmetered",
+          "unmapped"
+        ],
+        "title": "GridValidity",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1352,6 +1679,31 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HalfOpenInterval": {
+        "description": "Half-open interval ``[start_sample, end_sample)`` in source samples.",
+        "properties": {
+          "end_sample": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "End Sample",
+            "type": "integer"
+          },
+          "start_sample": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Start Sample",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_sample",
+          "end_sample"
+        ],
+        "title": "HalfOpenInterval",
         "type": "object"
       },
       "HardwareResponse": {
@@ -1813,6 +2165,164 @@
         "title": "MediaJob",
         "type": "object"
       },
+      "MeterHypothesis": {
+        "description": "One candidate meter interpretation for an automatic region (\u00a73.7).",
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "denominator": {
+            "description": "Positive meter denominator",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Denominator",
+            "type": "integer"
+          },
+          "grouping": {
+            "description": "Ordered grouping parts; their sum equals the numerator",
+            "items": {
+              "maximum": 256.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Grouping",
+            "type": "array"
+          },
+          "numerator": {
+            "description": "Positive meter numerator",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Numerator",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "numerator",
+          "denominator",
+          "grouping",
+          "confidence"
+        ],
+        "title": "MeterHypothesis",
+        "type": "object"
+      },
+      "MeterRegion": {
+        "description": "A time-signature region anchored in musical position (\u00a73.7).\n\n``grouping`` defines the bar's primary pulses: each part is one\nprimary-pulse span in denominator units. The ``primary_pulse_starts``\nproperty derives their offsets instead of storing a second copy.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/MeterHypothesis"
+            },
+            "maxItems": 8,
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "branch_id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Branch Id",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Confidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "denominator": {
+            "description": "Positive meter denominator",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Denominator",
+            "type": "integer"
+          },
+          "display_tempo_unit": {
+            "$ref": "#/components/schemas/MeterTempoUnit"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MusicalPosition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End position; normally derived from the next region"
+          },
+          "grid_validity": {
+            "$ref": "#/components/schemas/GridValidity",
+            "default": "valid"
+          },
+          "grouping": {
+            "description": "Ordered grouping parts; their sum equals the numerator",
+            "items": {
+              "maximum": 256.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Grouping",
+            "type": "array"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "numerator": {
+            "description": "Positive meter numerator",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Numerator",
+            "type": "integer"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RhythmOrigin"
+          },
+          "review_state": {
+            "$ref": "#/components/schemas/ReviewState",
+            "default": "unreviewed"
+          },
+          "start": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          }
+        },
+        "required": [
+          "id",
+          "branch_id",
+          "start",
+          "numerator",
+          "denominator",
+          "grouping",
+          "display_tempo_unit",
+          "origin"
+        ],
+        "title": "MeterRegion",
+        "type": "object"
+      },
+      "MeterTempoUnit": {
+        "description": "Note value used to display the local tempo (milestone3.md \u00a79.6).",
+        "enum": [
+          "whole",
+          "half",
+          "quarter",
+          "eighth",
+          "sixteenth",
+          "dotted_whole",
+          "dotted_half",
+          "dotted_quarter",
+          "dotted_eighth",
+          "dotted_sixteenth"
+        ],
+        "title": "MeterTempoUnit",
+        "type": "string"
+      },
       "MetronomeSettings": {
         "description": "Metronome preferences; audio behavior is implemented in M3.14.",
         "properties": {
@@ -2077,6 +2587,45 @@
           "right_channel"
         ],
         "title": "MonitoringInfo",
+        "type": "object"
+      },
+      "MusicalInterval": {
+        "description": "Half-open interval ``[start, end)`` in musical positions.",
+        "properties": {
+          "end": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "start": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "MusicalInterval",
+        "type": "object"
+      },
+      "MusicalPosition": {
+        "description": "Exact reduced rational musical position in quarter-note units.\n\nThe denominator is always positive; the sign lives on the numerator.\nZero is always ``0/1``. Normalized components stay within the\nJavaScript safe-integer range so the browser never receives a value\nit cannot represent exactly.",
+        "properties": {
+          "denominator": {
+            "description": "Positive denominator",
+            "exclusiveMinimum": 0.0,
+            "title": "Denominator",
+            "type": "integer"
+          },
+          "numerator": {
+            "description": "Signed quarter-note numerator",
+            "title": "Numerator",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "numerator",
+          "denominator"
+        ],
+        "title": "MusicalPosition",
         "type": "object"
       },
       "OpenChunkAckResponse": {
@@ -2948,6 +3497,27 @@
         "title": "ProjectStatus",
         "type": "string"
       },
+      "PulseAcceptance": {
+        "description": "Whether a pulse currently contributes to the grid.",
+        "enum": [
+          "accepted",
+          "rejected",
+          "candidate"
+        ],
+        "title": "PulseAcceptance",
+        "type": "string"
+      },
+      "PulseRole": {
+        "description": "Evidence class of a rhythm pulse, independent of meter.",
+        "enum": [
+          "beat",
+          "downbeat",
+          "candidate",
+          "unknown"
+        ],
+        "title": "PulseRole",
+        "type": "string"
+      },
       "QualificationStatus": {
         "description": "Qualification state of a device for the analysis runtime.\n\n- ``untested``: no qualification has been recorded for this device with\n  the current environment fingerprint.\n- ``qualified``: tensor, convolution, FFT, and a short model run all\n  passed on this device.\n- ``failed``: a qualification attempt failed; the reason is recorded in\n  ``unavailability_reason``.",
         "enum": [
@@ -3103,6 +3673,15 @@
         "title": "ResultSetSummary",
         "type": "object"
       },
+      "ReviewState": {
+        "enum": [
+          "unreviewed",
+          "accepted",
+          "corrected"
+        ],
+        "title": "ReviewState",
+        "type": "string"
+      },
       "RhythmDisplayMode": {
         "description": "Whether the project shows the automatic result or an edited branch.",
         "enum": [
@@ -3111,6 +3690,164 @@
         ],
         "title": "RhythmDisplayMode",
         "type": "string"
+      },
+      "RhythmGridResponse": {
+        "properties": {
+          "bar_origin": {
+            "$ref": "#/components/schemas/BarOriginState"
+          },
+          "branch_id": {
+            "format": "uuid",
+            "title": "Branch Id",
+            "type": "string"
+          },
+          "branch_revision": {
+            "title": "Branch Revision",
+            "type": "integer"
+          },
+          "branch_validity": {
+            "$ref": "#/components/schemas/GridValidity"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/GridResult"
+          },
+          "meter_regions": {
+            "items": {
+              "$ref": "#/components/schemas/MeterRegion"
+            },
+            "title": "Meter Regions",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "pulses": {
+            "items": {
+              "$ref": "#/components/schemas/RhythmPulse"
+            },
+            "title": "Pulses",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_duration_frames": {
+            "title": "Source Duration Frames",
+            "type": "integer"
+          },
+          "source_sample_rate": {
+            "title": "Source Sample Rate",
+            "type": "integer"
+          },
+          "tempo_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/TempoAnchor"
+            },
+            "title": "Tempo Anchors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "revision",
+          "branch_id",
+          "branch_revision",
+          "branch_validity",
+          "source_sample_rate",
+          "source_duration_frames",
+          "tempo_anchors",
+          "meter_regions",
+          "bar_origin",
+          "pulses",
+          "grid"
+        ],
+        "title": "RhythmGridResponse",
+        "type": "object"
+      },
+      "RhythmOrigin": {
+        "description": "Provenance of an editable rhythm object.",
+        "enum": [
+          "automatic",
+          "manual"
+        ],
+        "title": "RhythmOrigin",
+        "type": "string"
+      },
+      "RhythmPulse": {
+        "description": "One beat/downbeat-like event in source time (\u00a73.5).",
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/PulseAcceptance"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Frame Index"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RhythmOrigin"
+          },
+          "parent_id": {
+            "description": "Automatic result ID or edited branch ID that owns this pulse",
+            "title": "Parent Id",
+            "type": "string"
+          },
+          "review_state": {
+            "$ref": "#/components/schemas/ReviewState",
+            "default": "unreviewed"
+          },
+          "role": {
+            "$ref": "#/components/schemas/PulseRole"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "tempo_anchor_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo Anchor Id"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "source_frame",
+          "role",
+          "acceptance",
+          "confidence",
+          "origin"
+        ],
+        "title": "RhythmPulse",
+        "type": "object"
       },
       "RuntimeJobResponse": {
         "description": "The media job in flight (or the queue depth when only queued work exists).",
@@ -3706,6 +4443,29 @@
         "title": "SnapMode",
         "type": "string"
       },
+      "SourceFrameFraction": {
+        "description": "Exact fractional project source frame before final rounding.",
+        "properties": {
+          "denominator": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Denominator",
+            "type": "integer"
+          },
+          "numerator": {
+            "maximum": 9007199254740991.0,
+            "minimum": -9007199254740991.0,
+            "title": "Numerator",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "numerator",
+          "denominator"
+        ],
+        "title": "SourceFrameFraction",
+        "type": "object"
+      },
       "SourceInfoResponse": {
         "properties": {
           "channel_count": {
@@ -3816,6 +4576,81 @@
           "ready"
         ],
         "title": "SystemResponse",
+        "type": "object"
+      },
+      "TempoAnchor": {
+        "description": "A control point between source frames and musical positions (\u00a73.6).",
+        "properties": {
+          "branch_id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Branch Id",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Confidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "lock_state": {
+            "$ref": "#/components/schemas/AnchorLockState",
+            "default": "unlocked"
+          },
+          "musical_position": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RhythmOrigin"
+          },
+          "pulse_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse Id"
+          },
+          "source_frame": {
+            "description": "Integer source sample position (never milliseconds)",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Source Frame",
+            "type": "integer"
+          },
+          "updated_at": {
+            "description": "UTC timestamp in ISO 8601 form",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "branch_id",
+          "source_frame",
+          "musical_position",
+          "origin",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TempoAnchor",
         "type": "object"
       },
       "TrackSettings": {
@@ -6063,6 +6898,89 @@
           }
         },
         "summary": "Get Result Set Detail"
+      }
+    },
+    "/api/v1/projects/{project_id}/rhythm-grid": {
+      "get": {
+        "operationId": "get_rhythm_grid_api_v1_projects__project_id__rhythm_grid_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "detail",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/GridDetail",
+              "default": "primary"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RhythmGridResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rhythm Grid"
       }
     },
     "/api/v1/projects/{project_id}/runs": {

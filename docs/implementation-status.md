@@ -70,12 +70,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1577 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1580 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 101 files |
+| `mypy src/basseparate` | clean, 102 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 578 passed, 38 files |
+| `npx vitest run` (frontend) | 581 passed, 39 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4459,10 +4459,19 @@ Spec: `milestone3.md` §13. Plan: `projectPlans/m3.11-plan.md`.
   priority hit testing with a minimum handle width. It is React/DOM-free
   so static ruler primitives can be cached across playhead updates.
   `frontend/tests/ruler.test.ts` adds 5 tests.
-- **Remaining:** React ruler/lanes above the waveform, layered rendering,
-  tempo/meter/beat visuals, inspector, keyboard alternatives, drag/
-  selection integration, performance budget, and visual-alignment
-  acceptance.
+- **Read-only API + lanes:** `GET /api/v1/projects/{id}/rhythm-grid`
+  returns active-branch tempo/meter/bar-origin/pulses and the derived
+  grid (404 unavailable, 422 invalid range; 3 integration tests).
+  `RhythmLanes` renders bar/beat/subdivision lines, meter labels with
+  uncertainty, tempo anchor/lock handles, pulse markers, a playhead, and
+  click seeking, fetching a padded visible range at zoom-derived detail;
+  3 component tests. The component is not yet mounted in `App.tsx`
+  because the App test harness mocks ordered project requests and an
+  extra rhythm request would consume those mocks; mounting requires a
+  test-fixture integration.
+- **Remaining:** mount the ruler/lanes in the App, inspector, keyboard
+  alternatives, drag/selection integration, performance budget, and
+  visual-alignment acceptance.
 
 ## Architectural decisions so far
 

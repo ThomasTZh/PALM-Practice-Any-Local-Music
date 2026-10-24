@@ -97,7 +97,7 @@ def _timestamp(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
-def _tempo_map(branch: RhythmBranchRecord, project_sample_rate: int) -> TempoMap:
+def tempo_map_for_branch(branch: RhythmBranchRecord, project_sample_rate: int) -> TempoMap:
     if len(branch.tempo_anchors) < 2:
         raise RhythmCommandError("a mapped edit needs at least two tempo anchors")
     anchors = [
@@ -127,7 +127,7 @@ def _tempo_map(branch: RhythmBranchRecord, project_sample_rate: int) -> TempoMap
     return map_.model_copy(update={"summary_bpm": summarize_bpm(map_.segments)})
 
 
-def _meter_map(branch: RhythmBranchRecord) -> MeterMap:
+def meter_map_for_branch(branch: RhythmBranchRecord) -> MeterMap:
     regions = [
         ManualMeterRegion(
             start=region.start,
@@ -228,7 +228,9 @@ def _apply_add_pulse(
     musical = ZERO_MUSICAL_POSITION
     if branch.tempo_anchors:
         try:
-            musical = _tempo_map(branch, project_rate).map_source_to_musical(op.source_frame)
+            musical = tempo_map_for_branch(branch, project_rate).map_source_to_musical(
+                op.source_frame
+            )
         except Exception as exc:
             raise RhythmCommandError(str(exc)) from exc
     pulse = RhythmPulse(
@@ -442,7 +444,7 @@ def _rebuild_meter_regions(
 
 def _validate_meter(branch: RhythmBranchRecord) -> None:
     if branch.meter_regions:
-        _meter_map(branch)
+        meter_map_for_branch(branch)
 
 
 def _apply_add_meter(
@@ -546,7 +548,7 @@ def _apply_bar_origin(
         updates["first_bar_number"] = op.first_bar_number
     if op.first_downbeat_source is not None:
         try:
-            updates["first_numbered_bar_position"] = _tempo_map(
+            updates["first_numbered_bar_position"] = tempo_map_for_branch(
                 branch, project_rate
             ).map_source_to_musical(op.first_downbeat_source)
         except Exception as exc:
@@ -556,7 +558,7 @@ def _apply_bar_origin(
     if op.pickup_start_source is not None:
         if op.first_downbeat_source is None:
             raise RhythmCommandError("a pickup needs the first downbeat source in the same command")
-        map_ = _tempo_map(branch, project_rate)
+        map_ = tempo_map_for_branch(branch, project_rate)
         try:
             start = map_.map_source_to_musical(op.pickup_start_source)
         except Exception as exc:
@@ -576,7 +578,7 @@ def _apply_reinterpret(
     project_rate: int,
     now: datetime,
 ) -> RhythmBranchRecord:
-    map_ = _tempo_map(branch, project_rate)
+    map_ = tempo_map_for_branch(branch, project_rate)
     try:
         changed = reinterpret_tempo_map(
             map_,

@@ -42,6 +42,7 @@ from basseparate.api.open_routes import router as open_router
 from basseparate.api.playback_routes import router as playback_router
 from basseparate.api.portable_routes import router as portable_router
 from basseparate.api.result_set_routes import router as result_set_router
+from basseparate.api.rhythm_routes import router as rhythm_router
 from basseparate.api.routes import router
 from basseparate.api.security import SecurityMiddleware
 from basseparate.config import AppConfig
@@ -79,6 +80,7 @@ from basseparate.storage import (
     PortableArtifactRepository,
     ProjectRepository,
     RepresentationRepository,
+    RhythmRepository,
     SeparationRepository,
     StoragePaths,
     WaveformCacheRepository,
@@ -601,6 +603,7 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.storage_paths = paths
         app.state.repository = ProjectRepository(paths.database_path)
         app.state.import_repository = ImportRepository(paths.database_path)
+        app.state.rhythm_repository = RhythmRepository(paths.database_path)
         app.state.upload_manager = UploadManager(
             uploads_dir=paths.runtime / "uploads",
             chunk_size=config.import_chunk_bytes,
@@ -719,6 +722,7 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(portable_router)
     app.include_router(open_router)
     app.include_router(analysis_router)
+    app.include_router(rhythm_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.
