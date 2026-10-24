@@ -1490,7 +1490,7 @@ export interface components {
          * @description Progress stages reported by workers (milestone1.md §6.6).
          * @enum {string}
          */
-        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "preparing_input" | "separating" | "building_waveform" | "verifying_stems" | "encoding" | "verifying_export" | "ready";
+        JobStage: "transferring" | "verifying" | "inspecting" | "decoding" | "preparing_playback" | "preparing_input" | "separating" | "loading_model" | "running_inference" | "writing_activations" | "validating_artifact" | "decoding_pulses" | "building_waveform" | "verifying_stems" | "encoding" | "verifying_export" | "ready";
         /**
          * JobState
          * @enum {string}

@@ -9,8 +9,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   schema, `3d3c307`), M3.2 (Beat This! runtime, registry, install
   boundary, CPU qualification, `be2bb1b`), M3.3 (reproducible rhythm
   input preparation, `09d83ae`), M3.4 (real Beat This! runs with
-  retained framewise activations, `5266d9e`), and M3.5 (decoded
-  beat/downbeat candidates, `c0471b9`) complete on 2026-10-24. M2.21
+  retained framewise activations, `5266d9e`), M3.5 (decoded
+  beat/downbeat candidates, `c0471b9`), M3.6 (immutable automatic
+  results and editable branches, `bc49cf2`), M3.7 (tempo map,
+  `fbfdaf0`), M3.8 (meter features, inference, and manual regions,
+  `694a08a`), and M3.9 (bars, beats, pickups, and shared golden vectors,
+  `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
 - **Next work package:** M3.10 (manual rhythm, anchor, and meter editing
@@ -33,6 +37,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `__pycache__` trees under `src/` and `tests/` were removed.
   `basseparate doctor` now reports the foundation ready (GPU warning
   only, as expected). Run all commands from the new root.
+- **Contract correction (2026-10-24):** the M3.4 `JobStage` additions
+  were not exported, so `contracts/openapi.json` and
+  `frontend/src/api/schema.ts` drifted after M3.4. Both were
+  regenerated with `scripts/export_openapi.py` and `pnpm contracts`;
+  `check_contract.py` is green. Earlier "contract in sync" claims before
+  this correction were inaccurate.
 - **GPU availability correction (2026-10-24):** earlier notes in this
   file and the evidence said "no NVIDIA driver". The accurate diagnosis
   is that the host has NVIDIA 595.104.02 loaded and both GPUs bound, but
@@ -64,7 +74,7 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 99 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 569 passed, 36 files |
+| `npx vitest run` (frontend) | 573 passed, 37 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
