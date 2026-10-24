@@ -105,6 +105,12 @@ stream coordinate.
   `manifest.json`). Raw framewise logits are retained unmodified; the
   manifest records array hashes, source identity, model/adapter identity,
   frame mapping, and output semantics.
+- Rhythm edits are transactions: a command carries a base project
+  revision and idempotency key, validates the active branch, applies one
+  semantic edit, records before/after branch snapshots, increments branch
+  and project revisions, and stores a receipt. A separate rhythm history
+  provides persistent undo/redo; stale revisions conflict instead of
+  merging. Locks require an explicit forced override.
 - The visible grid is derived, not stored per line. `derive_grid` emits
   bar, primary-beat, denominator, half-beat, and quarter-beat events for a
   requested musical range/detail from the tempo map, meter map, and bar

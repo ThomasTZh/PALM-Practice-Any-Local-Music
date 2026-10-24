@@ -17,9 +17,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.10 (manual rhythm, anchor, and meter editing
-  commands with undo/redo and revision conflicts), then M3.11–M3.16 for
-  the correctable editor and metronome. Specification is
+- **Next work package:** M3.11 (rhythm lanes and musical ruler), then
+  M3.12–M3.13 to complete Gate D, followed by M3.14–M3.16 metronome and
+  transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the Gate C contract-fix ledger
@@ -69,10 +69,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1567 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1577 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 99 files |
+| `mypy src/basseparate` | clean, 101 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 573 passed, 37 files |
 | `npx tsc -b --force` | clean |
@@ -4403,6 +4403,50 @@ commit. Completes Gate C.
   (M3.10), tempo/meter artifact persistence and complete result stages
   (M3.10), grid API/UI and zoom-driven requests (M3.17), multi-region
   automatic meter decoding (M3.10).
+
+### M3.10 — Manual rhythm, anchor, and meter editing (complete)
+
+Spec: `milestone3.md` §12. Plan: `projectPlans/m3.10-plan.md`.
+Implementation commit recorded in the follow-up ledger entry.
+
+- **Commands (§12.1–§12.12):** `domain/rhythm_commands.py` defines one
+  discriminated operation union covering add/move/delete pulse, downbeat
+  classification, add/move/delete/lock tempo anchor, add/update/delete
+  meter region, bar origin/pickup, half/double-time reinterpretation, and
+  pulse/meter review state. Every request carries a command ID,
+  idempotency key, and base project revision.
+- **Transactionality (§12.14):** `RhythmCommandService` validates the
+  active branch, applies one pure edit, validates the resulting branch,
+  and in one SQLite transaction increments the branch revision, records
+  before/after snapshots in a rhythm history, truncates redo, increments
+  the project revision/pointer, and stores an idempotency receipt.
+  Replays return the stored result; a reused key with another command,
+  a stale base revision, or a locked-object conflict is rejected without
+  writes. Migration 15 adds receipts, history, and the history pointer.
+- **Local repair (§12.2–§12.11):** moving a pulse preserves its musical
+  position and moves the linked unlocked anchor; deleting a pulse removes
+  its unlocked anchor; anchor moves are axis-explicit; locked anchors
+  require `force_locked`; meter edits enforce grouping and whole-bar
+  boundaries; bar origin/first downbeat/pickup changes are commands;
+  half/double reinterpretation uses the M3.7 map operation. No global
+  quantization.
+- **Undo/redo/restart (§12.14):** `undo`/`redo` restore persistent branch
+  snapshots and increment the project revision. A fresh service instance
+  on the same database can undo/redo. Acceptance is covered by a restart
+  test.
+- **Batch review (§12.13):** review state (unreviewed/accepted/corrected)
+  can be changed by a transactional pulse or meter command; navigation
+  between uncertain objects remains UI work.
+- **Tests:** `tests/unit/test_rhythm_commands.py` (10) covers add/
+  idempotency/stale, undo/redo/restart, move+lock+forced override,
+  downbeat/bar origin/pickup, meter update/insert, anchor add/move/delete,
+  delete pulse/meter and validity, half-time/review, and invalid-edit
+  atomicity.
+- **Gate:** backend **1577 passed, 1 skipped**; frontend **573 passed**;
+  ruff check clean; mypy clean (101 files); contract in sync.
+- **Deferred:** HTTP routes and 409 JSON mapping (M3.17), unified project/
+  rhythm undo stack (M3.17), editor lanes/drag gestures/batch navigation
+  (M3.11/M3.13), multi-region automatic meter sequence decoding.
 
 ## Architectural decisions so far
 

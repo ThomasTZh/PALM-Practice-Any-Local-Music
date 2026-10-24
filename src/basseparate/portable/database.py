@@ -52,6 +52,8 @@ _TABLE_PREDICATES: tuple[tuple[str, str, str], ...] = (
     ("rhythm_activation_artifacts", "project_id", "project"),
     ("rhythm_results", "project_id", "project"),
     ("rhythm_branches", "project_id", "project"),
+    ("rhythm_command_receipts", "project_id", "project"),
+    ("rhythm_command_history", "project_id", "project"),
 )
 
 #: Tables with a ``project_id`` column checked by the isolation proof.
@@ -68,6 +70,8 @@ _PROJECT_SCOPED_TABLES: tuple[str, ...] = (
     "rhythm_activation_artifacts",
     "rhythm_results",
     "rhythm_branches",
+    "rhythm_command_receipts",
+    "rhythm_command_history",
 )
 
 

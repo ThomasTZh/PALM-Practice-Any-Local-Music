@@ -22,6 +22,12 @@ from basseparate.rhythm.activations import (
     run_and_publish,
     validate_activation_array,
 )
+from basseparate.rhythm.commands import (
+    RhythmCommandConflict,
+    RhythmCommandError,
+    RhythmCommandService,
+    apply_rhythm_op,
+)
 from basseparate.rhythm.decoder import (
     DecodeInput,
     RhythmDecodeError,
@@ -107,4 +113,8 @@ __all__ = [
     "first_downbeat_origin",
     "pickup_interval",
     "set_first_numbered_bar",
+    "RhythmCommandConflict",
+    "RhythmCommandError",
+    "RhythmCommandService",
+    "apply_rhythm_op",
 ]

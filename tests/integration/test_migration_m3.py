@@ -210,6 +210,8 @@ def test_migration_preserves_m2_projects(tmp_path: Path) -> None:
             "rhythm_activation_artifacts",
             "rhythm_branches",
             "rhythm_results",
+            "rhythm_command_receipts",
+            "rhythm_command_history",
         } <= tables
 
         for key, project_id in ids.items():

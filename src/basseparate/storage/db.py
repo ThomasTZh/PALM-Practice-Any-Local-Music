@@ -704,6 +704,46 @@ def _migration_13_to_14(conn: sqlite3.Connection) -> None:
 register_migration(14, _migration_13_to_14)
 
 
+#: M3.10 adds transactional rhythm command receipts, a rhythm-specific
+#: undo/redo history, and a history pointer on the project row.
+_MIGRATION_15_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE rhythm_command_receipts (
+        project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        idempotency_key TEXT NOT NULL,
+        command_id      TEXT NOT NULL,
+        result_json     TEXT NOT NULL,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (project_id, idempotency_key)
+    )
+    """,
+    """
+    CREATE TABLE rhythm_command_history (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        seq         INTEGER NOT NULL,
+        command_id  TEXT NOT NULL,
+        op_type     TEXT NOT NULL,
+        before_json TEXT NOT NULL,
+        after_json  TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        UNIQUE (project_id, seq)
+    )
+    """,
+    "ALTER TABLE projects ADD COLUMN rhythm_history_seq INTEGER NOT NULL DEFAULT -1",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_history_project "
+    "ON rhythm_command_history(project_id)",
+)
+
+
+def _migration_14_to_15(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_15_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(15, _migration_14_to_15)
+
+
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
 

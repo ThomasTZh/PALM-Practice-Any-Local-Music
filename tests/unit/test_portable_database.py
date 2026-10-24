@@ -141,6 +141,8 @@ class TestPortableDatabase:
                 "rhythm_activation_artifacts",
                 "rhythm_results",
                 "rhythm_branches",
+                "rhythm_command_receipts",
+                "rhythm_command_history",
             }
             assert expected <= tables
         finally:

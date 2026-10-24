@@ -83,6 +83,8 @@ class TestInitialization:
             "rhythm_activation_artifacts",
             "rhythm_branches",
             "rhythm_results",
+            "rhythm_command_receipts",
+            "rhythm_command_history",
         } <= tables
 
     def test_schema_version_is_current(self, db_path: Path) -> None:
@@ -134,6 +136,8 @@ class TestInitialization:
                 "project_history",
                 "rhythm_branches",
                 "rhythm_results",
+                "rhythm_command_receipts",
+                "rhythm_command_history",
             } <= tables
         finally:
             conn.close()
