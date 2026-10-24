@@ -19,11 +19,11 @@
     "note": "On 2026-10-24 the installed pnpm could not switch to the pinned 12.8.1 engine in this sandbox (read-only package-manager store). The existing frontend/node_modules remains usable; frontend gates were run with it."
   },
   "ffmpeg": {
-    "version": "8.1.2",
+    "version": "8.1.3",
     "location": "/usr/bin/ffmpeg"
   },
   "ffprobe": {
-    "version": "8.1.2",
+    "version": "8.1.3",
     "location": "/usr/bin/ffprobe"
   },
   "python_runtime_dependencies": {

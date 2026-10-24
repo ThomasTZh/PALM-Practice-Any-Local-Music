@@ -24,6 +24,14 @@ from basseparate.media.probe import (
     probe_media,
     tool_versions,
 )
+from basseparate.media.rhythm_input import (
+    RhythmInputEndpointError,
+    RhythmInputError,
+    RhythmInputHashMismatchError,
+    RhythmInputOutcome,
+    prepare_rhythm_input,
+    rhythm_input_transform_hash,
+)
 
 __all__ = [
     "DEFAULT_DECODE_TIMEOUT_SECONDS",
@@ -41,6 +49,12 @@ __all__ = [
     "ProbeError",
     "ProbeFailedError",
     "ProbeTimeoutError",
+    "RhythmInputEndpointError",
+    "RhythmInputError",
+    "RhythmInputHashMismatchError",
+    "RhythmInputOutcome",
+    "prepare_rhythm_input",
+    "rhythm_input_transform_hash",
     "UnsupportedMediaError",
     "decode_canonical",
     "probe_media",

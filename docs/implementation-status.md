@@ -6,11 +6,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 ## Current position
 
 - **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
-  schema, `3d3c307`) and M3.2 (Beat This! runtime, registry, install
-  boundary, CPU qualification, `be2bb1b`) complete on 2026-10-24. M2.21 final separation-app acceptance was
+  schema, `3d3c307`), M3.2 (Beat This! runtime, registry, install
+  boundary, CPU qualification, `be2bb1b`), and M3.3 (reproducible
+  rhythm input preparation) complete on 2026-10-24. M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
-- **Next work package:** M3.3 (prepare rhythm-analysis input
-  reproducibly). Specification is
+- **Next work package:** M3.4 (run Beat This! and retain frame
+  activations). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.2 ledger follow-up on
@@ -46,10 +47,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1474 passed |
+| `pytest tests/ -q` | 1500 passed |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 85 files |
+| `mypy src/basseparate` | clean, 87 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4023,6 +4024,51 @@ ledger update.
   the explicit install path until then. Rhythm inference, activation
   artifacts, and publication are M3.4. Installed checkpoints live under
   `data/models/<model_id>/` in the active storage root.
+
+### M3.3 — Prepare rhythm-analysis input reproducibly (complete)
+
+Spec: `milestone3.md` §5. Plan: `projectPlans/m3.3-plan.md`. Implementation
+commit recorded in the follow-up ledger entry.
+
+- **Domain (§5.1, §5.3, §5.7):** `domain/rhythm_input.py` defines
+  `RhythmInputPlan` (role, source hash/rate/channels, explicit downmix,
+  model ID/manifest hash, adapter version), `RhythmInputProfile`, and the
+  pinned `BEAT_THIS_INPUT_PROFILE`: 22,050 Hz, stereo preparation, adapter
+  channel mean, no amplitude transform, resampler profile v1, 50 fps
+  (hop 441), upstream long-track strategy (1500-frame chunks, 6-frame
+  border), and the `rhythm-input-v1` recipe.
+- **Engine (§5.4–§5.6):** `media/rhythm_input.py` verifies the source
+  hash, applies the explicit M1 stereo downmix for multichannel sources,
+  performs one continuous resample to 22,050 Hz, duplicates mono to
+  stereo, validates frame alignment/finiteness/endpoint tolerance, and
+  returns content hash, byte count, `TimeMapping(source_rate, 22050)`,
+  endpoint difference, and a deterministic transform identity.
+- **Identity:** `rhythm_input_transform_hash` is a pure function of
+  source hash, role, downmix, model identity, adapter, and the full
+  profile; it excludes the asset row ID so re-imported identical content
+  reuses the prepared representation.
+- **Degenerate input:** exact silence and a 10 ms fixture prepare
+  successfully with finite samples; a zero-pulse rhythm result is left
+  to the decoder, and no grid is fabricated at this stage.
+- **Long tracks:** no custom chunking; the profile records the pinned
+  Beat This! `split_predict_aggregate` strategy.
+- **Measured (real ffmpeg 8.1.3):** stereo 48 kHz 2 s → 44,100 frames;
+  mono 44.1 kHz 1 s → 22,050; standard 5.1 44.1 kHz 0.5 s → 11,025;
+  silence 1 s → 22,050 (max amplitude 0); 10 ms → 221 frames; every
+  fixture had endpoint difference 0. Repeat runs were byte-identical.
+  Evidence: `docs/evidence/m3.3-rhythm-input.md`.
+- **Tests:** `tests/unit/test_rhythm_input.py` (16) and
+  `tests/integration/test_rhythm_input.py` (9, real ffmpeg) cover plan
+  validation, profile geometry, registry agreement, identity
+  determinism/sensitivity, stereo/mono/multichannel preparation,
+  silence, short audio, hash mismatch, misalignment, determinism, and
+  cancellation.
+- **Gate:** backend **1500 passed** (1474 M3.2 baseline + 26 new); ruff
+  check clean; mypy clean (87 files); contract in sync; frontend
+  unchanged (569 passed).
+- **Deferred:** inference/activation publication (M3.4), decoder/tempo/
+  meter (M3.5–M3.9), durable job/API wiring (M3.17), and partial analysis
+  intervals (the identity will add the interval when enabled).
 
 ## Architectural decisions so far
 
