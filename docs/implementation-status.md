@@ -4722,8 +4722,12 @@ Spec: `milestone3.md` §22. Evidence:
   (11 predicted, 10 matched, exact timing), downbeat F1 0.462 (8
   predicted, 3 of 5 matched, exact timing). The downbeat over-labelling
   is reported separately rather than folded into the beat score.
-- Not measured: `small0` comparison, manually annotated excerpts,
-  confidence-usefulness and correction-time studies.
+- `small0` measured on the same synthetic fixture: identical beat F1
+  0.952, lower downbeat F1 0.444 (recall 0.4 vs 0.6), faster CPU
+  inference (0.052 s load + 0.085 s inference vs ~0.2 s for final0).
+  final0 remains the default.
+- Not measured: manually annotated excerpts, confidence-usefulness,
+  correction-time, and real-recording runtime/memory comparisons.
 
 ### M3.21 — Performance, browser, playback, and listening acceptance (automated complete, human pending)
 
