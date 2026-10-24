@@ -19,7 +19,9 @@ from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
 from basseparate.domain.commands import (
     HISTORY_EXCLUDED_TYPES,
+    AddMusicalLoopOp,
     CommandResult,
+    ConvertLoopOp,
     ProjectCommandOp,
 )
 from basseparate.domain.export import ExportArtifact
@@ -37,6 +39,7 @@ from basseparate.domain.media_job import (
     MediaJob,
     assert_transition,
 )
+from basseparate.domain.meter import MeterMap
 from basseparate.domain.portable import PortableArtifact
 from basseparate.domain.practice import (
     DEFAULT_LOOP_COLOR,
@@ -62,6 +65,7 @@ from basseparate.domain.representation import (
 )
 from basseparate.domain.rhythm import (
     ActivationArtifactManifest,
+    LoopAnchorMode,
     ProjectRhythmState,
     RhythmAnalysisRun,
     RhythmBranchRecord,
@@ -74,6 +78,7 @@ from basseparate.domain.separation import (
     StemRecord,
     ValidationStatus,
 )
+from basseparate.domain.tempo import TempoMap
 from basseparate.domain.waveform import WaveformCacheRecord, WaveformLevelSummary, WaveformResult
 from basseparate.portable.errors import PortableOpenDbInvalid
 from basseparate.storage.db import DatabaseError
@@ -92,6 +97,48 @@ def _open(db_path: Path) -> sqlite3.Connection:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _resolve_project_loops(conn: sqlite3.Connection, project: ProjectRecord) -> ProjectRecord:
+    """Resolve musical loops through the active branch for read snapshots.
+
+    Resolution is intentionally read-time: stored loops keep their exact
+    musical boundaries and the cached source frames are derived from the
+    current branch revision. Source loops are returned unchanged.
+    """
+    from basseparate.rhythm.commands import tempo_map_for_branch
+    from basseparate.rhythm.loops import resolve_loops
+
+    practice = project.practice_state
+    if not practice.loops or project.sample_rate is None:
+        return project
+    if not any(loop.anchor_mode.value == "musical" for loop in practice.loops):
+        return project
+    branch_id = project.rhythm_state.active_branch_id
+    if branch_id is None:
+        return project
+    row = conn.execute(
+        "SELECT record_json FROM rhythm_branches WHERE id = ? AND project_id = ?",
+        (str(branch_id), str(project.id)),
+    ).fetchone()
+    if row is None:
+        return project
+    from basseparate.domain.rhythm import RhythmBranchRecord
+
+    branch = RhythmBranchRecord.model_validate_json(row["record_json"])
+    try:
+        tempo = tempo_map_for_branch(branch, project.sample_rate)
+    except Exception:
+        return project
+    loops = resolve_loops(
+        practice.loops,
+        tempo,
+        branch_id=branch.id,
+        branch_revision=branch.revision,
+    )
+    return project.model_copy(
+        update={"practice_state": practice.model_copy(update={"loops": loops})}
+    )
 
 
 def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
@@ -251,9 +298,7 @@ class RhythmBranchStaleRevisionError(Exception):
     """An editable rhythm branch changed since the caller read it."""
 
     def __init__(self, current_revision: int) -> None:
-        super().__init__(
-            f"rhythm branch revision is stale; current revision is {current_revision}"
-        )
+        super().__init__(f"rhythm branch revision is stale; current revision is {current_revision}")
         self.current_revision = current_revision
 
 
@@ -297,12 +342,22 @@ class LoopRangeInvalidError(Exception):
     """A loop's boundaries must satisfy ``0 ≤ start < end ≤ duration``."""
 
     def __init__(self, start: int, end: int, duration: int) -> None:
-        super().__init__(
-            f"loop range [{start}, {end}) is outside the source length {duration}"
-        )
+        super().__init__(f"loop range [{start}, {end}) is outside the source length {duration}")
         self.start = start
         self.end = end
         self.duration = duration
+
+
+class LoopGridUnavailableError(Exception):
+    """A musical loop operation needs an active, complete rhythm branch."""
+
+
+class LoopAlignmentConfirmationRequiredError(Exception):
+    """Source→musical conversion has off-grid boundaries and needs confirmation."""
+
+    def __init__(self, warnings: list[str]) -> None:
+        super().__init__("; ".join(warnings))
+        self.warnings = warnings
 
 
 class NoActiveLoopError(Exception):
@@ -546,9 +601,7 @@ def _apply_op(
                 PlaybackMode.BASS_PAIR,
                 PlaybackMode.FOUR_STEMS,
             ):
-                ps_updated = ps_updated.model_copy(
-                    update={"playback_mode": PlaybackMode.ORIGINAL}
-                )
+                ps_updated = ps_updated.model_copy(update={"playback_mode": PlaybackMode.ORIGINAL})
         else:
             ps_updated = ps.model_copy(update={"active_result_set_id": op.result_set_id})
         return markers, ws, ps_updated
@@ -610,12 +663,14 @@ def _apply_op(
             # Absent = unchanged; explicit null = infinite (§13.1).
             loop_patch["repeat_count"] = op.repeat_count
         updated_loop = current_loop.model_copy(update={**loop_patch, "updated_at": now})
-        return markers, ws, ps.model_copy(
-            update={
-                "loops": [
-                    updated_loop if loop.id == op.loop_id else loop for loop in ps.loops
-                ]
-            }
+        return (
+            markers,
+            ws,
+            ps.model_copy(
+                update={
+                    "loops": [updated_loop if loop.id == op.loop_id else loop for loop in ps.loops]
+                }
+            ),
         )
     if op.type == "delete_loop":
         if not any(loop.id == op.loop_id for loop in ps.loops):
@@ -664,6 +719,8 @@ _READY_REQUIRED_TYPES: frozenset[str] = frozenset(
         # M2.11: loop ranges are validated against the source duration and
         # the repeatable minimum (spec §13.3).
         "add_loop",
+        "add_musical_loop",
+        "convert_loop",
         "update_loop",
         "set_loop_enabled",
     }
@@ -676,9 +733,119 @@ def _validate_loop_range(start: int, end: int, duration: int) -> None:
         raise LoopRangeInvalidError(start, end, duration)
 
 
-def _insert_portable_bundle_rows(
-    conn: sqlite3.Connection, bundle: PortableImportBundle
-) -> None:
+def _loop_grid_context(
+    conn: sqlite3.Connection, project: ProjectRecord
+) -> tuple[RhythmBranchRecord, TempoMap, MeterMap]:
+    """Active branch plus tempo/meter maps for musical-loop operations."""
+    from basseparate.rhythm.commands import meter_map_for_branch, tempo_map_for_branch
+
+    if project.sample_rate is None:
+        raise LoopGridUnavailableError("the project has no sample rate")
+    branch_id = project.rhythm_state.active_branch_id
+    if branch_id is None:
+        raise LoopGridUnavailableError("the project has no active rhythm branch")
+    row = conn.execute(
+        "SELECT record_json FROM rhythm_branches WHERE id = ? AND project_id = ?",
+        (str(branch_id), str(project.id)),
+    ).fetchone()
+    if row is None:
+        raise LoopGridUnavailableError("the active rhythm branch does not exist")
+    branch = RhythmBranchRecord.model_validate_json(row["record_json"])
+    try:
+        tempo = tempo_map_for_branch(branch, project.sample_rate)
+        meter = meter_map_for_branch(branch)
+    except Exception as exc:  # noqa: BLE001 - incomplete grid is a domain condition
+        raise LoopGridUnavailableError(str(exc)) from exc
+    return branch, tempo, meter
+
+
+def _create_musical_loop(
+    conn: sqlite3.Connection,
+    project: ProjectRecord,
+    practice: PracticeState,
+    op: AddMusicalLoopOp,
+    now: str,
+) -> PracticeState:
+    from basseparate.rhythm.loops import LoopResolutionError, resolve_loop
+
+    branch, tempo, _meter = _loop_grid_context(conn, project)
+    provisional = PracticeLoop(
+        id=uuid.uuid4(),
+        name=op.name or f"Loop {len(practice.loops) + 1}",
+        start_frames=0,
+        end_frames=1,
+        color=op.color or DEFAULT_LOOP_COLOR,
+        repeat_count=op.repeat_count,
+        boundary_fade=op.boundary_fade,
+        anchor_mode=LoopAnchorMode.MUSICAL,
+        start_musical=op.start_musical,
+        end_musical=op.end_musical,
+        created_at=now,
+        updated_at=now,
+    )
+    try:
+        resolved = resolve_loop(
+            provisional, tempo, branch_id=branch.id, branch_revision=branch.revision
+        )
+    except LoopResolutionError as exc:
+        raise LoopRangeInvalidError(0, 1, project.duration_frames or 0) from exc
+    if resolved.unresolved or resolved.resolved_source_start is None:
+        raise LoopRangeInvalidError(0, 1, project.duration_frames or 0)
+    _validate_loop_range(
+        resolved.start_frames,
+        resolved.end_frames,
+        project.duration_frames or 0,
+    )
+    return practice.model_copy(update={"loops": [*practice.loops, resolved]})
+
+
+def _convert_practice_loop(
+    conn: sqlite3.Connection,
+    project: ProjectRecord,
+    practice: PracticeState,
+    op: ConvertLoopOp,
+) -> PracticeState:
+    from basseparate.rhythm.loops import (
+        LoopAlignmentError,
+        LoopResolutionError,
+        convert_loop,
+    )
+
+    current = next((loop for loop in practice.loops if loop.id == op.loop_id), None)
+    if current is None:
+        raise LoopNotFoundError(op.loop_id)
+    branch, tempo, meter = _loop_grid_context(conn, project)
+    try:
+        conversion = convert_loop(
+            current,
+            tempo,
+            meter,
+            branch.bar_origin,
+            target=op.target,
+            branch_id=branch.id,
+            branch_revision=branch.revision,
+            confirm_off_grid=op.confirm_off_grid,
+        )
+    except LoopAlignmentError as exc:
+        raise LoopAlignmentConfirmationRequiredError(exc.warnings) from exc
+    except LoopResolutionError as exc:
+        raise LoopRangeInvalidError(
+            current.start_frames,
+            current.end_frames,
+            project.duration_frames or 0,
+        ) from exc
+    updated = conversion.loop
+    _validate_loop_range(
+        updated.start_frames,
+        updated.end_frames,
+        project.duration_frames or 0,
+    )
+    return practice.model_copy(
+        update={"loops": [updated if loop.id == current.id else loop for loop in practice.loops]}
+    )
+
+
+def _insert_portable_bundle_rows(conn: sqlite3.Connection, bundle: PortableImportBundle) -> None:
     """Insert every row of an opened working copy (caller owns the txn).
 
     FK order: assets, project, links, imports, representations, caches,
@@ -787,11 +954,7 @@ def _insert_portable_bundle_rows(
                 imp.received_byte_count,
                 imp.source_sha256,
                 imp.transfer_state.value,
-                (
-                    json.dumps(probe.model_dump(mode="json"), sort_keys=True)
-                    if probe
-                    else None
-                ),
+                (json.dumps(probe.model_dump(mode="json"), sort_keys=True) if probe else None),
                 imp.selected_stream_index,
                 json.dumps([str(job_id) for job_id in imp.job_ids]),
                 imp.error,
@@ -849,9 +1012,7 @@ def _insert_portable_bundle_rows(
                 cache.sample_rate,
                 cache.frame_count,
                 cache.channel_count,
-                json.dumps(
-                    [level.model_dump() for level in cache.levels], sort_keys=True
-                ),
+                json.dumps([level.model_dump() for level in cache.levels], sort_keys=True),
                 cache.manifest_path,
                 _timestamp_z(cache.created_at),
             ),
@@ -959,11 +1120,7 @@ def _insert_portable_bundle_rows(
                 job.stage.value if job.stage else None,
                 job.progress_fraction,
                 job.progress_detail,
-                (
-                    json.dumps(job.result, sort_keys=True)
-                    if job.result is not None
-                    else None
-                ),
+                (json.dumps(job.result, sort_keys=True) if job.result is not None else None),
                 job.error_code,
                 job.error,
                 job.max_threads,
@@ -1027,9 +1184,7 @@ class ProjectRepository:
         finally:
             conn.close()
 
-    def get_asset_metadata_ids(
-        self, asset_ids: set[uuid.UUID]
-    ) -> tuple[set[str], set[str]]:
+    def get_asset_metadata_ids(self, asset_ids: set[uuid.UUID]) -> tuple[set[str], set[str]]:
         """Existing global rows keyed by asset (representations, caches).
 
         Representations and waveform caches are asset-global, like asset
@@ -1045,16 +1200,14 @@ class ProjectRepository:
             representation_ids = {
                 row[0]
                 for row in conn.execute(
-                    f"SELECT asset_id FROM representations "
-                    f"WHERE asset_id IN ({placeholders})",
+                    f"SELECT asset_id FROM representations WHERE asset_id IN ({placeholders})",
                     params,
                 )
             }
             cache_ids = {
                 row[0]
                 for row in conn.execute(
-                    f"SELECT asset_id FROM waveform_caches "
-                    f"WHERE asset_id IN ({placeholders})",
+                    f"SELECT asset_id FROM waveform_caches WHERE asset_id IN ({placeholders})",
                     params,
                 )
             }
@@ -1088,9 +1241,7 @@ class ProjectRepository:
                     conn.execute("ROLLBACK")
                 raise
         except sqlite3.IntegrityError as exc:
-            raise PortableOpenDbInvalid(
-                f"cannot import the opened project: {exc}"
-            ) from exc
+            raise PortableOpenDbInvalid(f"cannot import the opened project: {exc}") from exc
         finally:
             conn.close()
         project = self.get_project(bundle.project.id)
@@ -1104,7 +1255,7 @@ class ProjectRepository:
             row = conn.execute("SELECT * FROM projects WHERE id = ?", (str(project_id),)).fetchone()
             if row is None:
                 return None
-            record = _row_to_project(row)
+            record = _resolve_project_loops(conn, _row_to_project(row))
             markers = _markers_for(conn, project_id)
             can_undo, can_redo = _history_flags(conn, project_id, row["history_seq"])
             return record.model_copy(
@@ -1149,9 +1300,7 @@ class ProjectRepository:
         conn = _open(self._db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                "SELECT * FROM projects WHERE id = ?", (str(project_id),)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (str(project_id),)).fetchone()
             if row is None:
                 raise ProjectMissingError()
             if row["revision"] != base_revision:
@@ -1179,11 +1328,7 @@ class ProjectRepository:
                     _validate_loop_range(op.start_frames, op.end_frames, project.duration_frames)
                 else:
                     current = next(
-                        (
-                            loop
-                            for loop in project.practice_state.loops
-                            if loop.id == op.loop_id
-                        ),
+                        (loop for loop in project.practice_state.loops if loop.id == op.loop_id),
                         None,
                     )
                     if current is None:
@@ -1193,15 +1338,15 @@ class ProjectRepository:
                         op.end_frames if op.end_frames is not None else current.end_frames,
                         project.duration_frames,
                     )
-            if op.type == "set_active_loop" and op.loop_id is not None and not any(
-                loop.id == op.loop_id for loop in project.practice_state.loops
+            if (
+                op.type == "set_active_loop"
+                and op.loop_id is not None
+                and not any(loop.id == op.loop_id for loop in project.practice_state.loops)
             ):
                 raise LoopNotFoundError(op.loop_id)
             if op.type == "set_loop_enabled" and op.enabled:
                 ps = project.practice_state
-                active = next(
-                    (loop for loop in ps.loops if loop.id == ps.active_loop_id), None
-                )
+                active = next((loop for loop in ps.loops if loop.id == ps.active_loop_id), None)
                 if active is None:
                     raise NoActiveLoopError()
                 sample_rate = project.sample_rate or 0
@@ -1210,7 +1355,21 @@ class ProjectRepository:
                     raise LoopTooShortError(frames, sample_rate)
             markers = _markers_for(conn, project_id)
             before = _history_snapshot(markers, project.working_state, project.practice_state)
-            new_markers, new_ws, new_ps = _apply_op(project, markers, op)
+            now = _now()
+            if isinstance(op, AddMusicalLoopOp):
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    _create_musical_loop(conn, project, project.practice_state, op, now),
+                )
+            elif isinstance(op, ConvertLoopOp):
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    _convert_practice_loop(conn, project, project.practice_state, op),
+                )
+            else:
+                new_markers, new_ws, new_ps = _apply_op(project, markers, op)
             # Full re-validation (range checks against the duration).
             ProjectRecord(
                 **{
@@ -1322,9 +1481,7 @@ class ProjectRepository:
         conn = _open(self._db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                "SELECT * FROM projects WHERE id = ?", (str(project_id),)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (str(project_id),)).fetchone()
             if row is None:
                 raise ProjectMissingError()
             if row["revision"] != base_revision:
@@ -1472,16 +1629,12 @@ class ProjectRepository:
     def get_asset(self, asset_id: uuid.UUID) -> AssetRecord | None:
         conn = _open(self._db_path)
         try:
-            row = conn.execute(
-                "SELECT * FROM assets WHERE id = ?", (str(asset_id),)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM assets WHERE id = ?", (str(asset_id),)).fetchone()
             return _row_to_asset(row) if row else None
         finally:
             conn.close()
 
-    def list_project_assets(
-        self, project_id: uuid.UUID
-    ) -> list[tuple[AssetRecord, AssetRole]]:
+    def list_project_assets(self, project_id: uuid.UUID) -> list[tuple[AssetRecord, AssetRole]]:
         """Every asset linked to a project, with its project-level role.
 
         The same asset row can carry several links (e.g. one asset used as
@@ -1579,9 +1732,7 @@ class ProjectRepository:
                 """,
                 (
                     str(representation.asset_id),
-                    str(representation.parent_asset_id)
-                    if representation.parent_asset_id
-                    else None,
+                    str(representation.parent_asset_id) if representation.parent_asset_id else None,
                     representation.role.value,
                     representation.sample_rate,
                     representation.channel_count,
@@ -2378,9 +2529,7 @@ class WaveformCacheRepository:
         record = self.get_for_asset(asset_id)
         assert record is not None
         if record.source_hash != result.source_hash:
-            raise DatabaseError(
-                f"waveform cache for asset {asset_id} pins a different source hash"
-            )
+            raise DatabaseError(f"waveform cache for asset {asset_id} pins a different source hash")
         return record
 
     def get_for_asset(self, asset_id: uuid.UUID) -> WaveformCacheRecord | None:
@@ -2441,9 +2590,7 @@ class SeparationRepository:
             conn.close()
         return run
 
-    def fail_run(
-        self, run_id: uuid.UUID, code: str, message: str
-    ) -> SeparationRun | None:
+    def fail_run(self, run_id: uuid.UUID, code: str, message: str) -> SeparationRun | None:
         """Mark a live run failed (M2.17 scheduling/publication failure).
 
         A run whose job disappeared or failed must never stay "live":
@@ -2530,9 +2677,7 @@ class SeparationRepository:
                 return float(value)
         return None
 
-    def find_active_run(
-        self, project_id: uuid.UUID, cache_key: str
-    ) -> SeparationRun | None:
+    def find_active_run(self, project_id: uuid.UUID, cache_key: str) -> SeparationRun | None:
         """A queued/running run for (project, cache key), if any (M2.7 §9.2.8).
 
         Cancelled, failed, interrupted, and completed runs never match:
@@ -2640,8 +2785,7 @@ class SeparationRepository:
         conn = _open(self._db_path)
         try:
             row = conn.execute(
-                "SELECT record_json FROM separation_result_sets "
-                "WHERE id = ? AND project_id = ?",
+                "SELECT record_json FROM separation_result_sets WHERE id = ? AND project_id = ?",
                 (str(result_set_id), str(project_id)),
             ).fetchone()
             if row is None:
@@ -2653,8 +2797,7 @@ class SeparationRepository:
             ).fetchone()
             if run_row is None:
                 raise DatabaseError(
-                    f"separation run {result_set.run_id} for result set "
-                    f"{result_set_id} is missing"
+                    f"separation run {result_set.run_id} for result set {result_set_id} is missing"
                 )
             run = SeparationRun.model_validate_json(run_row["record_json"])
             stem_rows = conn.execute(
@@ -2929,9 +3072,7 @@ class RhythmRepository:
                 (str(manifest.parent_run_id),),
             ).fetchone()
             if run_row is None or run_row["project_id"] != str(project_id):
-                raise DatabaseError(
-                    "activation artifact parent run does not belong to the project"
-                )
+                raise DatabaseError("activation artifact parent run does not belong to the project")
             conn.execute(
                 """
                 INSERT INTO rhythm_activation_artifacts (
@@ -2963,16 +3104,12 @@ class RhythmRepository:
                 (str(artifact_id),),
             ).fetchone()
             return (
-                ActivationArtifactManifest.model_validate_json(row["record_json"])
-                if row
-                else None
+                ActivationArtifactManifest.model_validate_json(row["record_json"]) if row else None
             )
         finally:
             conn.close()
 
-    def list_artifacts_for_project(
-        self, project_id: uuid.UUID
-    ) -> list[ActivationArtifactManifest]:
+    def list_artifacts_for_project(self, project_id: uuid.UUID) -> list[ActivationArtifactManifest]:
         conn = _open(self._db_path)
         try:
             rows = conn.execute(
@@ -2983,8 +3120,7 @@ class RhythmRepository:
                 (str(project_id),),
             ).fetchall()
             return [
-                ActivationArtifactManifest.model_validate_json(row["record_json"])
-                for row in rows
+                ActivationArtifactManifest.model_validate_json(row["record_json"]) for row in rows
             ]
         finally:
             conn.close()
@@ -3097,9 +3233,7 @@ class RhythmRepository:
             conn.close()
         return branch
 
-    def save_branch(
-        self, branch: RhythmBranchRecord, expected_revision: int
-    ) -> RhythmBranchRecord:
+    def save_branch(self, branch: RhythmBranchRecord, expected_revision: int) -> RhythmBranchRecord:
         """Persist a new branch revision after an optimistic revision check."""
         if branch.revision != expected_revision + 1:
             raise ValueError("a saved branch must advance the revision by exactly one")

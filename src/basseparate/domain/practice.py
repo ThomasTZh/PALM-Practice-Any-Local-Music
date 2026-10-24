@@ -14,7 +14,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from basseparate.domain.common import SamplePosition, UtcTimestamp, Uuid
+from basseparate.domain.common import Revision, SamplePosition, UtcTimestamp, Uuid
+from basseparate.domain.rhythm import LoopAnchorMode, MusicalPosition
 from basseparate.domain.separation import StemRole
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -106,6 +107,17 @@ class PracticeLoop(BaseModel):
     color: str = Field(default=DEFAULT_LOOP_COLOR, pattern=r"^#[0-9a-fA-F]{6}$")
     repeat_count: int | None = Field(default=None, ge=1, le=MAX_LOOP_REPEAT)
     boundary_fade: bool = True
+    #: M3.13: source-anchored (default) or musical-grid anchored.
+    anchor_mode: LoopAnchorMode = LoopAnchorMode.SOURCE
+    start_musical: MusicalPosition | None = None
+    end_musical: MusicalPosition | None = None
+    #: Last resolution through the active branch; cached, never authoritative
+    #: in musical mode.
+    resolved_source_start: SamplePosition | None = None
+    resolved_source_end: SamplePosition | None = None
+    grid_branch_id: Uuid | None = None
+    grid_branch_revision: Revision | None = None
+    unresolved: bool = False
     created_at: UtcTimestamp
     updated_at: UtcTimestamp
 
@@ -117,6 +129,25 @@ class PracticeLoop(BaseModel):
     def model_post_init(self, __context: object) -> None:
         if self.end_frames <= self.start_frames:
             raise ValueError("loop end_frames must be strictly greater than start_frames")
+        if (self.start_musical is None) != (self.end_musical is None):
+            raise ValueError("loop musical boundaries must be present together")
+        if self.start_musical is not None and self.end_musical is not None and (
+            self.end_musical.numerator * self.start_musical.denominator
+            <= self.start_musical.numerator * self.end_musical.denominator
+        ):
+            raise ValueError("loop end_musical must be after start_musical")
+        if self.anchor_mode is LoopAnchorMode.MUSICAL and (
+            self.start_musical is None or self.end_musical is None
+        ):
+            raise ValueError("a musical loop needs musical start and end")
+        if (self.resolved_source_start is None) != (self.resolved_source_end is None):
+            raise ValueError("resolved source boundaries must be present together")
+        if (
+            self.resolved_source_start is not None
+            and self.resolved_source_end is not None
+            and self.resolved_source_end <= self.resolved_source_start
+        ):
+            raise ValueError("resolved loop end must be after its start")
 
 
 class PracticeState(BaseModel):

@@ -30,6 +30,8 @@ function makeLoop(overrides: Partial<PracticeLoop> = {}): PracticeLoop {
     color: '#f59e0b',
     repeat_count: null,
     boundary_fade: true,
+    anchor_mode: 'source',
+    unresolved: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -44,6 +46,7 @@ function setup(props: Partial<LoopsPanelProps> = {}) {
     onDelete: vi.fn(),
     onSelectActive: vi.fn(),
     onSetEnabled: vi.fn(),
+    onConvert: vi.fn(),
   }
   render(
     <LoopsPanel
@@ -65,6 +68,12 @@ describe('LoopsPanel (M2.11 §13.2)', () => {
     setup({ loops: [], activeLoopId: null })
     expect(screen.getByText(/No loops yet/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Loop list')).not.toBeInTheDocument()
+  })
+
+  it('reports conversion from source to musical', async () => {
+    const handlers = setup()
+    await userEvent.click(screen.getByRole('button', { name: 'Convert to musical' }))
+    expect(handlers.onConvert).toHaveBeenCalledWith('loop-1', 'musical')
   })
 
   it('lists name, seconds, duration, and exact frames', () => {

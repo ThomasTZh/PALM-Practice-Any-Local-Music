@@ -27,6 +27,7 @@ from basseparate.domain.practice import (
     PracticeState,
 )
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
+from basseparate.domain.rhythm import LoopAnchorMode, MusicalPosition
 from basseparate.domain.separation import StemRole
 
 DEFAULT_MARKER_LABEL = "Marker"
@@ -144,14 +145,19 @@ class SetTrackSettingsOp(BaseModel):
     mute: bool | None = None
     solo: bool | None = None
     visible: bool | None = None
-    display_height: float | None = Field(
-        default=None, ge=MIN_DISPLAY_HEIGHT, le=MAX_DISPLAY_HEIGHT
-    )
+    display_height: float | None = Field(default=None, ge=MIN_DISPLAY_HEIGHT, le=MAX_DISPLAY_HEIGHT)
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
 
     def model_post_init(self, __context: object) -> None:
-        patch = (self.gain, self.balance, self.mute, self.solo, self.visible,
-                 self.display_height, self.color)
+        patch = (
+            self.gain,
+            self.balance,
+            self.mute,
+            self.solo,
+            self.visible,
+            self.display_height,
+            self.color,
+        )
         if all(value is None for value in patch):
             raise ValueError("set_track_settings requires at least one field to change")
 
@@ -259,6 +265,38 @@ class UpdateLoopOp(BaseModel):
             raise ValueError("update_loop requires at least one field to change")
 
 
+class AddMusicalLoopOp(BaseModel):
+    """Create a loop anchored to exact musical positions (M3.13 §15.3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["add_musical_loop"] = "add_musical_loop"
+    start_musical: MusicalPosition
+    end_musical: MusicalPosition
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    repeat_count: int | None = Field(default=None, ge=1, le=MAX_LOOP_REPEAT)
+    boundary_fade: bool = True
+
+    def model_post_init(self, __context: object) -> None:
+        if (
+            self.end_musical.numerator * self.start_musical.denominator
+            <= self.start_musical.numerator * self.end_musical.denominator
+        ):
+            raise ValueError("musical loop end must be after its start")
+
+
+class ConvertLoopOp(BaseModel):
+    """Convert a loop between source and musical authority (M3.13 §15.4-§15.5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["convert_loop"] = "convert_loop"
+    loop_id: Uuid
+    target: LoopAnchorMode
+    confirm_off_grid: bool = False
+
+
 class DeleteLoopOp(BaseModel):
     """Delete a saved loop (M2.11, spec §13.2.8).
 
@@ -328,6 +366,8 @@ ProjectCommandOp = Annotated[
         | SetMonitoringLimiterOp
         | SetPlaybackSpeedOp
         | AddLoopOp
+        | AddMusicalLoopOp
+        | ConvertLoopOp
         | UpdateLoopOp
         | DeleteLoopOp
         | DuplicateLoopOp

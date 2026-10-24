@@ -109,6 +109,72 @@
         "title": "AddMarkerOp",
         "type": "object"
       },
+      "AddMusicalLoopOp": {
+        "description": "Create a loop anchored to exact musical positions (M3.13 \u00a715.3).",
+        "properties": {
+          "boundary_fade": {
+            "default": true,
+            "title": "Boundary Fade",
+            "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "end_musical": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "repeat_count": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat Count"
+          },
+          "start_musical": {
+            "$ref": "#/components/schemas/MusicalPosition"
+          },
+          "type": {
+            "const": "add_musical_loop",
+            "default": "add_musical_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_musical",
+          "end_musical"
+        ],
+        "title": "AddMusicalLoopOp",
+        "type": "object"
+      },
       "AnchorLockState": {
         "description": "Whether a tempo anchor may be moved by automatic re-derivation.",
         "enum": [
@@ -446,6 +512,8 @@
               "mapping": {
                 "add_loop": "#/components/schemas/AddLoopOp",
                 "add_marker": "#/components/schemas/AddMarkerOp",
+                "add_musical_loop": "#/components/schemas/AddMusicalLoopOp",
+                "convert_loop": "#/components/schemas/ConvertLoopOp",
                 "delete_loop": "#/components/schemas/DeleteLoopOp",
                 "delete_marker": "#/components/schemas/DeleteMarkerOp",
                 "duplicate_loop": "#/components/schemas/DuplicateLoopOp",
@@ -516,6 +584,12 @@
               },
               {
                 "$ref": "#/components/schemas/AddLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/AddMusicalLoopOp"
+              },
+              {
+                "$ref": "#/components/schemas/ConvertLoopOp"
               },
               {
                 "$ref": "#/components/schemas/UpdateLoopOp"
@@ -757,6 +831,37 @@
         ],
         "title": "ConfidenceKind",
         "type": "string"
+      },
+      "ConvertLoopOp": {
+        "description": "Convert a loop between source and musical authority (M3.13 \u00a715.4-\u00a715.5).",
+        "properties": {
+          "confirm_off_grid": {
+            "default": false,
+            "title": "Confirm Off Grid",
+            "type": "boolean"
+          },
+          "loop_id": {
+            "description": "UUID identifier, serialized as a string",
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/LoopAnchorMode"
+          },
+          "type": {
+            "const": "convert_loop",
+            "default": "convert_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loop_id",
+          "target"
+        ],
+        "title": "ConvertLoopOp",
+        "type": "object"
       },
       "CountInMode": {
         "description": "Count-in length (milestone3.md \u00a717.1).",
@@ -1974,6 +2079,15 @@
         "title": "JobType",
         "type": "string"
       },
+      "LoopAnchorMode": {
+        "description": "Authoritative coordinate pair for a practice loop (M3.13).",
+        "enum": [
+          "source",
+          "musical"
+        ],
+        "title": "LoopAnchorMode",
+        "type": "string"
+      },
       "MarkerRecord": {
         "description": "A single marker annotation in a project (\u00a717.1).",
         "properties": {
@@ -2915,6 +3029,10 @@
       "PracticeLoop": {
         "description": "A saved practice loop with integer source-frame boundaries (spec \u00a713.1).\n\n``repeat_count`` is the total number of passes (not \"extra repeats\");\n``None`` means infinite. ``boundary_fade`` enables the short output\nfades at the join (\u00a713.6); disabling them gives exact boundary\naudition. The boundaries are exact source frames and are never\nexpanded (\u00a713.3.5\u20136).",
         "properties": {
+          "anchor_mode": {
+            "$ref": "#/components/schemas/LoopAnchorMode",
+            "default": "source"
+          },
           "boundary_fade": {
             "default": true,
             "title": "Boundary Fade",
@@ -2937,6 +3055,41 @@
             "minimum": 0.0,
             "title": "End Frames",
             "type": "integer"
+          },
+          "end_musical": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MusicalPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grid_branch_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Branch Id"
+          },
+          "grid_branch_revision": {
+            "anyOf": [
+              {
+                "description": "Nonnegative integer revision",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Branch Revision"
           },
           "id": {
             "description": "UUID identifier, serialized as a string",
@@ -2962,12 +3115,55 @@
             ],
             "title": "Repeat Count"
           },
+          "resolved_source_end": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Source End"
+          },
+          "resolved_source_start": {
+            "anyOf": [
+              {
+                "description": "Integer source sample position (never milliseconds)",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Source Start"
+          },
           "start_frames": {
             "description": "Integer source sample position (never milliseconds)",
             "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Start Frames",
             "type": "integer"
+          },
+          "start_musical": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MusicalPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unresolved": {
+            "default": false,
+            "title": "Unresolved",
+            "type": "boolean"
           },
           "updated_at": {
             "description": "UTC timestamp in ISO 8601 form",

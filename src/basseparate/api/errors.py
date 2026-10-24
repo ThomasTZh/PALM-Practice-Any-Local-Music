@@ -336,8 +336,7 @@ class MissingStreamSelection(ApiError):
     def __init__(self) -> None:
         super().__init__(
             code="NO_STREAM_SELECTION",
-            message="No audio stream is selected for this import; "
-            "select a stream before decoding",
+            message="No audio stream is selected for this import; select a stream before decoding",
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
@@ -445,8 +444,7 @@ class NoExportResultSetError(ApiError):
     def __init__(self) -> None:
         super().__init__(
             code="NO_RESULT_SET",
-            message="The project has no separation result set to export; "
-            "run a separation first",
+            message="The project has no separation result set to export; run a separation first",
             status_code=status.HTTP_409_CONFLICT,
         )
 
@@ -624,3 +622,22 @@ def create_error_response(request: Request, error: ApiError, request_id: str) ->
         content=envelope.to_dict(),
         headers={"X-Request-ID": request_id},
     )
+
+
+class LoopGridUnavailableError(ApiError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="LOOP_GRID_UNAVAILABLE",
+            message=message,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+
+class LoopAlignmentConfirmationRequiredError(ApiError):
+    def __init__(self, warnings: list[str]) -> None:
+        super().__init__(
+            code="LOOP_ALIGNMENT_CONFIRMATION_REQUIRED",
+            message="The loop boundaries are not close to the musical grid; confirm the conversion",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"warnings": warnings},
+        )

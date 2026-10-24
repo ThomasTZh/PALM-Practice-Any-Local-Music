@@ -60,6 +60,8 @@ export interface LoopsPanelProps {
   onDelete: (id: string) => void
   onSelectActive: (id: string) => void
   onSetEnabled: (enabled: boolean) => void
+  /** Convert a loop between source and musical authority (M3.13). */
+  onConvert: (id: string, target: 'source' | 'musical') => void
 }
 
 /** Seconds with 3 decimals, the numeric-entry display form (§13.2.2). */
@@ -81,6 +83,7 @@ export function LoopsPanel({
   onDelete,
   onSelectActive,
   onSetEnabled,
+  onConvert,
 }: LoopsPanelProps) {
   /** Commit a boundary entry; false → revert the input (invalid entry). */
   const commitBoundary = (loop: PracticeLoop, which: 'start' | 'end', raw: string): boolean => {
@@ -162,6 +165,8 @@ export function LoopsPanel({
       ) : (
         <ul className="loops-list" aria-label="Loop list">
           {loops.map((loop) => {
+            const target = loop.anchor_mode === 'musical' ? 'source' : 'musical'
+
             const length = loop.end_frames - loop.start_frames
             const tooShort = sampleRate > 0 && length < MIN_REPEATABLE_LOOP_SECONDS * sampleRate
             return (
@@ -287,6 +292,26 @@ export function LoopsPanel({
                   }}
                 >
                   Duplicate
+                </button>
+                <span
+                  className={`loop-anchor-mode ${
+                    loop.anchor_mode === 'musical' ? 'musical' : 'source'
+                  }`}
+                  title={
+                    loop.anchor_mode === 'musical'
+                      ? 'Follows the active musical grid'
+                      : 'Fixed to source audio'
+                  }
+                >
+                  {loop.anchor_mode === 'musical' ? 'Musical' : 'Source'}
+                  {loop.unresolved ? ' (unresolved)' : ''}
+                </span>
+                <button
+                  type="button"
+                  className="loop-convert"
+                  onClick={() => onConvert(loop.id, target)}
+                >
+                  Convert to {target}
                 </button>
                 <button
                   type="button"

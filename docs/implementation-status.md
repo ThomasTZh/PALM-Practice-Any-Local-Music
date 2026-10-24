@@ -17,8 +17,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.13 (musical/beat-anchored loops) to complete
-  Gate D, followed by M3.14–M3.16 metronome and transport. Specification is
+- **Next work package:** M3.14 (synchronized metronome), then M3.15–
+  M3.16 count-in and transport. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.12 snapping ledger
@@ -68,12 +68,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1592 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1608 passed, 1 skipped (real-model integration without the env checkpoint); one load-sensitive analysis-worker test that passes alone |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 104 files |
+| `mypy src/basseparate` | clean, 105 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 588 passed, 40 files |
+| `npx vitest run` (frontend) | 589 passed, 40 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4509,6 +4509,39 @@ commit.
   40 files**; ruff/mypy/contract/typecheck/format green.
 - **Deferred:** drag-handler integration and final modifier key binding
   (editor interaction); no retroactive quantization by design.
+
+### M3.13 — Musical/beat-anchored loops (complete)
+
+Spec: `milestone3.md` §15. Plan: `projectPlans/m3.13-plan.md`.
+Implementation commit recorded in the follow-up ledger entry. Completes
+Gate D with M3.10–M3.12.
+
+- **Schema (§15.1–§15.2):** `PracticeLoop` adds `anchor_mode` (source
+  default, musical), exact `start_musical`/`end_musical`, cached
+  resolved source boundaries, branch ID/revision, and `unresolved`.
+  Existing source loops deserialize unchanged and never move on tempo
+  edits.
+- **Resolution (§15.6–§15.8):** `rhythm/loops.py` resolves musical
+  boundaries through the active tempo map; out-of-map/collapsed ranges
+  become explicitly unresolved. `get_project` resolves musical loops
+  read-time against the active branch, so save/open/API snapshots see
+  current boundaries while stored musical positions stay authoritative.
+  Transport continues in source frames after resolution.
+- **Conversion (§15.3–§15.5):** `add_musical_loop` and `convert_loop`
+  commands; source→musical checks grid alignment and requires explicit
+  confirmation for off-grid boundaries; musical→source makes resolved
+  frames authoritative. No silent conversion of old loops. Loops panel
+  shows authority/unresolved state and a convert action.
+- **Tests:** 9 unit loop tests, 6 integration (read resolution, grid
+  edit re-resolution, unresolved, add+undo, confirmation, conversion),
+  2 command API tests, and a frontend conversion/badge test.
+- **Gate:** backend **1608 passed, 1 skipped**, plus one load-sensitive
+  analysis-worker test that failed once in the full run and passed alone;
+  frontend **589 passed, 40 files**; ruff/mypy/contract/typecheck/format
+  green.
+- **Deferred:** direct ruler-range musical-loop creation UI; transport
+  rebuffer orchestration on live grid changes; batch conversion is
+  prohibited by design.
 
 ## Architectural decisions so far
 

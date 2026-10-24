@@ -213,3 +213,68 @@ def test_snap_endpoint_rejects_out_of_range(client: TestClient, app, headers) ->
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "RHYTHM_SNAP_INVALID"
+
+
+def test_add_musical_loop_command(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    project = app.state.repository.get_project(project_id)
+    assert project is not None
+    response = client.post(
+        f"/api/v1/projects/{project_id}/commands",
+        json={
+            "command_id": str(uuid.uuid4()),
+            "idempotency_key": uuid.uuid4().hex,
+            "base_revision": project.revision,
+            "op": {
+                "type": "add_musical_loop",
+                "start_musical": {"numerator": 0, "denominator": 1},
+                "end_musical": {"numerator": 2, "denominator": 1},
+                "name": "Musical",
+            },
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    loops = response.json()["practice_state"]["loops"]
+    loop = next(loop for loop in loops if loop["name"] == "Musical")
+    assert loop["anchor_mode"] == "musical"
+    assert loop["start_frames"] == 0
+    assert loop["end_frames"] == 48_000
+
+
+def test_musical_loop_conversion_endpoint(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    project = app.state.repository.get_project(project_id)
+    assert project is not None
+    added = client.post(
+        f"/api/v1/projects/{project_id}/commands",
+        json={
+            "command_id": str(uuid.uuid4()),
+            "idempotency_key": uuid.uuid4().hex,
+            "base_revision": project.revision,
+            "op": {
+                "type": "add_musical_loop",
+                "start_musical": {"numerator": 0, "denominator": 1},
+                "end_musical": {"numerator": 2, "denominator": 1},
+            },
+        },
+        headers=headers,
+    )
+    assert added.status_code == 200, added.text
+    loop = added.json()["practice_state"]["loops"][0]
+    converted = client.post(
+        f"/api/v1/projects/{project_id}/commands",
+        json={
+            "command_id": str(uuid.uuid4()),
+            "idempotency_key": uuid.uuid4().hex,
+            "base_revision": added.json()["revision"],
+            "op": {
+                "type": "convert_loop",
+                "loop_id": loop["id"],
+                "target": "source",
+            },
+        },
+        headers=headers,
+    )
+    assert converted.status_code == 200, converted.text
+    assert converted.json()["practice_state"]["loops"][0]["anchor_mode"] == "source"

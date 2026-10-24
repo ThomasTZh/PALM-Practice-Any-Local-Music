@@ -115,6 +115,8 @@ function makeLoop(overrides: Partial<PracticeLoop> = {}): PracticeLoop {
     color: '#f59e0b',
     repeat_count: null,
     boundary_fade: true,
+    anchor_mode: 'source',
+    unresolved: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,

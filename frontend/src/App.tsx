@@ -1502,6 +1502,27 @@ function ProjectView({ project }: { project: ProjectSummary }) {
     })()
   }, [])
 
+  const handleLoopConvert = useCallback((id: string, target: 'source' | 'musical') => {
+    void (async () => {
+      if (
+        target === 'musical' &&
+        !window.confirm(
+          'Convert this loop to follow the musical grid? Its current boundaries will become musical positions.',
+        )
+      ) {
+        return
+      }
+      const res = await sendRef.current({
+        type: 'convert_loop',
+        loop_id: id,
+        target,
+        confirm_off_grid: target === 'musical',
+      })
+      if (!res)
+        setLoopNotice('Could not convert the loop; the active rhythm grid may be unavailable.')
+    })()
+  }, [])
+
   const handleLoopUpdate = useCallback((id: string, patch: LoopPatch) => {
     const op: {
       type: 'update_loop'
@@ -1695,6 +1716,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onDelete={handleLoopDelete}
         onSelectActive={handleLoopSelectActive}
         onSetEnabled={handleSetLoopEnabled}
+        onConvert={handleLoopConvert}
       />
       <div className="original-track-label">
         <span className="track-name">Original</span>

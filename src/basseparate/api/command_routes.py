@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field, ValidationError
 from basseparate.api.errors import (
     IdempotencyConflictError,
     InvalidCommandError,
+    LoopAlignmentConfirmationRequiredError,
+    LoopGridUnavailableError,
     LoopNotFoundError,
     LoopRangeInvalidError,
     LoopTooShortError,
@@ -37,6 +39,12 @@ from basseparate.api.errors import (
 from basseparate.api.idempotency import IdempotencyStore
 from basseparate.domain.commands import CommandRequest, CommandResult
 from basseparate.storage import ProjectRepository
+from basseparate.storage.repository import (
+    LoopAlignmentConfirmationRequiredError as RepoLoopAlignmentConfirmationRequiredError,
+)
+from basseparate.storage.repository import (
+    LoopGridUnavailableError as RepoLoopGridUnavailableError,
+)
 from basseparate.storage.repository import (
     LoopNotFoundError as RepoLoopNotFoundError,
 )
@@ -107,6 +115,10 @@ def _raise_mapped(exc: Exception) -> NoReturn:
         raise LoopNotFoundError(str(exc.loop_id)) from exc
     if isinstance(exc, RepoLoopRangeInvalidError):
         raise LoopRangeInvalidError(exc.start, exc.end, exc.duration) from exc
+    if isinstance(exc, RepoLoopGridUnavailableError):
+        raise LoopGridUnavailableError(str(exc)) from exc
+    if isinstance(exc, RepoLoopAlignmentConfirmationRequiredError):
+        raise LoopAlignmentConfirmationRequiredError(exc.warnings) from exc
     if isinstance(exc, RepoNoActiveLoopError):
         raise NoActiveLoopError() from exc
     if isinstance(exc, RepoLoopTooShortError):
@@ -143,9 +155,7 @@ async def apply_command(
 @router.post("/projects/{project_id}/undo", response_model=CommandResult)
 async def undo(project_id: uuid.UUID, body: HistoryRequest, request: Request) -> CommandResult:
     try:
-        return await asyncio.to_thread(
-            _repo(request).undo, project_id, body.base_revision
-        )
+        return await asyncio.to_thread(_repo(request).undo, project_id, body.base_revision)
     except Exception as exc:
         _raise_mapped(exc)
 
@@ -153,8 +163,6 @@ async def undo(project_id: uuid.UUID, body: HistoryRequest, request: Request) ->
 @router.post("/projects/{project_id}/redo", response_model=CommandResult)
 async def redo(project_id: uuid.UUID, body: HistoryRequest, request: Request) -> CommandResult:
     try:
-        return await asyncio.to_thread(
-            _repo(request).redo, project_id, body.base_revision
-        )
+        return await asyncio.to_thread(_repo(request).redo, project_id, body.base_revision)
     except Exception as exc:
         _raise_mapped(exc)

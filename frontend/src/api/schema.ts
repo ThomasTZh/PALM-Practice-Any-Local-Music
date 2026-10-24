@@ -929,6 +929,30 @@ export interface components {
             type: "add_marker";
         };
         /**
+         * AddMusicalLoopOp
+         * @description Create a loop anchored to exact musical positions (M3.13 §15.3).
+         */
+        AddMusicalLoopOp: {
+            /**
+             * Boundary Fade
+             * @default true
+             */
+            boundary_fade: boolean;
+            /** Color */
+            color?: string | null;
+            end_musical: components["schemas"]["MusicalPosition"];
+            /** Name */
+            name?: string | null;
+            /** Repeat Count */
+            repeat_count?: number | null;
+            start_musical: components["schemas"]["MusicalPosition"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_musical_loop";
+        };
+        /**
          * AnchorLockState
          * @description Whether a tempo anchor may be moved by automatic re-derivation.
          * @enum {string}
@@ -1069,7 +1093,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
         };
         /**
          * CommandResult
@@ -1166,6 +1190,29 @@ export interface components {
          * @enum {string}
          */
         ConfidenceKind: "probability" | "periodicity" | "heuristic" | "agreement" | "unavailable";
+        /**
+         * ConvertLoopOp
+         * @description Convert a loop between source and musical authority (M3.13 §15.4-§15.5).
+         */
+        ConvertLoopOp: {
+            /**
+             * Confirm Off Grid
+             * @default false
+             */
+            confirm_off_grid: boolean;
+            /**
+             * Loop Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            loop_id: string;
+            target: components["schemas"]["LoopAnchorMode"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "convert_loop";
+        };
         /**
          * CountInMode
          * @description Count-in length (milestone3.md §17.1).
@@ -1698,6 +1745,12 @@ export interface components {
          */
         JobType: "probe" | "canonical_decode" | "monitoring_downmix" | "playback_rate" | "waveform" | "export" | "separation";
         /**
+         * LoopAnchorMode
+         * @description Authoritative coordinate pair for a practice loop (M3.13).
+         * @enum {string}
+         */
+        LoopAnchorMode: "source" | "musical";
+        /**
          * MarkerRecord
          * @description A single marker annotation in a project (§17.1).
          */
@@ -2126,6 +2179,8 @@ export interface components {
          *     expanded (§13.3.5–6).
          */
         PracticeLoop: {
+            /** @default source */
+            anchor_mode: components["schemas"]["LoopAnchorMode"];
             /**
              * Boundary Fade
              * @default true
@@ -2146,6 +2201,11 @@ export interface components {
              * @description Integer source sample position (never milliseconds)
              */
             end_frames: number;
+            end_musical?: components["schemas"]["MusicalPosition"] | null;
+            /** Grid Branch Id */
+            grid_branch_id?: string | null;
+            /** Grid Branch Revision */
+            grid_branch_revision?: number | null;
             /**
              * Id
              * @description UUID identifier, serialized as a string
@@ -2155,11 +2215,21 @@ export interface components {
             name: string;
             /** Repeat Count */
             repeat_count?: number | null;
+            /** Resolved Source End */
+            resolved_source_end?: number | null;
+            /** Resolved Source Start */
+            resolved_source_start?: number | null;
             /**
              * Start Frames
              * @description Integer source sample position (never milliseconds)
              */
             start_frames: number;
+            start_musical?: components["schemas"]["MusicalPosition"] | null;
+            /**
+             * Unresolved
+             * @default false
+             */
+            unresolved: boolean;
             /**
              * Updated At
              * @description UTC timestamp in ISO 8601 form
