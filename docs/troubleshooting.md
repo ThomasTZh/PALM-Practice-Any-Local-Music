@@ -174,14 +174,26 @@ driver query failed`, or separation is configured for a GPU device that
 cannot be used.
 
 **Cause:** No NVIDIA driver is loaded, the GPU is absent, or the sandbox
-hides `/dev/nvidia*`.
+mounts a minimal `/dev` without `/dev/nvidia*` or `/dev/dri` even though
+the host driver is loaded. Check both layers:
+
+```sh
+lsmod | grep nvidia
+cat /sys/module/nvidia/version
+ls -l /dev/nvidia* /dev/dri
+```
+
+A loaded module plus no device nodes means the process is sandboxed, not
+that the driver is missing.
 
 **Fix:** Import, waveform editing, playback, export, and portable
-projects work without a GPU. Separation can run on the explicit `cpu`
-device in the isolated analysis environment, but it is several times
-slower than real time. Select the GPU only when `torch.cuda.is_available()`
-is true in `analysis/.venv`. GPU acceptance runs may need approved
-escalated device access outside the sandbox.
+projects work without a GPU. Separation and Beat This! inference can run
+on the explicit `cpu` device in their isolated environments; Demucs is
+several times slower than real time on CPU, Beat This! is practical on
+CPU. Select the GPU only when `torch.cuda.is_available()` is true in the
+relevant environment. Do not reinstall the driver if the modules are
+loaded; re-run the command with device access outside the sandbox
+instead. GPU acceptance runs may need approved escalated device access.
 
 ## Playwright browser dependencies unavailable on Nobara
 

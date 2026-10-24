@@ -32,6 +32,14 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `__pycache__` trees under `src/` and `tests/` were removed.
   `basseparate doctor` now reports the foundation ready (GPU warning
   only, as expected). Run all commands from the new root.
+- **GPU availability correction (2026-10-24):** earlier notes in this
+  file and the evidence said "no NVIDIA driver". The accurate diagnosis
+  is that the host has NVIDIA 595.104.02 loaded and both GPUs bound, but
+  the agent sandbox mounts a minimal `/dev` without `/dev/nvidia*` or
+  `/dev/dri`; `nvidia-smi` and CUDA fail only inside that sandbox. GPU
+  work requires approved device access outside it, and no driver
+  reinstall is needed. Verified from `lsmod`, `/sys/module/nvidia/version`,
+  `/proc/driver/nvidia/gpus/*/information`, and the PCI driver bindings.
 - **Documentation refresh (2026-10-24):** README, architecture,
   toolchain, troubleshooting, the milestone 1/2 specification links, the
   M2.19 evidence, and the generated license notices were brought up to
@@ -93,13 +101,21 @@ shell.
   `docs/evidence/m2.20-performance-and-acceptance.md`,
   `docs/evidence/m2.21-listening-review.md`, and
   `docs/evidence/session-2026-10-23-handover.md`.
-- **Current environment limits:** no NVIDIA driver (`nvidia-smi` fails;
-  `torch.cuda.is_available()` is false), so do not attempt a new
-  separation here. The acceptance stems, result set, and portable
-  archive are preserved, and playback is CPU-side. The application
+- **Current environment limits:** the host has the NVIDIA 595.104.02
+  open kernel module loaded and both GPUs bound to it (RTX 4080
+  `GPU-0dab3af3...`, RTX 5060 Ti `GPU-9cccfe8d...`). The agent sandbox,
+  however, mounts a minimal `/dev` without `/dev/nvidia*` or `/dev/dri`,
+  so inside the sandbox `nvidia-smi` cannot communicate with the driver
+  and `torch.cuda.is_available()` is false. Outside the sandbox, with
+  approved device access (as used for the M2.19 GPU runs), GPU work is
+  available; do not reinstall the driver. The acceptance stems, result
+  set, and portable archive are preserved, and playback is CPU-side. The application
   environment is torch-free; inference runs only in `analysis/.venv`
   (Python 3.11.15, demucs 4.1.0, torch 2.9.1+cu128, soundfile 0.14.0)
-  against the hash-pinned `models/htdemucs_ft` bundle. pnpm is installed
+  for Demucs and `rhythm/.venv` (Python 3.11.15, beat-this 1.1.0,
+  torch/torchaudio 2.9.1+cu128) for Beat This!, against the hash-pinned
+  `models/htdemucs_ft` bundle and the explicitly installed Beat This!
+  checkpoints. pnpm is installed
   as 12.15.0 at `~/.local/share/pnpm/bin/pnpm`; `package.json` pins
   12.8.1, and the installed pnpm cannot switch to the pinned engine in
   this sandbox (read-only package-manager store). The existing
@@ -3666,8 +3682,9 @@ review passed on 2026-10-23 (M2.20-M2.21 sections). This section records
 the first partial CPU run and what was open at that point.
 
 **2026-10-18:** `docs/evidence/m2.19-separation-acceptance.md`. The
-environment has no usable NVIDIA driver (`nvidia-smi` fails;
-`torch.cuda.is_available()` false), so the GPU acceptance could not run.
+the default agent sandbox exposes no GPU device nodes (`nvidia-smi`
+fails; `torch.cuda.is_available()` false), so the GPU acceptance could not
+run there.
 A real offline CPU run on a 12 s stereo 44.1 kHz excerpt of
 `audio2test/46.GIBBS - Simplicity.wav` completed: four stems, 529,200
 frames, 78.1 s (RTF 6.51×), peak host RSS 2.04 GiB, bundle verified
@@ -3772,8 +3789,8 @@ loops were removed, and the final 60-minute run completed on 2026-10-23:
 12 resets, 11 full periods of 293.88–294.91 s (mean 294.468 s vs
 expected 294.4565 s), one startup underrun and none later, bounded
 memory. The restart needs no GPU: the earlier separation result is
-preserved and playback is CPU-side; the current environment's NVIDIA
-driver is unavailable, so no new separation is attempted.
+preserved and playback is CPU-side; the agent sandbox exposes no GPU
+device nodes, so no new separation is attempted there.
 
 **Objective results:**
 
@@ -4257,7 +4274,7 @@ Milestone 0 setup (2026-09-29):
 |---|---|
 | `sha256sum audio2test/*.wav` | 5 hashes recorded in baseline report |
 | `uv python list --only-installed` | 3.14.7 (system), 3.13.14, 3.11.15 (uv) |
-| `nvidia-smi -L` | 2 GPUs listed at setup time (driver unavailable on 2026-10-24) |
+| `nvidia-smi -L` | 2 GPUs listed at setup time; on 2026-10-24 the 595.104.02 driver is loaded but the sandbox hides the device nodes |
 | `git init -b main` | OK |
 
 Current gates (2026-10-24): see the table in "Current position". All
@@ -4278,9 +4295,11 @@ listed commands were run from `/home/thomas/Documents/basseparate`.
   not a lint failure; `scripts/dev.py check` runs this command, so that
   aggregate check is red until the tree is reformatted in a dedicated
   change. `ruff check` and `mypy` are clean.
-- The NVIDIA driver is unavailable on this host (`nvidia-smi` fails), so
-  GPU separation cannot be re-run here; the accepted results are
-  preserved and playback is CPU-side.
+- GPU device nodes are hidden inside the agent sandbox (`nvidia-smi`
+  fails there) although the host driver 595.104.02 is loaded, so GPU
+  separation/qualification must run with approved device access outside
+  the sandbox; the accepted results are preserved and playback is
+  CPU-side.
 - The workspace moved on 2026-10-24; the venv editable install and stale
   bytecode caches were repaired (see "Current position"). For a fresh
   checkout, run `uv sync --locked` instead of reusing a moved `.venv`.
