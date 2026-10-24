@@ -22,10 +22,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   Chromium/Firefox listening and the five-recording review. Specification
   is `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is `f919c11` (M3.19-M3.22 corpus,
-  evaluation, acceptance evidence, and documentation) on top of `52ee7dc`
-  (M3.17/M3.18 completion). Earlier checkpoints: `48d64a7` ledger,
-  `a9f97f8` selector, `c99fd95` M3.17 APIs, `e0abed3` M3.18 cache.
+- **Repository:** branch `main`; feature completion is `f919c11`
+  (M3.19-M3.22 corpus, evaluation, acceptance evidence, and
+  documentation) on top of `52ee7dc` (M3.17/M3.18 completion); `c59a56c`
+  adds the small0 comparison. HEAD is the latest ledger follow-up.
+  Earlier checkpoints: `48d64a7` ledger, `a9f97f8` selector, `c99fd95`
+  M3.17 APIs, `e0abed3` M3.18 cache.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -173,7 +175,8 @@ the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
 - **Recent commits (full history in `git log`):** `f919c11`
-  M3.19-M3.22 corpus/evaluation/docs; `52ee7dc` M3.17/M3.18 completion;
+  M3.19-M3.22 corpus/evaluation/docs; `c59a56c` small0 comparison;
+  `52ee7dc` M3.17/M3.18 completion;
   `e0abed3` M3.18 cache
   identities; `c99fd95` M3.17 APIs; `eba49ab` M3.15/M3.16 completion; `bcffeb7` M3.15 count-in; `76a7756` M3.14 metronome; `fec7a84` M3.13 musical loops; `15baa05` M3.12 snapping; `d1e9e07` M3.11 mount/inspector; `f845286` M3.11 grid API and read-only lanes; `fb3a224` M3.11 ruler foundation; `3f58b96` M3.10 rhythm commands; `adb92d2` contract drift fix and Gate C ledger sync; `9d466b7` M3.9 grid and golden
   vectors; `694a08a` M3.8 meter inference; `fbfdaf0` M3.7 tempo map; `98fc3a8` GPU diagnosis correction; `bc49cf2` M3.6 automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
