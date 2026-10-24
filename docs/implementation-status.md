@@ -8,16 +8,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 - **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
   schema, `3d3c307`), M3.2 (Beat This! runtime, registry, install
   boundary, CPU qualification, `be2bb1b`), and M3.3 (reproducible
-  rhythm input preparation) complete on 2026-10-24. M2.21 final separation-app acceptance was
+  rhythm input preparation, `09d83ae`) complete on 2026-10-24. M2.21 final separation-app acceptance was
   accepted on 2026-10-23 (objective plus human steps 6-10).
 - **Next work package:** M3.4 (run Beat This! and retain frame
   activations). Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.2 ledger follow-up on
-  top of `be2bb1b` ("M3.2: integrate the Beat This! runtime, registry,
-  and install boundary"); 114 commits at that implementation commit;
-  the tree was clean before the M3.2 work.
+- **Repository:** branch `main`; HEAD is the M3.3 ledger follow-up on
+  top of `09d83ae` ("M3.3: prepare rhythm-analysis input reproducibly");
+  115 commits at that implementation commit; the tree was clean before
+  the M3.3 work.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -142,7 +142,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `be2bb1b` M3.2 Beat
+- **Recent commits (full history in `git log`):** `09d83ae` M3.3
+  reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
   status ledger and project docs; `9bcdd6c` final
@@ -4028,7 +4029,7 @@ ledger update.
 ### M3.3 — Prepare rhythm-analysis input reproducibly (complete)
 
 Spec: `milestone3.md` §5. Plan: `projectPlans/m3.3-plan.md`. Implementation
-commit recorded in the follow-up ledger entry.
+commit `09d83ae`; this ledger update is the follow-up commit.
 
 - **Domain (§5.1, §5.3, §5.7):** `domain/rhythm_input.py` defines
   `RhythmInputPlan` (role, source hash/rate/channels, explicit downmix,
