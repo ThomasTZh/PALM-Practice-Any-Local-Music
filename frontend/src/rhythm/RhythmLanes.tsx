@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
-import { fetchRhythmGrid, type RhythmGridData } from '../api/rhythm'
+import type { RhythmGridData } from '../api/rhythm'
 import {
   detailForZoom,
   suppressOverlappingLabels,
@@ -18,6 +18,7 @@ import {
   type GridLikeEvent,
 } from '../music/ruler'
 import { barBeatLabel, musicalAtSource, sourceAtMusical } from '../music/tempoGrid'
+import { RhythmBranchStore } from './branchStore'
 import type { PlayheadSource, SharedView, ViewSource } from '../waveform/WaveformEditor'
 
 export interface RhythmLanesProps {
@@ -112,6 +113,16 @@ export function RhythmLanes({
   } | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const playheadRef = useRef<HTMLDivElement | null>(null)
+  const branchStore = useMemo(() => new RhythmBranchStore(), [])
+  const lastRefresh = useRef(refreshKey)
+
+  useEffect(() => {
+    return branchStore.subscribe((snapshot) => {
+      if (!snapshot) return
+      setData(snapshot.grid)
+      setNotice(snapshot.grid ? null : 'No rhythm grid for this project')
+    })
+  }, [branchStore])
 
   useEffect(() => {
     let frame = 0
@@ -146,16 +157,21 @@ export function RhythmLanes({
   const detail = detailForZoom(estimatedPpq)
 
   useEffect(() => {
+    if (lastRefresh.current !== refreshKey) {
+      branchStore.invalidate()
+      lastRefresh.current = refreshKey
+    }
     if (!view || view.widthCssPx < 2 || view.fpp <= 0) return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       const margin = view.widthCssPx * view.fpp * 0.25
       const start = Math.max(0, Math.floor(view.startFrame - margin))
       const end = Math.ceil(view.startFrame + view.widthCssPx * view.fpp + margin)
-      fetchRhythmGrid(projectId, { startFrame: start, endFrame: end, detail }, controller.signal)
-        .then((next) => {
-          setData(next)
-          setNotice(next ? null : 'No rhythm grid for this project')
+      branchStore
+        .load(projectId, { startFrame: start, endFrame: end, detail }, controller.signal)
+        .then((snapshot) => {
+          setData(snapshot.grid)
+          setNotice(snapshot.grid ? null : 'No rhythm grid for this project')
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return
@@ -167,7 +183,7 @@ export function RhythmLanes({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [projectId, view, detail, refreshKey])
+  }, [projectId, view, detail, refreshKey, branchStore])
 
   const visibleEnd = startFrame + width * Math.max(1, fpp)
   const visible = useMemo(() => {

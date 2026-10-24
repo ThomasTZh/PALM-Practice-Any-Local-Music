@@ -39,6 +39,7 @@ from basseparate.portable.format import (
     MANIFEST_MEMBER,
     PROVENANCE_MODELS_MEMBER,
     PROVENANCE_RUNS_MEMBER,
+    RHYTHM_ACTIVATION_PREFIX,
     ManifestAsset,
     ManifestMember,
     ManifestProvenance,
@@ -159,6 +160,20 @@ def write_portable_archive(
                 members.append(
                     _write_file_member(zf, asset.member, source, asset.essential, saved_at)
                 )
+            for artifact_id in plan.rhythm_artifact_ids:
+                directory = paths.data / "rhythm" / "activations" / artifact_id
+                if not directory.is_dir():
+                    continue  # raw arrays are rebuildable/optional
+                for rel, file_path in _walk_cache_files(directory):
+                    members.append(
+                        _write_file_member(
+                            zf,
+                            f"{RHYTHM_ACTIVATION_PREFIX}{artifact_id}/{rel}",
+                            file_path,
+                            False,
+                            saved_at,
+                        )
+                    )
             for cache in plan.waveform_caches:
                 cache_dir = paths.resolve_asset_path(f"cache/waveforms/{cache.source_hash}")
                 if not cache_dir.is_dir():

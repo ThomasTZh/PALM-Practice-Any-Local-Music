@@ -22,6 +22,7 @@ from basseparate.domain.rhythm import (
     BarOriginState,
     GridValidity,
     MeterRegion,
+    RhythmAnalysisRun,
     RhythmBranchRecord,
     RhythmPulse,
     TempoAnchor,
@@ -29,6 +30,7 @@ from basseparate.domain.rhythm import (
 from basseparate.domain.rhythm_commands import RhythmCommandRequest, RhythmCommandResult
 from basseparate.domain.rhythm_pipeline import RhythmPipelineStage, module_catalog
 from basseparate.domain.snapping import SNAP_RADIUS_CSS_PX, SnapMode, SnapResult
+from basseparate.models.rhythm_registry import BEAT_THIS_FINAL0_ID
 from basseparate.rhythm.commands import (
     RhythmCommandConflict,
     RhythmCommandError,
@@ -39,6 +41,11 @@ from basseparate.rhythm.commands import (
 from basseparate.rhythm.count_in import CountInError, build_count_in_plan
 from basseparate.rhythm.grid import GridError, derive_grid
 from basseparate.rhythm.metronome import MetronomeError, build_metronome_schedule
+from basseparate.rhythm.pipeline import (
+    RhythmPipelineError,
+    RhythmPipelineService,
+    RhythmRunRequest,
+)
 from basseparate.rhythm.snapping import SnapError, snap_to_grid
 from basseparate.storage import ProjectRepository, RhythmRepository
 from basseparate.storage.repository import StaleRevisionError
@@ -573,3 +580,147 @@ async def get_rhythm_activation_range(
 @router.get("/rhythm-modules", response_model=list[RhythmPipelineStage])
 async def list_rhythm_modules() -> list[RhythmPipelineStage]:
     return module_catalog()
+
+
+# ---------------------------------------------------------------------------
+# Analyze Rhythm runs (M3.17 §19.2-§19.3)
+# ---------------------------------------------------------------------------
+
+
+class RhythmRunRequestBody(BaseModel):
+    model_id: str | None = None
+    device: str | None = None
+    force_rerun: bool | None = None
+    threads: int | None = None
+
+
+class RhythmRunSummary(BaseModel):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    status: str
+    input_asset_id: uuid.UUID
+    input_hash: str
+    model_manifest_id: str
+    model_preset: str
+    requested_device: str
+    actual_device: str | None
+    activation_artifact_id: uuid.UUID | None
+    decoded_result_id: uuid.UUID | None
+    started_at: str | None
+    ended_at: str | None
+    warnings: list[str]
+
+
+def _run_summary(run: RhythmAnalysisRun) -> RhythmRunSummary:
+    return RhythmRunSummary(
+        id=run.id,
+        project_id=run.project_id,
+        status=run.status.value,
+        input_asset_id=run.input_asset_id,
+        input_hash=run.input_hash,
+        model_manifest_id=run.model_manifest_id,
+        model_preset=run.model_preset.value,
+        requested_device=run.requested_device.value,
+        actual_device=(
+            run.actual_device.value if run.actual_device is not None else None
+        ),
+        activation_artifact_id=run.activation_artifact_id,
+        decoded_result_id=run.decoded_result_id,
+        started_at=(
+            run.started_at.isoformat().replace("+00:00", "Z")
+            if run.started_at is not None
+            else None
+        ),
+        ended_at=(
+            run.ended_at.isoformat().replace("+00:00", "Z")
+            if run.ended_at is not None
+            else None
+        ),
+        warnings=list(run.warnings),
+    )
+
+
+def _pipeline(request: Request) -> RhythmPipelineService:
+    existing = getattr(request.app.state, "rhythm_pipeline", None)
+    if existing is not None:
+        return cast(RhythmPipelineService, existing)
+    paths = request.app.state.storage_paths
+    service = RhythmPipelineService(
+        paths=paths,
+        projects=_projects(request),
+        rhythm=_rhythm(request),
+    )
+    request.app.state.rhythm_pipeline = service
+    return service
+
+
+@router.post(
+    "/projects/{project_id}/rhythm-runs",
+    response_model=RhythmRunSummary,
+    status_code=202,
+)
+async def start_rhythm_run(
+    project_id: uuid.UUID,
+    body: RhythmRunRequestBody,
+    request: Request,
+) -> RhythmRunSummary:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    service = _pipeline(request)
+    try:
+        run = await asyncio.to_thread(
+            service.start,
+            project_id,
+            RhythmRunRequest(
+                model_id=body.model_id or BEAT_THIS_FINAL0_ID,
+                device=body.device or "cpu",
+                force_rerun=bool(body.force_rerun),
+                threads=body.threads or 4,
+            ),
+        )
+    except RhythmPipelineError as exc:
+        status_code = 404 if exc.code == "PROJECT_NOT_FOUND" else 409
+        raise ApiError(
+            code=exc.code,
+            message=exc.message,
+            status_code=status_code,
+        ) from exc
+    return _run_summary(run)
+
+
+@router.get(
+    "/projects/{project_id}/rhythm-runs",
+    response_model=list[RhythmRunSummary],
+)
+async def list_rhythm_runs(
+    project_id: uuid.UUID,
+    request: Request,
+) -> list[RhythmRunSummary]:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    runs = await asyncio.to_thread(_rhythm(request).list_runs_for_project, project_id)
+    return [_run_summary(run) for run in runs]
+
+
+@router.get(
+    "/projects/{project_id}/rhythm-runs/{run_id}",
+    response_model=RhythmRunSummary,
+)
+async def get_rhythm_run(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    request: Request,
+) -> RhythmRunSummary:
+    project = await asyncio.to_thread(_projects(request).get_project, project_id)
+    if project is None:
+        raise ProjectNotFoundError(str(project_id))
+    run = await asyncio.to_thread(_rhythm(request).get_run, run_id)
+    if run is None or run.project_id != project_id:
+        raise ApiError(
+            code="RHYTHM_RUN_NOT_FOUND",
+            message="The rhythm run does not exist",
+            status_code=404,
+        )
+    return _run_summary(run)

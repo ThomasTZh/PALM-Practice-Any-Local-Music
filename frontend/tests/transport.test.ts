@@ -1927,3 +1927,42 @@ describe('M2.12 pinned loops (§14.1.4)', () => {
     expect(writes).toHaveLength(3)
   })
 })
+
+describe('M3.17 musical grid, metronome, and count-in interface', () => {
+  it('hosts a grid by revision and rejects stale schedules', () => {
+    const { transport } = makeRig()
+    transport.setMusicalGrid({
+      revision: 4,
+      events: [{ renderFrame: 100, label: 'Bar 2', revision: 4 }],
+    })
+    expect(transport.gridSchedule().revision).toBe(4)
+    expect(transport.gridSchedule().events).toHaveLength(1)
+
+    transport.setMusicalGrid({
+      revision: 3,
+      events: [{ renderFrame: 1, label: 'stale', revision: 3 }],
+    })
+    expect(transport.gridSchedule().revision).toBe(4)
+    expect(transport.gridSchedule().events[0].label).toBe('Bar 2')
+
+    transport.invalidateGridSchedule(4)
+    expect(transport.gridSchedule()).toEqual({ revision: -1, events: [] })
+  })
+
+  it('stores metronome settings and applies them to a live worklet', () => {
+    const { transport } = makeRig()
+    transport.setMetronomeState({ enabled: true, volume: 0.8, clicks: [] })
+    expect(transport.metronomeSettings()).toEqual({ enabled: true, volume: 0.8, clicks: [] })
+  })
+
+  it('schedules count-in clicks before starting playback', async () => {
+    const { transport } = makeRig()
+    const play = vi.spyOn(transport, 'play').mockResolvedValue(undefined)
+    transport.setCountIn({
+      clicks: [{ frame: 0, strength: 'accent' } as never],
+      volume: 0.6,
+    })
+    await transport.prepareCountInAndPlay()
+    expect(play).toHaveBeenCalledOnce()
+  })
+})

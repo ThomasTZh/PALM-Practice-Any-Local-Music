@@ -75,6 +75,8 @@ export interface ProjectCommands {
   flush: () => Promise<void>
   /** Clear the stale notice. */
   clearStaleNotice: () => void
+  /** Refetch the project snapshot (for example after an analysis run). */
+  refresh: () => Promise<void>
 }
 
 export function useProjectCommands(projectId: string | null): ProjectCommands {
@@ -353,5 +355,8 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
     redo,
     flush,
     clearStaleNotice,
+    refresh: async () => {
+      await resync()
+    },
   }
 }

@@ -604,6 +604,9 @@ def create_app(config: AppConfig) -> FastAPI:
         app.state.repository = ProjectRepository(paths.database_path)
         app.state.import_repository = ImportRepository(paths.database_path)
         app.state.rhythm_repository = RhythmRepository(paths.database_path)
+        interrupted_rhythm_runs = app.state.rhythm_repository.mark_interrupted()
+        if interrupted_rhythm_runs:
+            log.info("marked %d rhythm run(s) interrupted on startup", interrupted_rhythm_runs)
         from basseparate.rhythm.commands import RhythmCommandService
 
         app.state.rhythm_command_service = RhythmCommandService(paths.database_path)

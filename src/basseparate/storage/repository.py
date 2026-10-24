@@ -73,6 +73,7 @@ from basseparate.domain.rhythm import (
     LoopAnchorMode,
     ProjectRhythmState,
     RhythmAnalysisRun,
+    RhythmAnalysisStatus,
     RhythmBranchRecord,
     RhythmDisplayMode,
 )
@@ -909,8 +910,9 @@ def _insert_portable_bundle_rows(conn: sqlite3.Connection, bundle: PortableImpor
                               waveform_status, monitoring_asset_id,
                               source_metadata, monitoring_left_channel,
                               monitoring_right_channel, working_state,
-                              history_seq, practice_state, portable_provenance)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              history_seq, practice_state, portable_provenance,
+                              rhythm_state, rhythm_history_seq)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(project.id),
@@ -941,6 +943,8 @@ def _insert_portable_bundle_rows(conn: sqlite3.Connection, bundle: PortableImpor
                 if bundle.portable_provenance is not None
                 else None
             ),
+            project.rhythm_state.model_dump_json(),
+            bundle.rhythm_history_seq,
         ),
     )
 
@@ -1142,6 +1146,122 @@ def _insert_portable_bundle_rows(conn: sqlite3.Connection, bundle: PortableImpor
                 json.dumps(job.parameters, sort_keys=True),
                 _timestamp_z(job.created_at),
                 _timestamp_z(job.updated_at),
+            ),
+        )
+
+    for rhythm_run in bundle.rhythm_runs:
+        run_started = rhythm_run.started_at
+        run_ended = rhythm_run.ended_at or run_started
+        conn.execute(
+            """
+            INSERT INTO rhythm_analysis_runs (id, project_id, status,
+                                              created_at, updated_at, record_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(rhythm_run.id),
+                str(rhythm_run.project_id),
+                rhythm_run.status.value,
+                _timestamp_z(run_started) if run_started is not None else _now(),
+                _timestamp_z(run_ended) if run_ended is not None else _now(),
+                rhythm_run.model_dump_json(),
+            ),
+        )
+    for rhythm_artifact in bundle.rhythm_artifacts:
+        conn.execute(
+            """
+            INSERT INTO rhythm_activation_artifacts (id, project_id, run_id,
+                                                    content_hash, created_at,
+                                                    record_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(rhythm_artifact.artifact_id),
+                str(project.id),
+                str(rhythm_artifact.parent_run_id),
+                rhythm_artifact.content_hash,
+                _now(),
+                rhythm_artifact.model_dump_json(),
+            ),
+        )
+    for rhythm_result in bundle.rhythm_results:
+        conn.execute(
+            """
+            INSERT INTO rhythm_results (id, project_id, run_id,
+                                        activation_artifact_id, stage,
+                                        validation_status, decoder_profile_id,
+                                        decoded_content_hash, created_at,
+                                        record_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(rhythm_result.id),
+                str(rhythm_result.project_id),
+                str(rhythm_result.run_id),
+                str(rhythm_result.activation_artifact_id),
+                rhythm_result.stage.value,
+                rhythm_result.status.value,
+                rhythm_result.decoder_profile.profile_id,
+                rhythm_result.decoded_content_hash,
+                _timestamp_z(rhythm_result.created_at),
+                rhythm_result.model_dump_json(),
+            ),
+        )
+    for rhythm_branch in bundle.rhythm_branches:
+        conn.execute(
+            """
+            INSERT INTO rhythm_branches (id, project_id,
+                                         parent_automatic_result_id, revision,
+                                         created_at, updated_at, record_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(rhythm_branch.id),
+                str(rhythm_branch.project_id),
+                (
+                    str(rhythm_branch.parent_automatic_result_id)
+                    if rhythm_branch.parent_automatic_result_id is not None
+                    else None
+                ),
+                rhythm_branch.revision,
+                _timestamp_z(rhythm_branch.created_at),
+                _timestamp_z(rhythm_branch.updated_at),
+                rhythm_branch.model_dump_json(),
+            ),
+        )
+    for receipt in bundle.rhythm_receipts:
+        conn.execute(
+            """
+            INSERT INTO rhythm_command_receipts (project_id, idempotency_key,
+                                                 command_id, result_json,
+                                                 created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                receipt.project_id,
+                receipt.idempotency_key,
+                receipt.command_id,
+                receipt.result_json,
+                receipt.created_at,
+            ),
+        )
+    for rhythm_row in bundle.rhythm_history:
+        conn.execute(
+            """
+            INSERT INTO rhythm_command_history (id, project_id, seq, command_id,
+                                                op_type, before_json,
+                                                after_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rhythm_row.id,
+                rhythm_row.project_id,
+                rhythm_row.seq,
+                rhythm_row.command_id,
+                rhythm_row.op_type,
+                rhythm_row.before_json,
+                rhythm_row.after_json,
+                rhythm_row.created_at,
             ),
         )
 
@@ -3150,6 +3270,30 @@ class RhythmRepository:
             return RhythmAnalysisRun.model_validate_json(row["record_json"]) if row else None
         finally:
             conn.close()
+
+    def mark_interrupted(self) -> int:
+        """Flip running rhythm runs to interrupted on application restart.
+
+        Completed activation/decode/tempo stages stay reusable; only the
+        run that was executing becomes restartable (M3.18 §20.7).
+        """
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                "SELECT record_json FROM rhythm_analysis_runs WHERE status = 'running'"
+            ).fetchall()
+        finally:
+            conn.close()
+        now = datetime.now(UTC)
+        count = 0
+        for row in rows:
+            run = RhythmAnalysisRun.model_validate_json(row["record_json"])
+            interrupted = run.model_copy(
+                update={"status": RhythmAnalysisStatus.INTERRUPTED, "ended_at": now}
+            )
+            self.save_run(interrupted)
+            count += 1
+        return count
 
     def list_runs_for_project(self, project_id: uuid.UUID) -> list[RhythmAnalysisRun]:
         conn = _open(self._db_path)

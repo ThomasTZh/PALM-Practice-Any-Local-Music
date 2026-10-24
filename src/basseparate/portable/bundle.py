@@ -12,7 +12,7 @@ consumes it, while ``portable.open`` builds it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from basseparate.domain.asset import AssetRecord
@@ -21,6 +21,12 @@ from basseparate.domain.marker import MarkerRecord
 from basseparate.domain.media_job import MediaJob
 from basseparate.domain.project import ProjectRecord
 from basseparate.domain.representation import AudioRepresentation
+from basseparate.domain.rhythm import (
+    ActivationArtifactManifest,
+    RhythmAnalysisRun,
+    RhythmBranchRecord,
+)
+from basseparate.domain.rhythm_result import RhythmResultRecord
 from basseparate.domain.separation import SeparationResultSet, SeparationRun, StemRecord
 from basseparate.domain.waveform import WaveformCacheRecord
 
@@ -40,6 +46,31 @@ class HistoryRow:
 
 #: (project_id, asset_id, role) — one ``project_assets`` link.
 AssetLink = tuple[str, str, str]
+
+
+@dataclass(frozen=True)
+class RhythmReceiptRow:
+    """One ``rhythm_command_receipts`` row (idempotent command result)."""
+
+    project_id: str
+    idempotency_key: str
+    command_id: str
+    result_json: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class RhythmHistoryRow:
+    """One ``rhythm_command_history`` row (rhythm undo/redo snapshot)."""
+
+    id: str
+    project_id: str
+    seq: int
+    command_id: str
+    op_type: str
+    before_json: str
+    after_json: str
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -72,5 +103,17 @@ class PortableImportBundle:
     result_sets: tuple[SeparationResultSet, ...]
     stems: tuple[StemRecord, ...]
     jobs: tuple[MediaJob, ...]
+    #: Rhythm analysis runs, activation artifacts, automatic results,
+    #: editable branches, and rhythm undo/redo rows (M3.18 §20.8).
+    rhythm_runs: tuple[RhythmAnalysisRun, ...] = ()
+    rhythm_artifacts: tuple[ActivationArtifactManifest, ...] = ()
+    rhythm_results: tuple[RhythmResultRecord, ...] = ()
+    rhythm_branches: tuple[RhythmBranchRecord, ...] = ()
+    rhythm_receipts: tuple[RhythmReceiptRow, ...] = ()
+    rhythm_history: tuple[RhythmHistoryRow, ...] = ()
+    #: ``projects.rhythm_history_seq`` pointer (rhythm undo/redo).
+    rhythm_history_seq: int = -1
+    #: New artifact ID -> archive member prefix for optional raw arrays.
+    rhythm_artifact_members: dict[str, str] = field(default_factory=dict)
     #: §18.5 provenance (archived identity); ``None`` only for tests.
-    portable_provenance: dict[str, Any] | None
+    portable_provenance: dict[str, Any] | None = None

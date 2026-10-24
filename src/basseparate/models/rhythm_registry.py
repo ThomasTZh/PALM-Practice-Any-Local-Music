@@ -240,6 +240,35 @@ _register(_BEAT_THIS_FINAL0)
 _register(_BEAT_THIS_SMALL0)
 
 
+def rhythm_manifest_hash(manifest: RhythmModelManifest) -> str:
+    """Deterministic identity of one rhythm model manifest."""
+    import hashlib
+    import json
+
+    payload = {
+        "model_id": manifest.model_id,
+        "preset": manifest.preset,
+        "upstream_repository": manifest.upstream_repository,
+        "upstream_revision": manifest.upstream_revision,
+        "package_name": manifest.package_name,
+        "package_version": manifest.package_version,
+        "package_wheel_sha256": manifest.package_wheel_sha256,
+        "checkpoint": {
+            "filename": manifest.checkpoint.filename,
+            "size_bytes": manifest.checkpoint.size_bytes,
+            "sha256": manifest.checkpoint.sha256,
+        },
+        "adapter_version": manifest.adapter_version,
+        "preprocessing_profile": manifest.preprocessing_profile,
+        "preprocessing_version": manifest.preprocessing_version,
+        "input_sample_rate": manifest.input_sample_rate,
+        "frame_hop": manifest.frame_hop,
+        "activation_dtype": manifest.activation_dtype,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def get_rhythm_model(model_id: str) -> RhythmModelManifest:
     """Look up a rhythm model by its stable basseparate ID."""
     try:

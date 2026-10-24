@@ -101,3 +101,57 @@ export async function listRhythmBranches(
   }
   return res.data as RhythmBranchSummary[]
 }
+
+export type RhythmRunSummary = components['schemas']['RhythmRunSummary']
+
+export interface RhythmRunRequest {
+  model_id?: string
+  device?: string
+  force_rerun?: boolean
+  threads?: number
+}
+
+export async function startRhythmRun(
+  projectId: string,
+  request: RhythmRunRequest = {},
+  signal?: AbortSignal,
+): Promise<RhythmRunSummary> {
+  const res = await client.POST('/api/v1/projects/{project_id}/rhythm-runs', {
+    params: { path: { project_id: projectId } },
+    body: { ...request, force_rerun: request.force_rerun ?? false },
+    signal,
+  })
+  if (!res.response.ok || !res.data) {
+    throw new Error(errorMessage(res.error, `Rhythm run failed (${res.response.status})`))
+  }
+  return res.data
+}
+
+export async function listRhythmRuns(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<RhythmRunSummary[]> {
+  const res = await client.GET('/api/v1/projects/{project_id}/rhythm-runs', {
+    params: { path: { project_id: projectId } },
+    signal,
+  })
+  if (!res.response.ok || !res.data) {
+    throw new Error(errorMessage(res.error, `Rhythm runs failed (${res.response.status})`))
+  }
+  return res.data
+}
+
+export async function getRhythmRun(
+  projectId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<RhythmRunSummary> {
+  const res = await client.GET('/api/v1/projects/{project_id}/rhythm-runs/{run_id}', {
+    params: { path: { project_id: projectId, run_id: runId } },
+    signal,
+  })
+  if (!res.response.ok || !res.data) {
+    throw new Error(errorMessage(res.error, `Rhythm run failed (${res.response.status})`))
+  }
+  return res.data
+}

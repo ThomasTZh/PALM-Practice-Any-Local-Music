@@ -50,6 +50,9 @@ PROVENANCE_MODELS_MEMBER = "provenance/model-manifests.json"
 #: Member prefixes for the variable members (§16.1).
 ASSETS_PREFIX = "assets/sha256/"
 WAVEFORM_CACHE_PREFIX = "caches/waveforms/"
+#: Optional rhythm activation arrays (M3.18 §20.9). Rebuildable, so
+#: members under this prefix are not essential for practice.
+RHYTHM_ACTIVATION_PREFIX = "caches/rhythm/activations/"
 
 #: Compression: stored for large media/PCM and the database, deflate
 #: for compact text/metadata (§16.1).
@@ -114,6 +117,8 @@ def category_for(member: str) -> MemberCategory:
     if member.startswith(ASSETS_PREFIX):
         return MemberCategory.MEDIA
     if member.startswith(WAVEFORM_CACHE_PREFIX):
+        return MemberCategory.CACHE
+    if member.startswith(RHYTHM_ACTIVATION_PREFIX):
         return MemberCategory.CACHE
     if member.startswith("provenance/"):
         return MemberCategory.PROVENANCE

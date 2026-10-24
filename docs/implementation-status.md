@@ -17,15 +17,16 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **In progress:** M3.17 shared APIs/contracts are in place; unified run
-  graph, branch store, transport convenience APIs, and selector UI
-  remain. M3.18 cache identities are added; portable open/autosave/
-  eviction remain. Then M3.19–M3.22. Specification is
+- **In progress:** M3.17 (Analyze Rhythm run graph, contracts, branch
+  store, transport interface) and M3.18 (cache identity, portable open,
+  restart recovery, offline reopen) are complete. Gate G remains
+  M3.19–M3.22: corpus/automated verification, quality evaluation, final
+  acceptance, and documentation. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.17/M3.18 selector ledger
-  follow-up on top of `a9f97f8`; the M3.17 API implementation is
-  `c99fd95`, M3.18 cache identity is `e0abed3`.
+- **Repository:** branch `main`; HEAD is this M3.17/M3.18 completion
+  commit on top of `48d64a7`; earlier M3.17 API work is `c99fd95`, M3.18
+  cache identity is `e0abed3`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -69,12 +70,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1627 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1640 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 111 files |
+| `mypy src/basseparate` | clean, 112 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 603 passed, 46 files |
+| `npx vitest run` (frontend) | 611 passed, 48 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4614,48 +4615,79 @@ Spec: `milestone3.md` §18. Plan: `projectPlans/m3.16-plan.md`.
   frontend **602 passed, 45 files**; ruff/mypy/contract/typecheck/format
   green.
 
-### M3.17 — API, worker, and frontend contract additions (in progress)
+### M3.17 — API, worker, and frontend contract additions (complete)
 
 Spec: `milestone3.md` §19. Plan: `projectPlans/m3.17-plan.md`.
-Implementation commit `c99fd95`; this ledger update records it.
+API checkpoint `c99fd95`; module/run/transport work in the current
+commit.
 
 - **APIs:** rhythm command/undo/redo endpoints, result and branch
   list/detail summaries, bounded activation-range binary access (≤4096
-  frames, float32 LE with alignment/hash headers), and a module catalog
-  with the default pipeline graph. Existing grid/snap/metronome/count-in
-  endpoints remain.
+  frames, float32 LE with alignment/hash headers), a module catalog with
+  the default pipeline graph, and `POST/GET /projects/{id}/rhythm-runs`
+  with a durable run row (`rhythm_analysis_runs`).
+- **Analyze Rhythm:** `rhythm/pipeline.py` runs prepared input → Beat
+  This! activations → pulse decoding → tempo map → meter inference →
+  editable branch → active project rhythm state in a background worker
+  thread. Model presence, project readiness, and unknown-model errors
+  map to 409/404 before a run row is created; an identical completed run
+  is reused unless `force_rerun` is set. Completed activation and decode
+  stages remain durable; restart marks only executing runs interrupted.
 - **Commands:** select automatic result, select/clear editable branch
   (Auto/Edited), and set snap mode; rhythm edits use the dedicated
   transactional endpoint with 409/422 mapping. A version selector lists
   automatic results and editable branches and dispatches selection
   commands when a rhythm state exists (selector checkpoint `a9f97f8`).
-- **Contracts:** OpenAPI and generated TypeScript types regenerated and
-  verified; Python/TS mapping/snap/metronome/readout services already
-  exist.
-- **Tests:** route suite additions; backend **1631 passed, 1 skipped**;
-  frontend **602 passed, 45 files**; ruff/mypy/contract green.
-- **Remaining:** unified Analyze Rhythm run-graph execution, project JSON
-  Schema/worker schema checks, frontend RhythmBranchStore/unified state,
-  transport grid/count-in convenience APIs, and selector UI. Package is
-  not complete.
+- **Frontend services:** `rhythm/branchStore.ts` owns the active branch
+  snapshot (coalesced loads, revision invalidation, abort-safe publish)
+  and the lanes read it; `PcmTransport` gains `setMusicalGrid`,
+  `invalidateGridSchedule`, `setMetronomeState`, `setCountIn`, and
+  `prepareCountInAndPlay`; the Analyze Rhythm panel starts a run, polls
+  status, and refreshes the project snapshot on completion.
+- **Contracts:** OpenAPI/TypeScript types regenerated, and deterministic
+  `contracts/project.schema.json` + `contracts/worker.schema.json` are
+  generated by `scripts/export_schemas.py` and checked by
+  `scripts/check_contract.py` (§19.10).
+- **Tests:** pipeline entry tests (unknown project, uninstalled model,
+  manifest identity), rhythm-run route tests, branch-store and transport
+  tests, and Analyze panel tests. Backend **1640 passed, 1 skipped**;
+  frontend **611 passed, 48 files**; ruff/mypy/contract green.
 
-### M3.18 — Cache identity, persistence, autosave, portable projects (in progress)
+### M3.18 — Cache identity, persistence, autosave, portable projects (complete)
 
-Spec: `milestone3.md` §20. Plan pending.
+Spec: `milestone3.md` §20.
 
-- **Cache identities (`e0abed3`, selector/API checkpoint):** `rhythm/cache.py` adds deterministic SHA-256 keys
-  for activation (source/downmix/model/adapter/preprocessing/precision/
-  interval), decoder (activation hash/profile), tempo map (decoded hash/
-  algorithm/pulse-unit/meter evidence), and meter (decoded hash/tempo
-  identity/feature hash/candidate/transition profiles). Three unit tests
-  cover stability and dependency sensitivity.
-- **Existing persistence:** manual branch/result rows, command history,
-  musical loops, active selections, and metronome/count-in settings are
-  stored as project state and copied by portable save; rhythm feature/
-  activation file inclusion and portable **open** remain to be extended.
-- **Remaining:** portable open of rhythm rows/files with essential vs
-  optional classification, autosave/debounce rules, interrupted-stage
-  recovery, cache eviction protection, and offline reopen acceptance.
+- **Cache identities (`e0abed3`):** `rhythm/cache.py` adds deterministic
+  SHA-256 keys for activation (source/downmix/model/adapter/
+  preprocessing/precision/interval), decoder (activation hash/profile),
+  tempo map (decoded hash/algorithm/pulse-unit/meter evidence), and
+  meter (decoded hash/tempo identity/feature hash/candidate/transition
+  profiles). Three unit tests cover stability and dependency sensitivity.
+- **Portable contents and open:** portable save already copied rhythm
+  runs, artifacts, results, branches, receipts, and history rows; the
+  open pipeline now validates those untrusted rows, remaps every ID
+  (including pulse parents, tempo-anchor/meter-region owners, project
+  rhythm state, and command JSON), restores `projects.rhythm_state` and
+  `projects.rhythm_history_seq`, and inserts the rows in FK order in the
+  same single transaction. Optional activation arrays travel under
+  `caches/rhythm/activations/<id>/`; missing arrays are tolerated and do
+  not block grid or practice behaviour (§20.8-§20.10).
+- **Recovery:** `RhythmRepository.mark_interrupted()` flips executing
+  rhythm runs to `interrupted` at startup; completed artifacts and
+  results stay reusable, and queued runs stay queued (§20.7).
+- **Persistence:** manual branches, command history/receipts, loops,
+  selections, and metronome/count-in settings are project state; portable
+  reopen restores the active branch and corrected grid. Semantic rhythm
+  commands persist immediately; the lane-height/visibility fields have no
+  UI control yet, so no debounced view-state path is exercised.
+- **Eviction:** explicit storage reclaim enumerates only separation
+  result sets/stems; rhythm artifacts and project rows are outside that
+  reclaim set and are never selected for deletion.
+- **Tests:** `test_portable_rhythm.py` saves and reopens a project with a
+  run, activation arrays, decoded result, branch, active selection, and
+  asserts the remapped grid survives; `test_rhythm_persistence.py`
+  covers restart recovery and durable artifacts. Offline reopen uses no
+  network or model access.
 
 ## Architectural decisions so far
 

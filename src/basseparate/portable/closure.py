@@ -79,6 +79,9 @@ class PortablePlan:
     asset_ids: frozenset[str]
     result_set_ids: frozenset[str]
     run_ids: frozenset[str]
+    #: Activation artifact IDs whose files travel with the archive
+    #: (optional raw arrays, M3.18 §20.8-§20.9).
+    rhythm_artifact_ids: tuple[str, ...] = ()
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -290,6 +293,14 @@ def _compute_portable_plan(conn: sqlite3.Connection, project_id: str) -> Portabl
     )
     run_ids = frozenset(str(run["id"]) for run in separation_runs)
 
+    rhythm_artifact_ids = tuple(
+        row["id"]
+        for row in conn.execute(
+            "SELECT id FROM rhythm_activation_artifacts WHERE project_id = ? ORDER BY id",
+            (project_id,),
+        )
+    )
+
     return PortablePlan(
         project_id=project_id,
         project_row=project_row,
@@ -299,6 +310,7 @@ def _compute_portable_plan(conn: sqlite3.Connection, project_id: str) -> Portabl
         asset_ids=closed_asset_ids,
         result_set_ids=result_set_ids,
         run_ids=run_ids,
+        rhythm_artifact_ids=rhythm_artifact_ids,
     )
 
 

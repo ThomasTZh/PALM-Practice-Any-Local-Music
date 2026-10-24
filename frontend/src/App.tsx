@@ -34,6 +34,7 @@ import {
 import { formatTime } from './playback/pcm'
 import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
+import { RhythmAnalysisPanel } from './rhythm/RhythmAnalysisPanel'
 import { RhythmLanes } from './rhythm/RhythmLanes'
 import { RhythmVersionSelector } from './rhythm/RhythmVersionSelector'
 import { fetchMetronomeSchedule } from './api/metronome'
@@ -2081,6 +2082,7 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
       />
+      <RhythmAnalysisPanel projectId={project.id} refresh={commands.refresh} />
       {commands.rhythmState?.active_branch_id ||
       commands.rhythmState?.active_automatic_result_id ? (
         <RhythmVersionSelector

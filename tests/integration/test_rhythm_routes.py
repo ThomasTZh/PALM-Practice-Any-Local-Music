@@ -435,3 +435,66 @@ def test_rhythm_module_catalog(client: TestClient, headers) -> None:
     ids = [module["module_id"] for module in modules]
     assert "rhythm.activation_inference.v1" in ids
     assert "rhythm.analyze.v1" in ids
+
+
+class TestRhythmRuns:
+    def test_lists_no_runs(self, client: TestClient, app, headers) -> None:
+        project_id = _seed(app)
+        response = client.get(f"/api/v1/projects/{project_id}/rhythm-runs", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_missing_model_is_a_conflict(self, client: TestClient, app, headers) -> None:
+        project_id = _seed(app)
+        response = client.post(
+            f"/api/v1/projects/{project_id}/rhythm-runs",
+            headers=headers,
+            json={"device": "cpu"},
+        )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "RHYTHM_MODEL_NOT_INSTALLED"
+
+    def test_start_returns_durable_run_identity(
+        self, client: TestClient, app, headers
+    ) -> None:
+        from basseparate.domain.rhythm import RhythmAnalysisRun, RhythmAnalysisStatus
+
+        project_id = _seed(app)
+        run = RhythmAnalysisRun(
+            id=uuid.uuid4(),
+            project_id=project_id,
+            input_asset_id=uuid.uuid4(),
+            input_hash="ab" * 32,
+            input_role="original_mix",
+            model_manifest_id="beat_this_final0",
+            model_manifest_hash="ef" * 32,
+            model_preset="final0",
+            adapter_version="beat-this-adapter-v1",
+            preprocessing_profile="beat-this-logmel-22050-441-v1",
+            preprocessing_version=1,
+            requested_device="cpu",
+            status=RhythmAnalysisStatus.QUEUED,
+        )
+
+        class FakePipeline:
+            def start(self, project_id_arg, request):
+                assert project_id_arg == project_id
+                return run
+
+        app.state.rhythm_pipeline = FakePipeline()
+        response = client.post(
+            f"/api/v1/projects/{project_id}/rhythm-runs",
+            headers=headers,
+            json={"device": "cpu"},
+        )
+        assert response.status_code == 202
+        body = response.json()
+        assert body["id"] == str(run.id)
+        assert body["status"] == "queued"
+        assert body["model_manifest_id"] == "beat_this_final0"
+
+        detail = client.get(
+            f"/api/v1/projects/{project_id}/rhythm-runs/{run.id}", headers=headers
+        )
+        assert detail.status_code == 404
+        assert detail.json()["error"]["code"] == "RHYTHM_RUN_NOT_FOUND"

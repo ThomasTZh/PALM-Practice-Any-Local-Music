@@ -102,6 +102,31 @@ export interface TransportLoopSpec {
 }
 
 /** One metronome click in absolute worklet render frames (M3.14). */
+export interface MusicalGridEvent {
+  /** Context render frame of the grid event boundary. */
+  renderFrame: number
+  /** Musical label for diagnostics; never used for arithmetic here. */
+  label: string
+  /** Grid revision that produced the event. */
+  revision: number
+}
+
+export interface MusicalGridSchedule {
+  revision: number
+  events: readonly MusicalGridEvent[]
+}
+
+export interface MetronomeTransportState {
+  enabled: boolean
+  volume: number
+  clicks: MetronomeClickSpec[]
+}
+
+export interface CountInTransportState {
+  clicks: MetronomeClickSpec[]
+  volume: number
+}
+
 export interface MetronomeClickSpec {
   frame: number
   strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision'
@@ -464,6 +489,10 @@ export class PcmTransport {
   private limiterNode: CompressorNodeLike | null = null
   private blobUrl: string | null = null
   private pendingGain = 1
+  private musicalGridRevision = -1
+  private musicalGrid: readonly MusicalGridEvent[] = []
+  private metronomeState: MetronomeTransportState | null = null
+  private countInState: CountInTransportState | null = null
   /** Master monitoring gain (linear), applied in the worklet mixer. */
   private pendingMasterGain = 1
   /** M2.9: target playback speed (0.25…2.0), remembered for fresh graphs. */
@@ -1334,6 +1363,69 @@ export class PcmTransport {
    */
   scheduleMetronome(clicks: MetronomeClickSpec[], volume?: number): void {
     this.node?.port.postMessage({ type: 'metronome', clicks, volume })
+  }
+
+  /**
+   * Host a compact musical-grid schedule (M3.17 §19.8). The transport
+   * owns the revision so a stale schedule can never overwrite a newer
+   * one; worklet message details stay private to this layer.
+   */
+  setMusicalGrid(grid: MusicalGridSchedule | null): void {
+    if (grid === null) {
+      this.musicalGridRevision = -1
+      this.musicalGrid = []
+      return
+    }
+    if (grid.revision < this.musicalGridRevision) return
+    this.musicalGridRevision = grid.revision
+    this.musicalGrid = grid.events
+  }
+
+  /** Forget a grid schedule at or below `revision` (stale-revision guard). */
+  invalidateGridSchedule(revision: number): void {
+    if (revision < this.musicalGridRevision) return
+    this.musicalGridRevision = -1
+    this.musicalGrid = []
+  }
+
+  /** The currently hosted grid revision and its bounded event list. */
+  gridSchedule(): { revision: number; events: readonly MusicalGridEvent[] } {
+    return { revision: this.musicalGridRevision, events: this.musicalGrid }
+  }
+
+  /**
+   * Apply metronome settings. Clicks are absolute render frames; an empty
+   * list clears the worklet's lookahead.
+   */
+  setMetronomeState(state: MetronomeTransportState): void {
+    this.metronomeState = state
+    this.node?.port.postMessage({
+      type: 'metronome',
+      clicks: state.clicks,
+      volume: state.volume,
+    })
+  }
+
+  /** Remember the count-in clicks that `prepareCountInAndPlay` will use. */
+  setCountIn(state: CountInTransportState): void {
+    this.countInState = state
+  }
+
+  /**
+   * Schedule the count-in clicks and start playback from the current
+   * position (M3.17 §19.8). Count-in audio is heard before project audio
+   * only when the caller has advanced the position itself.
+   */
+  async prepareCountInAndPlay(): Promise<void> {
+    if (this.countInState !== null) {
+      this.scheduleMetronome(this.countInState.clicks, this.countInState.volume)
+    }
+    await this.play()
+  }
+
+  /** The last metronome settings applied through this transport. */
+  metronomeSettings(): MetronomeTransportState | null {
+    return this.metronomeState
   }
 
   setMasterGain(gain: number): void {

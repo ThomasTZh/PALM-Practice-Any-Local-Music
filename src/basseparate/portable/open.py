@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import shutil
 import sqlite3
 import uuid
@@ -53,13 +54,26 @@ from basseparate.domain.marker import MarkerRecord
 from basseparate.domain.media_job import MediaJob
 from basseparate.domain.project import ProjectRecord
 from basseparate.domain.representation import AudioRepresentation
+from basseparate.domain.rhythm import (
+    ActivationArtifactManifest,
+    RhythmAnalysisRun,
+    RhythmBranchRecord,
+)
+from basseparate.domain.rhythm_commands import RhythmCommandResult
+from basseparate.domain.rhythm_result import RhythmResultRecord
 from basseparate.domain.separation import (
     SeparationResultSet,
     SeparationRun,
     StemRecord,
 )
 from basseparate.domain.waveform import WaveformCacheRecord
-from basseparate.portable.bundle import AssetLink, HistoryRow, PortableImportBundle
+from basseparate.portable.bundle import (
+    AssetLink,
+    HistoryRow,
+    PortableImportBundle,
+    RhythmHistoryRow,
+    RhythmReceiptRow,
+)
 from basseparate.portable.errors import (
     PortableOpenDbInvalid,
     PortableOpenIdConflict,
@@ -79,6 +93,7 @@ from basseparate.portable.format import (
     DATABASE_MEMBER,
     FORMAT_ID,
     MANIFEST_MEMBER,
+    RHYTHM_ACTIVATION_PREFIX,
     WAVEFORM_CACHE_PREFIX,
     MemberCategory,
     PortableManifest,
@@ -157,8 +172,16 @@ class _PortableRows:
     result_sets: tuple[SeparationResultSet, ...]
     stems: tuple[StemRecord, ...]
     jobs: tuple[MediaJob, ...]
+    rhythm_runs: tuple[RhythmAnalysisRun, ...]
+    rhythm_artifacts: tuple[ActivationArtifactManifest, ...]
+    rhythm_results: tuple[RhythmResultRecord, ...]
+    rhythm_branches: tuple[RhythmBranchRecord, ...]
+    rhythm_receipts: tuple[RhythmReceiptRow, ...]
+    rhythm_history: tuple[RhythmHistoryRow, ...]
     #: ``projects.history_seq`` pointer (undo/redo position, §17.4).
     history_seq: int
+    #: ``projects.rhythm_history_seq`` pointer (rhythm undo/redo).
+    rhythm_history_seq: int
 
 
 @dataclass(frozen=True)
@@ -175,6 +198,11 @@ class _IdMaps:
     marker: dict[str, str]
     waveform: dict[str, str]
     history: dict[str, str]
+    rhythm_run: dict[str, str]
+    rhythm_artifact: dict[str, str]
+    rhythm_result: dict[str, str]
+    rhythm_branch: dict[str, str]
+    rhythm_history: dict[str, str]
 
     @property
     def all(self) -> dict[str, str]:
@@ -191,6 +219,11 @@ class _IdMaps:
             self.marker,
             self.waveform,
             self.history,
+            self.rhythm_run,
+            self.rhythm_artifact,
+            self.rhythm_result,
+            self.rhythm_branch,
+            self.rhythm_history,
         ):
             merged.update(space)
         return merged
@@ -503,6 +536,46 @@ def _read_database_rows(conn: sqlite3.Connection) -> _PortableRows:
         for row in conn.execute("SELECT record_json FROM stems")
     )
     jobs = tuple(_row_to_job(row) for row in conn.execute("SELECT * FROM media_jobs"))
+    rhythm_runs = tuple(
+        RhythmAnalysisRun.model_validate_json(row["record_json"])
+        for row in conn.execute("SELECT * FROM rhythm_analysis_runs")
+    )
+    rhythm_artifacts = tuple(
+        ActivationArtifactManifest.model_validate_json(row["record_json"])
+        for row in conn.execute("SELECT * FROM rhythm_activation_artifacts")
+    )
+    rhythm_results = tuple(
+        RhythmResultRecord.model_validate_json(row["record_json"])
+        for row in conn.execute("SELECT * FROM rhythm_results")
+    )
+    rhythm_branches = tuple(
+        RhythmBranchRecord.model_validate_json(row["record_json"])
+        for row in conn.execute("SELECT * FROM rhythm_branches")
+    )
+    rhythm_receipts = tuple(
+        RhythmReceiptRow(
+            project_id=row["project_id"],
+            idempotency_key=row["idempotency_key"],
+            command_id=row["command_id"],
+            result_json=row["result_json"],
+            created_at=row["created_at"],
+        )
+        for row in conn.execute("SELECT * FROM rhythm_command_receipts")
+    )
+    rhythm_history = tuple(
+        RhythmHistoryRow(
+            id=row["id"],
+            project_id=row["project_id"],
+            seq=int(row["seq"]),
+            command_id=row["command_id"],
+            op_type=row["op_type"],
+            before_json=row["before_json"],
+            after_json=row["after_json"],
+            created_at=row["created_at"],
+        )
+        for row in conn.execute("SELECT * FROM rhythm_command_history")
+    )
+    rhythm_history_seq = int(project_rows[0]["rhythm_history_seq"])
     return _PortableRows(
         project=project,
         assets=assets,
@@ -516,7 +589,14 @@ def _read_database_rows(conn: sqlite3.Connection) -> _PortableRows:
         result_sets=result_sets,
         stems=stems,
         jobs=jobs,
+        rhythm_runs=rhythm_runs,
+        rhythm_artifacts=rhythm_artifacts,
+        rhythm_results=rhythm_results,
+        rhythm_branches=rhythm_branches,
+        rhythm_receipts=rhythm_receipts,
+        rhythm_history=rhythm_history,
         history_seq=history_seq,
+        rhythm_history_seq=rhythm_history_seq,
     )
 
 
@@ -614,6 +694,62 @@ def _check_isolation(rows: _PortableRows) -> None:
             f"practice_state references unknown result set {active}"
         )
 
+    rhythm_run_ids = {str(run.id) for run in rows.rhythm_runs}
+    rhythm_artifact_ids = {
+        str(artifact.artifact_id) for artifact in rows.rhythm_artifacts
+    }
+    rhythm_result_ids = {str(result.id) for result in rows.rhythm_results}
+    if len(rhythm_result_ids) != len(rows.rhythm_results):
+        raise PortableOpenDbInvalid("duplicate rhythm result ids")
+    for rhythm_run in rows.rhythm_runs:
+        if str(rhythm_run.project_id) != project_id:
+            raise PortableOpenDbInvalid("rhythm run references a foreign project")
+        _must_be_asset(rhythm_run.input_asset_id, "rhythm_analysis_runs.input_asset_id")
+        if (
+            rhythm_run.activation_artifact_id is not None
+            and str(rhythm_run.activation_artifact_id) not in rhythm_artifact_ids
+        ):
+            raise PortableOpenDbInvalid(
+                "rhythm run references an unknown activation artifact"
+            )
+        if (
+            rhythm_run.decoded_result_id is not None
+            and str(rhythm_run.decoded_result_id) not in rhythm_result_ids
+        ):
+            raise PortableOpenDbInvalid("rhythm run references an unknown result")
+    for rhythm_artifact in rows.rhythm_artifacts:
+        if str(rhythm_artifact.parent_run_id) not in rhythm_run_ids:
+            raise PortableOpenDbInvalid(
+                "activation artifact references an unknown rhythm run"
+            )
+    for rhythm_result in rows.rhythm_results:
+        if str(rhythm_result.project_id) != project_id:
+            raise PortableOpenDbInvalid("rhythm result references a foreign project")
+        if str(rhythm_result.run_id) not in rhythm_run_ids:
+            raise PortableOpenDbInvalid("rhythm result references an unknown run")
+        if str(rhythm_result.activation_artifact_id) not in rhythm_artifact_ids:
+            raise PortableOpenDbInvalid(
+                "rhythm result references an unknown activation artifact"
+            )
+    for rhythm_branch in rows.rhythm_branches:
+        if str(rhythm_branch.project_id) != project_id:
+            raise PortableOpenDbInvalid("rhythm branch references a foreign project")
+        parent = rhythm_branch.parent_automatic_result_id
+        if parent is not None and str(parent) not in rhythm_result_ids:
+            raise PortableOpenDbInvalid(
+                "rhythm branch references an unknown automatic result"
+            )
+    for receipt in rows.rhythm_receipts:
+        if receipt.project_id != project_id:
+            raise PortableOpenDbInvalid(
+                "rhythm command receipt references a foreign project"
+            )
+    for rhythm_row in rows.rhythm_history:
+        if rhythm_row.project_id != project_id:
+            raise PortableOpenDbInvalid(
+                "rhythm command history references a foreign project"
+            )
+
 
 def _check_manifest_assets(manifest: PortableManifest, rows: _PortableRows) -> None:
     """Cross-check the manifest's asset list against the embedded rows.
@@ -693,6 +829,13 @@ def _new_id_maps(
         marker=_map([str(marker.id) for marker in rows.markers]),
         waveform=_map([str(cache.id) for cache in rows.waveform_caches]),
         history=_map([row.id for row in rows.history]),
+        rhythm_run=_map([str(run.id) for run in rows.rhythm_runs]),
+        rhythm_artifact=_map(
+            [str(artifact.artifact_id) for artifact in rows.rhythm_artifacts]
+        ),
+        rhythm_result=_map([str(result.id) for result in rows.rhythm_results]),
+        rhythm_branch=_map([str(branch.id) for branch in rows.rhythm_branches]),
+        rhythm_history=_map([row.id for row in rows.rhythm_history]),
     )
 
 
@@ -814,6 +957,23 @@ def build_bundle(
             practice_state = practice_state.model_copy(
                 update={"active_result_set_id": uuid.UUID(maps.result_set[old_active])}
             )
+    rhythm_state = project.rhythm_state
+    if rhythm_state.active_automatic_result_id is not None:
+        rhythm_state = rhythm_state.model_copy(
+            update={
+                "active_automatic_result_id": _remap_uuid(
+                    maps.rhythm_result, rhythm_state.active_automatic_result_id
+                )
+            }
+        )
+    if rhythm_state.active_branch_id is not None:
+        rhythm_state = rhythm_state.model_copy(
+            update={
+                "active_branch_id": _remap_uuid(
+                    maps.rhythm_branch, rhythm_state.active_branch_id
+                )
+            }
+        )
     project = project.model_copy(
         update={
             "id": new_project_id,
@@ -821,6 +981,7 @@ def build_bundle(
             "canonical_asset_id": _remap_uuid(maps.asset, project.canonical_asset_id),
             "monitoring_asset_id": _remap_uuid(maps.asset, project.monitoring_asset_id),
             "practice_state": practice_state,
+            "rhythm_state": rhythm_state,
         }
     )
     if project_name is not None:
@@ -952,6 +1113,109 @@ def build_bundle(
         for job in rows.jobs
     )
 
+    rhythm_runs = tuple(
+        RhythmAnalysisRun.model_validate(
+            _remap_json_uuids(
+                {
+                    **rhythm_run.model_dump(mode="json"),
+                    "id": maps.rhythm_run[str(rhythm_run.id)],
+                    "project_id": str(new_project_id),
+                    "input_asset_id": _remap_uuid(maps.asset, rhythm_run.input_asset_id),
+                    "activation_artifact_id": _remap_uuid(
+                        maps.rhythm_artifact, rhythm_run.activation_artifact_id
+                    ),
+                    "decoded_result_id": _remap_uuid(
+                        maps.rhythm_result, rhythm_run.decoded_result_id
+                    ),
+                },
+                flat,
+            )
+        )
+        for rhythm_run in rows.rhythm_runs
+    )
+    run_inputs = {str(item.id): item.input_asset_id for item in rows.rhythm_runs}
+    rhythm_artifacts = tuple(
+        ActivationArtifactManifest.model_validate(
+            {
+                **rhythm_artifact.model_dump(mode="json"),
+                "artifact_id": maps.rhythm_artifact[str(rhythm_artifact.artifact_id)],
+                "parent_run_id": maps.rhythm_run[str(rhythm_artifact.parent_run_id)],
+                "source_asset_id": _remap_uuid(
+                    maps.asset,
+                    rhythm_artifact.source_asset_id
+                    if rhythm_artifact.source_asset_id in maps.asset
+                    else run_inputs.get(
+                        str(rhythm_artifact.parent_run_id),
+                        rhythm_artifact.source_asset_id,
+                    ),
+                ),
+            }
+        )
+        for rhythm_artifact in rows.rhythm_artifacts
+    )
+    rhythm_results = tuple(
+        RhythmResultRecord.model_validate(
+            _remap_json_uuids(
+                {
+                    **rhythm_result.model_dump(mode="json"),
+                    "id": maps.rhythm_result[str(rhythm_result.id)],
+                    "project_id": str(new_project_id),
+                    "run_id": maps.rhythm_run[str(rhythm_result.run_id)],
+                    "activation_artifact_id": maps.rhythm_artifact[
+                        str(rhythm_result.activation_artifact_id)
+                    ],
+                },
+                flat,
+            )
+        )
+        for rhythm_result in rows.rhythm_results
+    )
+    rhythm_branches = tuple(
+        RhythmBranchRecord.model_validate(
+            _remap_json_uuids(
+                {
+                    **rhythm_branch.model_dump(mode="json"),
+                    "id": maps.rhythm_branch[str(rhythm_branch.id)],
+                    "project_id": str(new_project_id),
+                    "parent_automatic_result_id": _remap_uuid(
+                        maps.rhythm_result, rhythm_branch.parent_automatic_result_id
+                    ),
+                },
+                flat,
+            )
+        )
+        for rhythm_branch in rows.rhythm_branches
+    )
+    rhythm_receipts = tuple(
+        RhythmReceiptRow(
+            project_id=str(new_project_id),
+            idempotency_key=rhythm_receipt.idempotency_key,
+            command_id=rhythm_receipt.command_id,
+            result_json=RhythmCommandResult.model_validate(
+                _remap_json_uuids(json.loads(rhythm_receipt.result_json), flat)
+            ).model_dump_json(),
+            created_at=rhythm_receipt.created_at,
+        )
+        for rhythm_receipt in rows.rhythm_receipts
+    )
+    rhythm_history = tuple(
+        RhythmHistoryRow(
+            id=maps.rhythm_history[rhythm_row.id],
+            project_id=str(new_project_id),
+            seq=rhythm_row.seq,
+            command_id=rhythm_row.command_id,
+            op_type=rhythm_row.op_type,
+            before_json=json.dumps(
+                _remap_json_uuids(json.loads(rhythm_row.before_json), flat), sort_keys=True
+            ),
+            after_json=json.dumps(
+                _remap_json_uuids(json.loads(rhythm_row.after_json), flat), sort_keys=True
+            ),
+            created_at=rhythm_row.created_at,
+        )
+        for rhythm_row in rows.rhythm_history
+    )
+
     provenance = {
         "archived_project_id": str(manifest.project_id),
         "saved_revision": manifest.saved_revision,
@@ -974,6 +1238,19 @@ def build_bundle(
         result_sets=result_sets,
         stems=stems,
         jobs=jobs,
+        rhythm_runs=rhythm_runs,
+        rhythm_artifacts=rhythm_artifacts,
+        rhythm_results=rhythm_results,
+        rhythm_branches=rhythm_branches,
+        rhythm_receipts=rhythm_receipts,
+        rhythm_history=rhythm_history,
+        rhythm_history_seq=rows.rhythm_history_seq,
+        rhythm_artifact_members={
+            maps.rhythm_artifact[str(artifact.artifact_id)]: (
+                f"{RHYTHM_ACTIVATION_PREFIX}{artifact.artifact_id}/"
+            )
+            for artifact in rows.rhythm_artifacts
+        },
         portable_provenance=provenance,
     )
 
@@ -1201,6 +1478,31 @@ def _copy_verified(source: Path, destination: Path, expected_hash: str) -> None:
     _stream_copy(source, destination)
 
 
+def restore_rhythm_artifact_files(
+    bundle: PortableImportBundle,
+    manifest: PortableManifest,
+    staging: Path,
+    present: set[str],
+    paths: StoragePaths,
+) -> None:
+    """Restore optional activation arrays into the rhythm artifact store.
+
+    Arrays are rebuildable, so absent members are tolerated (the grid and
+    metronome keep working; re-decoding is reported as unavailable).
+    """
+    for artifact_id, prefix in bundle.rhythm_artifact_members.items():
+        for member in manifest.members:
+            if not member.name.startswith(prefix):
+                continue
+            if member.name not in present:
+                continue
+            relative = member.name[len(prefix):]
+            if not relative:
+                continue
+            destination = paths.data / "rhythm" / "activations" / artifact_id / relative
+            _copy_verified(staging / member.name, destination, member.sha256)
+
+
 def restore_asset_files(
     bundle: PortableImportBundle,
     manifest: PortableManifest,
@@ -1295,6 +1597,7 @@ def open_portable_archive(
         )
         bundle = drop_absent_optional_assets(bundle, manifest, present)
         restore_asset_files(bundle, manifest, staging, present, paths)
+        restore_rhythm_artifact_files(bundle, manifest, staging, present, paths)
         return repository.import_portable_bundle(bundle)
     finally:
         shutil.rmtree(staging, ignore_errors=True)

@@ -888,6 +888,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/rhythm-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rhythm Runs */
+        get: operations["list_rhythm_runs_api_v1_projects__project_id__rhythm_runs_get"];
+        put?: never;
+        /** Start Rhythm Run */
+        post: operations["start_rhythm_run_api_v1_projects__project_id__rhythm_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rhythm-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rhythm Run */
+        get: operations["get_rhythm_run_api_v1_projects__project_id__rhythm_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/rhythm-snap": {
         parameters: {
             query?: never;
@@ -3258,6 +3293,57 @@ export interface components {
             stage: string;
             /** Status */
             status: string;
+        };
+        /** RhythmRunRequestBody */
+        RhythmRunRequestBody: {
+            /** Device */
+            device?: string | null;
+            /** Force Rerun */
+            force_rerun?: boolean | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Threads */
+            threads?: number | null;
+        };
+        /** RhythmRunSummary */
+        RhythmRunSummary: {
+            /** Activation Artifact Id */
+            activation_artifact_id: string | null;
+            /** Actual Device */
+            actual_device: string | null;
+            /** Decoded Result Id */
+            decoded_result_id: string | null;
+            /** Ended At */
+            ended_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Input Asset Id
+             * Format: uuid
+             */
+            input_asset_id: string;
+            /** Input Hash */
+            input_hash: string;
+            /** Model Manifest Id */
+            model_manifest_id: string;
+            /** Model Preset */
+            model_preset: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Requested Device */
+            requested_device: string;
+            /** Started At */
+            started_at: string | null;
+            /** Status */
+            status: string;
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * RuntimeJobResponse
@@ -5725,6 +5811,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RhythmResultSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rhythm_runs_api_v1_projects__project_id__rhythm_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmRunSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_rhythm_run_api_v1_projects__project_id__rhythm_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RhythmRunRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmRunSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rhythm_run_api_v1_projects__project_id__rhythm_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RhythmRunSummary"];
                 };
             };
             /** @description Validation Error */

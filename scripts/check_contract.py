@@ -102,6 +102,17 @@ out.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\\n", encoding="u
             )
             return 1
 
+    schema_check = subprocess.run(
+        [str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "scripts" / "export_schemas.py"), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    if schema_check.returncode != 0:
+        print(schema_check.stdout.strip())
+        print(schema_check.stderr.strip())
+        return 1
+    print(schema_check.stdout.strip())
+
     print("OK: contract artifacts are in sync.")
     return 0
 

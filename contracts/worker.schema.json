@@ -1,0 +1,984 @@
+{
+  "$defs": {
+    "CancelPayload": {
+      "description": "Request to cancel a running job (backend \u2192 worker).",
+      "properties": {
+        "job_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "title": "CancelPayload",
+      "type": "object"
+    },
+    "CancelledPayload": {
+      "description": "Confirmation that a job was cancelled (worker \u2192 backend).",
+      "properties": {
+        "job_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "staging_removed": {
+          "title": "Staging Removed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "job_id",
+        "staging_removed"
+      ],
+      "title": "CancelledPayload",
+      "type": "object"
+    },
+    "CapabilitiesPayload": {
+      "properties": {
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "worker": {
+          "title": "Worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worker"
+      ],
+      "title": "CapabilitiesPayload",
+      "type": "object"
+    },
+    "Capability": {
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "Capability",
+      "type": "object"
+    },
+    "CompletedPayload": {
+      "description": "A job finished successfully (worker \u2192 backend).",
+      "properties": {
+        "job_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "job_id",
+        "result"
+      ],
+      "title": "CompletedPayload",
+      "type": "object"
+    },
+    "DescribePayload": {
+      "properties": {},
+      "title": "DescribePayload",
+      "type": "object"
+    },
+    "ErrorPayload": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    },
+    "FailedPayload": {
+      "description": "A job failed (worker \u2192 backend).",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "job_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 2000,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "code",
+        "message"
+      ],
+      "title": "FailedPayload",
+      "type": "object"
+    },
+    "HelloPayload": {
+      "properties": {
+        "protocol_version": {
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "worker": {
+          "title": "Worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worker",
+        "protocol_version"
+      ],
+      "title": "HelloPayload",
+      "type": "object"
+    },
+    "JobStage": {
+      "description": "Progress stages reported by workers (milestone1.md \u00a76.6).",
+      "enum": [
+        "transferring",
+        "verifying",
+        "inspecting",
+        "decoding",
+        "preparing_playback",
+        "preparing_input",
+        "separating",
+        "loading_model",
+        "running_inference",
+        "writing_activations",
+        "validating_artifact",
+        "decoding_pulses",
+        "building_waveform",
+        "verifying_stems",
+        "encoding",
+        "verifying_export",
+        "ready"
+      ],
+      "title": "JobStage",
+      "type": "string"
+    },
+    "JobType": {
+      "enum": [
+        "probe",
+        "canonical_decode",
+        "monitoring_downmix",
+        "playback_rate",
+        "waveform",
+        "export",
+        "separation"
+      ],
+      "title": "JobType",
+      "type": "string"
+    },
+    "PingPayload": {
+      "properties": {
+        "nonce": {
+          "title": "Nonce",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nonce"
+      ],
+      "title": "PingPayload",
+      "type": "object"
+    },
+    "PongPayload": {
+      "properties": {
+        "nonce": {
+          "title": "Nonce",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nonce"
+      ],
+      "title": "PongPayload",
+      "type": "object"
+    },
+    "ProgressPayload": {
+      "description": "A progress report for a running job (worker \u2192 backend).",
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fraction"
+        },
+        "job_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/JobStage"
+        }
+      },
+      "required": [
+        "job_id",
+        "stage"
+      ],
+      "title": "ProgressPayload",
+      "type": "object"
+    },
+    "RunPayload": {
+      "description": "Request to execute one media job (backend \u2192 worker).",
+      "properties": {
+        "job_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "job_type": {
+          "$ref": "#/$defs/JobType"
+        },
+        "max_threads": {
+          "default": 4,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Max Threads",
+          "type": "integer"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "title": "Parameters",
+          "type": "object"
+        },
+        "source_path": {
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        },
+        "staging_dir": {
+          "minLength": 1,
+          "title": "Staging Dir",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "job_type",
+        "source_path",
+        "staging_dir"
+      ],
+      "title": "RunPayload",
+      "type": "object"
+    },
+    "ShutdownPayload": {
+      "properties": {},
+      "title": "ShutdownPayload",
+      "type": "object"
+    },
+    "StoppedPayload": {
+      "properties": {
+        "exit_code": {
+          "default": 0,
+          "title": "Exit Code",
+          "type": "integer"
+        }
+      },
+      "title": "StoppedPayload",
+      "type": "object"
+    }
+  },
+  "$id": "https://basseparate.local/schemas/worker.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "messages": {
+    "CancelMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/CancelPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "cancel",
+          "default": "cancel",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "CancelMessage",
+      "type": "object"
+    },
+    "CancelledMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/CancelledPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "cancelled",
+          "default": "cancelled",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "CancelledMessage",
+      "type": "object"
+    },
+    "CapabilitiesMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/CapabilitiesPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "capabilities",
+          "default": "capabilities",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "CapabilitiesMessage",
+      "type": "object"
+    },
+    "CompletedMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/CompletedPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "completed",
+          "default": "completed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "CompletedMessage",
+      "type": "object"
+    },
+    "DescribeMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/DescribePayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "describe",
+          "default": "describe",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "DescribeMessage",
+      "type": "object"
+    },
+    "ErrorMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ErrorPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "ErrorMessage",
+      "type": "object"
+    },
+    "FailedMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/FailedPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "failed",
+          "default": "failed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "FailedMessage",
+      "type": "object"
+    },
+    "HelloMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/HelloPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "hello",
+          "default": "hello",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "HelloMessage",
+      "type": "object"
+    },
+    "PingMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/PingPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "ping",
+          "default": "ping",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "PingMessage",
+      "type": "object"
+    },
+    "PongMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/PongPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "pong",
+          "default": "pong",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "PongMessage",
+      "type": "object"
+    },
+    "ProgressMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ProgressPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "progress",
+          "default": "progress",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "ProgressMessage",
+      "type": "object"
+    },
+    "RunMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/RunPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "run",
+          "default": "run",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "RunMessage",
+      "type": "object"
+    },
+    "ShutdownMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ShutdownPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "shutdown",
+          "default": "shutdown",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "ShutdownMessage",
+      "type": "object"
+    },
+    "StoppedMessage": {
+      "properties": {
+        "message_id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/StoppedPayload"
+        },
+        "protocol_version": {
+          "default": 2,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "type": {
+          "const": "stopped",
+          "default": "stopped",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "payload"
+      ],
+      "title": "StoppedMessage",
+      "type": "object"
+    }
+  },
+  "protocol_version": 2,
+  "title": "WorkerProtocol"
+}
