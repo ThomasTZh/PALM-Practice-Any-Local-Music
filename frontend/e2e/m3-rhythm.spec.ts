@@ -203,7 +203,8 @@ test('M3 rhythm workflow (Firefox)', async ({ page }) => {
     },
   )
   expect(scheduleResponse.ok()).toBeTruthy()
-  expect((await scheduleResponse.json()).clicks.length).toBeGreaterThan(0)
+  const scheduleBody = await scheduleResponse.json()
+  expect(scheduleBody.clicks.length).toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: 'Re-analyze' })).toBeVisible()
   await page.getByRole('button', { name: 'Play', exact: true }).click()
   await page.waitForTimeout(5_000)

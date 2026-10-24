@@ -501,3 +501,22 @@ producing doubled/rough attacks.
 the lookahead schedule instead of merging copies. Rebuild and hard-reload
 Firefox. The Firefox E2E now asserts that the worklet actually renders
 clicks (`metronome-rendered` count), not just that messages are sent.
+
+
+## Metronome clicks are uneven or grouped
+
+**Symptom:** clicks alternate short and long, or do not sound like one
+click per beat.
+
+**Cause:** **Clicks: Primary beats** follows the inferred meter
+grouping. For the current project the inferred meter is `7/8 (2+2+3)`, so
+primary clicks intentionally land on the 2+2+3 grouping pulses; that is
+three clicks per bar, not one click per eighth note.
+
+**Fix:** choose **Clicks: Denominator units** to click every eighth note
+evenly. `Primary beats` is the musical grouping track, not a plain
+metronome. If the song is actually 4/4, the inferred meter is wrong;
+record the label and section because lane editing is still read-only.
+
+The scheduler also keeps the first computed render frame per source
+click, so overlapping lookahead fetches cannot move or drop a beat.

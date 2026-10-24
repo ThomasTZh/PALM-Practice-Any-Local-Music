@@ -107,6 +107,13 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   counts so the Firefox E2E proves clicks render, not merely that
   messages are posted. Files: `App.tsx`, `worklet-processor.js`,
   `e2e/m3-rhythm.spec.ts`.
+- **Metronome scheduling stability (2026-10-24):** overlapping lookahead
+  fetches now keep the first render frame per source click in a map
+  instead of replacing the schedule or duplicating entries, so future
+  beats cannot be dropped when a fetch response returns close to their
+  time. The worklet reports rendered click frames for E2E verification.
+  The inferred meter's grouping still shapes **Primary beats**; use
+  **Denominator units** for a plain even click track.
 - **Firefox E2E (2026-10-24):** `frontend/e2e/m3-rhythm.spec.ts` imports
   a generated 12 s click track, runs the real final0 pipeline, checks the
   meter/branch/metronome/count-in/portable-save UI. Result: 1 passed in

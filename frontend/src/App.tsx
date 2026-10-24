@@ -684,9 +684,12 @@ const PlaybackPanel = memo(function PlaybackPanel({
   const transportRef = useRef<PcmTransport | null>(null)
   const metronomeSettingsRef = useRef<{ enabled: boolean; volume: number } | null>(null)
   const rhythmGridAvailableRef = useRef(false)
+  // Upcoming clicks keyed by source frame. Keeping the first computed
+  // render frame for a source click prevents jitter and dropped beats
+  // when overlapping lookahead fetches return the same click.
   const metronomePendingRef = useRef<
-    { frame: number; strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision' }[]
-  >([])
+    Map<number, { frame: number; strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision' }>
+  >(new Map())
   const metronomeFetchAtRef = useRef(0)
   const onRhythmGridRef = useRef(onRhythmGrid)
   onRhythmGridRef.current = onRhythmGrid
@@ -787,8 +790,8 @@ const PlaybackPanel = memo(function PlaybackPanel({
       if (!transport) return
       const settings = metronomeSettingsRef.current
       if (!playing || !settings?.enabled || !rhythmGridAvailableRef.current) {
-        if (metronomePendingRef.current.length > 0) {
-          metronomePendingRef.current = []
+        if (metronomePendingRef.current.size > 0) {
+          metronomePendingRef.current.clear()
           transport.scheduleMetronome([])
         }
         return
@@ -809,7 +812,7 @@ const PlaybackPanel = memo(function PlaybackPanel({
         (previousFrame !== null && Math.abs(frame - previousFrame) > 0.25 * contextRate) ||
         (previousRate !== null && previousRate !== rate)
       ) {
-        metronomePendingRef.current = []
+        metronomePendingRef.current.clear()
         transport.scheduleMetronome([])
         metronomeFetchAtRef.current = 0
         const loop = practiceStateRef.current?.loops?.find(
@@ -838,21 +841,26 @@ const PlaybackPanel = memo(function PlaybackPanel({
       fetchMetronomeSchedule(projectId, Math.max(0, Math.floor(current)), Math.ceil(windowEnd))
         .then((schedule) => {
           const nowRender = Math.round((transport.contextTime ?? contextTime) * contextRate)
-          const ready = (schedule.clicks ?? [])
-            .map((click) => ({
-              frame: Math.round(
-                (contextTime + (click.source_frame - current) / (projectRate * rate)) * contextRate,
-              ),
+          const scheduled = metronomePendingRef.current
+          // Keep the first frame computed for a source click; later
+          // overlapping windows must not move or drop it.
+          for (const click of schedule.clicks ?? []) {
+            if (scheduled.has(click.source_frame)) continue
+            const frame = Math.round(
+              (contextTime + (click.source_frame - current) / (projectRate * rate)) * contextRate,
+            )
+            if (frame <= nowRender + Math.round(0.03 * contextRate)) continue
+            scheduled.set(click.source_frame, {
+              frame,
               strength: click.strength as 'downbeat' | 'beat' | 'grouping' | 'subdivision',
-            }))
-            .filter((click) => click.frame > nowRender + Math.round(0.03 * contextRate))
-          // Replace the lookahead instead of merging it with the previous
-          // fetch: the same source click appears in every overlapping
-          // window, and keeping both copies produced doubled/distorted
-          // clicks. The window is two seconds and refreshes every ~0.5 s,
-          // so a slow fetch still has ample lookahead.
-          const next = ready.sort((left, right) => left.frame - right.frame).slice(0, 512)
-          metronomePendingRef.current = next
+            })
+          }
+          for (const [sourceFrame, click] of scheduled) {
+            if (click.frame < nowRender - contextRate) scheduled.delete(sourceFrame)
+          }
+          const next = [...scheduled.values()]
+            .sort((left, right) => left.frame - right.frame)
+            .slice(0, 512)
           transport.scheduleMetronome(next, settings.volume)
         })
         .catch(() => {

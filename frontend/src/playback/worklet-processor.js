@@ -1650,6 +1650,7 @@ export class MetronomeClickMixer {
     this.active = null
     // Diagnostics: clicks actually started, not just scheduled.
     this.renderedClicks = 0
+    this.lastClickFrame = 0
   }
 
   setVolume(volume) {
@@ -1702,6 +1703,7 @@ export class MetronomeClickMixer {
       this.nextIndex += 1
       this.active = { table: click.table, pos: 0 }
       this.renderedClicks += 1
+      this.lastClickFrame = click.frame
       offset = Math.max(offset, click.frame - startFrame)
     }
   }
@@ -1858,6 +1860,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         this.port.postMessage({
           type: 'metronome-rendered',
           count: this.metronome.renderedClicks,
+          frame: this.metronome.lastClickFrame,
         })
       }
       if (res.anchor) {
