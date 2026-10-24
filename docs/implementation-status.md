@@ -13,8 +13,9 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   beat/downbeat candidates, `c0471b9`) complete on 2026-10-24. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.9 (bars, beats, subdivisions, first downbeat,
-  pickups, and shared Python/TypeScript mapping) to complete Gate C. Specification is
+- **Next work package:** M3.10 (manual rhythm, anchor, and meter editing
+  commands with undo/redo and revision conflicts), then M3.11–M3.16 for
+  the correctable editor and metronome. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.8 ledger follow-up on
@@ -57,10 +58,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1556 passed, 1 skipped (real-model integration without the env checkpoint); one load-sensitive job-manager flake that passes alone |
+| `pytest tests/ -q` | 1567 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 97 files |
+| `mypy src/basseparate` | clean, 99 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4343,6 +4344,53 @@ commit.
   already support changes), meter persistence into branches/results
   (M3.9), meter UI/hatching/alternative selection (M3.17), calibrated
   meter confidence, and GPU-specific feature extraction.
+
+### M3.9 — Bars, beats, subdivisions, first downbeat, and pickups (complete)
+
+Spec: `milestone3.md` §11. Plan: `projectPlans/m3.9-plan.md`.
+Implementation commit recorded in the follow-up ledger entry. Completes
+Gate C.
+
+- **Derived grid (§11.1–§11.2, §11.8–§11.9):** `domain/grid.py` defines
+  bar/primary/denominator/half/quarter events, gaps, detail levels, and a
+  content hash. `rhythm/grid.py` derives only visible events from the
+  tempo map, meter map, and bar origin; source positions carry an exact
+  fraction and one half-up rounded frame; unmapped ranges return explicit
+  gaps with no events; event counts are bounded.
+- **Numbering and pickups (§11.4–§11.7):** bar numbering starts at the
+  first numbered bar, marks earlier bars as pickup, continues through
+  meter changes, and requires the first numbered bar to be on a bar
+  boundary. Helpers create a bar origin from a source downbeat, a pickup
+  interval ending at that downbeat, and a display-number override without
+  changing timing.
+- **Shared mapping (§11.3):** the pure TypeScript mapping/label library
+  `frontend/src/music/tempoGrid.ts` uses exact BigInt rationals and the
+  same half-up rounding. One JSON golden fixture
+  (`frontend/tests/golden/rhythm-grid.json`) is consumed by Python and
+  TypeScript tests and covers variable segments, exact fractions,
+  rounded frames, inverse maps, and bar/beat labels across a 4/4→3/4
+  change.
+- **Branch attachment:** `create_branch_from_result` accepts a tempo map
+  and meter map, converts anchors/regions into the branch, links pulse
+  IDs, preserves parent result, and sets `valid`/`uncertain`/`unmapped`
+  validity. The real final0 flow produces a mapped branch with grid
+  events; uncertain inferred meter remains explicitly uncertain.
+- **Tests:** `tests/unit/test_grid.py` (9) covers the golden vectors,
+  detail levels, pickups, gaps, origin alignment, and rounding; the TS
+  suite adds 4 golden tests. The real-model integration test creates the
+  mapped branch and derives grid events.
+- **Gate C:** Python/TypeScript golden vectors agree; constant/variable
+  tempo maps, half/double reinterpretation, meter candidate/region
+  rules, first downbeat/pickup behavior, and explicit unmapped gaps pass.
+  Automatic multi-region meter sequence decoding is deferred as a
+  quality improvement to M3.10; manual multi-region maps work.
+- **Gate:** backend **1567 passed, 1 skipped**; frontend **573 passed**;
+  ruff check clean; mypy clean (99 files); contract in sync; frontend
+  typecheck/format clean.
+- **Deferred:** editing commands/undo/redo and stale-revision handling
+  (M3.10), tempo/meter artifact persistence and complete result stages
+  (M3.10), grid API/UI and zoom-driven requests (M3.17), multi-region
+  automatic meter decoding (M3.10).
 
 ## Architectural decisions so far
 

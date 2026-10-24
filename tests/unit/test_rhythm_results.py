@@ -10,11 +10,17 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from basseparate.domain.meter import (
+    ManualMeterRegion,
+    build_meter_map,
+    manual_candidate,
+)
 from basseparate.domain.rhythm import (
     ActivationArrayRef,
     ActivationArtifactManifest,
     ActivationFrameMapping,
     GridValidity,
+    MusicalPosition,
     RhythmAnalysisRun,
     RhythmAnalysisStatus,
     RhythmDisplayMode,
@@ -33,6 +39,7 @@ from basseparate.rhythm.results import (
     create_branch_from_result,
     publish_decoded_result,
 )
+from basseparate.rhythm.tempo import build_automatic_tempo_map
 from basseparate.storage.db import initialize_database
 from basseparate.storage.repository import ProjectRepository, RhythmRepository
 
@@ -219,6 +226,45 @@ class TestBranches:
         assert repo.get_branch(branch.id) == branch
         assert len(repo.list_results_for_project(project.id)) == 2
         assert second.run_id == second_run.id
+
+    def test_branch_carries_tempo_and_meter_maps(self, db_path: Path) -> None:
+        _projects, project, repo, run = _setup(db_path)
+        result = publish_decoded_result(run, _decoded(run.activation_artifact_id), repo)
+        tempo = build_automatic_tempo_map(
+            result.accepted_pulses,
+            project_id=project.id,
+            project_sample_rate=48_000,
+            source_duration_frames=result.source_duration_frames,
+        )
+        meter = build_meter_map(
+            [
+                ManualMeterRegion(
+                    start=MusicalPosition(numerator=0, denominator=1),
+                    candidate=manual_candidate(4, 4, [1, 1, 1, 1]),
+                )
+            ]
+        )
+        branch = create_branch_from_result(result, repo, tempo_map=tempo, meter_map=meter)
+        assert branch.grid_validity is GridValidity.VALID
+        assert len(branch.tempo_anchors) == len(tempo.anchors)
+        assert len(branch.meter_regions) == 1
+        assert branch.meter_regions[0].end is None
+        assert branch.tempo_anchors[0].branch_id == branch.id
+        assert branch.meter_regions[0].branch_id == branch.id
+
+        uncertain = build_meter_map(
+            [
+                ManualMeterRegion(
+                    start=MusicalPosition(numerator=0, denominator=1),
+                    candidate=manual_candidate(4, 4, [1, 1, 1, 1]),
+                    uncertain=True,
+                )
+            ]
+        )
+        branch_uncertain = create_branch_from_result(
+            result, repo, tempo_map=tempo, meter_map=uncertain
+        )
+        assert branch_uncertain.grid_validity is GridValidity.UNCERTAIN
 
     def test_activate_result_and_branch(self, db_path: Path) -> None:
         projects, project, repo, run = _setup(db_path)

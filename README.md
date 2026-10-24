@@ -13,8 +13,9 @@ explicit install boundary, CPU qualification), M3.3 (reproducible
 rhythm-analysis input), M3.4 (real Beat This! runs with retained
 framewise activations), M3.5 (source-aligned beat/downbeat decoding),
 M3.6 (immutable automatic results and editable branches), M3.7
-(tempo-map construction and reinterpretation), and M3.8 (meter features,
-inference, and manual regions) are complete. See
+(tempo-map construction and reinterpretation), M3.8 (meter features,
+inference, and manual regions), and M3.9 (bars, beats, pickups, and
+shared Python/TypeScript golden vectors) are complete. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
 authoritative resume ledger and verified test results.
 

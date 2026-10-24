@@ -29,6 +29,15 @@ from basseparate.rhythm.decoder import (
     decode_artifact,
     decoded_content_hash,
 )
+from basseparate.rhythm.grid import (
+    GridError,
+    bar_beat_label,
+    default_bar_origin,
+    derive_grid,
+    first_downbeat_origin,
+    pickup_interval,
+    set_first_numbered_bar,
+)
 from basseparate.rhythm.meter import (
     MeterFeatureError,
     MeterFeatureStore,
@@ -91,4 +100,11 @@ __all__ = [
     "MeterInferenceError",
     "extract_meter_features",
     "infer_meter",
+    "GridError",
+    "bar_beat_label",
+    "default_bar_origin",
+    "derive_grid",
+    "first_downbeat_origin",
+    "pickup_interval",
+    "set_first_numbered_bar",
 ]

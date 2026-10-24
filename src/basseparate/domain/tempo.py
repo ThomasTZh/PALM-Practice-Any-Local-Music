@@ -305,12 +305,10 @@ class TempoMap(BaseModel):
             numerator=fraction.numerator, denominator=fraction.denominator
         )
 
-    def map_musical_to_source(
-        self, position: MusicalPosition, *, rounding: Literal["half_up"] = "half_up"
-    ) -> int:
-        """Source frame for a musical position, rounded once (§9.1)."""
+    def source_fraction_for_musical(self, position: MusicalPosition) -> Fraction:
+        """Exact fractional source frame for a musical position (no rounding)."""
         segment = self._segment_for_musical(position)
-        fraction = (
+        return (
             Fraction(segment.source_start, 1)
             + (position.as_quarter_notes() - segment.musical_start.as_quarter_notes())
             * Fraction(segment.source_end - segment.source_start, 1)
@@ -319,8 +317,14 @@ class TempoMap(BaseModel):
                 - segment.musical_start.as_quarter_notes()
             )
         )
+
+    def map_musical_to_source(
+        self, position: MusicalPosition, *, rounding: Literal["half_up"] = "half_up"
+    ) -> int:
+        """Source frame for a musical position, rounded once (§9.1)."""
         if rounding != "half_up":
             raise ValueError(f"unsupported rounding mode {rounding!r}")
+        fraction = self.source_fraction_for_musical(position)
         return int(math.floor(fraction + Fraction(1, 2)))
 
     def local_bpm_at_source(self, source_frame: int) -> float:

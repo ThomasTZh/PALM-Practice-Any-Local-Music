@@ -13,11 +13,13 @@ import uuid
 from datetime import UTC, datetime
 
 from basseparate.domain.common import Uuid
+from basseparate.domain.meter import MeterMap
 from basseparate.domain.project import ProjectRecord
 from basseparate.domain.rhythm import (
     ZERO_MUSICAL_POSITION,
     BarOriginState,
     GridValidity,
+    MeterRegion,
     ProjectRhythmState,
     PulseAcceptance,
     RhythmAnalysisRun,
@@ -26,6 +28,7 @@ from basseparate.domain.rhythm import (
     RhythmDisplayMode,
     RhythmOrigin,
     RhythmPulse,
+    TempoAnchor,
 )
 from basseparate.domain.rhythm_decode import DecodedPulse, DecodedRhythmResult
 from basseparate.domain.rhythm_result import (
@@ -34,6 +37,7 @@ from basseparate.domain.rhythm_result import (
     RhythmResultStatus,
     result_content_hash,
 )
+from basseparate.domain.tempo import TempoMap
 from basseparate.storage.repository import ProjectRepository, RhythmRepository
 
 
@@ -134,24 +138,78 @@ def publish_decoded_result(
     return repository.create_result(record)
 
 
+def _tempo_anchors(tempo_map: TempoMap, branch_id: Uuid) -> list[TempoAnchor]:
+    return [
+        TempoAnchor(
+            id=anchor.id,
+            branch_id=branch_id,
+            source_frame=anchor.source_frame,
+            musical_position=anchor.musical_position,
+            lock_state=anchor.lock_state,
+            origin=anchor.origin,
+            pulse_id=anchor.pulse_id,
+            confidence=anchor.confidence,
+            created_at=anchor.created_at,
+            updated_at=anchor.updated_at,
+        )
+        for anchor in tempo_map.anchors
+    ]
+
+
+def _meter_regions(meter_map: MeterMap, branch_id: Uuid) -> list[MeterRegion]:
+    regions: list[MeterRegion] = []
+    for index, region in enumerate(meter_map.regions):
+        end = meter_map.regions[index + 1].start if index + 1 < len(meter_map.regions) else None
+        regions.append(
+            MeterRegion(
+                id=uuid.uuid4(),
+                branch_id=branch_id,
+                start=region.start,
+                end=end,
+                numerator=region.candidate.numerator,
+                denominator=region.candidate.denominator,
+                grouping=region.candidate.grouping,
+                display_tempo_unit=region.candidate.display_tempo_unit,
+                confidence=region.confidence,
+                alternatives=region.alternatives,
+                grid_validity=(GridValidity.UNCERTAIN if region.uncertain else GridValidity.VALID),
+                origin=region.origin,
+            )
+        )
+    return regions
+
+
 def create_branch_from_result(
     result: RhythmResultRecord,
     repository: RhythmRepository,
     *,
     branch_id: Uuid | None = None,
     created_at: datetime | None = None,
+    tempo_map: TempoMap | None = None,
+    meter_map: MeterMap | None = None,
+    bar_origin: BarOriginState | None = None,
 ) -> RhythmBranchRecord:
     """Create an editable branch that references an automatic result (§8.3).
 
-    Accepted and candidate pulses are copied with this branch as parent;
-    the automatic result is left untouched. No tempo anchors or meter
-    regions exist yet, so the branch starts explicitly unmapped.
+    Accepted and candidate pulses are copied with this branch as parent.
+    Optional tempo-map/meter-map artifacts are converted into branch
+    anchors/regions; without both, the branch starts explicitly unmapped.
     """
     ident = branch_id or uuid.uuid4()
     now = created_at or _now()
     pulses = [_copy_pulse(pulse, parent_id=ident) for pulse in result.accepted_pulses] + [
         _copy_pulse(pulse, parent_id=ident) for pulse in result.candidate_pulses
     ]
+    anchors = _tempo_anchors(tempo_map, ident) if tempo_map is not None else []
+    regions = _meter_regions(meter_map, ident) if meter_map is not None else []
+    if anchors and regions:
+        validity = (
+            GridValidity.UNCERTAIN
+            if any(region.grid_validity is GridValidity.UNCERTAIN for region in regions)
+            else GridValidity.VALID
+        )
+    else:
+        validity = GridValidity.UNMAPPED
     branch = RhythmBranchRecord(
         id=ident,
         project_id=result.project_id,
@@ -159,10 +217,14 @@ def create_branch_from_result(
         revision=0,
         source_duration_frames=result.source_duration_frames,
         pulses=pulses,
-        tempo_anchors=[],
-        meter_regions=[],
-        bar_origin=BarOriginState(first_numbered_bar_position=ZERO_MUSICAL_POSITION),
-        grid_validity=GridValidity.UNMAPPED,
+        tempo_anchors=anchors,
+        meter_regions=regions,
+        bar_origin=(
+            bar_origin
+            if bar_origin is not None
+            else BarOriginState(first_numbered_bar_position=ZERO_MUSICAL_POSITION)
+        ),
+        grid_validity=validity,
         created_at=now,
         updated_at=now,
     )

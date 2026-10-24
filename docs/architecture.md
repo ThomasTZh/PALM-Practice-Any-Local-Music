@@ -105,6 +105,14 @@ stream coordinate.
   `manifest.json`). Raw framewise logits are retained unmodified; the
   manifest records array hashes, source identity, model/adapter identity,
   frame mapping, and output semantics.
+- The visible grid is derived, not stored per line. `derive_grid` emits
+  bar, primary-beat, denominator, half-beat, and quarter-beat events for a
+  requested musical range/detail from the tempo map, meter map, and bar
+  origin. Events carry an exact source fraction plus one half-up rounded
+  frame; unmapped ranges yield explicit gaps with no events. Bar numbering
+  continues through meter changes; material before the first numbered bar
+  is pickup. The same mapping and label rules are implemented in Python
+  and TypeScript and validated by one shared JSON golden fixture.
 - Meter evidence is a separate, versioned 50 fps accent/onset artifact
   extracted from the prepared reference mix with bounded memory. Meter
   candidates are scored against those features, accepted pulses, and the
