@@ -37,6 +37,7 @@ from basseparate.domain.practice import (
     PracticeState,
 )
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
+from basseparate.domain.rhythm import ProjectRhythmState
 from basseparate.domain.separation import StemRole
 
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
@@ -270,6 +271,7 @@ def test_command_result_shape() -> None:
         markers=[marker],
         working_state=WorkingState(),
         practice_state=PracticeState(),
+        rhythm_state=ProjectRhythmState(),
         can_undo=True,
         can_redo=False,
     )

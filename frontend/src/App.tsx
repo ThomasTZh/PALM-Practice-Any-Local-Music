@@ -40,6 +40,7 @@ import type { View as EditorView } from './waveform/viewport'
 import { OpenProjectPanel } from './projects/OpenProjectPanel'
 import { useProjectCommands } from './projects/useProjectCommands'
 import { LoopsPanel, MIN_REPEATABLE_LOOP_SECONDS, type LoopPatch } from './practice/LoopsPanel'
+import { MetronomePanel, type MetronomePatch } from './practice/MetronomePanel'
 import { PortableSavePanel } from './tracks/PortableSavePanel'
 import type { ConnectionState, ProjectSummary } from './types'
 import {
@@ -599,6 +600,8 @@ const PlaybackPanel = memo(function PlaybackPanel({
     { frame: number; strength: 'downbeat' | 'beat' | 'grouping' | 'subdivision' }[]
   >([])
   const metronomeFetchAtRef = useRef(0)
+  const lastReportedFrameRef = useRef<number | null>(null)
+  const lastPlaybackRateRef = useRef<number | null>(null)
   metronomeSettingsRef.current = metronomeEnabled
     ? { enabled: true, volume: metronomeVolume ?? 0.5 }
     : null
@@ -692,6 +695,18 @@ const PlaybackPanel = memo(function PlaybackPanel({
       const contextRate = transport.contextRate
       if (contextTime == null || contextRate == null) return
       const rate = transport.playbackRate
+      const previousFrame = lastReportedFrameRef.current
+      const previousRate = lastPlaybackRateRef.current
+      lastReportedFrameRef.current = frame
+      lastPlaybackRateRef.current = rate
+      if (
+        (previousFrame !== null && Math.abs(frame - previousFrame) > 0.25 * contextRate) ||
+        (previousRate !== null && previousRate !== rate)
+      ) {
+        metronomePendingRef.current = []
+        transport.scheduleMetronome([])
+        metronomeFetchAtRef.current = 0
+      }
       const current = transport.getAudiblePosition()
       const duration = info?.durationFrames ?? null
       const windowEnd = Math.min(
@@ -1589,6 +1604,10 @@ function ProjectView({ project }: { project: ProjectSummary }) {
     })()
   }, [])
 
+  const handleMetronomeChange = useCallback((patch: MetronomePatch) => {
+    void sendRef.current({ type: 'set_metronome', ...patch })
+  }, [])
+
   const handleLoopUpdate = useCallback((id: string, patch: LoopPatch) => {
     const op: {
       type: 'update_loop'
@@ -1770,6 +1789,13 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onMode={handleMode}
         onSelectSet={handleSelectSet}
         onPlaybackSpeed={handlePlaybackSpeed}
+      />
+      <MetronomePanel
+        enabled={commands.rhythmState?.metronome?.enabled ?? false}
+        volume={commands.rhythmState?.metronome?.volume ?? 0.5}
+        accentDownbeats={commands.rhythmState?.metronome?.accent_downbeats ?? true}
+        subdivision={commands.rhythmState?.metronome?.subdivision ?? 'primary'}
+        onChange={handleMetronomeChange}
       />
       <LoopsPanel
         loops={commands.practiceState?.loops ?? []}

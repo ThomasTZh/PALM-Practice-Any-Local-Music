@@ -23,6 +23,7 @@ from basseparate.domain.commands import (
     CommandResult,
     ConvertLoopOp,
     ProjectCommandOp,
+    SetMetronomeOp,
 )
 from basseparate.domain.export import ExportArtifact
 from basseparate.domain.import_record import (
@@ -432,6 +433,7 @@ def _history_snapshot(
     markers: list[MarkerRecord],
     working_state: WorkingState,
     practice_state: PracticeState,
+    rhythm_state: ProjectRhythmState,
 ) -> dict[str, object]:
     """A before/after history snapshot (M1.15, spec §17.4).
 
@@ -458,6 +460,7 @@ def _history_snapshot(
         ],
         "working_state": ws,
         "practice_state": practice_state.model_dump(mode="json"),
+        "rhythm_state": rhythm_state.model_dump(mode="json"),
     }
 
 
@@ -488,6 +491,7 @@ def _write_state(
     revision: int,
     history_seq: int,
     now: str,
+    rhythm_state: ProjectRhythmState | None = None,
 ) -> None:
     """Write markers + working state + practice state + revision + history pointer atomically."""
     conn.execute("DELETE FROM markers WHERE project_id = ?", (project_id,))
@@ -510,13 +514,15 @@ def _write_state(
         )
     conn.execute(
         """
-        UPDATE projects SET working_state = ?, practice_state = ?, revision = ?,
-                            updated_at = ?, history_seq = ?
+        UPDATE projects SET working_state = ?, practice_state = ?,
+                            rhythm_state = COALESCE(?, rhythm_state),
+                            revision = ?, updated_at = ?, history_seq = ?
         WHERE id = ?
         """,
         (
             working_state.model_dump_json(),
             practice_state.model_dump_json(),
+            rhythm_state.model_dump_json() if rhythm_state is not None else None,
             revision,
             now,
             history_seq,
@@ -1354,9 +1360,29 @@ class ProjectRepository:
                 if frames < MIN_REPEATABLE_LOOP_SECONDS * sample_rate:
                     raise LoopTooShortError(frames, sample_rate)
             markers = _markers_for(conn, project_id)
-            before = _history_snapshot(markers, project.working_state, project.practice_state)
+            before = _history_snapshot(
+                markers,
+                project.working_state,
+                project.practice_state,
+                project.rhythm_state,
+            )
             now = _now()
-            if isinstance(op, AddMusicalLoopOp):
+            new_rhythm_state = project.rhythm_state
+            if isinstance(op, SetMetronomeOp):
+                patch = {
+                    name: getattr(op, name)
+                    for name in ("enabled", "volume", "accent_downbeats", "subdivision")
+                    if getattr(op, name) is not None
+                }
+                new_rhythm_state = project.rhythm_state.model_copy(
+                    update={"metronome": project.rhythm_state.metronome.model_copy(update=patch)}
+                )
+                new_markers, new_ws, new_ps = (
+                    markers,
+                    project.working_state,
+                    project.practice_state,
+                )
+            elif isinstance(op, AddMusicalLoopOp):
                 new_markers, new_ws, new_ps = (
                     markers,
                     project.working_state,
@@ -1388,7 +1414,7 @@ class ProjectRepository:
                     (str(project_id), history_seq),
                 )
                 history_seq += 1
-                after = _history_snapshot(new_markers, new_ws, new_ps)
+                after = _history_snapshot(new_markers, new_ws, new_ps, new_rhythm_state)
                 conn.execute(
                     """
                     INSERT INTO project_history (id, project_id, seq, kind,
@@ -1428,6 +1454,7 @@ class ProjectRepository:
                 new_revision,
                 history_seq,
                 now,
+                new_rhythm_state,
             )
             conn.execute("COMMIT")
         except (
@@ -1460,6 +1487,7 @@ class ProjectRepository:
             markers=result.markers,
             working_state=result.working_state,
             practice_state=result.practice_state,
+            rhythm_state=result.rhythm_state,
             can_undo=history_seq >= 0,
             can_redo=False,
         )
@@ -1525,6 +1553,8 @@ class ProjectRepository:
                 new_ps = PracticeState.model_validate_json(row["practice_state"])
             else:
                 new_ps = PracticeState.model_validate(ps_data)
+            rs_data = snapshot.get("rhythm_state")
+            new_rs = ProjectRhythmState.model_validate(rs_data) if rs_data is not None else None
             _write_state(
                 conn,
                 str(project_id),
@@ -1534,6 +1564,7 @@ class ProjectRepository:
                 row["revision"] + 1,
                 target_seq,
                 _now(),
+                new_rs,
             )
             conn.execute("COMMIT")
         except (ProjectMissingError, StaleRevisionError, NothingToUndoError, NothingToRedoError):
@@ -1554,6 +1585,7 @@ class ProjectRepository:
             markers=project.markers,
             working_state=project.working_state,
             practice_state=project.practice_state,
+            rhythm_state=project.rhythm_state,
             can_undo=target_seq >= 0,
             can_redo=can_redo,
         )

@@ -27,7 +27,12 @@ from basseparate.domain.practice import (
     PracticeState,
 )
 from basseparate.domain.project import ChannelDisplay, ViewportState, WorkingState
-from basseparate.domain.rhythm import LoopAnchorMode, MusicalPosition
+from basseparate.domain.rhythm import (
+    LoopAnchorMode,
+    MetronomeSubdivision,
+    MusicalPosition,
+    ProjectRhythmState,
+)
 from basseparate.domain.separation import StemRole
 
 DEFAULT_MARKER_LABEL = "Marker"
@@ -192,6 +197,25 @@ class SetMonitoringLimiterOp(BaseModel):
 
     type: Literal["set_monitoring_limiter"] = "set_monitoring_limiter"
     enabled: bool
+
+
+class SetMetronomeOp(BaseModel):
+    """Patch persisted metronome preferences (M3.14 §16.11)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_metronome"] = "set_metronome"
+    enabled: bool | None = None
+    volume: float | None = Field(default=None, ge=0.0, le=1.0)
+    accent_downbeats: bool | None = None
+    subdivision: MetronomeSubdivision | None = None
+
+    def model_post_init(self, __context: object) -> None:
+        if all(
+            getattr(self, name) is None
+            for name in ("enabled", "volume", "accent_downbeats", "subdivision")
+        ):
+            raise ValueError("set_metronome requires at least one field to change")
 
 
 class SetPlaybackSpeedOp(BaseModel):
@@ -365,6 +389,7 @@ ProjectCommandOp = Annotated[
         | SetMasterGainOp
         | SetMonitoringLimiterOp
         | SetPlaybackSpeedOp
+        | SetMetronomeOp
         | AddLoopOp
         | AddMusicalLoopOp
         | ConvertLoopOp
@@ -401,5 +426,6 @@ class CommandResult(BaseModel):
     #: The resulting practice state (including the active result set
     #: selection, M2.7 §9.4.3).
     practice_state: PracticeState
+    rhythm_state: ProjectRhythmState
     can_undo: bool
     can_redo: bool

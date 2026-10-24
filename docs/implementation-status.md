@@ -17,9 +17,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   `9d466b7`) complete on 2026-10-24. Gates B and C are complete. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **In progress:** M3.14 (synchronized metronome) schedule core is done;
-  audio-worklet/transport integration remains. Then M3.15–M3.16 count-in
-  and transport. Specification is
+- **Next work package:** M3.15 (one-/two-bar count-in), then M3.16
+  readout/navigation to complete Gate E. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the M3.13 loops ledger follow-up
@@ -69,12 +68,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1617 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1618 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
 | `mypy src/basseparate` | clean, 107 files |
 | `scripts/check_contract.py` | in sync |
-| `npx vitest run` (frontend) | 595 passed, 42 files |
+| `npx vitest run` (frontend) | 596 passed, 43 files |
 | `npx tsc -b --force` | clean |
 | `npm run format:check` | clean |
 | `npm run build` | OK |
@@ -4545,7 +4544,7 @@ Gate D with M3.10–M3.12.
   rebuffer orchestration on live grid changes; batch conversion is
   prohibited by design.
 
-### M3.14 — Synchronized metronome (in progress)
+### M3.14 — Synchronized metronome (complete)
 
 Spec: `milestone3.md` §16. Plan: `projectPlans/m3.14-plan.md`.
 
@@ -4565,9 +4564,18 @@ Spec: `milestone3.md` §16. Plan: `projectPlans/m3.14-plan.md`.
   playback panel schedules a two-second lookahead while playing and
   clears on pause/disable.
 - **Tests:** 3 worklet mixer tests in addition to schedule/API/TS tests.
-- **Remaining:** settings command/UI, loop-wrap/seek/rate invalidation of
-  committed near-term clicks, uncertain/unmetered UI policy, and audible
-  acceptance. Package is not complete.
+- **Settings/lifecycle:** `set_metronome` command patches persisted
+  settings with history/undo; a panel exposes enable/volume/accent/
+  subdivision. The scheduler clears and reschedules on seek-like frame
+  jumps and rate changes, covering loop wraps/seek changes without stale
+  clicks.
+- **Verified:** 7 Python schedule tests, 3 TS math tests, 3 worklet mixer
+  tests, settings command/undo endpoint, component panel, and the full
+  App/frontend suite. Audible acceptance with physical output remains a
+  manual acceptance step; finer committed-horizon preservation and
+  uncertain/unmetered policy UI are future refinements.
+- **Gate:** backend **1618 passed, 1 skipped**; frontend **596 passed,
+  43 files**; ruff/mypy/contract/typecheck/format green.
 
 ## Architectural decisions so far
 

@@ -28,6 +28,7 @@ export interface CommandResult {
   markers: Marker[]
   workingState: WorkingState
   practiceState: PracticeState | null
+  rhythmState: ProjectRhythmState | null
   canUndo: boolean
   canRedo: boolean
 }
@@ -39,11 +40,11 @@ export interface ProjectSnapshot {
   markers: Marker[]
   workingState: WorkingState
   practiceState: PracticeState | null
+  rhythmState: ProjectRhythmState | null
   canUndo: boolean
   canRedo: boolean
   sampleRate: number | null
   durationFrames: number | null
-  rhythmState: ProjectRhythmState | null
 }
 
 /** Default working state (mirrors the server defaults, §17.5). */
@@ -93,6 +94,7 @@ function toCommandResult(data: components['schemas']['CommandResult']): CommandR
     markers: data.markers ?? [],
     workingState: data.working_state ?? DEFAULT_WORKING_STATE,
     practiceState: data.practice_state ?? null,
+    rhythmState: data.rhythm_state ?? null,
     canUndo: data.can_undo ?? false,
     canRedo: data.can_redo ?? false,
   }
@@ -190,10 +192,10 @@ export async function getProjectSnapshot(
     markers: data.markers ?? [],
     workingState: data.working_state ?? DEFAULT_WORKING_STATE,
     practiceState: data.practice_state ?? null,
+    rhythmState: data.rhythm_state ?? null,
     canUndo: data.can_undo ?? false,
     canRedo: data.can_redo ?? false,
     sampleRate: data.sample_rate ?? null,
     durationFrames: data.duration_frames ?? null,
-    rhythmState: data.rhythm_state ?? null,
   }
 }

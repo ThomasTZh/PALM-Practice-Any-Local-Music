@@ -595,6 +595,7 @@
                 "set_follow_playhead": "#/components/schemas/SetFollowPlayheadOp",
                 "set_loop_enabled": "#/components/schemas/SetLoopEnabledOp",
                 "set_master_gain": "#/components/schemas/SetMasterGainOp",
+                "set_metronome": "#/components/schemas/SetMetronomeOp",
                 "set_monitoring_limiter": "#/components/schemas/SetMonitoringLimiterOp",
                 "set_monitoring_volume": "#/components/schemas/SetMonitoringVolumeOp",
                 "set_playback_mode": "#/components/schemas/SetPlaybackModeOp",
@@ -653,6 +654,9 @@
               },
               {
                 "$ref": "#/components/schemas/SetPlaybackSpeedOp"
+              },
+              {
+                "$ref": "#/components/schemas/SetMetronomeOp"
               },
               {
                 "$ref": "#/components/schemas/AddLoopOp"
@@ -718,6 +722,9 @@
             "title": "Revision",
             "type": "integer"
           },
+          "rhythm_state": {
+            "$ref": "#/components/schemas/ProjectRhythmState"
+          },
           "working_state": {
             "$ref": "#/components/schemas/WorkingState"
           }
@@ -727,6 +734,7 @@
           "markers",
           "working_state",
           "practice_state",
+          "rhythm_state",
           "can_undo",
           "can_redo"
         ],
@@ -4485,6 +4493,64 @@
           "gain"
         ],
         "title": "SetMasterGainOp",
+        "type": "object"
+      },
+      "SetMetronomeOp": {
+        "description": "Patch persisted metronome preferences (M3.14 \u00a716.11).",
+        "properties": {
+          "accent_downbeats": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Downbeats"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "subdivision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetronomeSubdivision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "set_metronome",
+            "default": "set_metronome",
+            "title": "Type",
+            "type": "string"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "title": "SetMetronomeOp",
         "type": "object"
       },
       "SetMonitoringLimiterOp": {

@@ -1133,7 +1133,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
         };
         /**
          * CommandResult
@@ -1152,6 +1152,7 @@ export interface components {
              * @description Nonnegative integer revision
              */
             revision: number;
+            rhythm_state: components["schemas"]["ProjectRhythmState"];
             working_state: components["schemas"]["WorkingState"];
         };
         /** CompleteImportResponse */
@@ -2837,6 +2838,24 @@ export interface components {
              * @enum {string}
              */
             type: "set_master_gain";
+        };
+        /**
+         * SetMetronomeOp
+         * @description Patch persisted metronome preferences (M3.14 §16.11).
+         */
+        SetMetronomeOp: {
+            /** Accent Downbeats */
+            accent_downbeats?: boolean | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            subdivision?: components["schemas"]["MetronomeSubdivision"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_metronome";
+            /** Volume */
+            volume?: number | null;
         };
         /**
          * SetMonitoringLimiterOp

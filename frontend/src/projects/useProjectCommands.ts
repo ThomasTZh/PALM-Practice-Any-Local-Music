@@ -106,6 +106,7 @@ export function useProjectCommands(projectId: string | null): ProjectCommands {
     setMarkers(result.markers)
     setWorkingState(result.workingState)
     setPracticeState(result.practiceState)
+    setRhythmState(result.rhythmState ?? null)
     setCanUndo(result.canUndo)
     setCanRedo(result.canRedo)
   }, [])

@@ -303,3 +303,36 @@ def test_metronome_schedule_endpoint(client: TestClient, app, headers) -> None:
     assert data["clicks"]
     assert data["clicks"][0]["strength"] == "downbeat"
     assert any(click["strength"] == "beat" for click in data["clicks"])
+
+
+def test_metronome_settings_command_and_undo(client: TestClient, app, headers) -> None:
+    project_id = _seed(app)
+    project = app.state.repository.get_project(project_id)
+    assert project is not None
+    applied = client.post(
+        f"/api/v1/projects/{project_id}/commands",
+        json={
+            "command_id": str(uuid.uuid4()),
+            "idempotency_key": uuid.uuid4().hex,
+            "base_revision": project.revision,
+            "op": {
+                "type": "set_metronome",
+                "enabled": True,
+                "volume": 0.3,
+                "subdivision": "half_beat",
+            },
+        },
+        headers=headers,
+    )
+    assert applied.status_code == 200, applied.text
+    metronome = applied.json()["rhythm_state"]["metronome"]
+    assert metronome["enabled"] is True
+    assert metronome["volume"] == 0.3
+    assert metronome["subdivision"] == "half_beat"
+    undone = client.post(
+        f"/api/v1/projects/{project_id}/undo",
+        json={"base_revision": applied.json()["revision"]},
+        headers=headers,
+    )
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["rhythm_state"]["metronome"]["enabled"] is False
