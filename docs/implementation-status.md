@@ -18,9 +18,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   the correctable editor and metronome. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.8 ledger follow-up on
-  top of `694a08a` ("M3.8: infer and edit meter regions"); 121 commits
-  at that implementation commit; the M3.7 implementation is `fbfdaf0`.
+- **Repository:** branch `main`; HEAD is the M3.9 ledger follow-up on
+  top of `9d466b7` ("M3.9: bars, beats, pickups, and shared golden
+  vectors"); 122 commits at that implementation commit; the M3.8
+  implementation is `694a08a`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -161,8 +162,8 @@ M3.1. The Beat This! model install is a deliberate network operation
 the NVIDIA driver restored (the M2.19 runs used approved escalated
 device access).
 
-- **Recent commits (full history in `git log`):** `694a08a` M3.8 meter
-  inference; `fbfdaf0` M3.7 tempo map; `98fc3a8` GPU diagnosis correction; `bc49cf2` M3.6 automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
+- **Recent commits (full history in `git log`):** `9d466b7` M3.9 grid
+  and golden vectors; `694a08a` M3.8 meter inference; `fbfdaf0` M3.7 tempo map; `98fc3a8` GPU diagnosis correction; `bc49cf2` M3.6 automatic results and branches; `c0471b9` M3.5 decoded candidates; `5266d9e` M3.4 activation retention; `09d83ae` M3.3 reproducible rhythm input; `be2bb1b` M3.2 Beat
   This! runtime, registry, and install boundary; `3d3c307` M3.1 rhythm
   domain and schema; `ba37ffc` refresh the
   status ledger and project docs; `9bcdd6c` final
@@ -4348,8 +4349,8 @@ commit.
 ### M3.9 — Bars, beats, subdivisions, first downbeat, and pickups (complete)
 
 Spec: `milestone3.md` §11. Plan: `projectPlans/m3.9-plan.md`.
-Implementation commit recorded in the follow-up ledger entry. Completes
-Gate C.
+Implementation commit `9d466b7`; this ledger update is the follow-up
+commit. Completes Gate C.
 
 - **Derived grid (§11.1–§11.2, §11.8–§11.9):** `domain/grid.py` defines
   bar/primary/denominator/half/quarter events, gaps, detail levels, and a
