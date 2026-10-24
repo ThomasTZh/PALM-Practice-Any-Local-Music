@@ -36,6 +36,15 @@ from basseparate.rhythm.results import (
     create_branch_from_result,
     publish_decoded_result,
 )
+from basseparate.rhythm.tempo import (
+    TempoMapBuildError,
+    TempoMapConflictError,
+    bpm_for_display_unit,
+    build_automatic_tempo_map,
+    build_manual_tempo_map,
+    map_round_trip_error_frames,
+    reinterpret_tempo_map,
+)
 
 __all__ = [
     "BEAT_FILE",
@@ -63,4 +72,11 @@ __all__ = [
     "activate_result",
     "create_branch_from_result",
     "publish_decoded_result",
+    "TempoMapBuildError",
+    "TempoMapConflictError",
+    "bpm_for_display_unit",
+    "build_automatic_tempo_map",
+    "build_manual_tempo_map",
+    "map_round_trip_error_frames",
+    "reinterpret_tempo_map",
 ]

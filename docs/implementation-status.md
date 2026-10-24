@@ -13,8 +13,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   beat/downbeat candidates, `c0471b9`) complete on 2026-10-24. M2.21
   final separation-app acceptance passed on 2026-10-23 (objective plus
   human steps 6-10).
-- **Next work package:** M3.7 (build the tempo map), then M3.8–M3.9
-  to complete Gate C. Specification is
+- **Next work package:** M3.8 (infer and edit meter regions), then M3.9
+  (bars/beats/pickups) to complete Gate C. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
 - **Repository:** branch `main`; HEAD is the GPU-diagnosis correction
@@ -58,10 +58,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1535 passed, 1 skipped (real-model integration without the env checkpoint) |
+| `pytest tests/ -q` | 1547 passed, 1 skipped (real-model integration without the env checkpoint) |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 93 files |
+| `mypy src/basseparate` | clean, 95 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -4246,6 +4246,60 @@ commit.
 - **Deferred:** tempo-map/meter/complete stages (M3.7–M3.9), manual edit
   commands/undo (M3.10), result/branch API and UI (M3.17), portable-open
   rhythm rows and archive upgrades (M3.18), GPU qualification.
+
+### M3.7 — Build the tempo map (complete)
+
+Spec: `milestone3.md` §9. Plan: `projectPlans/m3.7-plan.md`. Implementation
+commit recorded in the follow-up ledger entry.
+
+- **Representation (§9.1):** `domain/tempo.py` defines `TempoMap` as a
+  strictly monotonic piecewise-linear source-frame ↔ exact-rational
+  musical-position map, with `TempoMapAnchor` and derived
+  `TempoMapSegment` records. Interpolation/inversion use `Fraction`;
+  rounding is half-up once at a discrete frame. Outside the first/last
+  anchor raises `TempoMapRangeError`; automatic extrapolation is
+  disabled (`max_edge_extension_quarters = 0`).
+- **Pulse units (§9.2):** versioned `PulseUnitHypothesis` records for
+  quarter, half, eighth, dotted quarter, denominator-unit, and irregular
+  grouping sequences, with labels, meter requirements, rationales, and
+  selected/alternative storage on the map.
+- **Automatic and manual maps (§9.3, §9.11):**
+  `build_automatic_tempo_map` creates one anchor per accepted decoded
+  pulse, assigns monotonically increasing musical positions from the
+  selected unit (preserving timing variation), links pulse IDs and
+  confidences, and derives segment/summary BPM without replacing the
+  map. `build_manual_tempo_map` accepts ≥2 explicit anchors with optional
+  locks, enabling quarter-position readout without a stable meter.
+- **BPM (§9.4–§9.6):** segment BPM = 60 × exact quarter-note difference /
+  seconds; the summary is the median segment BPM, stored as explicitly
+  labeled quarter-note metadata. `bpm_for_display_unit` converts to
+  labeled dotted-quarter/half/eighth values; the map never presents an
+  unlabeled unit.
+- **Reinterpretation and locks (§9.9–§9.10):**
+  `reinterpret_tempo_map` halves/doubles musical distances in a region
+  while keeping source frames fixed. The start anchor stays fixed;
+  locked end/interior anchors raise `TempoMapConflictError` instead of
+  moving; crossed neighbors are rejected; lock state is an anchor field
+  and survives later branch persistence.
+- **Real map (2026-10-24):** 11 accepted pulses at 24,000-frame spacing
+  produced 11 anchors, source 0..240,000, musical 0..10 quarters, constant
+  120.0 BPM segments and summary, and **0-frame** round-trip error over
+  the mapped interval. Half-time reinterpretation produced 20 quarters
+  over 5 s (quarter BPM 240). Evidence:
+  `docs/evidence/m3.7-tempo-map.md`.
+- **Tests:** `tests/unit/test_tempo.py` (12) covers exact mapping and
+  inversion, range errors, quarter/half/eighth/dotted/grouping/
+  denominator units, sparse maps, invalid maps, half/double region
+  edits, locked-anchor conflicts, and display-unit conversion. The real
+  final0 integration test also builds a map from the published result
+  and checks anchors, 120 BPM summary, and ≤1-frame round-trip error.
+- **Gate:** backend **1547 passed, 1 skipped**; ruff check clean; mypy
+  clean (95 files); contract in sync; frontend unchanged (569 passed).
+- **Deferred:** meter regions (M3.8), bars/beats/pickups (M3.9),
+  persisting maps into branch anchors and result stage references
+  (M3.9), revisioned edit commands/undo (M3.10), frontend musical-map
+  service plus Python/TS golden fixtures (Gate C; M3.9/M3.17), and
+  metronome scheduling from local BPM (M3.14).
 
 ## Architectural decisions so far
 

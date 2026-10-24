@@ -12,8 +12,8 @@ schema), M3.2 (isolated Beat This! runtime, verified model registry,
 explicit install boundary, CPU qualification), M3.3 (reproducible
 rhythm-analysis input), M3.4 (real Beat This! runs with retained
 framewise activations), M3.5 (source-aligned beat/downbeat decoding),
-and M3.6 (immutable automatic results and editable branches) are
-complete. See
+M3.6 (immutable automatic results and editable branches), and M3.7
+(tempo-map construction and reinterpretation) are complete. See
 [docs/implementation-status.md](docs/implementation-status.md) for the
 authoritative resume ledger and verified test results.
 

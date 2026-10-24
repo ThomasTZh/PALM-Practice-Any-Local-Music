@@ -105,6 +105,13 @@ stream coordinate.
   `manifest.json`). Raw framewise logits are retained unmodified; the
   manifest records array hashes, source identity, model/adapter identity,
   frame mapping, and output semantics.
+- A `TempoMap` is a strictly monotonic piecewise-linear source-frame ↔
+  exact-rational musical-position map with one anchor per accepted pulse
+  for automatic maps or explicit anchors for manual maps. Pulse-unit
+  hypotheses (quarter, half, eighth, dotted quarter, denominator,
+  grouping) are versioned data; segment BPM and a median summary BPM are
+  derived metadata. Reinterpretation changes musical distances only and
+  refuses to move locked anchors silently.
 - The `beat-this-minimal-v1` decoder reads an activation artifact without
   torch and produces accepted and candidate pulses, source-aligned by one
   half-up rounding of the exact model-to-project frame mapping. Accepted
