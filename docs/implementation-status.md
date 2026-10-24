@@ -23,8 +23,8 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   eviction remain. Then M3.19–M3.22. Specification is
   `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
   "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
-- **Repository:** branch `main`; HEAD is the M3.17/M3.18 API/selector
-  checkpoint on top of the cache commit; the M3.17 API implementation is
+- **Repository:** branch `main`; HEAD is the M3.17/M3.18 selector ledger
+  follow-up on top of `a9f97f8`; the M3.17 API implementation is
   `c99fd95`, M3.18 cache identity is `e0abed3`.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
@@ -4628,7 +4628,7 @@ Implementation commit `c99fd95`; this ledger update records it.
   (Auto/Edited), and set snap mode; rhythm edits use the dedicated
   transactional endpoint with 409/422 mapping. A version selector lists
   automatic results and editable branches and dispatches selection
-  commands when a rhythm state exists.
+  commands when a rhythm state exists (selector checkpoint `a9f97f8`).
 - **Contracts:** OpenAPI and generated TypeScript types regenerated and
   verified; Python/TS mapping/snap/metronome/readout services already
   exist.
