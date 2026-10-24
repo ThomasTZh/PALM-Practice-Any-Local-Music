@@ -594,6 +594,73 @@ def _migration_11_to_12(conn: sqlite3.Connection) -> None:
 register_migration(12, _migration_11_to_12)
 
 
+#: M3.1 adds the rhythm domain (milestone3.md §3.11): analysis runs,
+#: activation-artifact manifests, editable rhythm branches, and the
+#: project-level rhythm state. Automatic rhythm results are added by M3.6;
+#: until then ``rhythm_branches.parent_automatic_result_id`` is an
+#: unconstrained identifier.
+_MIGRATION_13_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE projects ADD COLUMN rhythm_state TEXT NOT NULL DEFAULT '{}'",
+    """
+    CREATE TABLE rhythm_analysis_runs (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        status      TEXT NOT NULL
+                    CHECK (status IN ('queued', 'running', 'completed',
+                                      'failed', 'cancelled', 'interrupted')),
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE rhythm_activation_artifacts (
+        id           TEXT PRIMARY KEY,
+        project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        run_id       TEXT NOT NULL
+                     REFERENCES rhythm_analysis_runs(id) ON DELETE CASCADE,
+        content_hash TEXT NOT NULL,
+        created_at   TEXT NOT NULL,
+        record_json  TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE rhythm_branches (
+        id                         TEXT PRIMARY KEY,
+        project_id                 TEXT NOT NULL REFERENCES projects(id)
+                                   ON DELETE CASCADE,
+        parent_automatic_result_id TEXT,
+        revision                   INTEGER NOT NULL DEFAULT 0,
+        created_at                 TEXT NOT NULL,
+        updated_at                 TEXT NOT NULL,
+        record_json                TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_runs_project "
+    "ON rhythm_analysis_runs(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_runs_status "
+    "ON rhythm_analysis_runs(status)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_artifacts_project "
+    "ON rhythm_activation_artifacts(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_artifacts_run "
+    "ON rhythm_activation_artifacts(run_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_artifacts_hash "
+    "ON rhythm_activation_artifacts(content_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_branches_project "
+    "ON rhythm_branches(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rhythm_branches_parent "
+    "ON rhythm_branches(parent_automatic_result_id)",
+)
+
+
+def _migration_12_to_13(conn: sqlite3.Connection) -> None:
+    for statement in _MIGRATION_13_STATEMENTS:
+        conn.execute(statement)
+
+
+register_migration(13, _migration_12_to_13)
+
+
 def initialize_database(db_path: Path) -> None:
     """Open, configure, migrate, and close the database.
 

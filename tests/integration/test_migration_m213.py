@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from basseparate import DATABASE_SCHEMA_VERSION
 from basseparate.domain.media_job import JobState, JobType
 from basseparate.storage.db import _apply_migrations, initialize_database
 from basseparate.storage.repository import JobRepository, ProjectRepository
@@ -40,7 +41,7 @@ def _build_v8_db(path: Path) -> None:
             "stage, progress_fraction, progress_detail, result, error_code, error, "
             "max_threads, created_at, updated_at, parameters) "
             "VALUES (?, ?, NULL, 'waveform', 'completed', 'ready', 1.0, NULL, "
-            "'{\"levels\": []}', NULL, NULL, 4, ?, ?, '{\"asset_id\": \"a\"}')",
+            '\'{"levels": []}\', NULL, NULL, 4, ?, ?, \'{"asset_id": "a"}\')',
             (
                 str(JOB_ID),
                 str(PROJECT_ID),
@@ -62,7 +63,7 @@ def test_v8_to_v9_preserves_jobs_and_allows_export(tmp_path: Path) -> None:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 12
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
         # The rebuilt table kept the old job row and its columns.
         row = conn.execute("SELECT * FROM media_jobs WHERE id = ?", (str(JOB_ID),)).fetchone()
@@ -74,13 +75,11 @@ def test_v8_to_v9_preserves_jobs_and_allows_export(tmp_path: Path) -> None:
 
         # The export artifact table exists with its indexes.
         tables = {
-            r["name"]
-            for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         assert "export_artifacts" in tables
         indexes = {
-            r["name"]
-            for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+            r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
         }
         assert "idx_export_artifacts_job" in indexes
         assert "idx_media_jobs_project" in indexes

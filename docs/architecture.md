@@ -43,9 +43,11 @@ Pydantic models in `src/basseparate/domain/` are the single source of truth.
 Generated artifacts:
 
 - `contracts/openapi.json` — HTTP API contract (47 routes as of M2.21).
-- `contracts/project.schema.json`, `contracts/asset.schema.json`,
-  `contracts/worker.schema.json` — JSON Schemas.
 - `frontend/src/api/schema.ts` — TypeScript types (openapi-typescript).
+
+The project, asset, and worker JSON Schemas named in the Milestone 0
+notes are not produced by the current contract script; OpenAPI plus the
+generated TypeScript types are the maintained contract artifacts.
 
 Regenerate with `scripts/dev.py contracts`; verify drift with
 `scripts/dev.py contracts --check` (or `scripts/check_contract.py`).

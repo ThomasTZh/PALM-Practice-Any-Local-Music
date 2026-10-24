@@ -1062,6 +1062,28 @@ export interface components {
             status: string;
         };
         /**
+         * CountInMode
+         * @description Count-in length (milestone3.md §17.1).
+         * @enum {string}
+         */
+        CountInMode: "off" | "one_bar" | "two_bars";
+        /**
+         * CountInRepetition
+         * @description Whether count-in repeats with every loop pass (milestone3.md §17.9).
+         * @enum {string}
+         */
+        CountInRepetition: "once" | "every_repeat";
+        /**
+         * CountInSettings
+         * @description Count-in preferences; transport behavior is implemented in M3.15.
+         */
+        CountInSettings: {
+            /** @default off */
+            mode: components["schemas"]["CountInMode"];
+            /** @default once */
+            repetition: components["schemas"]["CountInRepetition"];
+        };
+        /**
          * CreateExportRequest
          * @description Export selection and options (spec §15.1–15.2).
          */
@@ -1570,6 +1592,35 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * MetronomeSettings
+         * @description Metronome preferences; audio behavior is implemented in M3.14.
+         */
+        MetronomeSettings: {
+            /**
+             * Accent Downbeats
+             * @default true
+             */
+            accent_downbeats: boolean;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** @default primary */
+            subdivision: components["schemas"]["MetronomeSubdivision"];
+            /**
+             * Volume
+             * @default 0.5
+             */
+            volume: number;
+        };
+        /**
+         * MetronomeSubdivision
+         * @description Metronome subdivision modes (milestone3.md §16.6).
+         * @enum {string}
+         */
+        MetronomeSubdivision: "primary" | "denominator" | "half_beat" | "quarter_beat";
         /** ModelListResponse */
         ModelListResponse: {
             /** Models */
@@ -1952,6 +2003,7 @@ export interface components {
              * @default 0
              */
             revision: number;
+            rhythm_state?: components["schemas"]["ProjectRhythmState"];
             /**
              * Sample Rate
              * @description Selected source stream sample rate in Hz
@@ -1960,7 +2012,7 @@ export interface components {
             /**
              * Schema Version
              * @description Project schema version
-             * @default 4
+             * @default 5
              */
             schema_version: number;
             /** Source Asset Id */
@@ -1988,6 +2040,38 @@ export interface components {
             /** @default none */
             waveform_status: components["schemas"]["WaveformStatus"];
             working_state?: components["schemas"]["WorkingState"];
+        };
+        /**
+         * ProjectRhythmState
+         * @description Project-level rhythm display and practice settings (§3.10).
+         */
+        ProjectRhythmState: {
+            /** Active Automatic Result Id */
+            active_automatic_result_id?: string | null;
+            /** Active Branch Id */
+            active_branch_id?: string | null;
+            count_in?: components["schemas"]["CountInSettings"];
+            /** @default automatic */
+            display_mode: components["schemas"]["RhythmDisplayMode"];
+            /**
+             * Lane Height
+             * @default 1
+             */
+            lane_height: number;
+            /**
+             * Lane Visible
+             * @default true
+             */
+            lane_visible: boolean;
+            last_selected?: components["schemas"]["SelectedRhythmObject"] | null;
+            metronome?: components["schemas"]["MetronomeSettings"];
+            /**
+             * Ruler Visible
+             * @default true
+             */
+            ruler_visible: boolean;
+            /** @default beat */
+            snap_mode: components["schemas"]["SnapMode"];
         };
         /**
          * ProjectStatus
@@ -2081,6 +2165,12 @@ export interface components {
             validation_status: string;
         };
         /**
+         * RhythmDisplayMode
+         * @description Whether the project shows the automatic result or an edited branch.
+         * @enum {string}
+         */
+        RhythmDisplayMode: "automatic" | "edited";
+        /**
          * RuntimeJobResponse
          * @description The media job in flight (or the queue depth when only queued work exists).
          */
@@ -2116,6 +2206,24 @@ export interface components {
             /** Stream Index */
             stream_index: number;
         };
+        /**
+         * SelectedRhythmObject
+         * @description The last selected rhythm object, for editor restoration.
+         */
+        SelectedRhythmObject: {
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            kind: components["schemas"]["SelectedRhythmObjectKind"];
+        };
+        /**
+         * SelectedRhythmObjectKind
+         * @description Kinds that can be the project's last selected rhythm object.
+         * @enum {string}
+         */
+        SelectedRhythmObjectKind: "pulse" | "tempo_anchor" | "meter_region";
         /**
          * SelectionRange
          * @description A frame selection ``[start, end)`` in source frames (M1.15 §17.5).
@@ -2345,6 +2453,12 @@ export interface components {
             type: "set_viewport";
             viewport?: components["schemas"]["ViewportState"] | null;
         };
+        /**
+         * SnapMode
+         * @description Musical snapping modes (milestone3.md §14.1).
+         * @enum {string}
+         */
+        SnapMode: "off" | "beat" | "half_beat" | "quarter_beat" | "bar" | "event";
         /** SourceInfoResponse */
         SourceInfoResponse: {
             /** Channel Count */

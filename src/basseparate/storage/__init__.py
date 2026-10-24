@@ -21,6 +21,8 @@ from basseparate.storage.repository import (
     PortableArtifactRepository,
     ProjectRepository,
     RepresentationRepository,
+    RhythmBranchStaleRevisionError,
+    RhythmRepository,
     SeparationRepository,
     WaveformCacheRepository,
 )
@@ -33,6 +35,8 @@ __all__ = [
     "PortableArtifactRepository",
     "ProjectRepository",
     "RepresentationRepository",
+    "RhythmBranchStaleRevisionError",
+    "RhythmRepository",
     "SeparationRepository",
     "StorageError",
     "StoragePaths",

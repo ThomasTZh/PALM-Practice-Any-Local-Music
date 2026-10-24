@@ -20,6 +20,7 @@ from basseparate import PROJECT_SCHEMA_VERSION
 from basseparate.domain.common import Revision, SamplePosition, SampleRate, UtcTimestamp, Uuid
 from basseparate.domain.marker import MarkerRecord
 from basseparate.domain.practice import PracticeState
+from basseparate.domain.rhythm import ProjectRhythmState
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -168,6 +169,9 @@ class ProjectRecord(BaseModel):
     #: Mixer and practice state (M2.1, milestone2.md §3.5). Defaulted so
     #: pre-M2 projects deserialize unchanged.
     practice_state: PracticeState = Field(default_factory=PracticeState)
+    #: Musical-grid display and practice settings (M3.1, milestone3.md
+    #: §3.10). Defaulted so pre-M3 projects deserialize unchanged.
+    rhythm_state: ProjectRhythmState = Field(default_factory=ProjectRhythmState)
     #: Undo/redo availability, computed by the repository on read
     #: (M1.15 §17.4); not stored, defaults to "none available".
     can_undo: bool = False

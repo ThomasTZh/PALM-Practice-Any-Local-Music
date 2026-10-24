@@ -219,3 +219,51 @@ class TestPracticeState:
         data["schema_version"] = 3
         restored = ProjectRecord.model_validate(data)
         assert restored.practice_state == PracticeState()
+
+
+class TestRhythmState:
+    def test_default_rhythm_state(self) -> None:
+        from basseparate.domain import ProjectRhythmState, RhythmDisplayMode, SnapMode
+
+        p = _make_project()
+        assert p.rhythm_state == ProjectRhythmState()
+        assert p.rhythm_state.display_mode is RhythmDisplayMode.AUTOMATIC
+        assert p.rhythm_state.snap_mode is SnapMode.BEAT
+        assert p.rhythm_state.metronome.enabled is False
+        assert p.rhythm_state.count_in.mode.value == "off"
+
+    def test_rhythm_state_roundtrip(self) -> None:
+        from basseparate.domain import (
+            CountInMode,
+            CountInSettings,
+            MetronomeSettings,
+            ProjectRhythmState,
+            RhythmDisplayMode,
+            SnapMode,
+        )
+
+        state = ProjectRhythmState(
+            active_branch_id=uuid4(),
+            display_mode=RhythmDisplayMode.EDITED,
+            lane_visible=False,
+            lane_height=1.5,
+            ruler_visible=False,
+            snap_mode=SnapMode.HALF_BEAT,
+            metronome=MetronomeSettings(enabled=True, volume=0.8),
+            count_in=CountInSettings(mode=CountInMode.TWO_BARS),
+        )
+        p = _make_project(**_ready_overrides(), rhythm_state=state)
+        restored = ProjectRecord.model_validate(p.model_dump(mode="json"))
+        assert restored.rhythm_state == state
+
+    def test_pre_m3_project_json_without_rhythm_state_loads(self) -> None:
+        # A project serialized before M3.1 (schema v4, no rhythm_state key)
+        # must deserialize with a defaulted rhythm state.
+        from basseparate.domain import ProjectRhythmState
+
+        p = _make_project(**_ready_overrides())
+        data = p.model_dump(mode="json")
+        data.pop("rhythm_state")
+        data["schema_version"] = 4
+        restored = ProjectRecord.model_validate(data)
+        assert restored.rhythm_state == ProjectRhythmState()

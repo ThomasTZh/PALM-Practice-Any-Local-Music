@@ -60,6 +60,12 @@ from basseparate.domain.representation import (
     RepresentationRole,
     TimeMapping,
 )
+from basseparate.domain.rhythm import (
+    ActivationArtifactManifest,
+    ProjectRhythmState,
+    RhythmAnalysisRun,
+    RhythmBranchRecord,
+)
 from basseparate.domain.separation import (
     SeparationResultSet,
     SeparationRun,
@@ -115,6 +121,7 @@ def _row_to_project(row: sqlite3.Row) -> ProjectRecord:
         source_metadata=json.loads(row["source_metadata"]),
         working_state=WorkingState.model_validate_json(row["working_state"]),
         practice_state=PracticeState.model_validate_json(row["practice_state"]),
+        rhythm_state=ProjectRhythmState.model_validate_json(row["rhythm_state"]),
     )
 
 
@@ -236,6 +243,16 @@ class StaleRevisionError(Exception):
 
     def __init__(self, current_revision: int) -> None:
         super().__init__(f"base revision is stale; current revision is {current_revision}")
+        self.current_revision = current_revision
+
+
+class RhythmBranchStaleRevisionError(Exception):
+    """An editable rhythm branch changed since the caller read it."""
+
+    def __init__(self, current_revision: int) -> None:
+        super().__init__(
+            f"rhythm branch revision is stale; current revision is {current_revision}"
+        )
         self.current_revision = current_revision
 
 
@@ -1772,6 +1789,36 @@ class ProjectRepository:
         assert updated is not None
         return updated
 
+    def set_rhythm_state(
+        self, project_id: uuid.UUID, rhythm_state: ProjectRhythmState
+    ) -> ProjectRecord:
+        """Persist the project's musical-grid settings (M3.1, spec §3.10).
+
+        Writes the serialized state and bumps the project revision.
+        Command/undo integration for these settings arrives with M3.10.
+        """
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                """
+                UPDATE projects SET
+                    rhythm_state = ?,
+                    updated_at = ?,
+                    revision = revision + 1
+                WHERE id = ?
+                """,
+                (rhythm_state.model_dump_json(), _now(), str(project_id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"project {project_id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        updated = self.get_project(project_id)
+        assert updated is not None
+        return updated
+
 
 class ImportRepository:
     """Synchronous repository for import sessions."""
@@ -2785,6 +2832,260 @@ class SeparationRepository:
         finally:
             conn.close()
         return result_set
+
+
+class RhythmRepository:
+    """Synchronous repository for rhythm runs, artifacts, and branches.
+
+    Runs and activation artifacts are immutable records keyed by ID; an
+    editable rhythm branch is updated with optimistic revision checks
+    (M3.1, milestone3.md §3.3-§3.9, §3.11).
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+    # -- Analysis runs -------------------------------------------------------
+    def create_run(self, run: RhythmAnalysisRun) -> RhythmAnalysisRun:
+        conn = _open(self._db_path)
+        now = _now()
+        try:
+            conn.execute(
+                """
+                INSERT INTO rhythm_analysis_runs (
+                    id, project_id, status, created_at, updated_at, record_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(run.id),
+                    str(run.project_id),
+                    run.status.value,
+                    now,
+                    now,
+                    run.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create rhythm analysis run: {exc}") from exc
+        finally:
+            conn.close()
+        return run
+
+    def save_run(self, run: RhythmAnalysisRun) -> RhythmAnalysisRun:
+        """Update a run's status/record (progress, completion, failure)."""
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                """
+                UPDATE rhythm_analysis_runs
+                SET status = ?, updated_at = ?, record_json = ?
+                WHERE id = ?
+                """,
+                (run.status.value, _now(), run.model_dump_json(), str(run.id)),
+            )
+            if cur.rowcount != 1:
+                raise DatabaseError(f"rhythm analysis run {run.id} not found")
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        return run
+
+    def get_run(self, run_id: uuid.UUID) -> RhythmAnalysisRun | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM rhythm_analysis_runs WHERE id = ?",
+                (str(run_id),),
+            ).fetchone()
+            return RhythmAnalysisRun.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_runs_for_project(self, project_id: uuid.UUID) -> list[RhythmAnalysisRun]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT record_json FROM rhythm_analysis_runs
+                WHERE project_id = ? ORDER BY rowid
+                """,
+                (str(project_id),),
+            ).fetchall()
+            return [RhythmAnalysisRun.model_validate_json(row["record_json"]) for row in rows]
+        finally:
+            conn.close()
+
+    # -- Activation artifacts ------------------------------------------------
+    def create_artifact(
+        self, project_id: uuid.UUID, manifest: ActivationArtifactManifest
+    ) -> ActivationArtifactManifest:
+        conn = _open(self._db_path)
+        try:
+            run_row = conn.execute(
+                "SELECT project_id FROM rhythm_analysis_runs WHERE id = ?",
+                (str(manifest.parent_run_id),),
+            ).fetchone()
+            if run_row is None or run_row["project_id"] != str(project_id):
+                raise DatabaseError(
+                    "activation artifact parent run does not belong to the project"
+                )
+            conn.execute(
+                """
+                INSERT INTO rhythm_activation_artifacts (
+                    id, project_id, run_id, content_hash, created_at, record_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(manifest.artifact_id),
+                    str(project_id),
+                    str(manifest.parent_run_id),
+                    manifest.content_hash,
+                    _now(),
+                    manifest.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create activation artifact: {exc}") from exc
+        finally:
+            conn.close()
+        return manifest
+
+    def get_artifact(self, artifact_id: uuid.UUID) -> ActivationArtifactManifest | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM rhythm_activation_artifacts WHERE id = ?",
+                (str(artifact_id),),
+            ).fetchone()
+            return (
+                ActivationArtifactManifest.model_validate_json(row["record_json"])
+                if row
+                else None
+            )
+        finally:
+            conn.close()
+
+    def list_artifacts_for_project(
+        self, project_id: uuid.UUID
+    ) -> list[ActivationArtifactManifest]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT record_json FROM rhythm_activation_artifacts
+                WHERE project_id = ? ORDER BY rowid
+                """,
+                (str(project_id),),
+            ).fetchall()
+            return [
+                ActivationArtifactManifest.model_validate_json(row["record_json"])
+                for row in rows
+            ]
+        finally:
+            conn.close()
+
+    # -- Editable branches ---------------------------------------------------
+    def create_branch(self, branch: RhythmBranchRecord) -> RhythmBranchRecord:
+        conn = _open(self._db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO rhythm_branches (
+                    id, project_id, parent_automatic_result_id, revision,
+                    created_at, updated_at, record_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(branch.id),
+                    str(branch.project_id),
+                    (
+                        str(branch.parent_automatic_result_id)
+                        if branch.parent_automatic_result_id is not None
+                        else None
+                    ),
+                    branch.revision,
+                    branch.created_at.isoformat().replace("+00:00", "Z"),
+                    branch.updated_at.isoformat().replace("+00:00", "Z"),
+                    branch.model_dump_json(),
+                ),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            raise DatabaseError(f"cannot create rhythm branch: {exc}") from exc
+        finally:
+            conn.close()
+        return branch
+
+    def save_branch(
+        self, branch: RhythmBranchRecord, expected_revision: int
+    ) -> RhythmBranchRecord:
+        """Persist a new branch revision after an optimistic revision check."""
+        if branch.revision != expected_revision + 1:
+            raise ValueError("a saved branch must advance the revision by exactly one")
+        conn = _open(self._db_path)
+        try:
+            cur = conn.execute(
+                """
+                UPDATE rhythm_branches
+                SET revision = ?, parent_automatic_result_id = ?, updated_at = ?,
+                    record_json = ?
+                WHERE id = ? AND revision = ?
+                """,
+                (
+                    branch.revision,
+                    (
+                        str(branch.parent_automatic_result_id)
+                        if branch.parent_automatic_result_id is not None
+                        else None
+                    ),
+                    branch.updated_at.isoformat().replace("+00:00", "Z"),
+                    branch.model_dump_json(),
+                    str(branch.id),
+                    expected_revision,
+                ),
+            )
+            if cur.rowcount != 1:
+                row = conn.execute(
+                    "SELECT revision FROM rhythm_branches WHERE id = ?",
+                    (str(branch.id),),
+                ).fetchone()
+                if row is None:
+                    raise DatabaseError(f"rhythm branch {branch.id} not found")
+                raise RhythmBranchStaleRevisionError(int(row["revision"]))
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        return branch
+
+    def get_branch(self, branch_id: uuid.UUID) -> RhythmBranchRecord | None:
+        conn = _open(self._db_path)
+        try:
+            row = conn.execute(
+                "SELECT record_json FROM rhythm_branches WHERE id = ?",
+                (str(branch_id),),
+            ).fetchone()
+            return RhythmBranchRecord.model_validate_json(row["record_json"]) if row else None
+        finally:
+            conn.close()
+
+    def list_branches_for_project(self, project_id: uuid.UUID) -> list[RhythmBranchRecord]:
+        conn = _open(self._db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT record_json FROM rhythm_branches
+                WHERE project_id = ? ORDER BY rowid
+                """,
+                (str(project_id),),
+            ).fetchall()
+            return [RhythmBranchRecord.model_validate_json(row["record_json"]) for row in rows]
+        finally:
+            conn.close()
 
 
 class ExportArtifactRepository:

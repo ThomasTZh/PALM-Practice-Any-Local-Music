@@ -5,21 +5,17 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 ## Current position
 
-- **Milestones:** 0, 1, and 2 complete. M2.21 (final separation-app
-  acceptance) is **complete and accepted on 2026-10-23**: objective
-  checks passed, and the human listening steps 6-10 all passed. No
-  functional work is pending in Milestone 2.
-- **Next milestone:** Milestone 3 (musical grid: Beat This! beat and
-  downbeat analysis, tempo map, meter regions, musical ruler and
-  snapping, metronome, count-in). **Not started:** there is no M3 code
-  and no `m3.*-plan.md` yet. Specification is
-  `projectPlans/milestone3.md` (work packages M3.1-M3.22); start with
-  M3.1. CONTRIBUTING requires implementing the earliest incomplete
-  milestone, so M3 is the next work item, not optional polish.
-- **Repository:** branch `main`; HEAD `ba37ffc` ("Chore: refresh the
-  status ledger and project docs for the M2 closeout"), the docs/license
-  commit described below; 111 commits before the ledger follow-up; the
-  tree was clean at the start of the 2026-10-24 session.
+- **Milestones:** 0, 1, and 2 complete; M3.1 (rhythm domain and
+  schema) complete on 2026-10-24 (implementation commit in the
+  follow-up ledger entry). M2.21 final separation-app acceptance was
+  accepted on 2026-10-23 (objective plus human steps 6-10).
+- **Next work package:** M3.2 (integrate the Beat This! runtime and
+  model registry), then M3.3. Specification is
+  `projectPlans/milestone3.md` (work packages M3.1-M3.22; see
+  "Milestone 3 progress" and `projectPlans/m3.1-plan.md`).
+- **Repository:** branch `main`; HEAD `3ac9fef` ("Ledger: record the
+  docs/license refresh hash (ba37ffc)"); 112 commits; the tree was clean
+  at the start of the 2026-10-24 M3.1 work.
 - **Workspace relocation (2026-10-24):** the checkout moved from
   `/home/thomas/Documents/localLLM playground/opencodetest/basseparate`
   to `/home/thomas/Documents/basseparate`. The venv's editable-install
@@ -49,10 +45,10 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 
 | Gate | Result |
 |---|---|
-| `pytest tests/ -q` | 1414 passed, 2 failed (both load-sensitive timing tests; each passes in isolation) |
+| `pytest tests/ -q` | 1460 passed |
 | `ruff check src/ tests/` | clean |
 | `ruff format --check src/ tests/` | **not clean**: 90 of 170 files would be reformatted (pre-existing drift with the locked ruff 0.16.9; no source file was touched by this session) |
-| `mypy src/basseparate` | clean, 82 files |
+| `mypy src/basseparate` | clean, 83 files |
 | `scripts/check_contract.py` | in sync |
 | `npx vitest run` (frontend) | 569 passed, 36 files |
 | `npx tsc -b --force` | clean |
@@ -60,12 +56,12 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
 | `npm run build` | OK |
 | `npm run lint` | 131 errors + 1 warning; all pre-existing |
 
-The two intermittent pytest failures are
+The two historically load-sensitive tests
 `tests/integration/test_analysis_job_manager.py::TestAnalysisJobClass::test_separation_completes_on_the_analysis_worker`
 and
-`tests/integration/test_job_manager.py::TestProbeCompletion::test_probe_job_completes_and_publishes`.
-Both are timing-sensitive under full-suite load; do not treat them as
-regressions until they fail alone. The frontend baseline was 567
+`tests/integration/test_job_manager.py::TestProbeCompletion::test_probe_job_completes_and_publishes`
+passed in the final M3.1 full run; they remain timing-sensitive under
+load, so do not treat them as regressions until they fail alone. The frontend baseline was 567
 before the two M2.21 loop regression tests; it is now 569. One stale
 overlay assertion in `frontend/tests/app-loops.test.tsx` still
 expected the pre-`2e1c2f0` draw order and sizes, so the full suite was
@@ -3893,14 +3889,77 @@ evidence stands.
 
 ## Milestone 3 progress
 
-**Not started.** No M3 code, migration, route, or plan document exists.
-The specification is `projectPlans/milestone3.md` (work packages
-M3.1-M3.22; section 25 gives the implementation order and gates). First
-work package: M3.1, verify prerequisites and extend the domain. M3
-requires an explicit Beat This! model install (a deliberate network
-operation), and GPU-dependent acceptance runs will need the NVIDIA
-driver restored. Re-run the gate commands in "Current position" before
-starting.
+Specification: `projectPlans/milestone3.md` (work packages M3.1-M3.22;
+section 25 gives the implementation order and gates). M3 requires an
+explicit Beat This! model install (a deliberate network operation), and
+GPU-dependent acceptance runs will need the NVIDIA driver restored.
+
+### M3.1 — Verify prerequisites and extend the domain (complete)
+
+Spec: `milestone3.md` §3. Plan: `projectPlans/m3.1-plan.md`. Domain,
+schema, project/portable serialization, and contracts only. No model,
+GPU, network, or analysis execution. Implementation commit and ledger
+hash are in the follow-up commit.
+
+- **Prerequisites (§3.1, 2026-10-24):** current full gates were green
+  except the two known load-sensitive timing tests and the pre-existing
+  `ruff format` drift (see Current position). The preserved Carousel
+  acceptance project was inspected read-only: project
+  `923d1e34-...` ready, 48 kHz, 14,133,913 frames; canonical PCM
+  113,071,304 bytes (= frames × 2 channels × 4); four stems all
+  14,133,913 frames, 48 kHz, stereo, alignment offset 0; one
+  source-anchored loop 2,400,000-2,832,000 frames; portable provenance
+  present; result set `5299022f-...` valid; five waveform caches.
+  Playback/speed/loop/transport/portable/409/worker-coexistence
+  evidence remains the M2 corpus plus the M2.20-M2.21 records; no new
+  human playback run is needed for M3.1, and no metronome work starts
+  until the transport baseline is trusted.
+- **Domain (§3.2-§3.9):** `src/basseparate/domain/rhythm.py`:
+  `MusicalPosition` (exact reduced rational, safe-integer bounds),
+  `MusicalInterval`, all shared enums, `RhythmAnalysisRun`,
+  `ActivationArrayRef`/`ActivationFrameMapping`/
+  `ActivationArtifactManifest` (relative `.npy` paths, distinct arrays,
+  length checks), `RhythmPulse`, `TempoAnchor`, `MeterHypothesis`,
+  `MeterRegion` (grouping, derived primary-pulse starts, exact display
+  tempo-unit compatibility), `BarOriginState`, and
+  `RhythmBranchRecord` (unique ids, pulse parent/link checks, strictly
+  increasing source and musical anchor positions, source bounds,
+  ordered meter regions on whole-bar boundaries, valid-grid
+  requirements). Limits bound every collection.
+- **Project state (§3.10):** `MetronomeSettings`, `CountInSettings`,
+  `SelectedRhythmObject`, `ProjectRhythmState` (active result/branch,
+  Auto/Edited display, lane/ruler visibility, lane height, snap mode,
+  metronome, count-in, last selection). `ProjectRecord.rhythm_state`
+  is defaulted.
+- **Schema (§3.11):** migration 12→13 creates `rhythm_analysis_runs`,
+  `rhythm_activation_artifacts`, `rhythm_branches` (record JSON plus
+  index columns) and `projects.rhythm_state`;
+  `DATABASE_SCHEMA_VERSION` 13, `PROJECT_SCHEMA_VERSION` 5.
+  `RhythmRepository` provides run/artifact/branch create, read, list,
+  run status save, and optimistic branch save
+  (`RhythmBranchStaleRevisionError`); `ProjectRepository`
+  gains `set_rhythm_state`.
+- **Portable schema (§3.11.3):** the three rhythm tables are copied as
+  project-scoped rows and included in the isolation proof. Portable
+  **open** of rhythm rows and the raw activation files are deferred to
+  M3.18 (Gate G).
+- **Tests (§3.11.4-§3.11.7):** `tests/unit/test_rhythm.py` (33),
+  `tests/integration/test_rhythm_repository.py` (5),
+  `tests/integration/test_migration_m3.py` (empty, imported, separated,
+  looped, and portable-opened v12 fixtures; 2),
+  `tests/unit/test_project.py` rhythm-state tests (3), and a portable
+  rhythm-row copy test (1). Existing schema-version assertions now use
+  the exported constants.
+- **Gate (2026-10-24):** backend **1460 passed** (1416 baseline + 44
+  new/updated); ruff check clean; mypy clean (83 files); contract in
+  sync; frontend Vitest **569 passed**, `tsc -b --force` clean,
+  `format:check` clean, production build OK.
+- **Known boundaries:** a v12 portable archive cannot be opened by the
+  v13 build (the embedded database must equal the current schema
+  version); archive upgrades belong to M3.18. Automatic
+  `RhythmResult` and its table arrive in M3.6, so the branch parent and
+  project active-result IDs are unconstrained nullable UUIDs until
+  then. Command/undo integration for rhythm state is M3.10.
 
 ## Architectural decisions so far
 

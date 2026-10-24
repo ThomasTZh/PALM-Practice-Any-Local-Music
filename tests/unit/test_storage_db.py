@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from basseparate import DATABASE_SCHEMA_VERSION
 from basseparate.domain.asset import AssetRecord, AssetRole, AudioMetadata
 from basseparate.domain.project import ProjectStatus
 from basseparate.domain.waveform import WaveformResult, expected_levels
@@ -78,13 +79,16 @@ class TestInitialization:
             "separation_result_sets",
             "stems",
             "portable_artifacts",
+            "rhythm_analysis_runs",
+            "rhythm_activation_artifacts",
+            "rhythm_branches",
         } <= tables
 
-    def test_schema_version_is_12(self, db_path: Path) -> None:
+    def test_schema_version_is_current(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 12
+        assert version == DATABASE_SCHEMA_VERSION
 
     def test_migration_5_to_6_preserves_existing_projects(self, tmp_path: Path) -> None:
         # Build a genuine v5 database, insert a project, then upgrade.
@@ -96,8 +100,7 @@ class TestInitialization:
             conn.commit()
             _apply_migrations(conn, 0, 5)
             conn.execute(
-                "INSERT INTO projects (id, name, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
                 ("p1", "Old", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z"),
             )
             conn.commit()
@@ -110,7 +113,7 @@ class TestInitialization:
         conn.row_factory = sqlite3.Row
         try:
             version = conn.execute("PRAGMA user_version").fetchone()[0]
-            assert version == 12
+            assert version == DATABASE_SCHEMA_VERSION
             row = conn.execute(
                 "SELECT name, working_state, history_seq, practice_state "
                 "FROM projects WHERE id = 'p1'"
@@ -125,7 +128,7 @@ class TestInitialization:
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 ).fetchall()
             }
-            assert {"markers", "project_history"} <= tables
+            assert {"markers", "project_history", "rhythm_branches"} <= tables
         finally:
             conn.close()
 

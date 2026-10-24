@@ -608,6 +608,40 @@
         "title": "CompleteOpenSessionResponse",
         "type": "object"
       },
+      "CountInMode": {
+        "description": "Count-in length (milestone3.md \u00a717.1).",
+        "enum": [
+          "off",
+          "one_bar",
+          "two_bars"
+        ],
+        "title": "CountInMode",
+        "type": "string"
+      },
+      "CountInRepetition": {
+        "description": "Whether count-in repeats with every loop pass (milestone3.md \u00a717.9).",
+        "enum": [
+          "once",
+          "every_repeat"
+        ],
+        "title": "CountInRepetition",
+        "type": "string"
+      },
+      "CountInSettings": {
+        "description": "Count-in preferences; transport behavior is implemented in M3.15.",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/CountInMode",
+            "default": "off"
+          },
+          "repetition": {
+            "$ref": "#/components/schemas/CountInRepetition",
+            "default": "once"
+          }
+        },
+        "title": "CountInSettings",
+        "type": "object"
+      },
       "CreateExportRequest": {
         "description": "Export selection and options (spec \u00a715.1\u201315.2).",
         "properties": {
@@ -1774,6 +1808,45 @@
         "title": "MediaJob",
         "type": "object"
       },
+      "MetronomeSettings": {
+        "description": "Metronome preferences; audio behavior is implemented in M3.14.",
+        "properties": {
+          "accent_downbeats": {
+            "default": true,
+            "title": "Accent Downbeats",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "subdivision": {
+            "$ref": "#/components/schemas/MetronomeSubdivision",
+            "default": "primary"
+          },
+          "volume": {
+            "default": 0.5,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "title": "MetronomeSettings",
+        "type": "object"
+      },
+      "MetronomeSubdivision": {
+        "description": "Metronome subdivision modes (milestone3.md \u00a716.6).",
+        "enum": [
+          "primary",
+          "denominator",
+          "half_beat",
+          "quarter_beat"
+        ],
+        "title": "MetronomeSubdivision",
+        "type": "string"
+      },
       "ModelListResponse": {
         "properties": {
           "models": {
@@ -2682,6 +2755,9 @@
             "title": "Revision",
             "type": "integer"
           },
+          "rhythm_state": {
+            "$ref": "#/components/schemas/ProjectRhythmState"
+          },
           "sample_rate": {
             "anyOf": [
               {
@@ -2697,7 +2773,7 @@
             "title": "Sample Rate"
           },
           "schema_version": {
-            "default": 4,
+            "default": 5,
             "description": "Project schema version",
             "minimum": 1.0,
             "title": "Schema Version",
@@ -2785,6 +2861,78 @@
           "updated_at"
         ],
         "title": "ProjectRecord",
+        "type": "object"
+      },
+      "ProjectRhythmState": {
+        "description": "Project-level rhythm display and practice settings (\u00a73.10).",
+        "properties": {
+          "active_automatic_result_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Automatic Result Id"
+          },
+          "active_branch_id": {
+            "anyOf": [
+              {
+                "description": "UUID identifier, serialized as a string",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Branch Id"
+          },
+          "count_in": {
+            "$ref": "#/components/schemas/CountInSettings"
+          },
+          "display_mode": {
+            "$ref": "#/components/schemas/RhythmDisplayMode",
+            "default": "automatic"
+          },
+          "lane_height": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.25,
+            "title": "Lane Height",
+            "type": "number"
+          },
+          "lane_visible": {
+            "default": true,
+            "title": "Lane Visible",
+            "type": "boolean"
+          },
+          "last_selected": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectedRhythmObject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metronome": {
+            "$ref": "#/components/schemas/MetronomeSettings"
+          },
+          "ruler_visible": {
+            "default": true,
+            "title": "Ruler Visible",
+            "type": "boolean"
+          },
+          "snap_mode": {
+            "$ref": "#/components/schemas/SnapMode",
+            "default": "beat"
+          }
+        },
+        "title": "ProjectRhythmState",
         "type": "object"
       },
       "ProjectStatus": {
@@ -2950,6 +3098,15 @@
         "title": "ResultSetSummary",
         "type": "object"
       },
+      "RhythmDisplayMode": {
+        "description": "Whether the project shows the automatic result or an edited branch.",
+        "enum": [
+          "automatic",
+          "edited"
+        ],
+        "title": "RhythmDisplayMode",
+        "type": "string"
+      },
       "RuntimeJobResponse": {
         "description": "The media job in flight (or the queue depth when only queued work exists).",
         "properties": {
@@ -3073,6 +3230,35 @@
         ],
         "title": "SelectStreamRequest",
         "type": "object"
+      },
+      "SelectedRhythmObject": {
+        "description": "The last selected rhythm object, for editor restoration.",
+        "properties": {
+          "id": {
+            "description": "UUID identifier, serialized as a string",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SelectedRhythmObjectKind"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "SelectedRhythmObject",
+        "type": "object"
+      },
+      "SelectedRhythmObjectKind": {
+        "description": "Kinds that can be the project's last selected rhythm object.",
+        "enum": [
+          "pulse",
+          "tempo_anchor",
+          "meter_region"
+        ],
+        "title": "SelectedRhythmObjectKind",
+        "type": "string"
       },
       "SelectionRange": {
         "description": "A frame selection ``[start, end)`` in source frames (M1.15 \u00a717.5).",
@@ -3501,6 +3687,19 @@
         },
         "title": "SetViewportOp",
         "type": "object"
+      },
+      "SnapMode": {
+        "description": "Musical snapping modes (milestone3.md \u00a714.1).",
+        "enum": [
+          "off",
+          "beat",
+          "half_beat",
+          "quarter_beat",
+          "bar",
+          "event"
+        ],
+        "title": "SnapMode",
+        "type": "string"
       },
       "SourceInfoResponse": {
         "properties": {
