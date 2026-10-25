@@ -29,8 +29,9 @@ rewriting the foundation.
 ## Slice-0 evidence
 
 - `frontend/e2e/golden-path.spec.ts` passes on Firefox: import → ready →
-  Analyze Rhythm → 4/4 bars → rendered metronome clicks → musical loop →
-  count-in setting → portable save.
+  Analyze Rhythm → 4/4 bars → metronome schedule → musical loop →
+  count-in setting → portable save. The headless run does not assert
+  audible/rendered clicks; that needs manual listening.
 - `tests/unit/test_rhythm_corpus.py` + `test_rhythm_evaluation.py`: 37 pass.
 - Real final0 synthetic fixture: beat F1 **0.952**; downbeat F1 **0.462**
   on simple synthetic accents.

@@ -44,7 +44,8 @@ downbeat score does not.
 - create a ready project through canonical decode;
 - run Analyze Rhythm with the real final0 model;
 - select 4/4 and render bar lines;
-- start the metronome and observe rendered clicks in the worklet;
+- enable the metronome and verify a non-empty schedule (headless Firefox has no
+  audio device, so rendered/audible clicks are not asserted here);
 - create a musical loop from a waveform selection and enable looping;
 - select one-bar count-in;
 - save a portable project.

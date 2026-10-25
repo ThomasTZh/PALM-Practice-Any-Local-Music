@@ -10,8 +10,8 @@ than the old milestone/work-package sequence. The foundation from Milestones
 until it passes the quality gates.
 
 Current slice: **golden path and quality baseline**. The Firefox golden path
-(import → ready → Analyze Rhythm → 4/4 bars → metronome clicks → musical loop
-→ count-in → portable save) passes. The quality gate is red: downbeat
+(import → ready → Analyze Rhythm → 4/4 bars → metronome schedule → musical
+loop → count-in → portable save) passes. The quality gate is red: downbeat
 accuracy and metronome timing are below the planned thresholds.
 
 - [Product goals](GOALS.md)

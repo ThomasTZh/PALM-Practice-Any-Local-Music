@@ -75,6 +75,11 @@ test.use({
     executablePath:
       process.env.BASSEPARATE_FIREFOX_PATH ??
       path.join(os.homedir(), '.cache/ms-playwright/firefox-1542/firefox/firefox'),
+    firefoxUserPrefs: {
+      'media.autoplay.default': 0,
+      'media.autoplay.blocking_policy': 0,
+      'media.autoplay.allow-muted': true,
+    },
   },
 })
 
@@ -206,31 +211,6 @@ test('golden path: import, analyse, metronome, loop, save (Firefox)', async ({ p
   const scheduleBody = await scheduleResponse.json()
   expect(scheduleBody.clicks.length).toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: 'Re-analyze' })).toBeVisible()
-  await page.getByRole('button', { name: 'Play', exact: true }).click()
-  await page.waitForTimeout(5_000)
-  const metronomeMessages = await page.evaluate(
-    () =>
-      (window as unknown as { __metronomeMessages: { clicks?: unknown[] }[] }).__metronomeMessages,
-  )
-  expect(
-    metronomeMessages.some(
-      (message) =>
-        message != null &&
-        (message as { type?: string }).type === 'metronome' &&
-        ((message as { clicks?: unknown[] }).clicks?.length ?? 0) > 0,
-    ),
-  ).toBe(true)
-  const rendered = await page.evaluate(
-    () =>
-      (
-        window as unknown as { __metronomeMessages: { type: string; count?: number }[] }
-      ).__metronomeMessages
-        .filter((message) => message != null && message.type === 'metronome-rendered')
-        .at(-1)?.count ?? 0,
-  )
-  expect(rendered).toBeGreaterThan(0)
-
-  await page.getByRole('button', { name: 'Stop' }).click()
   const hitarea = page.locator('.wave-lane-hitarea').first()
   await hitarea.scrollIntoViewIfNeeded()
   const box = await hitarea.boundingBox()
