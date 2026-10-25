@@ -1,7 +1,7 @@
 [project]
 name = "basseparate-analysis"
 version = "0.1.0-dev"
-description = "Isolated Demucs analysis environment (M2.2). Inference only; separate from the application environment."
+description = "Isolated Demucs analysis environment. Inference only; separate from the application environment."
 requires-python = ">=3.11,<3.12"
 license = { text = "Proprietary - unpublished" }
 authors = [{ name = "basseparate" }]

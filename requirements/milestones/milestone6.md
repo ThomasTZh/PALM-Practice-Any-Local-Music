@@ -1,6 +1,6 @@
 # Milestone 6 — Complete persistence and workflow: detailed implementation specification
 
-This expands Milestone 6 in Section 13 of `basseparate_project_plan.md`.
+This expands Milestone 6 in Section 13 of [`basseparate_project_plan.md`](../product/basseparate_project_plan.md).
 
 It builds on `milestone0.md` through `milestone5.md`. Those milestones remain authoritative for the application foundation, import/media storage, waveform and transport architecture, source separation, variable-speed practice, portable project format, musical grid, chord/key/tuning analysis, bass transcription, model/result provenance, revisioned editing, and module-specific cache/staleness rules. Milestone 6 must consolidate and harden those systems rather than replace their domain semantics.
 

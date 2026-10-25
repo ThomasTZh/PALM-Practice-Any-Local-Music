@@ -1,8 +1,9 @@
-# Audible judgement guide (Firefox, M3)
+# Audible judgement guide (Firefox)
 
 This is the listening-only pass. UI state, import, analysis, and portable
-save are already covered by the Firefox Playwright test; do not repeat
-those unless something fails.
+save are covered by `frontend/e2e/golden-path.spec.ts`; do not repeat those
+unless something fails. Use this after the quality gate in
+`docs/quality-baseline.md` has an approved baseline.
 
 Use headphones or a single output device. Relative click/audio alignment
 is what matters, so Bluetooth output latency does not invalidate the
@@ -180,7 +181,7 @@ arbitrary time is not.
 
 ## Per-recording record
 
-Copy this block into `docs/evidence/m3.21-listening-review.md` for each of
+Copy this block into `docs/evidence/listening-review.md` for each of
 the five supplied files:
 
 ```md

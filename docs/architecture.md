@@ -1,9 +1,12 @@
-# basseparate architecture (Milestones 0-2)
+# basseparate architecture
 
-This document describes the architecture as implemented. It is updated as
-later milestones extend it. The authoritative product specification is
-`basseparate_project_plan.md`; the resume ledger is
-`docs/implementation-status.md`.
+This document describes the architecture as implemented. Product outcome:
+`GOALS.md`. Requirements: `requirements/`. Execution order and gates:
+`EXECUTION_PLAN.md`. Current resume point: `docs/implementation-status.md`.
+
+The rhythm/editor surface is still a prototype: it is wired into the API and
+transport, but the quality gates in `docs/quality-baseline.md` have not
+closed. Architecture notes do not imply acceptance.
 
 ## Process structure
 
@@ -49,12 +52,13 @@ committed. On startup, jobs left running are marked `interrupted`.
 Pydantic models in `src/basseparate/domain/` are the single source of truth.
 Generated artifacts:
 
-- `contracts/openapi.json` — HTTP API contract (47 routes as of M2.21).
+- `contracts/openapi.json` — HTTP API contract.
+- `contracts/project.schema.json` and `contracts/worker.schema.json` —
+  generated project/worker schemas.
 - `frontend/src/api/schema.ts` — TypeScript types (openapi-typescript).
 
-The project, asset, and worker JSON Schemas named in the Milestone 0
-notes are not produced by the current contract script; OpenAPI plus the
-generated TypeScript types are the maintained contract artifacts.
+Generate with `scripts/export_openapi.py`, `scripts/export_schemas.py`, and
+`pnpm --dir frontend run contracts`.
 
 Regenerate with `scripts/dev.py contracts`; verify drift with
 `scripts/dev.py contracts --check` (or `scripts/check_contract.py`).
@@ -74,7 +78,7 @@ stream coordinate.
 
 - Working database: SQLite (stdlib `sqlite3`), WAL mode, `synchronous=FULL`,
   schema version in `PRAGMA user_version`, ordered transactional migrations
-  (current `DATABASE_SCHEMA_VERSION` is 12; project schema version 4).
+  (current `DATABASE_SCHEMA_VERSION` is 15; project schema version 5).
 - Directories via platformdirs (XDG): config, data, cache, state, runtime.
   `--storage-root` overrides the root for tests and portable development.
   Data and runtime directories are owner-only.

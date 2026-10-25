@@ -1,9 +1,10 @@
-# M3 Firefox human acceptance guide
+# Firefox human acceptance guide
 
-Purpose: verify the Milestone 3 rhythm workflow by hand in Firefox. This
-guide covers the five supplied recordings and the offline portable
-reopen. Record results in `docs/evidence/m3.21-listening-review.md`
-(gitignored, create it from the checklist at the end).
+Purpose: verify the rhythm/practice workflow by hand in Firefox. This guide
+covers the supplied recordings and the offline portable reopen. It is the
+human evidence for slices 2, 3, and 6 of `EXECUTION_PLAN.md`; do not run it as
+a completion claim while the quality gate is red. Record results in
+`docs/evidence/listening-review.md` (gitignored).
 
 Known UI limitation at this checkpoint: the rhythm lanes and ruler are
 read-only. Metronome, count-in, loops, speed, snapping commands, and
@@ -166,7 +167,7 @@ useful but the textual record is required.
 
 ## 5. Manual review checklist
 
-Create `docs/evidence/m3.21-listening-review.md` with one block per
+Create `docs/evidence/listening-review.md` with one block per
 recording:
 
 ```md

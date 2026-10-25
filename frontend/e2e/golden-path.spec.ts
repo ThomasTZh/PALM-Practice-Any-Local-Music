@@ -121,7 +121,7 @@ test.afterAll(async () => {
   fs.rmSync(storageRoot, { recursive: true, force: true })
 })
 
-test('M3 rhythm workflow (Firefox)', async ({ page }) => {
+test('golden path: import, analyse, metronome, loop, save (Firefox)', async ({ page }) => {
   test.setTimeout(240_000)
   const errors: string[] = []
   page.on('console', (message) => {
@@ -229,6 +229,24 @@ test('M3 rhythm workflow (Firefox)', async ({ page }) => {
         .at(-1)?.count ?? 0,
   )
   expect(rendered).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Stop' }).click()
+  const hitarea = page.locator('.wave-lane-hitarea').first()
+  await hitarea.scrollIntoViewIfNeeded()
+  const box = await hitarea.boundingBox()
+  if (!box) throw new Error('waveform hit area has no box')
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByLabel('Selection')).not.toHaveText('—')
+  await page.getByRole('button', { name: 'Create musical loop' }).click()
+  await expect(page.locator('.loops-item')).toHaveCount(1)
+  await expect(page.locator('.loop-anchor-mode')).toContainText('Musical')
+  const looping = page.getByRole('checkbox', { name: 'Looping' })
+  await looping.click()
+  await expect(looping).toBeChecked({ timeout: 15_000 })
+
   await page.getByLabel('Count-in length').selectOption('one_bar')
   await expect(page.getByLabel('Count-in length')).toHaveValue('one_bar', { timeout: 15_000 })
   await page.getByRole('button', { name: 'Save portable project' }).click()

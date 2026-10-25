@@ -4,25 +4,24 @@ Local music-analysis and bass practice application.
 
 ## Status
 
-Milestones 0, 1, and 2 are complete (foundation, media pipeline and
-waveform editor, separation-based bass practice workflow). Milestone 2
-final acceptance passed on 2026-10-23, including the human listening
-review.
+The product is being re-baselined around a measured vertical slice rather
+than the old milestone/work-package sequence. The foundation from Milestones
+0–2 is retained; the rhythm work from Milestone 3 is treated as a prototype
+until it passes the quality gates.
 
-Milestone 3 (musical grid) implements M3.1-M3.20 and M3.22: rhythm domain
-and schema, the isolated Beat This! runtime and explicit model install,
-reproducible input preparation, real activation runs, pulse decoding,
-immutable automatic results and editable branches, tempo maps, meter
-inference and editing, bars/beats/pickups, transactional rhythm editing
-with undo/redo, the musical ruler and lanes, snapping, musical loops, the
-synchronized metronome, count-in, musical readout and navigation, the
-Analyze Rhythm run graph and generated contracts, cache identity and
-portable rhythm persistence, the deterministic rhythm corpus and quality
-metrics, and the updated documentation. M3.21 automated acceptance is
-implemented; browser-listening and the five-recording human review remain
-to be performed. See
-[docs/implementation-status.md](docs/implementation-status.md) for the
-authoritative ledger and verified test results.
+Current slice: **golden path and quality baseline**. The Firefox golden path
+(import → ready → Analyze Rhythm → 4/4 bars → metronome clicks → musical loop
+→ count-in → portable save) passes. The quality gate is red: downbeat
+accuracy and metronome timing are below the planned thresholds.
+
+- [Product goals](GOALS.md)
+- [Execution plan](EXECUTION_PLAN.md)
+- [Quality baseline](docs/quality-baseline.md)
+- [Current status ledger](docs/implementation-status.md)
+- [Requirements archive](requirements/README.md)
+
+No new editor UI is added until the quality gates close or an exception is
+recorded.
 
 ## Implemented features
 
@@ -54,16 +53,16 @@ authoritative ledger and verified test results.
   60-minute variable-tempo case) and auditable beat/downbeat, rate, meter,
   and tempo metrics.
 
-## Not implemented yet
+## Not implemented yet / not accepted
 
-- Remaining Milestone 3 human acceptance: browser listening on Chromium
-  and Firefox, and the five-recording listening/correction review
-  (M3.21). Automated rhythm tests and metrics are in place.
-- Milestone 4: harmony analysis and editing.
-- Milestone 5: bass transcription.
-- Milestones 6-8: complete persistence/workflow, quality models and
-  YouTube, browser validation and release.
-- Multi-user support, LAN exposure, mobile, and non-Linux platforms.
+- Reliable downbeat and metronome timing on ordinary 4/4 material (quality
+  gate red).
+- Five-recording acceptance and human listening review.
+- Editing/correction UI for wrong automatic grids (blocked on quality).
+- Separation controls in the current frontend; use the existing API/CLI
+  workflow for now.
+- Milestone 4 harmony, Milestone 5 transcription, and later release work.
+- Chromium/Safari/mobile support.
 
 ## Supported platform
 
@@ -212,12 +211,15 @@ Direct commands used in the resume ledger:
 cd frontend && npx vitest run
 ```
 
-Known pre-existing gate noise: `ruff format --check` would reformat 90
-files under the locked ruff 0.16.9, and ESLint reports 131 errors in older
-test harnesses. `ruff check`, mypy, the contract check, the unit and
-integration tests, the production build, and the frontend test suite are
-otherwise clean. See `docs/implementation-status.md` for the exact current
-results.
+The current slice evidence is the Firefox golden path and the quality
+baseline, not the total test count:
+
+```sh
+cd frontend && npm run e2e:golden
+```
+
+See `docs/quality-baseline.md` for the red/green quality gates and
+`docs/implementation-status.md` for the current resume point.
 
 ## Diagnostics
 
@@ -237,17 +239,16 @@ Starts the Vite dev server and the backend together. Stop both with Ctrl-C.
 
 ## Documentation
 
-- [Main project plan](basseparate_project_plan.md)
-- [Milestone 0 specification](projectPlans/milestone0.md)
-- [Milestone 1 specification](projectPlans/milestone1.md)
-- [Milestone 2 specification](projectPlans/milestone2.md)
-- [Milestone 3 specification](projectPlans/milestone3.md)
-- [Milestone 3 M3.1 plan](projectPlans/m3.1-plan.md)
-- [Milestone 3 M3.2 plan](projectPlans/m3.2-plan.md)
-- [Rhythm environment notes](rhythm/README.md)
+- [Product goals](GOALS.md)
+- [Execution plan](EXECUTION_PLAN.md)
+- [Quality baseline](docs/quality-baseline.md)
+- [Requirements archive](requirements/README.md)
+- [Current implementation status](docs/implementation-status.md)
 - [Architecture notes](docs/architecture.md)
 - [Troubleshooting guide](docs/troubleshooting.md)
-- [Implementation status](docs/implementation-status.md)
+- [Firefox acceptance guide](docs/acceptance/firefox-listening.md)
+- [Audible judgement guide](docs/acceptance/audible-judgement.md)
+- [Rhythm environment notes](rhythm/README.md)
 - [Dependency notices](licenses/NOTICES.md)
 
 ## License

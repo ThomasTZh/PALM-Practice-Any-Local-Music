@@ -1,7 +1,7 @@
 
 # Milestone 2 — Bass practice workflow: detailed implementation specification
 
-This expands Milestone 2 in Section 13 of [basseparate_project_plan.md](../basseparate_project_plan.md).
+This expands Milestone 2 in Section 13 of [basseparate_project_plan.md](../product/basseparate_project_plan.md).
 
 It builds on [milestone0.md](milestone0.md) and [milestone1.md](milestone1.md). Milestone 1 is complete (see `docs/implementation-status.md`); Milestone 2 extends that implemented foundation.
 

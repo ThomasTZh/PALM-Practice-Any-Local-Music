@@ -1,6 +1,6 @@
 # Milestone 4 — Harmony analysis and editing: detailed implementation specification
 
-This expands Milestone 4 in Section 13 of `basseparate_project_plan.md`.
+This expands Milestone 4 in Section 13 of [`basseparate_project_plan.md`](../product/basseparate_project_plan.md).
 
 It builds on `milestone0.md`, `milestone1.md`, `milestone2.md`, and `milestone3.md`. Those milestones remain authoritative for the local application foundation, media pipeline, source-frame timing, waveform editor, synchronized stem playback, time stretching, loops, portable projects, durable jobs, immutable analysis versions, editable branches, musical mapping, snapping, metronome, count-in, and revisioned command history. Milestone 4 must extend those systems rather than replace or fork them.
 

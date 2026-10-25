@@ -1,7 +1,7 @@
 [project]
 name = "basseparate-rhythm"
 version = "0.1.0-dev"
-description = "Isolated Beat This! rhythm-analysis environment (M3.2). Inference only; separate from the application and Demucs environments."
+description = "Isolated Beat This! rhythm-analysis environment. Inference only; separate from the application and Demucs environments."
 requires-python = ">=3.11,<3.12"
 license = { text = "Proprietary - unpublished" }
 authors = [{ name = "basseparate" }]

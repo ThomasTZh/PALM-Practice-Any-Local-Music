@@ -5,12 +5,12 @@ agreements for implementation sessions.
 
 ## Ground rules
 
-1. The design documents in `projectPlans/` (and the top-level
-   `basseparate_project_plan.md`) are the authoritative specification.
-   Implement the earliest incomplete milestone; do not pull later milestones'
-   features forward.
-2. `docs/implementation-status.md` is the persistent resume ledger. Update it
-   before ending a session and at every milestone gate.
+1. `GOALS.md` defines the product outcome. `requirements/` holds the
+   archived milestone requirements; `EXECUTION_PLAN.md` controls the current
+   order and acceptance evidence. Do not treat historical work-package plans
+   as current.
+2. `docs/implementation-status.md` is the persistent resume point. Update it
+   at slice boundaries and whenever a quality gate changes.
 3. User-supplied recordings in `audio2test/` are never modified, deleted, or
    committed. Their SHA-256 baseline is in `docs/evidence/m0-file-baseline.md`.
 4. The service binds loopback only. Never add LAN-facing endpoints or
@@ -22,10 +22,14 @@ agreements for implementation sessions.
 6. Generated artifacts (`contracts/openapi.json`, `frontend/src/api/schema.ts`,
    `licenses/components.json`) are regenerated with `scripts/dev.py contracts`
    / `scripts/dev.py licenses`, never hand-edited.
-7. Tests must prove behavior. Do not weaken a test to make it pass; fix the
-   implementation.
+7. Tests must prove behavior at the user boundary. A green unit suite does
+   not close a slice; the golden-path and quality evidence in
+   `EXECUTION_PLAN.md` must also pass.
 8. No network access at runtime. Only `dev.py setup` and explicit
    model/download operations may use the network.
+9. A new dependency needs a measured benefit, licence/size/offline review, and
+   explicit approval. Prefer existing project modules and established
+   libraries over new custom DSP.
 
 ## Verification before declaring work done
 
@@ -34,4 +38,5 @@ uv run --locked python scripts/dev.py check
 uv run --locked python scripts/dev.py test
 ```
 
-plus the milestone's gate-specific evidence (see `projectPlans/milestoneN.md`).
+plus the golden-path/quality evidence for the current slice (see
+`EXECUTION_PLAN.md` and `docs/quality-baseline.md`).

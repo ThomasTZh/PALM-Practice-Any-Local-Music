@@ -1,6 +1,6 @@
 # Milestone 7 — Quality models and YouTube: detailed implementation specification
 
-This expands Milestone 7 in Section 13 of `basseparate_project_plan.md`.
+This expands Milestone 7 in Section 13 of [`basseparate_project_plan.md`](../product/basseparate_project_plan.md).
 
 It builds on `milestone0.md` through `milestone6.md`. Those milestones remain authoritative for the application foundation, immutable source assets, waveform/playback timing, Demucs separation, practice transport, musical grid, harmony analysis, bass transcription, persistent command history, retained analysis versions, dependency/staleness state, crash recovery, exports, migrations, and cache management. Milestone 7 must extend those systems rather than introduce a parallel model, download, import, or pipeline architecture.
 

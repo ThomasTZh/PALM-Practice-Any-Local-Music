@@ -1,6 +1,6 @@
 # Milestone 3 — Musical grid: detailed implementation specification
 
-This expands Milestone 3 in Section 13 of `basseparate_project_plan.md`.
+This expands Milestone 3 in Section 13 of [`basseparate_project_plan.md`](../product/basseparate_project_plan.md).
 
 It builds on `milestone0.md`, `milestone1.md`, and `milestone2.md`. Those milestones remain authoritative for the foundation, media pipeline, waveform editor, source-time transport, separation workflow, stem mixer, time stretching, source-anchored loops, portable projects, and recovery behavior. Milestone 3 must extend those systems rather than replace or fork them.
 

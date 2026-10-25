@@ -1,6 +1,6 @@
 # Milestone 5 — Bass transcription: detailed implementation specification
 
-This expands Milestone 5 in Section 13 of `basseparate_project_plan.md`.
+This expands Milestone 5 in Section 13 of [`basseparate_project_plan.md`](../product/basseparate_project_plan.md).
 
 It builds on `milestone0.md`, `milestone1.md`, `milestone2.md`, `milestone3.md`, and `milestone4.md`. Those milestones remain authoritative for the application foundation, immutable source/stem timing, waveform editor, synchronized playback, separation versions, musical grid, chord/key/tuning context, project commands, portable projects, and recovery behavior. Milestone 5 extends those systems; it must not fork or replace them.
 

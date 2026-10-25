@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "basseparate"
 version = "0.1.0-dev"
-description = "Local music-analysis and bass practice application (Milestone 0: reproducible foundation)"
+description = "Local music-analysis and bass practice application"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = { text = "Proprietary - unpublished" }

@@ -1,6 +1,6 @@
 # Milestone 8 — Browser validation and release: detailed implementation specification
 
-This expands **Milestone 8 — Browser validation and release** in Section 13 of `basseparate_project_plan.md`.
+This expands **Milestone 8 — Browser validation and release** in Section 13 of [`basseparate_project_plan.md`](../product/basseparate_project_plan.md).
 
 It builds on `milestone0.md` through `milestone7.md`. Those documents remain authoritative for the application architecture, media pipeline, waveform editor, source-time transport, separation, practice playback, musical grid, harmony, bass transcription, persistent history, exports, cache/storage management, model management, YouTube retrieval, and Analyze All orchestration. Milestone 8 is the release-qualification layer over those systems; it must not replace them with release-only implementations.
 
