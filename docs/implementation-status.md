@@ -114,6 +114,15 @@ plus the repository state. Keep it concise; put long evidence in `docs/evidence/
   time. The worklet reports rendered click frames for E2E verification.
   The inferred meter's grouping still shapes **Primary beats**; use
   **Denominator units** for a plain even click track.
+- **Meter inference correction (2026-10-24):** the meter scorer gave
+  non-downbeat pulses almost full downbeat credit (confidence ~0.99) and
+  did not check whether a candidate's primary grouping could be formed
+  from the measured pulse unit. On the acceptance track this made a 4/4
+  song select `7/8 (2+2+3)` by a 0.006 margin. Non-downbeats now score 0
+  for downbeat evidence, and candidates whose grouping parts are not
+  whole multiples of the pulse step are excluded. Re-running inference
+  on the retained activation/features now selects 4/4. Restart and
+  **Re-analyze** are required for an existing branch.
 - **Firefox E2E (2026-10-24):** `frontend/e2e/m3-rhythm.spec.ts` imports
   a generated 12 s click track, runs the real final0 pipeline, checks the
   meter/branch/metronome/count-in/portable-save UI. Result: 1 passed in

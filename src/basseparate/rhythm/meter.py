@@ -271,9 +271,12 @@ def _score_candidate(
         pulses[index] for index in range(phase, phase + bars * beats + 1) if index < len(pulses)
     ]
 
+    # Downbeat *role* is the axis a meter hypothesis must explain. Using
+    # beat confidence for non-downbeats made every candidate score almost
+    # the same (a 4/4 song could lose to 7/8 by 0.006), because confident
+    # beats scored ~0.99. Non-downbeats contribute no downbeat evidence.
     downbeat = sum(
-        1.0 if pulse.role is PulseRole.DOWNBEAT else pulse.confidence.value or 0.0
-        for pulse in bar_pulses
+        1.0 if pulse.role is PulseRole.DOWNBEAT else 0.0 for pulse in bar_pulses
     ) / len(bar_pulses)
     beat = sum(pulse.confidence.value or 0.0 for pulse in primary) / len(primary)
 
@@ -350,6 +353,32 @@ def _score_candidate(
     )
 
 
+def _pulse_step_quarters(musical: list[MusicalPosition]) -> Fraction | None:
+    deltas = [
+        right.as_quarter_notes() - left.as_quarter_notes()
+        for left, right in zip(musical, musical[1:], strict=False)
+        if right.as_quarter_notes() > left.as_quarter_notes()
+    ]
+    if not deltas:
+        return None
+    return sorted(deltas)[len(deltas) // 2]
+
+
+def _matches_pulse_unit(candidate: MeterCandidate, step: Fraction) -> bool:
+    """Primary grouping pulses must be whole multiples of the pulse unit.
+
+    A 12/8 or 7/8 hypothesis over quarter-note pulses implies 1.5-quarter
+    primary pulses, which cannot be built from one-quarter pulses. Such a
+    candidate would otherwise win by a 0.003 margin on a plain 4/4 song.
+    """
+    for part in candidate.grouping:
+        length = Fraction(part * 4, candidate.denominator)
+        ratio = length / step
+        if ratio.denominator != 1:
+            return False
+    return True
+
+
 def infer_meter(
     *,
     project_id: Uuid,
@@ -379,8 +408,11 @@ def infer_meter(
     if len({(position.numerator, position.denominator) for position in musical}) != len(musical):
         raise MeterInferenceError("pulses collapse to duplicate musical positions")
 
+    pulse_step = _pulse_step_quarters(musical)
     scored: list[tuple[MeterCandidate, int, MeterScoreComponents, int]] = []
     for candidate in candidates:
+        if pulse_step is not None and not _matches_pulse_unit(candidate, pulse_step):
+            continue
         best: tuple[int, MeterScoreComponents, int] | None = None
         for phase in range(len(candidate.grouping)):
             outcome = _score_candidate(

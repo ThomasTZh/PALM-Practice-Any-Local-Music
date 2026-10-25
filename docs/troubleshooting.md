@@ -520,3 +520,23 @@ record the label and section because lane editing is still read-only.
 
 The scheduler also keeps the first computed render frame per source
 click, so overlapping lookahead fetches cannot move or drop a beat.
+
+
+## The inferred meter is wrong (for example 7/8 on a 4/4 song)
+
+**What 7/8 (2+2+3) means:** seven eighth-note units per bar, grouped
+2+2+3. Primary-beat clicks land on the three grouping pulses, giving a
+long-short pattern rather than one click per beat. The label is the
+meter hypothesis, not a claim that the song is in that meter.
+
+**Cause (fixed 2026-10-24):** meter scoring gave non-downbeat pulses
+almost the same downbeat credit as real downbeats, and did not reject a
+7/8 or 12/8 hypothesis whose primary grouping pulses cannot be built
+from the actual quarter-note pulse unit. A 4/4 song could lose to 7/8 by
+0.006.
+
+**Fix:** non-downbeat pulses contribute no downbeat evidence, and a
+candidate is only eligible when each grouping part is a whole multiple
+of the measured pulse unit. The same activation/feature inputs now select
+4/4. Restart the server, hard-reload, and click **Re-analyze** to rebuild
+the branch.
