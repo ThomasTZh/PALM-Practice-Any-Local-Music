@@ -48,8 +48,9 @@ docs/evidence/
 # artifacts are committed under frontend/src/playback/stretch/dist/.
 third_party/
 
-# User-supplied recordings (preserved, never tracked)
+# User-supplied recordings and local analysis tools (preserved, never tracked)
 audio2test/
+/chords auto/
 
 # OS / editor noise
 .DS_Store

@@ -50,6 +50,7 @@ next, in what order, and what evidence closes a slice**.
 | Quality metrics | Existing `rhythm/evaluation.py` and corpus | Extend; do not create a second metrics stack |
 | Beat/tempo/meter research baseline | Evaluate `librosa`, `scipy.signal`, `madmom`/`essentia` if installable | Offline evaluation only until a measured benefit and licence/size review; no runtime download |
 | MATLAB (optional) | Audio/Signal Processing toolboxes for offline cross-checks | Only if licensed and installed; never a runtime dependency |
+| Vamp reference oracle | `scripts/vamp_reference.py` + Sonic Visualiser's Piper host | Evaluation only; GPL/AGPL plugin licences, never bundled as runtime |
 
 ## Keep / adapt / replace
 

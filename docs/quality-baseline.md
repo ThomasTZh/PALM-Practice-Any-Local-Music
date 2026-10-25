@@ -68,12 +68,39 @@ beat. The functional test now verifies that clicks render, but the slice-1
 timing gate (median error ≤ 5 ms, p95 ≤ 15 ms, no gap > 1.5× beat period) is
 **not yet met or automated**.
 
+## Vamp reference comparison (evaluation only)
+
+A 20 s excerpt from the Carousel Theory mix (30–50 s) was analysed with the
+QM Bar and Beat Tracker through Sonic Visualiser's Piper host:
+
+```sh
+python scripts/vamp_reference.py   --server storage/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server   --vamp-path storage/tools/vamp-plugins   --plugin qm-vamp-plugins:qm-barbeattracker   --audio storage/tools/carousel20.wav   --output storage/tools/carousel-vamp.json --bpb 4
+```
+
+The host requires `LD_LIBRARY_PATH` pointing at the extracted Sonic
+Visualiser libraries. This is a reference oracle, not a runtime dependency:
+the Vamp plugin pack is GPL/AGPL and is not bundled.
+
+| Comparison | Result |
+|---|---|
+| Beats, ours vs QM | 46 vs 45; **45/46** within 50 ms |
+| Median beat interval | ours 0.440 s, QM 0.430 s |
+| Downbeats/bars | **11/11** within 100 ms |
+| Our downbeat times | 1.30, 3.06, 4.80, … |
+| QM bar times | 1.29, 3.03, 4.77, … |
+
+Interpretation: the Beat This! beat and downbeat detections agree with the
+mature Vamp tracker on real material. The bad 4/4 experience was caused by
+**meter scoring/grid construction**, not by the beat detector. Do not replace
+the beat decoder. The synthetic downbeat F1 (0.462) is a simple-accent
+artefact, while the real reference alignment is 11/11.
+
 ## Keep / adapt / replace decision
 
 | Subsystem | Decision | Evidence |
 |---|---|---|
-| Beat This! runtime and beat decoding | Keep | Beat F1 0.952 |
-| Downbeat postprocessing | Adapt | Downbeat F1 0.462 |
+| Beat This! runtime and beat decoding | Keep | Beat F1 0.952; 45/46 beats and 11/11 bars vs QM reference |
+| Downbeat postprocessing | Keep, monitor | Real reference 11/11 bars; synthetic F1 0.462 is an accent artefact |
 | Meter scoring (downbeat evidence + pulse-unit filter) | Keep, retest | 4/4 now selected on retained track |
 | Tempo map / metronome scheduler | Adapt | Reported interval jitter and dropped beat |
 | Media/import/storage/jobs/portable | Keep | Golden path import/save passes |

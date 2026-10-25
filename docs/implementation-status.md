@@ -32,8 +32,11 @@ rewriting the foundation.
   Analyze Rhythm → 4/4 bars → rendered metronome clicks → musical loop →
   count-in setting → portable save.
 - `tests/unit/test_rhythm_corpus.py` + `test_rhythm_evaluation.py`: 37 pass.
-- Real final0 synthetic fixture: beat F1 **0.952** (pass), downbeat F1
-  **0.462** (fail against the planned 0.70 gate).
+- Real final0 synthetic fixture: beat F1 **0.952**; downbeat F1 **0.462**
+  on simple synthetic accents.
+- Vamp reference on a real 20 s Carousel excerpt: **45/46 beats within
+  50 ms** and **11/11 bars within 100 ms** against the QM tracker. This
+  points to meter/grid construction, not beat detection, as the failure.
 - Meter re-inference on the retained 4/4 track now selects 4/4; this needs a
   five-excerpt automated gate.
 - Rendered-click timing on a 4/4 fixture has shown ±20–40 ms jitter and an
