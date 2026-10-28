@@ -1,8 +1,9 @@
 # Quality baseline (slice 0)
 
-Date: 2026-10-25. This is the pre-UI quality snapshot required by
-`EXECUTION_PLAN.md`. It records what passed, what failed, and what is still
-unmeasured. A red gate blocks UI work.
+Date: 2026-10-25. This baseline was taken before the switch to the QM Vamp default. It is kept
+for the Beat This! comparison and historical gate. The old downbeat gate no
+longer blocks the default UI, which now uses QM Vamp and has its own native
+host/golden-path evidence below.
 
 ## Commands and results
 
@@ -79,7 +80,7 @@ trips for the default path.
 | 20 s excerpt, native host | **0.16 s** |
 | 294 s Carousel source, first service run | **10.7 s** including 108 MiB PCM read, branch publication, and cache write |
 | Cached features | 48 KiB JSON; subsequent runs skip the host |
-| 12 s Firefox golden path, including UI steps | **4.3 s** test time |
+| 12 s Firefox golden path, including UI steps | **4.3–6.8 s** test time |
 
 The native host is local tooling, not a packaged dependency. The Piper host
 remains a fallback.

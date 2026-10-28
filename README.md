@@ -256,6 +256,7 @@ Starts the Vite dev server and the backend together. Stop both with Ctrl-C.
 - [Troubleshooting guide](docs/troubleshooting.md)
 - [Firefox acceptance guide](docs/acceptance/firefox-listening.md)
 - [Audible judgement guide](docs/acceptance/audible-judgement.md)
+- [Local Vamp host setup](docs/vamp-host.md)
 - [Rhythm environment notes](rhythm/README.md)
 - [Dependency notices](licenses/NOTICES.md)
 
