@@ -117,7 +117,8 @@ four track rows. GPU selection and mixed/stem portable save remain.
 Required evidence:
 
 - Five recordings: import → stems → Vamp grid → sections → loop → speed →
-  save/reopen.
+  save/reopen. QM grid analysis on all five 20 s excerpts is automated;
+  the audible practice review remains human.
 - Portable project with sections and linked loops.
 - Golden path green on the release commit.
 - Backend/frontend/type/lint/format/contract gates.

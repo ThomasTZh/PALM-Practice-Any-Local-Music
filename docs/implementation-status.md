@@ -24,7 +24,9 @@ comparison, but they are not required by the default UI or the golden path.
   4/4 branch**, about 10.7 s including the first 108 MiB PCM read and branch
   publication; the 48 KiB feature cache is reused after that.
 - Five supplied 20 s excerpts all produced beats/bars through the native QM
-  host (47/12, 45/11, 34/9, 28/7, 45/11).
+  host (47/12, 45/11, 34/9, 28/7, 45/11). This is now reproducible with
+  `tests/integration/test_five_recordings_vamp.py` when the native host and
+  recordings are configured (5 passed).
 - Full backend suite: **1726 passed, 2 skipped** in the main run (the
   skips require an explicitly configured legacy checkpoint or native host).
   A later full run hit one flaky

@@ -125,8 +125,9 @@ All five local recordings produced a usable QM grid with `bpb=4`:
 | Sweet Demo | 28 | 7 |
 | Videoslave Instrumental Demo | 45 | 11 |
 
-This is a runtime/bar sanity check, not a metrical ground-truth claim.
-Listening/correction review remains manual.
+This is a runtime/bar sanity check, not a metrical ground-truth claim. The
+same check is automated as `tests/integration/test_five_recordings_vamp.py`
+(opt-in, 5 passed). Listening/correction review remains manual.
 
 ## Keep / adapt / replace decision
 
