@@ -1,11 +1,11 @@
 /**
  * M3 rhythm workflow in a real Firefox window.
  *
- * Starts the application with an isolated storage root that symlinks the
- * installed Beat This! checkpoints, imports a deterministic 12 s click
- * track, runs Analyze Rhythm, and checks the ruler, selector, metronome,
- * count-in, and portable save UI. Audible listening is still a human step;
- * this covers the browser/state path around it.
+ * Starts the application with an isolated storage root, imports a
+ * deterministic 12 s click track, runs the local Vamp analysis, and checks
+ * the ruler, selector, metronome schedule, loop, count-in, and portable save
+ * UI. Audible listening is still a human step; this covers the browser/state
+ * path around it.
  */
 import { expect, test } from '@playwright/test'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -86,7 +86,6 @@ test.use({
 test.beforeAll(async () => {
   storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'basseparate-m3-e2e-'))
   fs.mkdirSync(path.join(storageRoot, 'data'), { recursive: true })
-  fs.symlinkSync(path.join(ROOT, 'storage/m3.2/data/models'), path.join(storageRoot, 'data/models'))
   makeWav(path.join(storageRoot, 'clicks.wav'))
 
   server = spawn(
@@ -102,7 +101,15 @@ test.beforeAll(async () => {
       '--storage-root',
       storageRoot,
     ],
-    { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] },
+    {
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        BASSEPARATE_VAMP_NATIVE_HOST_PATH: path.join(ROOT, 'storage/tools/vamp-host'),
+        BASSEPARATE_VAMP_PLUGIN_PATH: path.join(ROOT, 'storage/tools/vamp-plugins'),
+      },
+    },
   )
   let output = ''
   const matchToken = (chunk: string) => {
@@ -204,7 +211,7 @@ test('golden path: import, analyse, metronome, loop, save (Firefox)', async ({ p
     `${BASE_URL}/api/v1/projects/${readyProject.id}/metronome-schedule`,
     {
       headers: { Authorization: `Bearer ${token}` },
-      data: { start_frame: 30_000, end_frame: 60_000 },
+      data: { start_frame: 60_000, end_frame: 300_000 },
     },
   )
   expect(scheduleResponse.ok()).toBeTruthy()
@@ -226,6 +233,15 @@ test('golden path: import, analyse, metronome, loop, save (Firefox)', async ({ p
   const looping = page.getByRole('checkbox', { name: 'Looping' })
   await looping.click()
   await expect(looping).toBeChecked({ timeout: 15_000 })
+
+  await page.getByRole('button', { name: 'Add section from selection' }).click()
+  await expect(page.locator('.section-item')).toHaveCount(1)
+  await expect(page.locator('.section-item.selected')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Loop', exact: true }).click()
+  await expect(page.locator('.loops-item')).toHaveCount(2)
+
+  await page.getByRole('button', { name: '0.75×', exact: true }).click()
+  await expect(page.getByLabel('Playback speed value')).toHaveValue('0.75')
 
   await page.getByLabel('Count-in length').selectOption('one_bar')
   await expect(page.getByLabel('Count-in length')).toHaveValue('one_bar', { timeout: 15_000 })

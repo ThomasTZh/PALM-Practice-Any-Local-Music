@@ -603,7 +603,7 @@ def create_app(config: AppConfig) -> FastAPI:
             storage_paths=paths,
             repository=cast(ProjectRepository, app.state.repository),
             rhythm_repository=cast(RhythmRepository, app.state.rhythm_repository),
-            server_path=config.vamp_server_path,
+            server_path=config.vamp_server,
             plugin_path=config.vamp_plugin_path,
             library_path=config.vamp_library_path,
             native_host_path=config.vamp_native_host_path,

@@ -64,7 +64,7 @@ class AppConfig:
     max_archive_member_count: int
     cache_limit_bytes: int
     media_worker_memory_limit_mb: int
-    vamp_server_path: str
+    vamp_server: str
     vamp_plugin_path: str
     vamp_library_path: str
     vamp_native_host_path: str
@@ -90,7 +90,7 @@ class AppConfig:
             f"max_archive_member_count={self.max_archive_member_count} "
             f"cache_limit_bytes={self.cache_limit_bytes} "
             f"media_worker_memory_limit_mb={self.media_worker_memory_limit_mb} "
-            f"vamp_server_path={self.vamp_server_path!r} "
+            f"vamp_server={self.vamp_server!r} "
             f"vamp_plugin_path={self.vamp_plugin_path!r} "
             f"vamp_native_host_path={self.vamp_native_host_path!r} "
             f"storage_root={self.storage_root}"
@@ -129,7 +129,7 @@ _FIELDS: tuple[_FieldSpec, ...] = (
     _FieldSpec("max_archive_member_count", int, DEFAULT_MAX_ARCHIVE_MEMBER_COUNT),
     _FieldSpec("cache_limit_bytes", int, DEFAULT_CACHE_LIMIT_BYTES),
     _FieldSpec("media_worker_memory_limit_mb", int, DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB),
-    _FieldSpec("vamp_server_path", str, ""),
+    _FieldSpec("vamp_server", str, ""),
     _FieldSpec("vamp_plugin_path", str, ""),
     _FieldSpec("vamp_library_path", str, ""),
     _FieldSpec("vamp_native_host_path", str, ""),

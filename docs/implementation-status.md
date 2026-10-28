@@ -1,60 +1,67 @@
-# Implementation status — rebaselined
+# Implementation status — local practice studio
 
 Date: 2026-10-25. This is the current resume point. The previous 4,910-line
-milestone ledger is archived at
-[`archive/implementation-status-2026-10-24.md`](archive/implementation-status-2026-10-24.md);
-it is history, not a plan.
+ledger is archived at
+[`archive/implementation-status-2026-10-24.md`](archive/implementation-status-2026-10-24.md).
+Product goals: [`GOALS.md`](../GOALS.md). Plan:
+[`EXECUTION_PLAN.md`](../EXECUTION_PLAN.md).
 
 ## Position
 
-- Product goals: [`GOALS.md`](../GOALS.md).
-- Requirements: [`requirements/`](../requirements/README.md) (archived
-  milestone specs; old work-package plans under `requirements/archive/`).
-- Execution order and gates: [`EXECUTION_PLAN.md`](../EXECUTION_PLAN.md).
-- Current slice: **Slice 0 — re-baseline and golden path**.
-- No new editor UI until the quality gates in `docs/quality-baseline.md`
-  pass or an exception is recorded.
+The default path is now local file → Demucs stems → local Vamp QM bar/beat
+grid → editable Song Map sections → section/range loops → speed control.
 
-## What is currently reliable
+Beat This! and the custom meter pipeline remain in the repository for
+comparison, but they are not required by the default UI or the golden path.
 
-- Import, canonical decode, waveform, playback, monitoring, export.
-- Demucs separation and portable project save/open for M2 workflows.
-- Durable jobs, restart recovery, migrations, generated contracts.
-- Rhythm domain, activation artifacts, decoded pulses, branches, grids,
-  metronome/count-in plumbing, portable rhythm rows.
+## Working evidence
 
-These are retained. A measured failure in one subsystem does not justify
-rewriting the foundation.
+- Firefox golden path (`frontend/e2e/golden-path.spec.ts`):
+  import → ready → Analyze Rhythm (Vamp) → 4/4 bars → metronome schedule →
+  0.75× speed → musical loop → section → section loop → count-in → portable
+  save. Last run: **passed**, 4.3 s test time.
+- Native QM analysis on the 294 s Carousel source: **701 beats / 176 bars /
+  4/4 branch**, about 10.7 s including the first 108 MiB PCM read and branch
+  publication; the 48 KiB feature cache is reused after that.
+- QM reference comparison on a 20 s excerpt: 45 beats / 11 bars; our prior
+  Beat This! beats matched 45/46 within 50 ms and downbeats 11/11 within
+  100 ms.
+- Section commands: add/update/split/delete/set-active/loop, non-overlap and
+  duration validation, linked loop updates, undo/redo.
+- Stem separation panel starts the existing Demucs run, polls the durable
+  job, and activates the newest valid result set. Real Demucs acceptance is
+  still manual.
+- Frontend component tests cover the analysis panel, section panel, and stem
+  panel.
 
-## Slice-0 evidence
+## Architecture decisions
 
-- `frontend/e2e/golden-path.spec.ts` passes on Firefox: import → ready →
-  Analyze Rhythm → 4/4 bars → metronome schedule → musical loop →
-  count-in setting → portable save. The headless run does not assert
-  audible/rendered clicks; that needs manual listening.
-- `tests/unit/test_rhythm_corpus.py` + `test_rhythm_evaluation.py`: 37 pass.
-- Real final0 synthetic fixture: beat F1 **0.952**; downbeat F1 **0.462**
-  on simple synthetic accents.
-- Vamp reference on a real 20 s Carousel excerpt: **45/46 beats within
-  50 ms** and **11/11 bars within 100 ms** against the QM tracker. This
-  points to meter/grid construction, not beat detection, as the failure.
-- Meter re-inference on the retained 4/4 track now selects 4/4; this needs a
-  five-excerpt automated gate.
-- Rendered-click timing on a 4/4 fixture has shown ±20–40 ms jitter and an
-  occasional dropped beat; the timing gate is not yet automated or met.
+- Browser stays the frontend.
+- QM Vamp analysis is the primary grid. The native host consumes interleaved
+  f32 PCM and writes only beats/bars; the Piper JSON host is the fallback.
+- `bpb` is a manual beats-per-bar hint (2/3/4/6/7, default 4). No automatic
+  meter inference in this slice.
+- Sections live in `PracticeState`; no new database table. `PracticeLoop`
+  optionally links to a section through `section_id`, so section edits update
+  the linked loop atomically.
+- Sections are ordered and non-overlapping. A section range is a source-frame
+  range; loop ranges spanning sections use the existing loop path.
+- A section chain/playlist is deferred; only the active section and selected
+  ranges are looped now.
 
-Full detail: [`quality-baseline.md`](quality-baseline.md).
+## Known limitations
 
-## Keep / adapt / replace
-
-| Subsystem | Decision |
-|---|---|
-| Storage, jobs, media, import, portable, transport, semantic domain | Keep |
-| Beat This! runtime and beat decoding | Keep |
-| Downbeat postprocessing | Adapt (quality gate fails) |
-| Meter scoring | Keep after correction; retest on corpus |
-| Tempo map / metronome scheduling | Adapt (timing gate fails) |
-| Editor lanes | Defer until quality gates pass |
+- The stem panel has unit tests but no full Demucs browser acceptance run.
+- Portable save/open includes sections through `practice_state`; an explicit
+  section round-trip test is still pending.
+- The native Vamp host path is local tooling under `storage/tools/` and is not
+  packaged into a distributable app. Personal Linux use only.
+- Beat This! is still present behind the historical code/tests; its model is
+  not needed for the current golden path.
+- Automatic section suggestions are not implemented; manual editing is the
+  current workflow.
+- No correction UI for pulses/downbeats/meter.
+- No Chromium/Safari/mobile target.
 
 ## Verification commands
 
@@ -63,31 +70,20 @@ Full detail: [`quality-baseline.md`](quality-baseline.md).
 .venv/bin/python -m ruff check src/ tests/
 .venv/bin/python -m mypy src/basseparate
 .venv/bin/python scripts/check_contract.py
-cd frontend && npx vitest run && npx tsc -b --force
+cd frontend && npm test -- --run
 cd frontend && npm run format:check && npm run build
 cd frontend && npm run e2e:golden
+BASSEPARATE_VAMP_NATIVE_HOST_PATH=$PWD/storage/tools/vamp-host \
+BASSEPARATE_VAMP_PLUGIN_PATH=$PWD/storage/tools/vamp-plugins \
+  .venv/bin/python -m pytest tests/integration/test_vamp_native_real.py -q
 ```
 
-The last full backend count before this rebaseline was 1,686 passed, 1
-skipped; the frontend suite was 617 passed across 51 files. Re-run both after
-any code change rather than trusting these numbers.
+## Next actions
 
-## Known limitations
-
-- Downbeat quality on synthetic accents is below the planned gate.
-- Metronome clicks can jitter or drop; timing gate pending.
-- 4/4 meter was misread as 7/8 before the correction; retest on all five
-  recordings.
-- Editor lanes are read-only; correction workflow is slice 4 and is blocked
-  on quality.
-- Separation has no first-class UI path in the current frontend; do not
-  assume it during acceptance.
-- Portable archives are schema-version coupled; pre-M3.18 archives need the
-  matching build.
-- Chromium/Safari and mobile are deferred; Firefox/Linux is the target.
-
-## Next action
-
-Slice 1 only: close the downbeat and metronome timing gates on ordinary 4/4
-material, add the five-excerpt 4/4 selection check, and rerun the golden path.
-Do not add UI before that.
+1. Run a real Demucs separation through the new panel on one supplied track
+   and record the result.
+2. Add a portable section round-trip test.
+3. Update `docs/quality-baseline.md` with the native-host timing and current
+   gate status.
+4. Run the five-recording practice review before adding correction or
+   automatic-section UI.

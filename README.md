@@ -4,15 +4,16 @@ Local music-analysis and bass practice application.
 
 ## Status
 
-The product is being re-baselined around a measured vertical slice rather
-than the old milestone/work-package sequence. The foundation from Milestones
-0–2 is retained; the rhythm work from Milestone 3 is treated as a prototype
-until it passes the quality gates.
+The project is now a local practice studio: local files, Demucs stems, a
+Vamp QM bar/beat grid, editable Song Map sections, loops, and speed control.
+The old Beat This!/custom-meter path remains as an experimental comparison
+path, not the default.
 
-Current slice: **golden path and quality baseline**. The Firefox golden path
-(import → ready → Analyze Rhythm → 4/4 bars → metronome schedule → musical
-loop → count-in → portable save) passes. The quality gate is red: downbeat
-accuracy and metronome timing are below the planned thresholds.
+Current slice: **core practice workflow**. The Firefox golden path passes:
+import → ready → Vamp analysis → 4/4 bars → metronome schedule → speed →
+musical loop → section → section loop → count-in → portable save. The
+remaining work is real stem-separation UI acceptance, portable sections,
+and the five-recording review.
 
 - [Product goals](GOALS.md)
 - [Execution plan](EXECUTION_PLAN.md)
@@ -20,47 +21,40 @@ accuracy and metronome timing are below the planned thresholds.
 - [Current status ledger](docs/implementation-status.md)
 - [Requirements archive](requirements/README.md)
 
-No new editor UI is added until the quality gates close or an exception is
-recorded.
-
 ## Implemented features
 
 - Local audio/video import with chunked upload, ffprobe inspection,
   stream selection, and canonical PCM decode.
 - Waveform pyramid generation and a source waveform editor with zoom,
   pan, selection, markers, follow-playhead, and undo/redo.
-- Monitoring downmix for multichannel sources and playback-rate
-  representations, so 44.1 kHz and 48 kHz material plays at the correct
-  pitch and duration at any browser output rate.
+- Monitoring downmix and playback-rate representations for correct pitch
+  and duration at any browser output rate.
 - AudioWorklet transport with bounded buffering, underrun diagnostics,
   suspension handling, and audio-device recovery.
-- Stem separation with the bundled Demucs `htdemucs_ft` baseline (GPU or
-  explicit CPU), progress, cancellation, immutable versioned result
-  sets, and analysis caching.
-- Aligned stem tracks with mute, solo, gain, pan, time stretching
-  (0.25x-2x), and source-anchored practice loops.
-- WAV stem export and self-contained portable project save/open.
-- Autosaved working state (markers, viewport, selection, volume,
-  position, loops) with server-side revision checks and recovery.
-- Rhythm analysis (Milestone 3): Beat This! activations, decoded
-  beats/downbeats, tempo maps, meter inference, editable branches,
-  bars/beats/pickups, the musical ruler and lanes, snapping, loops,
-  metronome, count-in, and a durable Analyze Rhythm run graph.
-- Rhythm persistence and portability: rhythm results, branches, command
-  history, project rhythm state, and optional activation arrays travel in
-  portable projects and reopen offline.
-- Deterministic rhythm corpus (21 synthetic cases plus a generated
-  60-minute variable-tempo case) and auditable beat/downbeat, rate, meter,
-  and tempo metrics.
+- Demucs stem separation backend with progress, cancellation, immutable
+  result sets, caching, and a browser **Separate stems** panel.
+- Aligned stem tracks with mute, solo, gain, pan, and 0.25x–2x speed.
+- Local Vamp QM bar/beat analysis through a native host (preferred) or a
+  Piper host fallback; cached features and a generated rhythm branch.
+- Editable Song Map sections with add/split/rename/color/delete, linked
+  section loops, arbitrary range loops, and speed control.
+- Metronome and count-in driven by the local Vamp grid.
+- WAV export and self-contained portable project save/open.
+- Autosaved working state with revision checks and undo/redo.
+- The historical Beat This! rhythm pipeline and corpus remain available
+  for comparison, but are not required for the default workflow.
 
 ## Not implemented yet / not accepted
 
-- Reliable downbeat and metronome timing on ordinary 4/4 material (quality
-  gate red).
-- Five-recording acceptance and human listening review.
-- Editing/correction UI for wrong automatic grids (blocked on quality).
-- Separation controls in the current frontend; use the existing API/CLI
-  workflow for now.
+- Real stem-separation UI acceptance on the five recordings (backend and
+  panel tests pass; the full Demucs browser run is still manual).
+- Portable-project round-trip test for sections (the state is included;
+  the end-to-end check remains).
+- Editing/correction of pulses, downbeats, and meter regions.
+- Automatic section suggestions from the Vamp Segmenter; sections are
+  manual in the current slice.
+- Section chain/playlist looping (active section and selected ranges are
+  supported).
 - Milestone 4 harmony, Milestone 5 transcription, and later release work.
 - Chromium/Safari/mobile support.
 
@@ -104,7 +98,7 @@ artifact's size and SHA-256 against
 the Hugging Face/Transformers offline flags set. `basseparate doctor`
 reports whether the bundle is available.
 
-Rhythm analysis environment (Beat This!, Milestone 3):
+Optional legacy rhythm environment (Beat This! comparison only):
 
 ```sh
 cd rhythm && uv sync --locked
@@ -228,6 +222,21 @@ See `docs/quality-baseline.md` for the red/green quality gates and
 .venv/bin/basseparate doctor
 .venv/bin/basseparate worker-probe
 ```
+
+## Local Vamp configuration
+
+The default analysis path needs the local Sonic Visualiser/Vamp tools. No
+network access is used at runtime:
+
+```sh
+export BASSEPARATE_VAMP_PLUGIN_PATH="$PWD/storage/tools/vamp-plugins"
+export BASSEPARATE_VAMP_NATIVE_HOST_PATH="$PWD/storage/tools/vamp-host"
+```
+
+The native host is the fast path. A Piper JSON host remains available via
+`BASSEPARATE_VAMP_SERVER` and `BASSEPARATE_VAMP_LIBRARY_PATH`. See
+`docs/troubleshooting.md` for setup and `scripts/vamp_reference.py` for the
+reference oracle.
 
 ## Development workflow
 

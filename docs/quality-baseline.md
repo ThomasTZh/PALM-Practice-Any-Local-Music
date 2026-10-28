@@ -69,6 +69,21 @@ beat. The functional test now verifies that clicks render, but the slice-1
 timing gate (median error ≤ 5 ms, p95 ≤ 15 ms, no gap > 1.5× beat period) is
 **not yet met or automated**.
 
+## Native Vamp host timing (personal path)
+
+The native host (`storage/tools/vamp-host`) replaces the Piper JSON round
+trips for the default path.
+
+| Measurement | Result |
+|---|---|
+| 20 s excerpt, native host | **0.16 s** |
+| 294 s Carousel source, first service run | **10.7 s** including 108 MiB PCM read, branch publication, and cache write |
+| Cached features | 48 KiB JSON; subsequent runs skip the host |
+| 12 s Firefox golden path, including UI steps | **4.3 s** test time |
+
+The native host is local tooling, not a packaged dependency. The Piper host
+remains a fallback.
+
 ## Vamp reference comparison (evaluation only)
 
 A 20 s excerpt from the Carousel Theory mix (30–50 s) was analysed with the

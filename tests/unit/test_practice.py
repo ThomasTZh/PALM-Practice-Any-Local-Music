@@ -266,3 +266,37 @@ class TestPracticeStateSections:
     def test_loop_section_must_exist(self) -> None:
         with pytest.raises(ValidationError, match="section_id"):
             PracticeState(loops=[_loop(section_id=uuid4())])
+
+
+def test_sections_and_linked_loops_round_trip_project_json() -> None:
+    from uuid import UUID
+
+    from basseparate.domain.project import ProjectRecord, ProjectStatus
+
+    section = _section()
+    loop = _loop(section_id=section.id)
+    project = ProjectRecord(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        name="Round trip",
+        created_at=NOW,
+        updated_at=NOW,
+        status=ProjectStatus.READY,
+        source_asset_id=uuid4(),
+        canonical_asset_id=uuid4(),
+        source_stream_index=0,
+        sample_rate=48_000,
+        duration_frames=48_000,
+        source_channel_count=2,
+        source_channel_layout="stereo",
+        decode_profile_version=1,
+        practice_state=PracticeState(
+            sections=[section],
+            active_section_id=section.id,
+            loops=[loop],
+            active_loop_id=loop.id,
+        ),
+    )
+    restored = ProjectRecord.model_validate_json(project.model_dump_json())
+    assert restored.practice_state.sections[0].id == section.id
+    assert restored.practice_state.loops[0].section_id == section.id
+    assert restored.practice_state.active_section_id == section.id

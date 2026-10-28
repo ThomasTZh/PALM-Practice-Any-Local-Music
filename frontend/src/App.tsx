@@ -21,7 +21,7 @@ import {
 } from './api/uploader'
 import { bootstrapToken, getSessionToken } from './auth'
 import { fetchResultSetDetail, type ResultSetDetail, type StemRole } from './api/result-sets'
-import type { PracticeLoop, PracticeState } from './api/commands'
+import type { PracticeLoop, PracticeState, SongSection } from './api/commands'
 import {
   initialTransportDiagnostics,
   PcmTransport,
@@ -35,7 +35,9 @@ import {
 import { formatTime } from './playback/pcm'
 import { useSystemRuntime, type RuntimeStatus } from './system/useSystemRuntime'
 import { WaveformEditor, type PlayheadSource, type ViewSource } from './waveform/WaveformEditor'
-import { RhythmAnalysisPanel } from './rhythm/RhythmAnalysisPanel'
+import { SongAnalysisPanel } from './rhythm/SongAnalysisPanel'
+import { SongMapLane } from './songmap/SongMapLane'
+import { SectionPanel } from './songmap/SectionPanel'
 import { RhythmLanes } from './rhythm/RhythmLanes'
 import { RhythmVersionSelector } from './rhythm/RhythmVersionSelector'
 import { fetchMetronomeSchedule } from './api/metronome'
@@ -57,6 +59,7 @@ import {
   TrackStack,
   type PlaybackMode,
 } from './tracks/TrackStack'
+import { StemSeparationPanel } from './tracks/StemSeparationPanel'
 import type { TrackSettingsPatch } from './tracks/MixerStrip'
 import type { PlaybackTarget } from './api/playback'
 
@@ -1805,6 +1808,12 @@ function ProjectView({ project }: { project: ProjectSummary }) {
   const handleSelectSet = useCallback((resultSetId: string) => {
     void sendRef.current({ type: 'set_active_result_set', result_set_id: resultSetId })
   }, [])
+  const handleActivateStems = useCallback((resultSetId: string) => {
+    void (async () => {
+      await sendRef.current({ type: 'set_active_result_set', result_set_id: resultSetId })
+      await sendRef.current({ type: 'set_playback_mode', mode: 'four_stems' })
+    })()
+  }, [])
   const handleTrackSettings = useCallback((role: StemRole, patch: TrackSettingsPatch) => {
     const op = { type: 'set_track_settings', stem_role: role } as {
       type: 'set_track_settings'
@@ -1963,6 +1972,73 @@ function ProjectView({ project }: { project: ProjectSummary }) {
       if (created) void sendRef.current({ type: 'set_active_loop', loop_id: created.id })
     })()
   }, [])
+
+  // --- Song Map section commands (local practice studio) -------------------
+
+  const sectionCount = commands.practiceState?.sections?.length ?? 0
+  const handleAddSection = useCallback(() => {
+    const selection = selectionRef.current
+    if (!selection) return
+    const palette = ['#22c55e', '#38bdf8', '#f59e0b', '#e11d48', '#a78bfa', '#14b8a6']
+    const known = new Set((practiceLiveRef.current?.sections ?? []).map((section) => section.id))
+    void (async () => {
+      const res = await sendRef.current({
+        type: 'add_section',
+        name: `Section ${sectionCount + 1}`,
+        start_frames: selection.start,
+        end_frames: selection.end,
+        color: palette[sectionCount % palette.length],
+      })
+      if (!res?.practiceState) {
+        setLoopNotice('Could not add the section; check that it does not overlap.')
+        return
+      }
+      setLoopNotice(null)
+      const created = res.practiceState.sections?.find((section) => !known.has(section.id))
+      if (created) {
+        void sendRef.current({ type: 'set_active_section', section_id: created.id })
+        seekFnRef.current?.(created.start_frames)
+      }
+    })()
+  }, [sectionCount])
+
+  const handleSelectSection = useCallback((section: SongSection) => {
+    seekFnRef.current?.(section.start_frames)
+    void sendRef.current({ type: 'set_active_section', section_id: section.id })
+  }, [])
+
+  const handleUpdateSection = useCallback(
+    (sectionId: string, patch: { name?: string; color?: string }) => {
+      const op: {
+        type: 'update_section'
+        section_id: string
+        name?: string
+        color?: string
+      } = { type: 'update_section', section_id: sectionId }
+      if (patch.name !== undefined) op.name = patch.name
+      if (patch.color !== undefined) op.color = patch.color
+      void sendRef.current(op)
+    },
+    [],
+  )
+
+  const handleDeleteSection = useCallback((sectionId: string) => {
+    void sendRef.current({ type: 'delete_section', section_id: sectionId })
+  }, [])
+
+  const handleSplitSection = useCallback((sectionId: string, atFrame: number) => {
+    void sendRef.current({ type: 'split_section', section_id: sectionId, at_frame: atFrame })
+  }, [])
+
+  const handleLoopSection = useCallback((sectionId: string) => {
+    void (async () => {
+      const res = await sendRef.current({ type: 'loop_section', section_id: sectionId })
+      if (!res) setLoopNotice('Could not loop this section.')
+      else setLoopNotice(null)
+    })()
+  }, [])
+
+  const playheadFrame = playheadSource?.getPosition() ?? null
 
   const handleLoopConvert = useCallback((id: string, target: 'source' | 'musical') => {
     void (async () => {
@@ -2162,7 +2238,8 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         onPeaks={handlePeaks}
         onLoopDisabled={handleLoopDisabled}
       />
-      <RhythmAnalysisPanel projectId={project.id} refresh={commands.refresh} />
+      <SongAnalysisPanel projectId={project.id} refresh={commands.refresh} />
+      <StemSeparationPanel projectId={project.id} onActivate={handleActivateStems} />
       {commands.rhythmState?.active_branch_id ||
       commands.rhythmState?.active_automatic_result_id ? (
         <RhythmVersionSelector
@@ -2186,6 +2263,13 @@ function ProjectView({ project }: { project: ProjectSummary }) {
           onSeek={seekFn ?? undefined}
           refreshKey={commands.revision}
           selection={liveSelection}
+        />
+      ) : null}
+      {viewSource ? (
+        <SongMapLane
+          viewSource={viewSource}
+          practiceState={commands.practiceState}
+          onSelect={handleSelectSection}
         />
       ) : null}
       <TrackStack
@@ -2213,6 +2297,19 @@ function ProjectView({ project }: { project: ProjectSummary }) {
         accentDownbeats={commands.rhythmState?.metronome?.accent_downbeats ?? true}
         subdivision={commands.rhythmState?.metronome?.subdivision ?? 'primary'}
         onChange={handleMetronomeChange}
+      />
+      <SectionPanel
+        sections={commands.practiceState?.sections ?? []}
+        sampleRate={project.sample_rate ?? 0}
+        selection={liveSelection}
+        activeSectionId={commands.practiceState?.active_section_id ?? null}
+        playheadFrame={playheadFrame}
+        onAdd={handleAddSection}
+        onUpdate={handleUpdateSection}
+        onDelete={handleDeleteSection}
+        onSplit={handleSplitSection}
+        onLoop={handleLoopSection}
+        onSelect={handleSelectSection}
       />
       <LoopsPanel
         loops={commands.practiceState?.loops ?? []}

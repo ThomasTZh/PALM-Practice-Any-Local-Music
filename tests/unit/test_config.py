@@ -158,3 +158,31 @@ def test_relative_storage_root_resolves_to_absolute_paths(tmp_path, monkeypatch)
     for path in (paths.config, paths.data, paths.cache, paths.state, paths.runtime):
         assert path.is_absolute()
     assert paths.data == (tmp_path / "store" / "data").resolve()
+
+
+def test_vamp_paths_default_empty() -> None:
+    config = resolve_config(env={})
+    assert config.vamp_server == ""
+    assert config.vamp_plugin_path == ""
+    assert config.vamp_native_host_path == ""
+    assert config.vamp_timeout_seconds == 300.0
+
+
+def test_vamp_paths_from_environment() -> None:
+    config = resolve_config(
+        env={
+            "BASSEPARATE_VAMP_SERVER": "/tmp/piper",
+            "BASSEPARATE_VAMP_PLUGIN_PATH": "/tmp/plugins",
+            "BASSEPARATE_VAMP_NATIVE_HOST_PATH": "/tmp/vamp-host",
+            "BASSEPARATE_VAMP_TIMEOUT_SECONDS": "45",
+        }
+    )
+    assert config.vamp_server == "/tmp/piper"
+    assert config.vamp_plugin_path == "/tmp/plugins"
+    assert config.vamp_native_host_path == "/tmp/vamp-host"
+    assert config.vamp_timeout_seconds == 45.0
+
+
+def test_vamp_timeout_must_be_positive() -> None:
+    with pytest.raises(ConfigError, match="vamp_timeout_seconds"):
+        resolve_config(env={"BASSEPARATE_VAMP_TIMEOUT_SECONDS": "0"})

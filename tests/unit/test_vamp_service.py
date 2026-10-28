@@ -19,7 +19,9 @@ NOW = datetime(2026, 10, 25, tzinfo=UTC)
 
 
 @pytest.fixture()
-def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProjectRepository, RhythmRepository, VampAnalysisService, uuid.UUID]:
+def setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[ProjectRepository, RhythmRepository, VampAnalysisService, uuid.UUID]:
     paths = resolve_storage_paths(tmp_path / "store")
     paths.data.mkdir(parents=True)
     paths.cache.mkdir(parents=True)

@@ -1803,3 +1803,100 @@ button:hover:not(:disabled) {
   background: rgba(244, 63, 94, 0.12);
   border-left: 1px solid rgba(244, 63, 94, 0.45);
 }
+
+/* Song Map (local practice studio) */
+.songmap-lane {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-height: 34px;
+  margin: 6px 0 10px;
+  border: 1px solid var(--border, #2a3342);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.songmap-lane-label {
+  position: absolute;
+  z-index: 2;
+  left: 8px;
+  top: 2px;
+  font-size: 11px;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.songmap-lane-empty {
+  margin: 0;
+  padding: 18px 8px 8px;
+  font-size: 12px;
+}
+
+.songmap-section {
+  position: absolute;
+  top: 18px;
+  bottom: 3px;
+  min-width: 2px;
+  padding: 0 4px;
+  border: 1px solid;
+  border-radius: 3px;
+  color: #f8fafc;
+  font-size: 11px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.section-panel {
+  margin: 12px 0;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.section-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.section-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.section-item.selected {
+  outline: 1px solid #38bdf8;
+}
+
+.section-select {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.section-name {
+  min-width: 8rem;
+  flex: 1 1 auto;
+}
+
+.section-item input[type='color'] {
+  inline-size: 2rem;
+  block-size: 1.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}

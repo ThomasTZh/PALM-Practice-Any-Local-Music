@@ -270,23 +270,39 @@ def _vamp_check(config: AppConfig) -> DiagnosticCheck:
     This is optional until the user switches the analysis path. Missing
     paths are a warning; existing practice projects stay usable.
     """
-    if not config.vamp_server_path or not config.vamp_plugin_path:
+    if not config.vamp_plugin_path:
         return DiagnosticCheck(
             "vamp",
             "warn",
-            "not configured; set BASSEPARATE_VAMP_SERVER and "
-            "BASSEPARATE_VAMP_PLUGIN_PATH for local QM bar/beat analysis",
+            "not configured; set BASSEPARATE_VAMP_PLUGIN_PATH and either "
+            "BASSEPARATE_VAMP_NATIVE_HOST_PATH or BASSEPARATE_VAMP_SERVER "
+            "for local QM bar/beat analysis",
             required=False,
         )
-    server = Path(config.vamp_server_path).expanduser()
     plugins = Path(config.vamp_plugin_path).expanduser()
-    if not server.is_file():
-        return DiagnosticCheck("vamp", "fail", f"host not found: {server}", required=False)
     if not plugins.is_dir():
         return DiagnosticCheck(
             "vamp", "fail", f"plugin directory not found: {plugins}", required=False
         )
-    return DiagnosticCheck("vamp", "ok", f"host {server}; plugins {plugins}", required=False)
+    if config.vamp_native_host_path:
+        host = Path(config.vamp_native_host_path).expanduser()
+        if not host.is_file():
+            return DiagnosticCheck("vamp", "fail", f"native host not found: {host}", required=False)
+        return DiagnosticCheck(
+            "vamp", "ok", f"native host {host}; plugins {plugins}", required=False
+        )
+    if config.vamp_server:
+        server = Path(config.vamp_server).expanduser()
+        if not server.is_file():
+            return DiagnosticCheck("vamp", "fail", f"host not found: {server}", required=False)
+        return DiagnosticCheck("vamp", "ok", f"host {server}; plugins {plugins}", required=False)
+    return DiagnosticCheck(
+        "vamp",
+        "warn",
+        "plugin directory set but no host; set BASSEPARATE_VAMP_NATIVE_HOST_PATH "
+        "or BASSEPARATE_VAMP_SERVER",
+        required=False,
+    )
 
 
 def _rhythm_models_check(config: AppConfig) -> DiagnosticCheck:

@@ -4,6 +4,34 @@ This file lists the failures likely to occur in the current Firefox/Linux
 workflow. Historical M0/M1 troubleshooting is archived at
 `docs/archive/troubleshooting-2026-10-24.md`.
 
+## Vamp analysis is unavailable
+
+The default analysis path needs local Sonic Visualiser/Vamp tools. Set:
+
+```sh
+export BASSEPARATE_VAMP_PLUGIN_PATH="$PWD/storage/tools/vamp-plugins"
+export BASSEPARATE_VAMP_NATIVE_HOST_PATH="$PWD/storage/tools/vamp-host"
+```
+
+The native host is the fast path. Without it, a Piper host can be configured
+with `BASSEPARATE_VAMP_SERVER`, `BASSEPARATE_VAMP_LIBRARY_PATH`, and the same
+plugin path. `basseparate doctor` reports the configuration. No network is
+used at runtime.
+
+## Analyze Rhythm fails or leaves the old grid
+
+Check that the project is ready and the canonical PCM exists. Re-running
+analysis creates a new branch and activates it; the previous branch remains
+available in the selector. A cached feature file is reused when the source,
+plugin key, and beats-per-bar match.
+
+## Section cannot be added
+
+Sections are ordered and non-overlapping. If the selection overlaps an
+existing section, split/trim the existing section first. A section loop is
+linked to its section; editing or deleting the section updates/removes the
+linked loop.
+
 ## Port already in use
 
 ```sh

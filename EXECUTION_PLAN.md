@@ -1,234 +1,140 @@
 # basseparate execution plan
 
-This plan replaces the milestone/work-package execution order. The
-requirements remain in `requirements/`; this file controls **what is built
-next, in what order, and what evidence closes a slice**.
+This is the current local practice-studio plan. Product goals:
+`GOALS.md`. Requirements: `requirements/`. Resume point:
+`docs/implementation-status.md`.
 
 ## Operating rules
 
-1. **Vertical slices, not horizontal packages.** Every slice ends at a
-   user-visible behaviour, not at a layer or a test count.
-2. **The golden path stays green.** No new UI or subsystem is merged while
-   the Firefox golden-path test fails.
-3. **Quality before feature breadth.** Measure beat/downbeat/meter/timing
-   quality before adding more editor surface. A red quality gate blocks UI
-   work.
-4. **Reuse before invention.** Prefer established libraries and existing
-   project modules. A custom replacement needs a measured failure, not a
-   preference.
-5. **A slice is done only with evidence.** Unit tests alone do not close a
-   slice. The evidence listed for the slice must exist and be reproducible.
-6. **No new dependency without a decision.** Evaluate licence, size,
-   offline behaviour, and measured benefit against the current approach.
-   Installing an unplanned package requires explicit approval.
-7. **Keep/adapt/replace is recorded.** The decision table below is updated
-   whenever a measurement changes the verdict.
+1. Vertical slices with a checkable user outcome.
+2. The Firefox golden path stays green.
+3. Reuse mature tools; do not rebuild Vamp beat tracking or Demucs.
+4. One decision lives in one place.
+5. No new dependency without a licence/size/offline/measured-benefit review.
+6. Record keep/adapt/replace decisions from measurements, not test counts.
 
-## Current baseline (2026-10-25)
+## Fixed architecture
 
-- M0–M2 foundation is accepted and retained: import, media pipeline,
-  transport, separation, loops, export, portable projects.
-- M3 code exists but had integration and quality defects discovered by real
-  Firefox/manual use: upload serialization, missing decode job, relative
-  storage paths, silent/doubled metronome, slow finalizing, and wrong meter
-  selection on a 4/4 track.
-- The recent fixes are in place (see `docs/implementation-status.md`), but a
-  fresh golden-path and quality baseline must be recorded before any new UI.
-- The old milestone ledger is archived; it is history, not a resume point.
+- Browser React/TypeScript frontend; no Qt/Sonic Visualiser fork.
+- Local files only; no YouTube, cloud, accounts, or mobile in this scope.
+- Demucs for stems through the existing durable job/result-set system.
+- **QM Vamp Bar and Beat Tracker is the default grid engine.** The native
+  host is preferred; the Piper JSON host is a fallback.
+- `bpb` is a manual beats-per-bar hint (2/3/4/6/7; default 4). No automatic
+  meter inference in this slice.
+- Song Map sections live in `PracticeState`; linked section loops use the
+  optional `PracticeLoop.section_id`.
+- Beat This! remains experimental and is not required by the golden path.
+
+## Progress
+
+| Slice | Status | Evidence |
+|---|---|---|
+| 0. Re-baseline, goals, requirements, golden path | **done** | goals/plan/quality baseline; Firefox path |
+| 1. Song Map sections, commands, persistence | **done** | section domain/commands tests; undo/redo; non-overlap |
+| 2. Vamp host/parser/branch/API/cache | **done** | fixture/grid/service/route tests; real native host test; 294 s analysis |
+| 3. Vamp analysis UI | **done** | `SongAnalysisPanel`; Firefox path shows 4/4 |
+| 4. Song Map UI and section loops | **done core** | lane/list; add/split/rename/delete/loop; E2E section + loop |
+| 5. Stem separation UI | **core done** | panel/API/tests; real Demucs browser acceptance pending |
+| 6. Hardening and five-recording acceptance | **in progress** | real stem run, portable sections, docs, manual listening |
 
 ## Reuse map
 
 | Need | Use | Notes |
 |---|---|---|
-| Beat/downbeat inference | Beat This! (`rhythm/.venv`, pinned checkpoints) | Keep; measure quality before considering a replacement |
-| Bass separation | Demucs in `analysis/.venv` | Keep; accepted in M2 |
-| DSP/arrays | NumPy + established libraries | Do not hand-write resampling, FFT, or peak detection unless a library is unsuitable |
-| Playback/stretch | Existing AudioWorklet + Signalsmith Stretch | Keep |
-| Waveform/editor | Existing React/canvas editor | Keep; extend only in the correction slice |
-| Jobs/storage/portable | Existing FastAPI/SQLite/portable modules | Keep; fix defects, do not rewrite |
-| Contracts | Pydantic + generated OpenAPI/TS | Keep; regenerate after API changes |
-| Quality metrics | Existing `rhythm/evaluation.py` and corpus | Extend; do not create a second metrics stack |
-| Beat/tempo/meter research baseline | Evaluate `librosa`, `scipy.signal`, `madmom`/`essentia` if installable | Offline evaluation only until a measured benefit and licence/size review; no runtime download |
-| MATLAB (optional) | Audio/Signal Processing toolboxes for offline cross-checks | Only if licensed and installed; never a runtime dependency |
-| Vamp reference oracle | `scripts/vamp_reference.py` + Sonic Visualiser's Piper host | Evaluation only; GPL/AGPL plugin licences, never bundled as runtime |
+| Beat/bar/tempo | QM Vamp plugins via native host | Primary; reference-matched |
+| Stem separation | Demucs in `analysis/.venv` | Existing accepted backend |
+| Playback/stretch | Existing AudioWorklet + Signalsmith | Keep |
+| Waveform/editor | Existing React/canvas editor | Keep |
+| Jobs/storage/portable | Existing FastAPI/SQLite modules | Keep |
+| Metrics/reference | `scripts/vamp_reference.py`, QM/Sonic Visualiser | Evaluation only |
+| Beat This! | `rhythm/.venv` | Experimental comparison; not default |
 
-## Keep / adapt / replace
+## Slice details and remaining acceptance
 
-| Subsystem | Verdict | Trigger for change |
-|---|---|---|
-| Media import/decode, storage, jobs, portable format | **Keep** | Only a reproducible correctness failure |
-| Domain timing/grid/meter models | **Keep** | Only a requirement mismatch |
-| Beat This! runtime/adapter | **Keep** | Replace only if beat F1 stays below gate after postprocessing |
-| Meter scoring | **Adapted** (downbeat evidence + pulse-unit compatibility) | Revisit if 4/4 accuracy < 5/5 |
-| Tempo map / metronome scheduling | **Adapt only where measured** | Jitter/dropped-click gate in slice 1 |
-| Editor lanes | **Defer** until slices 1–3 pass | Editing UI is not a quality substitute |
-| Chromium/Safari support | **Defer** until Firefox release gate | No browser expansion before the core path is stable |
+### Slice 1 — sections
 
-## Slice 0 — Re-baseline and golden path
+Done:
 
-**Outcome:** one reproducible Firefox path proves the current product works
-end to end, and a quality baseline exists before any new feature.
+- `SongSection` and `PracticeState.sections/active_section_id`.
+- Non-overlap, ordering, duration and active-id validation.
+- Commands: add/update/delete/split/set-active/loop-section.
+- Linked loop updates; section delete clears linked active loop.
+- Undo/redo.
 
-**Scope**
+Remaining: portable section round-trip test.
 
-- Golden-path E2E: launch → import a short real/click fixture → ready project
-  → Analyze Rhythm → 4/4 bars → metronome renders clicks → count-in setting →
-  portable save.
-- Quality-baseline report: corpus structure, decoder/evaluation metrics,
-  real-model synthetic metrics, known failures.
-- Decide keep/adapt/replace from measurements, not test counts.
+### Slice 2 — Vamp
 
-**Non-goals:** new editor controls, new models, browser expansion, UI polish.
+Done:
 
-**Acceptance evidence**
+- `VampAnalysis` parser and monotonic validation.
+- `build_branch_from_vamp` creates a valid 4/4 branch with tempo anchors,
+  downbeats, and meter region.
+- Native host (fast) and Piper fallback.
+- Content-addressed feature cache; per-project lock; API error mapping.
+- Real native host test and 294 s user-project analysis.
 
-- `npm run e2e:golden` (in `frontend/`) passes on Firefox.
-- `pytest tests/unit/test_rhythm_corpus.py tests/unit/test_rhythm_evaluation.py`
-  passes; report recorded in `docs/quality-baseline.md`.
-- Real final0 run (`BASSEPARATE_RHYTHM_TEST_CHECKPOINT=...`) passes and its
-  beat/downbeat metrics are recorded there.
-- `docs/quality-baseline.md` lists every failing gate with a keep/adapt/replace
-  decision and no new UI is started while a gate is red.
+Remaining: package/document the native host path; decide whether to provide
+a build script for a fresh machine.
 
-## Slice 1 — Trustworthy 4/4 musical core
+### Slice 3 — analysis UI
 
-**Outcome:** for ordinary 4/4 songs, the inferred grid is correct, the
-metronome is steady, and the readout agrees with what the user hears.
+Done:
 
-**Scope**
+- `SongAnalysisPanel` with bpb selection, error/status, cache hint.
+- Old Beat This panel remains unused; default doctor no longer needs its
+  model for the golden path.
+- Firefox path analyzes without a model.
 
-- 4/4 beat/downbeat/meter accuracy; no 7/8 or 12/8 false selection on
-  quarter-note pulse tracks.
-- Steady rendered clicks: no dropped beats, no duplicate clicks, bounded
-  timing error.
-- Tempo-map smoothing/regularisation only if the measured timing gate fails.
-- Readout/bar navigation checks against the same grid.
+### Slice 4 — Song Map and practice controls
 
-**Non-goals:** 5/4, 7/8, rubato-heavy material, editing UI.
+Done:
 
-**Acceptance evidence**
+- Section lane aligned to the shared view.
+- Section list: add from selection, rename, color, split at playhead, delete,
+  select, loop.
+- Section loop uses the linked PracticeLoop; 0.75× speed verified.
+- Arbitrary range loop still available.
 
-- 5/5 supplied 4/4 excerpts select 4/4 (or a documented, manually verified
-  exception).
-- Beat F1 ≥ 0.90 and downbeat F1 ≥ 0.70 on the evaluation set.
-- Rendered click intervals over 60 s: median absolute error ≤ 5 ms, 95th
-  percentile ≤ 15 ms, no gap > 1.5 × the local beat period.
-- Count-in and bar readout agree with the grid in the same run.
-- Evidence in `docs/quality-baseline.md` and the Firefox golden path.
+Remaining: visual polish; optional section suggestions later.
 
-## Slice 2 — Complete practice session
+### Slice 5 — stems
 
-**Outcome:** the user can practise a section without leaving the page:
-selection → musical loop → count-in (once/every repeat) → speed change →
-playback, with controls and state agreeing.
+Done:
 
-**Scope**
+- `startSeparation`/`getMediaJob` client.
+- Separation panel starts a run, polls progress, activates newest valid set,
+  and switches to four stems.
+- Component tests.
 
-- Musical loop creation and loop playback at 0.5×/0.75×/1×/1.25×/1.5×.
-- Count-in click counts (grouping-aware), accents, stop/pause cancellation.
-- Metronome alignment after seek and loop wrap.
-- Portable save of the resulting project.
+Remaining: full Demucs browser run on a supplied track; confirm mixer lanes
+and portable save with real stems.
 
-**Non-goals:** lane editing, additional browsers, separation UI.
+### Slice 6 — release acceptance
 
-**Acceptance evidence**
+Required evidence:
 
-- Firefox E2E creates a loop from a waveform selection, enables it, plays
-  three passes at 0.75×, and verifies loop state and rendered click cadence.
-- Count-in E2E/unit checks record the exact click counts for 4/4 and the
-  grouped meters used by the supplied excerpts.
-- Portable archive saves and lists its revision in the same run.
-- No new UI beyond what the controls already provide.
-
-## Slice 3 — Offline portability and durability
-
-**Outcome:** a saved project reopens on a fresh installation with no model or
-network and retains the practice state.
-
-**Scope**
-
-- Save → download → open in a second storage root with no models.
-- Restore grid, active branch, loops, metronome/count-in, position/view state.
-- Verify missing optional activation arrays do not block practice.
-- Interrupted-run recovery messaging.
-
-**Non-goals:** cross-version archive upgrades (documented limitation), cloud.
-
-**Acceptance evidence**
-
-- `pytest tests/integration/test_portable_rhythm.py` and the golden-path
-  reopen step pass in Firefox.
-- No network requests during reopen; model absence is reported only when the
-  user starts a new analysis.
-- A seeded project with a deleted optional activation directory still opens
-  and plays.
-
-## Slice 4 — Correction workflow
-
-**Outcome:** when the automatic grid is wrong, the user can correct bars,
-beats, downbeats, and meter in the editor without losing practice state.
-
-**Scope**
-
-- Minimal lane editing: move/add/delete pulse, set downbeat, edit meter region,
-  undo/redo, save.
-- Correcting a 4/4 song misread as another meter.
-- Grid and metronome follow the corrected branch.
-
-**Non-goals:** batch editing, automatic re-analysis of every correction,
-mobile gestures.
-
-**Acceptance evidence**
-
-- Firefox E2E: load a deliberately wrong branch, correct it, verify bar
-  readout/metronome/loop follow, undo/redo, save/reopen.
-- Editing commands are idempotent and conflict-safe (existing command tests).
-- No correction path silently mutates the automatic result.
-
-## Slice 5 — Broader musical material
-
-**Outcome:** 3/4, 6/8, 9/8, 12/8, 5/4, 7/8, tempo changes, pickups, and
-meter changes meet their own gates instead of being hidden in one average.
-
-**Scope**
-
-- Corpus by meter/grouping and tempo behaviour.
-- Meter alternatives/pickups/downbeat evidence.
-- Tempo ramps and unmapped regions.
-- Half/double-time reporting kept separate from beat misses.
-
-**Acceptance evidence**
-
-- Per-meter corpus report with label/grouping/boundary accuracy.
-- No regression on the 4/4 gate.
-- Documented uncertainty behavior for ambiguous material.
-
-## Slice 6 — Firefox release hardening
-
-**Outcome:** the Firefox practice product is dependable for the supplied
-recordings and the remaining limitations are explicit.
-
-**Scope**
-
-- Five-recording acceptance (analysis, correction, loop, metronome/count-in,
-  save/reopen).
-- Performance budgets: finalize time, no playback underruns, bounded memory.
-- Failure messages: missing model, no pulses, no grid, missing artifacts,
-  portable archive without optional arrays.
-- Documentation and troubleshooting refresh; remove superseded docs.
-
-**Non-goals:** Chromium/Safari, mobile, accounts, streaming downloads.
-
-**Acceptance evidence**
-
-- Completed five-recording checklist.
+- Five recordings: import → stems → Vamp grid → sections → loop → speed →
+  save/reopen.
+- Portable project with sections and linked loops.
 - Golden path green on the release commit.
-- `pytest tests/ -q`, frontend suite, Firefox E2E, type/lint/format, contract
-  drift all green.
-- Release notes list known limitations (browser scope, archive compatibility,
-  model quality boundaries).
+- Backend/frontend/type/lint/format/contract gates.
+- Known limitations documented.
 
-## Immediate next action
+## Verification
 
-Slice 0 only. Do not add editor features until the golden-path test and the
-quality baseline are recorded and reviewed.
+```sh
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m ruff check src/ tests/
+.venv/bin/python -m mypy src/basseparate
+.venv/bin/python scripts/check_contract.py
+cd frontend && npm test -- --run
+cd frontend && npm run format:check && npm run build
+cd frontend && npm run e2e:golden
+```
+
+## Next action
+
+Run a real Demucs separation through the UI, then add the portable section
+round-trip test and complete the five-recording review.

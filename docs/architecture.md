@@ -27,14 +27,14 @@ closed. Architecture notes do not imply acceptance.
    the same protocol. It runs the Demucs `htdemucs_ft` pipeline through
    `analysis/separate.py` and is stopped when the analysis queue is idle. The
    application environment never imports torch.
-5. **Rhythm runtime**: a second isolated environment, `rhythm/.venv`
-   (beat-this, torch, torchaudio), launched by explicit interpreter path for
-   Beat This! qualification and framewise activation inference. The backend
-   supervises `rhythm/worker.py`, validates the returned float32 arrays, and
-   publishes them; the backend itself never imports torch. Model checkpoints
-   are installed explicitly into the managed store; there is no
-   inference-time download.
-6. **Browser**: React/TypeScript. Talks to the API through a generated client
+5. **Vamp analysis**: the default QM bar/beat engine. A local native host
+   (`storage/tools/vamp-host`) consumes interleaved f32 PCM and writes only
+   beats/bars; the Piper JSON host is a fallback. The backend caches features
+   and publishes a rhythm branch. No plugin is downloaded at runtime.
+6. **Experimental rhythm runtime**: the isolated `rhythm/.venv` Beat This!
+   environment remains for comparison tests only. It is not required by the
+   default UI or golden path.
+7. **Browser**: React/TypeScript. Talks to the API through a generated client
    (openapi-fetch over generated types). Waveform rendering is canvas-based.
    Playback runs in an AudioWorklet: a fetch worker produces PCM into shared
    memory when cross-origin isolation permits `SharedArrayBuffer`, otherwise
@@ -76,6 +76,9 @@ stream coordinate.
 
 ## Storage
 
+- Song Map sections and linked practice loops live in the project's
+  `practice_state` JSON; no separate table. A section loop is a `PracticeLoop`
+  with an optional `section_id`.
 - Working database: SQLite (stdlib `sqlite3`), WAL mode, `synchronous=FULL`,
   schema version in `PRAGMA user_version`, ordered transactional migrations
   (current `DATABASE_SCHEMA_VERSION` is 15; project schema version 5).
