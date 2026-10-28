@@ -64,6 +64,11 @@ class AppConfig:
     max_archive_member_count: int
     cache_limit_bytes: int
     media_worker_memory_limit_mb: int
+    vamp_server_path: str
+    vamp_plugin_path: str
+    vamp_library_path: str
+    vamp_native_host_path: str
+    vamp_timeout_seconds: float
     storage_root: Path | None
     config_file: Path
 
@@ -85,6 +90,9 @@ class AppConfig:
             f"max_archive_member_count={self.max_archive_member_count} "
             f"cache_limit_bytes={self.cache_limit_bytes} "
             f"media_worker_memory_limit_mb={self.media_worker_memory_limit_mb} "
+            f"vamp_server_path={self.vamp_server_path!r} "
+            f"vamp_plugin_path={self.vamp_plugin_path!r} "
+            f"vamp_native_host_path={self.vamp_native_host_path!r} "
             f"storage_root={self.storage_root}"
         )
 
@@ -120,9 +128,12 @@ _FIELDS: tuple[_FieldSpec, ...] = (
     _FieldSpec("max_archive_uncompressed_bytes", int, DEFAULT_MAX_ARCHIVE_UNCOMPRESSED_BYTES),
     _FieldSpec("max_archive_member_count", int, DEFAULT_MAX_ARCHIVE_MEMBER_COUNT),
     _FieldSpec("cache_limit_bytes", int, DEFAULT_CACHE_LIMIT_BYTES),
-    _FieldSpec(
-        "media_worker_memory_limit_mb", int, DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB
-    ),
+    _FieldSpec("media_worker_memory_limit_mb", int, DEFAULT_MEDIA_WORKER_MEMORY_LIMIT_MB),
+    _FieldSpec("vamp_server_path", str, ""),
+    _FieldSpec("vamp_plugin_path", str, ""),
+    _FieldSpec("vamp_library_path", str, ""),
+    _FieldSpec("vamp_native_host_path", str, ""),
+    _FieldSpec("vamp_timeout_seconds", float, 300.0),
 )
 
 
@@ -193,6 +204,7 @@ def _validate(values: dict[str, object]) -> None:
         "worker_handshake_timeout_seconds",
         "worker_graceful_stop_timeout_seconds",
         "database_busy_timeout_seconds",
+        "vamp_timeout_seconds",
     ):
         value = values[name]
         assert isinstance(value, float)
@@ -234,8 +246,7 @@ def _validate(values: dict[str, object]) -> None:
     assert isinstance(cache_limit, int)
     if cache_limit < MIN_CACHE_LIMIT_BYTES:
         raise ConfigError(
-            f"cache_limit_bytes must be at least 1 GiB ({MIN_CACHE_LIMIT_BYTES}), "
-            f"got {cache_limit}"
+            f"cache_limit_bytes must be at least 1 GiB ({MIN_CACHE_LIMIT_BYTES}), got {cache_limit}"
         )
 
     worker_memory = values["media_worker_memory_limit_mb"]

@@ -92,6 +92,37 @@ class MarkerNotFoundError(ApiError):
         )
 
 
+class SectionNotFoundError(ApiError):
+    def __init__(self, section_id: str) -> None:
+        super().__init__(
+            code="SECTION_NOT_FOUND",
+            message=f"The requested Song Map section does not exist: {section_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class SectionRangeInvalidError(ApiError):
+    def __init__(self, start: int, end: int, duration: int) -> None:
+        super().__init__(
+            code="SECTION_RANGE_INVALID",
+            message="A section must satisfy 0 <= start < end <= source length "
+            f"(got start={start}, end={end}, length={duration})",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"start_frames": start, "end_frames": end, "duration_frames": duration},
+        )
+
+
+class SectionOverlapError(ApiError):
+    def __init__(self, start: int, end: int) -> None:
+        super().__init__(
+            code="SECTION_OVERLAP",
+            message="Song Map sections must not overlap; split or trim the "
+            f"existing section before adding [{start}, {end})",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details={"start_frames": start, "end_frames": end},
+        )
+
+
 class ResultSetNotFoundError(ApiError):
     def __init__(self, result_set_id: str) -> None:
         super().__init__(
@@ -153,6 +184,25 @@ class LoopTooShortError(ApiError):
             "auditioned without looping)",
             status_code=status.HTTP_409_CONFLICT,
             details={"frames": frames, "sample_rate": sample_rate, "minimum_ms": 100},
+        )
+
+
+class VampUnavailableError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            code="VAMP_UNAVAILABLE",
+            message="Local Vamp analysis is not available. Configure the Piper host and "
+            f"plugin directory first ({detail})",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class VampAnalysisFailedError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            code="VAMP_ANALYSIS_FAILED",
+            message=f"Vamp analysis failed: {detail}",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
 

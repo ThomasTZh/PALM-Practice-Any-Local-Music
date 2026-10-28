@@ -319,6 +319,20 @@
           "default": null,
           "title": "Resolved Source Start"
         },
+        "section_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
+        },
         "start_frames": {
           "description": "Integer source sample position (never milliseconds)",
           "maximum": 9007199254740991,
@@ -391,6 +405,20 @@
           "default": null,
           "title": "Active Result Set Id"
         },
+        "active_section_id": {
+          "anyOf": [
+            {
+              "description": "UUID identifier, serialized as a string",
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Section Id"
+        },
         "loop_enabled": {
           "default": false,
           "title": "Loop Enabled",
@@ -425,6 +453,14 @@
           "minimum": 0.25,
           "title": "Playback Speed",
           "type": "number"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/SongSection"
+          },
+          "maxItems": 500,
+          "title": "Sections",
+          "type": "array"
         },
         "tracks": {
           "additionalProperties": {
@@ -599,6 +635,65 @@
       ],
       "title": "SnapMode",
       "type": "string"
+    },
+    "SongSection": {
+      "description": "A named, non-overlapping Song Map section in source frames.\n\nSections are ordered by ``start_frames`` in ``PracticeState``. The\nsource-frame bounds are authoritative; display seconds are derived.",
+      "properties": {
+        "color": {
+          "default": "#22c55e",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "title": "Color",
+          "type": "string"
+        },
+        "created_at": {
+          "description": "UTC timestamp in ISO 8601 form",
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "end_frames": {
+          "description": "Integer source sample position (never milliseconds)",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "End Frames",
+          "type": "integer"
+        },
+        "id": {
+          "description": "UUID identifier, serialized as a string",
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "start_frames": {
+          "description": "Integer source sample position (never milliseconds)",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Start Frames",
+          "type": "integer"
+        },
+        "updated_at": {
+          "description": "UTC timestamp in ISO 8601 form",
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "start_frames",
+        "end_frames",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "SongSection",
+      "type": "object"
     },
     "TrackSettings": {
       "description": "Mixer settings for one stem track (spec \u00a73.5).",

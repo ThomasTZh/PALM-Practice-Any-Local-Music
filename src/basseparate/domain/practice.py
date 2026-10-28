@@ -22,6 +22,9 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 MAX_LOOP_NAME_LENGTH = 80
 
+#: Upper bound on a project's Song Map sections.
+MAX_SECTIONS = 500
+
 #: Default loop color (M2.11, spec §13.1): amber, distinct from the
 #: marker default (rose).
 DEFAULT_LOOP_COLOR = "#f59e0b"
@@ -57,6 +60,33 @@ def _validate_loop_name(name: str) -> str:
     if _CONTROL_CHAR_RE.search(trimmed):
         raise ValueError("loop name must not contain embedded control characters")
     return trimmed
+
+
+class SongSection(BaseModel):
+    """A named, non-overlapping Song Map section in source frames.
+
+    Sections are ordered by ``start_frames`` in ``PracticeState``. The
+    source-frame bounds are authoritative; display seconds are derived.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: Uuid
+    name: str = Field(min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
+    start_frames: SamplePosition
+    end_frames: SamplePosition
+    color: str = Field(default="#22c55e", pattern=r"^#[0-9a-fA-F]{6}$")
+    created_at: UtcTimestamp
+    updated_at: UtcTimestamp
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _trim_name(cls, v: str) -> str:
+        return _validate_loop_name(v)
+
+    def model_post_init(self, __context: object) -> None:
+        if self.end_frames <= self.start_frames:
+            raise ValueError("section end_frames must be strictly greater than start_frames")
 
 
 class PlaybackMode(StrEnum):
@@ -118,6 +148,9 @@ class PracticeLoop(BaseModel):
     grid_branch_id: Uuid | None = None
     grid_branch_revision: Revision | None = None
     unresolved: bool = False
+    #: Linked Song Map section for a section loop. Optional: pre-M4
+    #: loops and free-form loops have no section.
+    section_id: Uuid | None = None
     created_at: UtcTimestamp
     updated_at: UtcTimestamp
 
@@ -173,6 +206,8 @@ class PracticeState(BaseModel):
     loops: list[PracticeLoop] = Field(default_factory=list)
     active_loop_id: Uuid | None = None
     loop_enabled: bool = False
+    sections: list[SongSection] = Field(default_factory=list, max_length=MAX_SECTIONS)
+    active_section_id: Uuid | None = None
 
     @field_validator("tracks")
     @classmethod
@@ -181,6 +216,16 @@ class PracticeState(BaseModel):
         for key in v:
             if key not in role_values:
                 raise ValueError(f"track key {key!r} is not a stem role")
+        return v
+
+    @field_validator("sections")
+    @classmethod
+    def _validate_sections(cls, v: list[SongSection]) -> list[SongSection]:
+        previous_end: int | None = None
+        for section in v:
+            if previous_end is not None and section.start_frames < previous_end:
+                raise ValueError("sections must be in order and must not overlap")
+            previous_end = section.end_frames
         return v
 
     @model_validator(mode="after")
@@ -195,4 +240,10 @@ class PracticeState(BaseModel):
             raise ValueError("active_loop_id must reference an existing loop")
         if self.loop_enabled and self.active_loop_id is None:
             raise ValueError("loop_enabled requires an active loop")
+        section_ids = {section.id for section in self.sections}
+        if self.active_section_id is not None and self.active_section_id not in section_ids:
+            raise ValueError("active_section_id must reference an existing section")
+        for loop in self.loops:
+            if loop.section_id is not None and loop.section_id not in section_ids:
+                raise ValueError("loop section_id must reference an existing section")
         return self

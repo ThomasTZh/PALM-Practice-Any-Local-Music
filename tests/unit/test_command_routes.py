@@ -109,6 +109,63 @@ class TestCommands:
         assert data["markers"][0]["label"] == "Marker"
         assert data["working_state"]["follow_playhead"] is True
 
+
+    def test_add_section_returns_section_state(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        resp = _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body(
+                {
+                    "type": "add_section",
+                    "name": "Intro",
+                    "start_frames": 0,
+                    "end_frames": 8_000,
+                },
+                0,
+            ),
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["practice_state"]["sections"] == [
+            {
+                "id": data["practice_state"]["sections"][0]["id"],
+                "name": "Intro",
+                "start_frames": 0,
+                "end_frames": 8_000,
+                "color": "#22c55e",
+                "created_at": data["practice_state"]["sections"][0]["created_at"],
+                "updated_at": data["practice_state"]["sections"][0]["updated_at"],
+            }
+        ]
+
+    def test_overlapping_section_is_rejected(
+        self, client: TestClient, auth_headers: dict, app
+    ) -> None:
+        project_id = _ready_project(client, auth_headers, app)
+        _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body(
+                {"type": "add_section", "name": "A", "start_frames": 0, "end_frames": 8_000},
+                0,
+            ),
+        )
+        resp = _post_command(
+            client,
+            auth_headers,
+            project_id,
+            _command_body(
+                {"type": "add_section", "name": "B", "start_frames": 7_000, "end_frames": 9_000},
+                1,
+            ),
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "SECTION_OVERLAP"
     def test_stale_revision_conflict(self, client: TestClient, auth_headers: dict, app) -> None:
         project_id = _ready_project(client, auth_headers, app)
         _post_command(

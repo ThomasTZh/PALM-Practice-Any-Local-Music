@@ -1035,6 +1035,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/vamp-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Project */
+        post: operations["analyze_project_api_v1_projects__project_id__vamp_analysis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rhythm-activations/{artifact_id}": {
         parameters: {
             query?: never;
@@ -1217,6 +1234,37 @@ export interface components {
              */
             type: "add_pulse";
         };
+        /**
+         * AddSectionOp
+         * @description Create a named Song Map section from a source-frame range.
+         */
+        AddSectionOp: {
+            /**
+             * Color
+             * @default #22c55e
+             */
+            color: string;
+            /**
+             * End Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            end_frames: number;
+            /**
+             * Name
+             * @default Section
+             */
+            name: string;
+            /**
+             * Start Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            start_frames: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_section";
+        };
         /** AddTempoAnchorOp */
         AddTempoAnchorOp: {
             musical_position: components["schemas"]["MusicalPosition"];
@@ -1395,7 +1443,7 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
             /** Op */
-            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["SetCountInOp"] | components["schemas"]["SelectRhythmResultOp"] | components["schemas"]["SelectRhythmBranchOp"] | components["schemas"]["SetSnapModeOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
+            op: components["schemas"]["AddMarkerOp"] | components["schemas"]["UpdateMarkerOp"] | components["schemas"]["AddSectionOp"] | components["schemas"]["UpdateSectionOp"] | components["schemas"]["DeleteSectionOp"] | components["schemas"]["SplitSectionOp"] | components["schemas"]["SetActiveSectionOp"] | components["schemas"]["LoopSectionOp"] | components["schemas"]["DeleteMarkerOp"] | components["schemas"]["SetSelectionOp"] | components["schemas"]["SetViewportOp"] | components["schemas"]["SetDisplayOp"] | components["schemas"]["SetMonitoringVolumeOp"] | components["schemas"]["SetPositionOp"] | components["schemas"]["SetFollowPlayheadOp"] | components["schemas"]["SetActiveResultSetOp"] | components["schemas"]["SetTrackSettingsOp"] | components["schemas"]["SetPlaybackModeOp"] | components["schemas"]["SetMasterGainOp"] | components["schemas"]["SetMonitoringLimiterOp"] | components["schemas"]["SetPlaybackSpeedOp"] | components["schemas"]["SetMetronomeOp"] | components["schemas"]["SetCountInOp"] | components["schemas"]["SelectRhythmResultOp"] | components["schemas"]["SelectRhythmBranchOp"] | components["schemas"]["SetSnapModeOp"] | components["schemas"]["AddLoopOp"] | components["schemas"]["AddMusicalLoopOp"] | components["schemas"]["ConvertLoopOp"] | components["schemas"]["UpdateLoopOp"] | components["schemas"]["DeleteLoopOp"] | components["schemas"]["DuplicateLoopOp"] | components["schemas"]["SetActiveLoopOp"] | components["schemas"]["SetLoopEnabledOp"];
         };
         /**
          * CommandResult
@@ -1822,6 +1870,20 @@ export interface components {
              */
             type: "delete_pulse";
         };
+        /** DeleteSectionOp */
+        DeleteSectionOp: {
+            /**
+             * Section Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            section_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_section";
+        };
         /** DeleteTempoAnchorOp */
         DeleteTempoAnchorOp: {
             /**
@@ -2173,6 +2235,23 @@ export interface components {
          * @enum {string}
          */
         LoopAnchorMode: "source" | "musical";
+        /**
+         * LoopSectionOp
+         * @description Create or update the loop linked to a section and enable it.
+         */
+        LoopSectionOp: {
+            /**
+             * Section Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            section_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "loop_section";
+        };
         /**
          * MarkerRecord
          * @description A single marker annotation in a project (§17.1).
@@ -2713,6 +2792,8 @@ export interface components {
             resolved_source_end?: number | null;
             /** Resolved Source Start */
             resolved_source_start?: number | null;
+            /** Section Id */
+            section_id?: string | null;
             /**
              * Start Frames
              * @description Integer source sample position (never milliseconds)
@@ -2743,6 +2824,8 @@ export interface components {
             active_loop_id?: string | null;
             /** Active Result Set Id */
             active_result_set_id?: string | null;
+            /** Active Section Id */
+            active_section_id?: string | null;
             /**
              * Loop Enabled
              * @default false
@@ -2767,6 +2850,8 @@ export interface components {
              * @default 1
              */
             playback_speed: number;
+            /** Sections */
+            sections?: components["schemas"]["SongSection"][];
             /** Tracks */
             tracks?: {
                 [key: string]: components["schemas"]["TrackSettings"];
@@ -3475,6 +3560,16 @@ export interface components {
              */
             type: "set_active_result_set";
         };
+        /** SetActiveSectionOp */
+        SetActiveSectionOp: {
+            /** Section Id */
+            section_id?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_active_section";
+        };
         /** SetAnchorLockOp */
         SetAnchorLockOp: {
             /**
@@ -3833,6 +3928,47 @@ export interface components {
          */
         SnapTargetKind: "none" | "bar" | "primary" | "half_beat" | "quarter_beat" | "event";
         /**
+         * SongSection
+         * @description A named, non-overlapping Song Map section in source frames.
+         *
+         *     Sections are ordered by ``start_frames`` in ``PracticeState``. The
+         *     source-frame bounds are authoritative; display seconds are derived.
+         */
+        SongSection: {
+            /**
+             * Color
+             * @default #22c55e
+             */
+            color: string;
+            /**
+             * Created At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            created_at: string;
+            /**
+             * End Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            end_frames: number;
+            /**
+             * Id
+             * @description UUID identifier, serialized as a string
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Start Frames
+             * @description Integer source sample position (never milliseconds)
+             */
+            start_frames: number;
+            /**
+             * Updated At
+             * @description UTC timestamp in ISO 8601 form
+             */
+            updated_at: string;
+        };
+        /**
          * SourceFrameFraction
          * @description Exact fractional project source frame before final rounding.
          */
@@ -3859,6 +3995,28 @@ export interface components {
             playback_rates: number[];
             /** Sample Rate */
             sample_rate: number;
+        };
+        /**
+         * SplitSectionOp
+         * @description Split an existing section at one source frame.
+         */
+        SplitSectionOp: {
+            /**
+             * At Frame
+             * @description Integer source sample position (never milliseconds)
+             */
+            at_frame: number;
+            /**
+             * Section Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            section_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "split_section";
         };
         /**
          * StemRole
@@ -4043,6 +4201,31 @@ export interface components {
              */
             type: "update_meter_region";
         };
+        /**
+         * UpdateSectionOp
+         * @description Partial section edit; absent fields stay unchanged.
+         */
+        UpdateSectionOp: {
+            /** Color */
+            color?: string | null;
+            /** End Frames */
+            end_frames?: number | null;
+            /** Name */
+            name?: string | null;
+            /**
+             * Section Id
+             * Format: uuid
+             * @description UUID identifier, serialized as a string
+             */
+            section_id: string;
+            /** Start Frames */
+            start_frames?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update_section";
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -4055,6 +4238,34 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VampAnalysisRequest */
+        VampAnalysisRequest: {
+            /**
+             * Bpb
+             * @default 4
+             */
+            bpb: number;
+        };
+        /** VampAnalysisResponse */
+        VampAnalysisResponse: {
+            /** Bars */
+            bars: number;
+            /** Beats */
+            beats: number;
+            /** Bpb */
+            bpb: number;
+            /**
+             * Branch Id
+             * Format: uuid
+             */
+            branch_id: string;
+            /** Cached */
+            cached: boolean;
+            /** Plugin Key */
+            plugin_key: string;
+            /** Plugin Version */
+            plugin_version: string;
         };
         /**
          * ViewportState
@@ -6111,6 +6322,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_project_api_v1_projects__project_id__vamp_analysis_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VampAnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VampAnalysisResponse"];
                 };
             };
             /** @description Validation Error */

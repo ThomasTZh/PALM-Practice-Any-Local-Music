@@ -270,6 +270,8 @@ class ProjectRecord(BaseModel):
     def _check_markers_and_working_state(self) -> None:
         if self.status == ProjectStatus.EMPTY and self.markers:
             raise ValueError("an empty project must not have markers")
+        if self.status == ProjectStatus.EMPTY and self.practice_state.sections:
+            raise ValueError("an empty project must not have sections")
         duration = self.duration_frames
         if duration is None:
             return
@@ -297,3 +299,9 @@ class ProjectRecord(BaseModel):
                 f"viewport start {state.viewport.start_frame} exceeds the project "
                 f"duration {duration}"
             )
+        for section in self.practice_state.sections:
+            if section.end_frames > duration:
+                raise ValueError(
+                    f"section {section.id} end {section.end_frames} exceeds the "
+                    f"project duration {duration}"
+                )

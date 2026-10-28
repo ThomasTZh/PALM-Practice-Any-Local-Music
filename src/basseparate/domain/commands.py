@@ -40,6 +40,7 @@ from basseparate.domain.snapping import SnapMode
 
 DEFAULT_MARKER_LABEL = "Marker"
 DEFAULT_MARKER_COLOR = "#e11d48"
+DEFAULT_SECTION_COLOR = "#22c55e"
 
 
 class AddMarkerOp(BaseModel):
@@ -68,6 +69,64 @@ class DeleteMarkerOp(BaseModel):
 
     type: Literal["delete_marker"] = "delete_marker"
     marker_id: Uuid
+
+
+class AddSectionOp(BaseModel):
+    """Create a named Song Map section from a source-frame range."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["add_section"] = "add_section"
+    name: str = Field(default="Section", min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
+    start_frames: SamplePosition
+    end_frames: SamplePosition
+    color: str = Field(default=DEFAULT_SECTION_COLOR, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class UpdateSectionOp(BaseModel):
+    """Partial section edit; absent fields stay unchanged."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["update_section"] = "update_section"
+    section_id: Uuid
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_LOOP_NAME_LENGTH)
+    start_frames: SamplePosition | None = None
+    end_frames: SamplePosition | None = None
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class DeleteSectionOp(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["delete_section"] = "delete_section"
+    section_id: Uuid
+
+
+class SplitSectionOp(BaseModel):
+    """Split an existing section at one source frame."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["split_section"] = "split_section"
+    section_id: Uuid
+    at_frame: SamplePosition
+
+
+class SetActiveSectionOp(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["set_active_section"] = "set_active_section"
+    section_id: Uuid | None = None
+
+
+class LoopSectionOp(BaseModel):
+    """Create or update the loop linked to a section and enable it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["loop_section"] = "loop_section"
+    section_id: Uuid
 
 
 class SetSelectionOp(BaseModel):
@@ -418,6 +477,12 @@ ProjectCommandOp = Annotated[
     (
         AddMarkerOp
         | UpdateMarkerOp
+        | AddSectionOp
+        | UpdateSectionOp
+        | DeleteSectionOp
+        | SplitSectionOp
+        | SetActiveSectionOp
+        | LoopSectionOp
         | DeleteMarkerOp
         | SetSelectionOp
         | SetViewportOp

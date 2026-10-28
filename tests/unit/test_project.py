@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from basseparate import PROJECT_SCHEMA_VERSION
+from basseparate.domain.practice import PracticeState, SongSection
 from basseparate.domain.project import ProjectRecord, ProjectStatus, WaveformStatus
 
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
@@ -267,3 +268,35 @@ class TestRhythmState:
         data["schema_version"] = 4
         restored = ProjectRecord.model_validate(data)
         assert restored.rhythm_state == ProjectRhythmState()
+
+
+def _section(start: int, end: int) -> SongSection:
+    return SongSection(
+        id=uuid4(),
+        name="Section",
+        start_frames=start,
+        end_frames=end,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def test_ready_project_sections_within_duration() -> None:
+    project = _make_project(
+        **_ready_overrides(), practice_state=PracticeState(sections=[_section(0, 1000)])
+    )
+    assert project.practice_state.sections[0].end_frames == 1000
+
+
+def test_ready_project_section_beyond_duration_rejected() -> None:
+    overrides = _ready_overrides()
+    overrides["duration_frames"] = 500
+    with pytest.raises(ValidationError, match="section"):
+        _make_project(
+            **overrides, practice_state=PracticeState(sections=[_section(0, 1000)])
+        )
+
+
+def test_empty_project_sections_rejected() -> None:
+    with pytest.raises(ValidationError, match="section"):
+        _make_project(practice_state=PracticeState(sections=[_section(0, 1000)]))

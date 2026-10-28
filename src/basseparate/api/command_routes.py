@@ -35,6 +35,9 @@ from basseparate.api.errors import (
     ProjectNotFoundError,
     ProjectNotReadyError,
     ResultSetNotFoundError,
+    SectionNotFoundError,
+    SectionOverlapError,
+    SectionRangeInvalidError,
     StaleRevisionError,
 )
 from basseparate.api.idempotency import IdempotencyStore
@@ -81,6 +84,15 @@ from basseparate.storage.repository import (
     RhythmSelectionError as RepoRhythmSelectionError,
 )
 from basseparate.storage.repository import (
+    SectionNotFoundError as RepoSectionNotFoundError,
+)
+from basseparate.storage.repository import (
+    SectionOverlapError as RepoSectionOverlapError,
+)
+from basseparate.storage.repository import (
+    SectionRangeInvalidError as RepoSectionRangeInvalidError,
+)
+from basseparate.storage.repository import (
     StaleRevisionError as RepoStaleRevisionError,
 )
 
@@ -119,6 +131,12 @@ def _raise_mapped(exc: Exception) -> NoReturn:
         raise LoopNotFoundError(str(exc.loop_id)) from exc
     if isinstance(exc, RepoLoopRangeInvalidError):
         raise LoopRangeInvalidError(exc.start, exc.end, exc.duration) from exc
+    if isinstance(exc, RepoSectionNotFoundError):
+        raise SectionNotFoundError(str(exc.section_id)) from exc
+    if isinstance(exc, RepoSectionRangeInvalidError):
+        raise SectionRangeInvalidError(exc.start, exc.end, exc.duration) from exc
+    if isinstance(exc, RepoSectionOverlapError):
+        raise SectionOverlapError(exc.start, exc.end) from exc
     if isinstance(exc, RepoLoopGridUnavailableError):
         raise LoopGridUnavailableError(str(exc)) from exc
     if isinstance(exc, RepoRhythmSelectionError):

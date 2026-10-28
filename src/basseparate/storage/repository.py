@@ -53,6 +53,7 @@ from basseparate.domain.practice import (
     PlaybackMode,
     PracticeLoop,
     PracticeState,
+    SongSection,
     TrackSettings,
 )
 from basseparate.domain.project import (
@@ -355,6 +356,33 @@ class LoopRangeInvalidError(Exception):
         self.duration = duration
 
 
+class SectionNotFoundError(Exception):
+    """The referenced Song Map section does not exist in the project."""
+
+    def __init__(self, section_id: uuid.UUID) -> None:
+        super().__init__(f"section {section_id} not found")
+        self.section_id = section_id
+
+
+class SectionRangeInvalidError(Exception):
+    """A section's boundaries must satisfy ``0 ≤ start < end ≤ duration``."""
+
+    def __init__(self, start: int, end: int, duration: int) -> None:
+        super().__init__(f"section range [{start}, {end}) is outside the source length {duration}")
+        self.start = start
+        self.end = end
+        self.duration = duration
+
+
+class SectionOverlapError(Exception):
+    """A new or edited section would overlap an existing section."""
+
+    def __init__(self, start: int, end: int) -> None:
+        super().__init__(f"section range [{start}, {end}) overlaps an existing section")
+        self.start = start
+        self.end = end
+
+
 class RhythmSelectionError(Exception):
     """A selected rhythm result/branch does not belong to the project."""
 
@@ -554,6 +582,149 @@ def _apply_op(
     ws = project.working_state
     ps = project.practice_state
     now = datetime.now(UTC)
+    if op.type == "add_section":
+        section = SongSection(
+            id=uuid.uuid4(),
+            name=op.name,
+            start_frames=op.start_frames,
+            end_frames=op.end_frames,
+            color=op.color,
+            created_at=now,
+            updated_at=now,
+        )
+        section_sections = sorted([*ps.sections, section], key=lambda item: item.start_frames)
+        return markers, ws, ps.model_copy(update={"sections": section_sections})
+    if op.type == "update_section":
+        section_current = next(section for section in ps.sections if section.id == op.section_id)
+        start = op.start_frames if op.start_frames is not None else section_current.start_frames
+        end = op.end_frames if op.end_frames is not None else section_current.end_frames
+        name = op.name if op.name is not None else section_current.name
+        color = op.color if op.color is not None else section_current.color
+        updated_section = section_current.model_copy(
+            update={
+                "name": name.strip(),
+                "start_frames": start,
+                "end_frames": end,
+                "color": color,
+                "updated_at": now,
+            }
+        )
+        section_sections = sorted(
+            [section for section in ps.sections if section.id != section_current.id]
+            + [updated_section],
+            key=lambda item: item.start_frames,
+        )
+        section_loops = [
+            loop.model_copy(
+                update={
+                    "name": name.strip(),
+                    "start_frames": start,
+                    "end_frames": end,
+                    "color": color,
+                    "updated_at": now,
+                }
+            )
+            if loop.section_id == section_current.id
+            else loop
+            for loop in ps.loops
+        ]
+        return (
+            markers,
+            ws,
+            ps.model_copy(update={"sections": section_sections, "loops": section_loops}),
+        )
+    if op.type == "split_section":
+        section_current = next(section for section in ps.sections if section.id == op.section_id)
+        first = section_current.model_copy(update={"end_frames": op.at_frame, "updated_at": now})
+        second = SongSection(
+            id=uuid.uuid4(),
+            name=f"{section_current.name} (2)",
+            start_frames=op.at_frame,
+            end_frames=section_current.end_frames,
+            color=section_current.color,
+            created_at=now,
+            updated_at=now,
+        )
+        section_sections = sorted(
+            [section for section in ps.sections if section.id != section_current.id]
+            + [first, second],
+            key=lambda item: item.start_frames,
+        )
+        section_loops = [
+            loop.model_copy(update={"end_frames": op.at_frame, "updated_at": now})
+            if loop.section_id == section_current.id
+            else loop
+            for loop in ps.loops
+        ]
+        return (
+            markers,
+            ws,
+            ps.model_copy(update={"sections": section_sections, "loops": section_loops}),
+        )
+    if op.type == "delete_section":
+        section_loops = [loop for loop in ps.loops if loop.section_id != op.section_id]
+        removed_loop_ids = {loop.id for loop in ps.loops if loop.section_id == op.section_id}
+        active_loop_id = None if ps.active_loop_id in removed_loop_ids else ps.active_loop_id
+        loop_enabled = ps.loop_enabled and active_loop_id is not None
+        active_section_id = None if ps.active_section_id == op.section_id else ps.active_section_id
+        return (
+            markers,
+            ws,
+            ps.model_copy(
+                update={
+                    "sections": [s for s in ps.sections if s.id != op.section_id],
+                    "loops": section_loops,
+                    "active_loop_id": active_loop_id,
+                    "loop_enabled": loop_enabled,
+                    "active_section_id": active_section_id,
+                }
+            ),
+        )
+    if op.type == "set_active_section":
+        return markers, ws, ps.model_copy(update={"active_section_id": op.section_id})
+    if op.type == "loop_section":
+        section = next(section for section in ps.sections if section.id == op.section_id)
+        section_existing = next(
+            (loop for loop in ps.loops if loop.section_id == op.section_id), None
+        )
+        if section_existing is None:
+            section_loop = PracticeLoop(
+                id=uuid.uuid4(),
+                name=section.name,
+                start_frames=section.start_frames,
+                end_frames=section.end_frames,
+                color=section.color,
+                section_id=section.id,
+                created_at=now,
+                updated_at=now,
+            )
+            section_loops = [*ps.loops, section_loop]
+        else:
+            section_loop = section_existing.model_copy(
+                update={
+                    "name": section.name,
+                    "start_frames": section.start_frames,
+                    "end_frames": section.end_frames,
+                    "color": section.color,
+                    "updated_at": now,
+                }
+            )
+            section_loops = [
+                section_loop if item.id == section_existing.id else item for item in ps.loops
+            ]
+        return (
+            markers,
+            ws,
+            ps.model_copy(
+                update={
+                    "sections": ps.sections,
+                    "loops": section_loops,
+                    "active_section_id": section.id,
+                    "active_loop_id": section_loop.id,
+                    "loop_enabled": True,
+                }
+            ),
+        )
     if op.type == "add_marker":
         marker = MarkerRecord(
             id=uuid.uuid4(),
@@ -747,6 +918,59 @@ def _validate_loop_range(start: int, end: int, duration: int) -> None:
     """``0 ≤ start < end ≤ duration`` (spec §13.3.1, §13.3.6)."""
     if start < 0 or end <= start or end > duration:
         raise LoopRangeInvalidError(start, end, duration)
+
+
+def _validate_section_range(start: int, end: int, duration: int) -> None:
+    if start < 0 or end <= start or end > duration:
+        raise SectionRangeInvalidError(start, end, duration)
+
+
+def _validate_section_op(project: ProjectRecord, op: ProjectCommandOp) -> None:
+    """Validate section bounds, existence, and non-overlap before applying."""
+    duration = project.duration_frames
+    assert duration is not None
+    ps = project.practice_state
+    sections = ps.sections
+    if op.type == "add_section":
+        _validate_section_range(op.start_frames, op.end_frames, duration)
+        for section in sections:
+            if op.start_frames < section.end_frames and section.start_frames < op.end_frames:
+                raise SectionOverlapError(op.start_frames, op.end_frames)
+        return
+    if op.type == "set_active_section":
+        if op.section_id is not None and not any(
+            section.id == op.section_id for section in sections
+        ):
+            raise SectionNotFoundError(op.section_id)
+        return
+    if op.type not in (
+        "update_section",
+        "delete_section",
+        "split_section",
+        "loop_section",
+    ):
+        return
+    current = next((section for section in sections if section.id == op.section_id), None)
+    if current is None:
+        raise SectionNotFoundError(op.section_id)
+    if op.type == "update_section":
+        start = op.start_frames if op.start_frames is not None else current.start_frames
+        end = op.end_frames if op.end_frames is not None else current.end_frames
+        _validate_section_range(start, end, duration)
+        for section in sections:
+            if section.id == current.id:
+                continue
+            if start < section.end_frames and section.start_frames < end:
+                raise SectionOverlapError(start, end)
+    elif op.type == "split_section" and not (
+        current.start_frames < op.at_frame < current.end_frames
+    ):
+        raise SectionRangeInvalidError(op.at_frame, current.end_frames, duration)
+    elif op.type == "loop_section":
+        frames = current.end_frames - current.start_frames
+        sample_rate = project.sample_rate or 0
+        if frames < MIN_REPEATABLE_LOOP_SECONDS * sample_rate:
+            raise LoopTooShortError(frames, sample_rate)
 
 
 def _loop_grid_context(
@@ -1456,6 +1680,15 @@ class ProjectRepository:
                 and project.practice_state.active_result_set_id is None
             ):
                 raise PlaybackModeRequiresResultSetError()
+            if op.type in (
+                "add_section",
+                "update_section",
+                "delete_section",
+                "split_section",
+                "set_active_section",
+                "loop_section",
+            ):
+                _validate_section_op(project, op)
             if op.type in ("add_loop", "update_loop"):
                 # The ready check above guarantees a duration (M2.11 §13.3).
                 assert project.duration_frames is not None

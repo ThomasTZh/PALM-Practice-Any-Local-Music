@@ -136,13 +136,9 @@ def _canonical_pcm_asset(
     """The project and its canonical PCM asset (or raise NO_CANONICAL)."""
     project = projects.get_project(job.project_id)
     if project is None:
-        raise ParameterResolutionError(
-            "NO_CANONICAL", f"project {job.project_id} no longer exists"
-        )
+        raise ParameterResolutionError("NO_CANONICAL", f"project {job.project_id} no longer exists")
     if project.canonical_asset_id is None:
-        raise ParameterResolutionError(
-            "NO_CANONICAL", "the project has no canonical audio"
-        )
+        raise ParameterResolutionError("NO_CANONICAL", "the project has no canonical audio")
     asset = projects.get_asset(project.canonical_asset_id)
     if asset is None or asset.audio is None:
         raise ParameterResolutionError(
@@ -213,8 +209,7 @@ def _playback_parameters_for(
     if isinstance(target, bool) or not isinstance(target, int):
         raise ParameterResolutionError(
             "INVALID_TARGET_RATE",
-            "playback_rate jobs require an integer target_sample_rate "
-            "(8000-192000 Hz)",
+            "playback_rate jobs require an integer target_sample_rate (8000-192000 Hz)",
         )
     if not MIN_SAMPLE_RATE <= target <= MAX_SAMPLE_RATE:
         raise ParameterResolutionError(
@@ -295,9 +290,7 @@ async def _separation_parameters_for(
     """
     raw_run_id = job.parameters.get("run_id")
     if not isinstance(raw_run_id, str):
-        raise ParameterResolutionError(
-            "RUN_NOT_FOUND", "the separation job has no run id"
-        )
+        raise ParameterResolutionError("RUN_NOT_FOUND", "the separation job has no run id")
     run = separations.get_run(uuid.UUID(raw_run_id))
     if run is None:
         raise ParameterResolutionError(
@@ -309,14 +302,10 @@ async def _separation_parameters_for(
             "PROJECT_NOT_FOUND", f"project {run.project_id} no longer exists"
         )
     canonical = (
-        projects.get_asset(project.canonical_asset_id)
-        if project.canonical_asset_id
-        else None
+        projects.get_asset(project.canonical_asset_id) if project.canonical_asset_id else None
     )
     monitoring = (
-        projects.get_asset(project.monitoring_asset_id)
-        if project.monitoring_asset_id
-        else None
+        projects.get_asset(project.monitoring_asset_id) if project.monitoring_asset_id else None
     )
     try:
         plan = reference_mix_plan(project, canonical, monitoring)
@@ -341,9 +330,7 @@ async def _separation_parameters_for(
             gpus = discover_gpus()
         except NvidiaSmiError as exc:
             raise ParameterResolutionError("DEVICE_UNAVAILABLE", str(exc)) from exc
-        index = next(
-            (i for i, gpu in enumerate(gpus) if gpu.uuid == run.gpu_uuid), None
-        )
+        index = next((i for i, gpu in enumerate(gpus) if gpu.uuid == run.gpu_uuid), None)
         if index is None:
             raise ParameterResolutionError(
                 "DEVICE_UNAVAILABLE",
@@ -610,6 +597,18 @@ def create_app(config: AppConfig) -> FastAPI:
         from basseparate.rhythm.commands import RhythmCommandService
 
         app.state.rhythm_command_service = RhythmCommandService(paths.database_path)
+        from basseparate.vamp.service import VampAnalysisService
+
+        app.state.vamp_service = VampAnalysisService(
+            storage_paths=paths,
+            repository=cast(ProjectRepository, app.state.repository),
+            rhythm_repository=cast(RhythmRepository, app.state.rhythm_repository),
+            server_path=config.vamp_server_path,
+            plugin_path=config.vamp_plugin_path,
+            library_path=config.vamp_library_path,
+            native_host_path=config.vamp_native_host_path,
+            timeout_seconds=config.vamp_timeout_seconds,
+        )
         app.state.upload_manager = UploadManager(
             uploads_dir=paths.runtime / "uploads",
             chunk_size=config.import_chunk_bytes,
@@ -649,9 +648,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 cast(JobRepository, app.state.job_repository),
                 cache_repository,
                 export_repository,
-                separation_repository=cast(
-                    SeparationRepository, app.state.separation_repository
-                ),
+                separation_repository=cast(SeparationRepository, app.state.separation_repository),
             ),
             parameters_for=lambda job: _job_parameters_for(
                 job,
@@ -729,6 +726,9 @@ def create_app(config: AppConfig) -> FastAPI:
     app.include_router(open_router)
     app.include_router(analysis_router)
     app.include_router(rhythm_router)
+    from basseparate.api.vamp_routes import router as vamp_router
+
+    app.include_router(vamp_router)
 
     # Static frontend shell, served from the backend origin (M0.8).
     # Mounted after the API router so /api/* routes take precedence.

@@ -80,6 +80,7 @@ from basseparate.domain.practice import (
     PlaybackMode,
     PracticeLoop,
     PracticeState,
+    SongSection,
     TrackSettings,
 )
 from basseparate.domain.preparation import (
@@ -282,6 +283,7 @@ __all__ = [
     "DEFAULT_LOOP_COLOR",
     "PracticeLoop",
     "PracticeState",
+    "SongSection",
     "PlaybackMode",
     "TrackSettings",
     "NORMALIZATION_PROFILE_VERSION",

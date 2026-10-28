@@ -17,10 +17,25 @@ from basseparate.domain import (
     PlaybackMode,
     PracticeLoop,
     PracticeState,
+    SongSection,
     TrackSettings,
 )
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def _section(**overrides: object) -> SongSection:
+    base: dict[str, object] = {
+        "id": uuid4(),
+        "name": "Verse",
+        "start_frames": 0,
+        "end_frames": 1000,
+        "color": "#22c55e",
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+    base.update(overrides)
+    return SongSection(**base)
 
 
 def _loop(**overrides: object) -> PracticeLoop:
@@ -194,3 +209,60 @@ class TestPracticeState:
 
     def test_monitoring_limiter_can_be_disabled(self) -> None:
         assert PracticeState(monitoring_limiter=False).monitoring_limiter is False
+
+
+class TestSongSection:
+    def test_valid_section(self) -> None:
+        section = _section(name="  Chorus  ")
+        assert section.name == "Chorus"
+        assert section.start_frames == 0
+        assert section.end_frames == 1000
+
+    def test_reverse_or_empty_range_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="end_frames"):
+            _section(start_frames=1000, end_frames=1000)
+        with pytest.raises(ValidationError, match="end_frames"):
+            _section(start_frames=2000, end_frames=1000)
+
+    def test_name_and_color_validated(self) -> None:
+        with pytest.raises(ValidationError, match="name"):
+            _section(name="   ")
+        with pytest.raises(ValidationError, match="color"):
+            _section(color="green")
+
+
+class TestPracticeStateSections:
+    def test_defaults(self) -> None:
+        state = PracticeState()
+        assert state.sections == []
+        assert state.active_section_id is None
+
+    def test_sections_must_be_ordered_and_non_overlapping(self) -> None:
+        a = _section(id=uuid4(), start_frames=0, end_frames=1000)
+        b = _section(id=uuid4(), start_frames=1000, end_frames=2000)
+        state = PracticeState(sections=[a, b])
+        assert [s.id for s in state.sections] == [a.id, b.id]
+        with pytest.raises(ValidationError, match="order"):
+            PracticeState(sections=[b, a])
+        overlap = _section(id=uuid4(), start_frames=500, end_frames=1500)
+        with pytest.raises(ValidationError, match="overlap"):
+            PracticeState(sections=[a, overlap])
+
+    def test_active_section_must_exist(self) -> None:
+        with pytest.raises(ValidationError, match="active_section_id"):
+            PracticeState(active_section_id=uuid4())
+        section = _section()
+        assert (
+            PracticeState(sections=[section], active_section_id=section.id).active_section_id
+            == section.id
+        )
+
+    def test_loop_can_reference_a_section(self) -> None:
+        section = _section()
+        loop = _loop(section_id=section.id)
+        state = PracticeState(sections=[section], loops=[loop], active_loop_id=loop.id)
+        assert state.loops[0].section_id == section.id
+
+    def test_loop_section_must_exist(self) -> None:
+        with pytest.raises(ValidationError, match="section_id"):
+            PracticeState(loops=[_loop(section_id=uuid4())])

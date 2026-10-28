@@ -180,6 +180,7 @@ def run_diagnostics(config: AppConfig) -> list[DiagnosticCheck]:
 
     checks.append(_model_baseline_check())
     checks.append(_rhythm_models_check(config))
+    checks.append(_vamp_check(config))
 
     build = _frontend_build_available()
     if build is not None:
@@ -261,6 +262,31 @@ def _model_baseline_check() -> DiagnosticCheck:
         "; ".join(details),
         required=False,
     )
+
+
+def _vamp_check(config: AppConfig) -> DiagnosticCheck:
+    """Report the local Sonic Visualiser/Vamp host configuration.
+
+    This is optional until the user switches the analysis path. Missing
+    paths are a warning; existing practice projects stay usable.
+    """
+    if not config.vamp_server_path or not config.vamp_plugin_path:
+        return DiagnosticCheck(
+            "vamp",
+            "warn",
+            "not configured; set BASSEPARATE_VAMP_SERVER and "
+            "BASSEPARATE_VAMP_PLUGIN_PATH for local QM bar/beat analysis",
+            required=False,
+        )
+    server = Path(config.vamp_server_path).expanduser()
+    plugins = Path(config.vamp_plugin_path).expanduser()
+    if not server.is_file():
+        return DiagnosticCheck("vamp", "fail", f"host not found: {server}", required=False)
+    if not plugins.is_dir():
+        return DiagnosticCheck(
+            "vamp", "fail", f"plugin directory not found: {plugins}", required=False
+        )
+    return DiagnosticCheck("vamp", "ok", f"host {server}; plugins {plugins}", required=False)
 
 
 def _rhythm_models_check(config: AppConfig) -> DiagnosticCheck:
