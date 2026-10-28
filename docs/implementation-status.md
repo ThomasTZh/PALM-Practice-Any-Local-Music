@@ -23,9 +23,11 @@ comparison, but they are not required by the default UI or the golden path.
 - Native QM analysis on the 294 s Carousel source: **701 beats / 176 bars /
   4/4 branch**, about 10.7 s including the first 108 MiB PCM read and branch
   publication; the 48 KiB feature cache is reused after that.
-- Full backend suite: **1726 passed, 2 skipped** (the skips require an
-  explicitly configured legacy checkpoint or native host). Frontend suite:
-  **624 passed, 54 files**.
+- Full backend suite: **1726 passed, 2 skipped** in the main run (the
+  skips require an explicitly configured legacy checkpoint or native host).
+  A later full run hit one flaky
+  `test_publisher_failure_fails_job` failure; the test passed immediately in
+  isolation. Frontend suite: **624 passed, 54 files**.
 - QM reference comparison on a 20 s excerpt: 45 beats / 11 bars; our prior
   Beat This! beats matched 45/46 within 50 ms and downbeats 11/11 within
   100 ms.

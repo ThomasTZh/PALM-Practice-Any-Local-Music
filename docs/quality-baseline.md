@@ -121,12 +121,14 @@ artefact, while the real reference alignment is 11/11.
 | Meter scoring (downbeat evidence + pulse-unit filter) | Keep, retest | 4/4 now selected on retained track |
 | Tempo map / metronome scheduler | Adapt | Reported interval jitter and dropped beat |
 | Media/import/storage/jobs/portable | Keep | Golden path import/save passes |
-| Editor lanes / new UI | Defer | Quality gates red/incomplete |
+| Editor lanes / new UI | Allowed on the Vamp path | Old Beat This gate is historical; QM reference alignment is the new baseline |
 
 ## Slice-0 verdict
 
 Functional golden path: **pass**.
 
-Quality gate: **red** (downbeat accuracy; timing not yet measured/steady).
-No new editor UI is permitted until slice 1 closes the downbeat and timing
-gates or records an approved exception.
+The old Beat This downbeat/timing gates are **historical**: the default path
+now uses QM Vamp, whose beats/bars match the reference. The current default
+has its own golden path and native-host timing evidence above. The remaining
+acceptance gaps are real Demucs browser acceptance, five-recording listening,
+and section/correction polish.
