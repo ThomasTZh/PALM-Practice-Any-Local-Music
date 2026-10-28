@@ -48,8 +48,7 @@ and the five-recording review.
 
 - Real stem-separation UI acceptance on the five recordings (backend and
   panel tests pass; the full Demucs browser run is still manual).
-- Portable-project round-trip test for sections (the state is included;
-  the end-to-end check remains).
+- Real stem-separation browser acceptance remains manual.
 - Editing/correction of pulses, downbeats, and meter regions.
 - Automatic section suggestions from the Vamp Segmenter; sections are
   manual in the current slice.

@@ -62,7 +62,8 @@ Done:
 - Linked loop updates; section delete clears linked active loop.
 - Undo/redo.
 
-Remaining: portable section round-trip test.
+Portable section + linked-loop round-trip test added to
+`tests/integration/test_portable_open.py`.
 
 ### Slice 2 — Vamp
 

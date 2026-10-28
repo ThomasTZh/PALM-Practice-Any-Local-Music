@@ -237,6 +237,7 @@ test('golden path: import, analyse, metronome, loop, save (Firefox)', async ({ p
   await page.getByRole('button', { name: 'Add section from selection' }).click()
   await expect(page.locator('.section-item')).toHaveCount(1)
   await expect(page.locator('.section-item.selected')).toHaveCount(1)
+  await expect(page.locator('.songmap-section')).toHaveCount(1)
   await page.getByRole('button', { name: 'Loop', exact: true }).click()
   await expect(page.locator('.loops-item')).toHaveCount(2)
 

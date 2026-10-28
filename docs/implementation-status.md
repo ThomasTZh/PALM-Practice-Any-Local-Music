@@ -52,8 +52,8 @@ comparison, but they are not required by the default UI or the golden path.
 ## Known limitations
 
 - The stem panel has unit tests but no full Demucs browser acceptance run.
-- Portable save/open includes sections through `practice_state`; an explicit
-  section round-trip test is still pending.
+- Portable save/open includes sections through `practice_state`; the portable
+  open test now round-trips a section and its linked loop.
 - The native Vamp host path is local tooling under `storage/tools/` and is not
   packaged into a distributable app. Personal Linux use only.
 - Beat This! is still present behind the historical code/tests; its model is

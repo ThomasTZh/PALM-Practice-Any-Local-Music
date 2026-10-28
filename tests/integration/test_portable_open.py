@@ -24,6 +24,7 @@ from basseparate.domain.practice import (
     PlaybackMode,
     PracticeLoop,
     PracticeState,
+    SongSection,
     TrackSettings,
 )
 from basseparate.domain.project import SelectionRange, ViewportState, WorkingState
@@ -66,6 +67,7 @@ class BuiltArchive:
     practice_state: PracticeState
     marker_id: uuid.UUID
     loop_id: uuid.UUID
+    section_id: uuid.UUID
 
 
 @pytest.fixture(scope="module")
@@ -77,6 +79,7 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> BuiltArchive:
     now = datetime.now(UTC)
     marker_id = uuid.uuid4()
     loop_id = uuid.uuid4()
+    section_id = uuid.uuid4()
     working_state = WorkingState(
         selection=SelectionRange(start=100, end=2000),
         viewport=ViewportState(start_frame=0, frames_per_css_pixel=64.0),
@@ -101,10 +104,22 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> BuiltArchive:
                 start_frames=1000,
                 end_frames=5001,
                 repeat_count=3,
+                section_id=section_id,
                 created_at=now,
                 updated_at=now,
             )
         ],
+        sections=[
+            SongSection(
+                id=section_id,
+                name="Chorus",
+                start_frames=1000,
+                end_frames=5001,
+                created_at=now,
+                updated_at=now,
+            )
+        ],
+        active_section_id=section_id,
         active_loop_id=loop_id,
         loop_enabled=True,
     )
@@ -138,6 +153,7 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> BuiltArchive:
         practice_state=practice_state,
         marker_id=marker_id,
         loop_id=loop_id,
+        section_id=section_id,
     )
 
 
@@ -396,6 +412,10 @@ class TestOpenSuccess:
         assert len(practice.loops) == 1
         assert practice.loops[0].id == built.loop_id  # loop ids are project-local
         assert practice.active_loop_id == built.loop_id
+        assert practice.sections[0].id == built.section_id
+        assert practice.sections[0].name == "Chorus"
+        assert practice.active_section_id == built.section_id
+        assert practice.loops[0].section_id == built.section_id
         assert practice.active_result_set_id is not None
         assert practice.active_result_set_id != uuid.UUID(built.seed.rs_a)
         # The active result set exists in the opened project.
