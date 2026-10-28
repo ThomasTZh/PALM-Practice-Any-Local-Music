@@ -23,6 +23,8 @@ comparison, but they are not required by the default UI or the golden path.
 - Native QM analysis on the 294 s Carousel source: **701 beats / 176 bars /
   4/4 branch**, about 10.7 s including the first 108 MiB PCM read and branch
   publication; the 48 KiB feature cache is reused after that.
+- Five supplied 20 s excerpts all produced beats/bars through the native QM
+  host (47/12, 45/11, 34/9, 28/7, 45/11).
 - Full backend suite: **1726 passed, 2 skipped** in the main run (the
   skips require an explicitly configured legacy checkpoint or native host).
   A later full run hit one flaky

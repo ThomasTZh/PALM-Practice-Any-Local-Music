@@ -112,6 +112,21 @@ mature Vamp tracker on real material. The bad 4/4 experience was caused by
 the beat decoder. The synthetic downbeat F1 (0.462) is a simple-accent
 artefact, while the real reference alignment is 11/11.
 
+## Five supplied excerpts (20 s each, native host)
+
+All five local recordings produced a usable QM grid with `bpb=4`:
+
+| Recording | Beats | Bars |
+|---|---:|---:|
+| 46.GIBBS - Simplicity | 47 | 12 |
+| Carousel Theory Full Mix | 45 | 11 |
+| Summer By The Sea Instrumental Demo | 34 | 9 |
+| Sweet Demo | 28 | 7 |
+| Videoslave Instrumental Demo | 45 | 11 |
+
+This is a runtime/bar sanity check, not a metrical ground-truth claim.
+Listening/correction review remains manual.
+
 ## Keep / adapt / replace decision
 
 | Subsystem | Decision | Evidence |
