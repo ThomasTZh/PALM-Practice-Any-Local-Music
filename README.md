@@ -46,8 +46,8 @@ and the five-recording review.
 
 ## Not implemented yet / not accepted
 
-- Real stem-separation UI acceptance on the five recordings (backend and
-  panel tests pass; the full Demucs browser run is still manual).
+- Five-recording practice/listening review (the real Demucs browser run now
+  passes on a short CPU fixture).
 - Real stem-separation browser acceptance remains manual.
 - Editing/correction of pulses, downbeats, and meter regions.
 - Automatic section suggestions from the Vamp Segmenter; sections are
@@ -209,6 +209,8 @@ baseline, not the total test count:
 
 ```sh
 cd frontend && npm run e2e:golden
+# opt-in real CPU Demucs acceptance (about 1-2 minutes)
+cd frontend && BASSEPARATE_TEST_SEPARATION=1 npm run e2e:separation
 ```
 
 See `docs/quality-baseline.md` for the red/green quality gates and

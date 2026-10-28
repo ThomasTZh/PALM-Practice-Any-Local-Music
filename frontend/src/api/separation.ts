@@ -26,7 +26,7 @@ export async function startSeparation(
 ): Promise<SeparationRun> {
   const res = await client.POST('/api/v1/projects/{project_id}/runs', {
     params: { path: { project_id: projectId } },
-    body: { mode: 'four_stems', seed: 0 },
+    body: { mode: 'four_stems', seed: 0, device: 'cpu' },
     signal,
   })
   if (!res.response.ok || !res.data) {

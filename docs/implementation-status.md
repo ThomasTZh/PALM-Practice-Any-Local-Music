@@ -35,9 +35,9 @@ comparison, but they are not required by the default UI or the golden path.
   100 ms.
 - Section commands: add/update/split/delete/set-active/loop, non-overlap and
   duration validation, linked loop updates, undo/redo.
-- Stem separation panel starts the existing Demucs run, polls the durable
-  job, and activates the newest valid result set. Real Demucs acceptance is
-  still manual.
+- Stem separation panel starts the existing Demucs CPU run, polls the durable
+  job, activates the newest valid result set, and renders the four-track
+  mixer. Real browser acceptance: **passed**, 8 s tone, 1.1 min.
 - Frontend component tests cover the analysis panel, section panel, and stem
   panel.
 
@@ -58,7 +58,8 @@ comparison, but they are not required by the default UI or the golden path.
 
 ## Known limitations
 
-- The stem panel has unit tests but no full Demucs browser acceptance run.
+- Stem separation runs on CPU by default. GPU selection/qualification is not
+  exposed in the panel yet.
 - Portable save/open includes sections through `practice_state`; the portable
   open test round-trips a section and its linked loop.
 - The native Vamp host path is local tooling under `storage/tools/` and is not
@@ -87,10 +88,6 @@ BASSEPARATE_VAMP_PLUGIN_PATH=$PWD/storage/tools/vamp-plugins \
 
 ## Next actions
 
-1. Run a real Demucs separation through the new panel on one supplied track
-   and record the result.
-2. Add a portable section round-trip test.
-3. Update `docs/quality-baseline.md` with the native-host timing and current
-   gate status.
-4. Run the five-recording practice review before adding correction or
-   automatic-section UI.
+1. Run the five-recording practice/listening review.
+2. Add correction/automatic-section UI only after that review.
+3. Expose GPU selection only if CPU separation is too slow in real use.

@@ -35,7 +35,7 @@ This is the current local practice-studio plan. Product goals:
 | 2. Vamp host/parser/branch/API/cache | **done** | fixture/grid/service/route tests; real native host test; 294 s analysis |
 | 3. Vamp analysis UI | **done** | `SongAnalysisPanel`; Firefox path shows 4/4 |
 | 4. Song Map UI and section loops | **done core** | lane/list; add/split/rename/delete/loop; E2E section + loop |
-| 5. Stem separation UI | **core done** | panel/API/tests; real Demucs browser acceptance pending |
+| 5. Stem separation UI | **done** | real 8 s CPU Demucs browser run, four-track mixer, 1.1 min |
 | 6. Hardening and five-recording acceptance | **in progress** | real stem run, portable sections, docs, manual listening |
 
 ## Reuse map
@@ -109,8 +109,8 @@ Done:
   and switches to four stems.
 - Component tests.
 
-Remaining: full Demucs browser run on a supplied track; confirm mixer lanes
-and portable save with real stems.
+Real browser run passed on an 8 s tone through the panel: 1.1 min CPU,
+four track rows. GPU selection and mixed/stem portable save remain.
 
 ### Slice 6 — release acceptance
 

@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "e2e:golden": "playwright test e2e/golden-path.spec.ts --project=firefox",
+    "e2e:separation": "playwright test e2e/stem-separation.spec.ts --project=firefox",
     "contracts": "openapi-typescript ../contracts/openapi.json -o src/api/schema.ts"
   },
   "dependencies": {

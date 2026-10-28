@@ -80,7 +80,8 @@ trips for the default path.
 | 20 s excerpt, native host | **0.16 s** |
 | 294 s Carousel source, first service run | **10.7 s** including 108 MiB PCM read, branch publication, and cache write |
 | Cached features | 48 KiB JSON; subsequent runs skip the host |
-| 12 s Firefox golden path, including UI steps | **4.3–6.8 s** test time |
+| 12 s Firefox golden path, including UI steps | **4.3–8.8 s** test time |
+| Real 8 s Demucs separation through the panel | **1.1 min CPU**, four track rows |
 
 The native host is local tooling, not a packaged dependency. The Piper host
 remains a fallback.
