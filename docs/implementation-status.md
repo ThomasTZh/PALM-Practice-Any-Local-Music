@@ -88,6 +88,7 @@ BASSEPARATE_VAMP_PLUGIN_PATH=$PWD/storage/tools/vamp-plugins \
 
 ## Next actions
 
-1. Run the five-recording practice/listening review.
+1. Run the five-recording practice/listening review using
+   `docs/acceptance/five-recordings.md`.
 2. Add correction/automatic-section UI only after that review.
 3. Expose GPU selection only if CPU separation is too slow in real use.
