@@ -43,16 +43,19 @@ dependencies from the preserved pnpm store; `pnpm install` is not used offline.
   atomic, versioned project document.
 - **Separate stems** with the local `htdemucs_ft` bundle: four stereo stems
   (drums, bass, other, vocals) cached by content hash, with hash-verified
-  checkpoints, progress, cancellation and stem PCM endpoints. Falls back to the
-  mix with a visible notice when a stem set is unavailable.
+  checkpoints, progress, cancellation and stem PCM endpoints. A **Separate
+  stems** control in the mixer starts the job, shows a determinate progress bar
+  and activates the four stems on success. Falls back to the mix with a visible
+  notice when a stem set is unavailable.
 - **Analyse** with the preserved Vamp plugins through the local Piper host:
   Chordino chords, Key Detector key, and QM Bar and Beat Tracker beats/bars with
   a beats-per-bar hint. Results are content-addressed and cached; the analysed
   grid, key and chords are persisted in the project.
 - **Practise** in the browser: waveform with selection/zoom/seek, collapsible
-  spectrogram, chord ribbon, bar-snapped sections and section loops, a five-source
-  mixer with mute/solo/gain/pan, speed 0.25–2× with independent pitch, accented
-  metronome, count-in, and a transport with frame-accurate position.
+  spectrogram, chord ribbon, sections you create or resize by dragging (bar-
+  snapped by default) and loop, a five-source mixer with mute/solo/gain/pan,
+  speed 0.25–2× with independent pitch, accented metronome, count-in, and a
+  transport with frame-accurate position.
 - **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
   pitch, position and mixer; reopen restores the project; mixdown export writes a
   16-bit WAV at the project rate with exactly the project frame count.
@@ -86,7 +89,7 @@ Final gate (run for this documentation, exit 0):
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / mypy strict
 [PASS] pytest 223 passed, 7 skipped
-[PASS] web typecheck, web tests (47 files / 416 tests), web build
+[PASS] web typecheck, web tests (49 files / 449 tests), web build
 [PASS] e2e golden path: Firefox and Chromium, real server, isolated data root
 gate: ok
 ```
@@ -104,9 +107,12 @@ that wraps, the metronome UI, autosave, reopen and WAV export. In the final run
 both Firefox and Chromium advanced the transport, changed speed and wrapped the
 loop; headless runs explicitly do not claim audible verification.
 
-The manual listening checklist is in [docs/progress.md](docs/progress.md) under
-the t15 entry. It is **not performed**; it needs a human with headphones and is
-not claimed as passed.
+The manual listening checklist is in [docs/progress.md](docs/progress.md). A
+first field session is recorded there (Carousel on Firefox: playback, speed,
+pitch, chords, key, BPM, metronome) together with the defects it found and the
+fixes that followed (stem separation control, autosave revision, section
+dragging). Items changed after that session still need a repeat listening pass;
+the checklist is not claimed as fully passed.
 
 ## Known limitations
 

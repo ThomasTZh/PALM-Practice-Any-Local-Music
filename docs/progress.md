@@ -1186,6 +1186,55 @@ every CPU sample over 100 ms even when the view change itself completed quickly.
   ms, best wall=67.2 ms, best cpu=66.6 ms, median cpu=121.9 ms`.
 - `make test-web` passes; no other test was changed.
 
-`PERFORMANCE.md` still describes the earlier five-run methodology and the CPU
-assertion. It lies outside t24's declared scope (`performance.test.ts` only), so
-it was not edited; its acceptance target (best wall under 100 ms) is unchanged.
+`PERFORMANCE.md` was updated after t24 to describe the three-run/best-wall
+methodology and to record three measured runs (best walls 50.1, 53.6 and
+56.2 ms under suite contention).
+
+## 2026-10-31 — field report and follow-up fixes (user session, Firefox)
+
+The user ran a full `Carousel Theory Full Mix V1 (With Limiter).wav` session in
+Firefox and reported the items below. They are recorded as given, not inferred.
+
+| Checklist item | User result |
+|---|---|
+| Play 60 s at 1x | pass: no clicks, dropouts or pitch drift |
+| 0.5x / 1.5x | pass: pitch stayed the same, no warble or metallic artefacts |
+| Pitch +2/-2 st | works, but the listener judged the control useless (kept, no change) |
+| Stem separation | no control was visible anywhere (defect) |
+| Analysis | QM reported Ab major; the listener hears F minor (relative keys, accepted). BPM, bars and beats good; chords acceptable |
+| Sections | worked but hard to use; the listener wants click-drag creation. Metronome sounded good |
+| Save/reopen | no save button; the status read "save failed"; after a server restart the song, chords and analysis were still there but the section was gone |
+| Playback behaviour | sometimes started on its own; the play button did not reflect playback started from another path; no autoplay when opening a project was requested |
+
+Root cause of the save failure, found in the code: the analysis job writes the
+project document and bumps its revision server-side, but the shell kept the
+revision read at open time. The next `PUT /api/projects/{id}/state` therefore
+returned 409, the status showed "save failed", and sections were never persisted
+(analysis itself was persisted, which is why chords survived the restart).
+
+Follow-up tasks and commits:
+
+- t21 `127fad7`: Separate stems control with determinate progress, cancel,
+  Re-separate/cache hint and activation of the four stems while preserving
+  position, speed, pitch, loop, sections, metronome and paused/playing state.
+- t22 `8ef93e5`: refresh the revision after analysis; one 409 refresh-and-retry
+  in `saveState`; opening never plays; section click only seeks; the transport
+  toggle follows direct engine `play()`/`pause()`.
+- t23 `7e5b15b`: drag on the section lane to create (bar/beat/free snapping,
+  live draft, Escape/pointercancel cancels) and edge-drag to resize.
+- t24 `5260333`: spectrogram performance test asserts best wall of three runs,
+  CPU printed for diagnosis only.
+- t25 `d817b86`: the golden path waits for the created section to appear in the
+  server state before reopening, and fails explicitly if it never does.
+
+Verification on the final tree:
+
+- `make gate` exit 0: pytest 223 passed / 7 skipped; web 49 files / 449 tests;
+  tsc and Vite build; e2e 29.1 s on Firefox and Chromium.
+- `make e2e` five consecutive runs passed on the stabilized tree (t25), with the
+  saved-section annotation, speed deltas 0.80-0.90 s, loop wrap and the
+  unchanged export assertions.
+
+Still to do after these fixes: one repeat listening pass covering the new stem
+control and mixer, section dragging, and save/reopen/export. The relative-key
+ambiguity (Ab major vs F minor) is accepted as plugin behaviour.
