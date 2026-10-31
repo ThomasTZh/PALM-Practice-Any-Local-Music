@@ -1162,3 +1162,30 @@ The section lane timeline now uses pointer events:
   the existing click-to-seek behaviour.
 - In Free mode the minimum section length is 100 ms because there is no musical
   snap unit.
+
+## 2026-10-31 — stabilize the spectrogram performance test (t24)
+
+The performance test flaked during t23 when the host was busy: it asserted the
+best CPU time as well as the best wall time, and a loaded scheduler could push
+every CPU sample over 100 ms even when the view change itself completed quickly.
+
+- Kept the workload and threshold unchanged: 5 minutes of 44.1 kHz PCM, a
+  1280 × 256 log-frequency view, 2048-sample FFT, one 32-column warm-up, and the
+  100 ms acceptance target.
+- After the warm-up the test now performs exactly three independent measured
+  runs (`MEASURED_RUNS = 3`), prints every wall and CPU value plus best wall,
+  best CPU and median CPU, and asserts only that the best wall time is under
+  100 ms. CPU values remain printed for diagnosis; they no longer decide the
+  capability check. The wall metric is the documented acceptance target in
+  `PERFORMANCE.md`.
+- Proof under load: five consecutive `web/node_modules/.bin/vitest run
+  src/spectrogram` executions ran while `make test-backend` was executing its
+  pytest suite (223 passed, 7 skipped in 55.47 s). All five exit 0, 61 tests
+  each, with these printed best walls: 54.5, 55.2, 62.6, 78.7 and 67.2 ms.
+  Example full line: `wall=[114.4, 111.7, 67.2] ms, cpu=[121.9, 125.4, 66.6]
+  ms, best wall=67.2 ms, best cpu=66.6 ms, median cpu=121.9 ms`.
+- `make test-web` passes; no other test was changed.
+
+`PERFORMANCE.md` still describes the earlier five-run methodology and the CPU
+assertion. It lies outside t24's declared scope (`performance.test.ts` only), so
+it was not edited; its acceptance target (best wall under 100 ms) is unchanged.
