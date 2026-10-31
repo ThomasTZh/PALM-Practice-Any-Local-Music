@@ -34,13 +34,19 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.api.deps import JobsDep, PathsDep, StoreDep
 from basseparate.config import DataPaths
 from basseparate.jobs import JobCancelled, JobContext, JobManager
-from basseparate.media import atomic_write_bytes, read_pcm_range
+from basseparate.media import (
+    RangeError,
+    atomic_write_bytes,
+    pcm_response_headers,
+    read_pcm_slice,
+    unsatisfiable_range_headers,
+)
 from basseparate.projects import Project, ProjectStore, RevisionConflict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -764,10 +770,20 @@ def project_stems(project_id: str, store: StoreDep) -> dict[str, Any]:
     }
 
 
+def _stem_range_error(error: RangeError, total_bytes: int) -> Response:
+    return Response(
+        content=json.dumps({"detail": str(error)}).encode(),
+        status_code=416,
+        media_type="application/json",
+        headers=unsatisfiable_range_headers(total_bytes),
+    )
+
+
 @router.get("/projects/{project_id}/stems/{label}/pcm")
 def project_stem_pcm(
     project_id: str,
     label: str,
+    request: Request,
     paths: PathsDep,
     store: StoreDep,
     start: int = Query(default=0),
@@ -783,27 +799,31 @@ def project_stem_pcm(
     if stem_set is None:
         raise HTTPException(status_code=404, detail=f"stem set {key} is missing or incomplete")
     stem = stem_set.file(label)
-    payload = read_pcm_range(
-        stem.path,
-        channels=stem.channels,
-        start=start,
-        end=stem_set.frames if end is None else end,
-        total_frames=stem_set.frames,
-    )
-    resolved_end = stem_set.frames if end is None else end
+    total_bytes = stem.path.stat().st_size
+    try:
+        sliced = read_pcm_slice(
+            stem.path,
+            channels=stem.channels,
+            total_frames=stem_set.frames,
+            range_header=request.headers.get("range"),
+            start=start,
+            end=end,
+        )
+    except RangeError as error:
+        return _stem_range_error(error, total_bytes)
     return Response(
-        content=payload,
+        content=sliced.payload,
+        status_code=sliced.status_code,
         media_type=BINARY_MEDIA_TYPE,
-        headers={
-            "x-stem-label": label,
-            "x-frame-start": str(start),
-            "x-frame-end": str(resolved_end),
-            "x-frame-count": str(resolved_end - start),
-            "x-sample-rate": str(stem_set.sample_rate),
-            "x-channels": str(stem.channels),
-            "x-total-frames": str(stem_set.frames),
-            "cache-control": "private, max-age=3600",
-        },
+        headers=pcm_response_headers(
+            start_frame=sliced.start_frame,
+            end_frame=sliced.end_frame,
+            total_frames=sliced.total_frames,
+            sample_rate=stem_set.sample_rate,
+            channels=stem.channels,
+            content_range=sliced.content_range,
+            extra={"x-stem-label": label},
+        ),
     )
 
 

@@ -7,12 +7,18 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from basseparate.api.deps import PathsDep, StoreDep
 from basseparate.api.models import ProjectUpdateRequest
 from basseparate.config import DataPaths
-from basseparate.media import MediaError, read_pcm_range
+from basseparate.media import (
+    MediaError,
+    RangeError,
+    pcm_response_headers,
+    read_pcm_slice,
+    unsatisfiable_range_headers,
+)
 from basseparate.peaks import PEAK_BUCKET_SIZES
 from basseparate.projects import project_response
 
@@ -73,9 +79,19 @@ def project_media(project_id: str, store: StoreDep) -> dict[str, Any]:
     return project.audio.model_dump(mode="json")
 
 
+def range_error_response(error: RangeError, total_bytes: int) -> Response:
+    return Response(
+        content=json.dumps({"detail": str(error)}).encode(),
+        status_code=416,
+        media_type="application/json",
+        headers=unsatisfiable_range_headers(total_bytes),
+    )
+
+
 @router.get("/projects/{project_id}/pcm")
 def project_pcm(
     project_id: str,
+    request: Request,
     paths: PathsDep,
     store: StoreDep,
     start: int = Query(default=0),
@@ -88,26 +104,30 @@ def project_pcm(
         raise HTTPException(
             status_code=404, detail=f"decoded PCM for project {project_id} is missing"
         )
-    payload = read_pcm_range(
-        pcm,
-        channels=project.audio.channels,
-        start=start,
-        end=total if end is None else end,
-        total_frames=total,
-    )
-    resolved_end = total if end is None else end
+    total_bytes = pcm.stat().st_size
+    try:
+        sliced = read_pcm_slice(
+            pcm,
+            channels=project.audio.channels,
+            total_frames=total,
+            range_header=request.headers.get("range"),
+            start=start,
+            end=end,
+        )
+    except RangeError as error:
+        return range_error_response(error, total_bytes)
     return Response(
-        content=payload,
+        content=sliced.payload,
+        status_code=sliced.status_code,
         media_type=BINARY_MEDIA_TYPE,
-        headers={
-            "x-frame-start": str(start),
-            "x-frame-end": str(resolved_end),
-            "x-frame-count": str(resolved_end - start),
-            "x-sample-rate": str(project.audio.sample_rate),
-            "x-channels": str(project.audio.channels),
-            "x-total-frames": str(total),
-            "cache-control": "private, max-age=3600",
-        },
+        headers=pcm_response_headers(
+            start_frame=sliced.start_frame,
+            end_frame=sliced.end_frame,
+            total_frames=sliced.total_frames,
+            sample_rate=project.audio.sample_rate,
+            channels=project.audio.channels,
+            content_range=sliced.content_range,
+        ),
     )
 
 

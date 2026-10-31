@@ -36,7 +36,195 @@ class MediaCancelled(MediaError):
 
 
 class RangeError(MediaError):
-    """The requested frame range is outside the asset; maps to HTTP 416."""
+    """The requested range is outside the asset; maps to HTTP 416."""
+
+
+@dataclass(frozen=True)
+class ByteRange:
+    """One inclusive HTTP byte range over a complete byte stream."""
+
+    start: int
+    end: int
+    total: int
+
+    @property
+    def length(self) -> int:
+        return self.end - self.start + 1
+
+    @property
+    def content_range(self) -> str:
+        return f"bytes {self.start}-{self.end}/{self.total}"
+
+
+@dataclass(frozen=True)
+class PcmSlice:
+    """A frame-aligned PCM read, from either a Range header or query params."""
+
+    payload: bytes
+    status_code: int
+    start_frame: int
+    end_frame: int
+    total_frames: int
+    content_range: str | None
+    byte_start: int
+    byte_end: int
+
+
+def parse_http_range(range_header: str | None, total_bytes: int) -> ByteRange | None:
+    """Parse a single ``bytes=`` range; other units are ignored (RFC 9110).
+
+    Unsatisfiable, malformed and multiple ranges raise :class:`RangeError` so
+    the route can return 416 with the required ``Content-Range: bytes */N``.
+    """
+    if range_header is None:
+        return None
+    value = range_header.strip()
+    if not value:
+        return None
+    unit, separator, spec = value.partition("=")
+    if unit.strip().lower() != "bytes":
+        return None
+    if not separator:
+        raise RangeError(f"invalid Range header: {range_header!r}")
+    spec = spec.strip()
+    if not spec:
+        raise RangeError("the Range header is empty")
+    if "," in spec:
+        raise RangeError("multiple byte ranges are not supported; request one range")
+    first, dash, last = spec.partition("-")
+    if not dash:
+        raise RangeError(f"invalid Range header: {range_header!r}")
+    try:
+        if first == "":
+            suffix = int(last, 10)
+            if suffix <= 0:
+                raise RangeError(f"range {spec!r} is outside the asset ({total_bytes} bytes)")
+            if total_bytes <= 0:
+                raise RangeError(f"range {spec!r} is outside the asset (0 bytes)")
+            start = max(0, total_bytes - suffix)
+            end = total_bytes - 1
+        else:
+            start = int(first, 10)
+            end = total_bytes - 1 if last == "" else int(last, 10)
+    except ValueError as error:
+        raise RangeError(f"invalid Range header: {range_header!r}") from error
+    if total_bytes <= 0:
+        raise RangeError(f"range {spec!r} is outside the asset (0 bytes)")
+    if start < 0 or end < start:
+        raise RangeError(f"range {spec!r} ends before it starts")
+    if start >= total_bytes:
+        raise RangeError(f"range {spec!r} is outside the asset ({total_bytes} bytes)")
+    end = min(end, total_bytes - 1)
+    return ByteRange(start=start, end=end, total=total_bytes)
+
+
+def _read_byte_range(path: Path, byte_range: ByteRange) -> bytes:
+    with Path(path).open("rb") as handle:
+        handle.seek(byte_range.start)
+        payload = handle.read(byte_range.length)
+    if len(payload) != byte_range.length:
+        raise MediaError(
+            f"PCM file is truncated: expected {byte_range.length} bytes at "
+            f"{byte_range.start}, got {len(payload)}"
+        )
+    return payload
+
+
+def read_pcm_slice(
+    path: Path,
+    *,
+    channels: int,
+    total_frames: int,
+    range_header: str | None,
+    start: int = 0,
+    end: int | None = None,
+) -> PcmSlice:
+    """Read PCM bytes for an HTTP Range header or the legacy start/end query.
+
+    Range requests must be aligned to whole f32le frames; the returned
+    ``content_range`` uses byte positions, while the frame headers describe the
+    same slice in project frames.
+    """
+    path = Path(path)
+    if channels <= 0:
+        raise MediaError("the PCM channel count must be positive")
+    if total_frames < 0:
+        raise MediaError("the PCM frame count must not be negative")
+    frame_size = channels * 4
+    expected_bytes = total_frames * frame_size
+    try:
+        actual_bytes = path.stat().st_size
+    except OSError as error:
+        raise MediaError(f"cannot read PCM file {path}: {error}") from error
+    if actual_bytes != expected_bytes:
+        raise MediaError(
+            f"PCM file size {actual_bytes} does not match {total_frames} frames "
+            f"at {channels} channels ({expected_bytes} bytes)"
+        )
+    byte_range = parse_http_range(range_header, actual_bytes)
+    if byte_range is not None:
+        if byte_range.start % frame_size or (byte_range.end + 1) % frame_size:
+            raise RangeError(f"Range {range_header!r} is not aligned to {frame_size}-byte frames")
+        start_frame = byte_range.start // frame_size
+        end_frame = (byte_range.end + 1) // frame_size
+        return PcmSlice(
+            payload=_read_byte_range(path, byte_range),
+            status_code=206,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            total_frames=total_frames,
+            content_range=byte_range.content_range,
+            byte_start=byte_range.start,
+            byte_end=byte_range.end,
+        )
+    start_frame, end_frame = validate_frame_range(start, end, total_frames)
+    return PcmSlice(
+        payload=read_pcm_range(
+            path,
+            channels=channels,
+            start=start_frame,
+            end=end_frame,
+            total_frames=total_frames,
+        ),
+        status_code=200,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        total_frames=total_frames,
+        content_range=None,
+        byte_start=start_frame * frame_size,
+        byte_end=end_frame * frame_size - 1,
+    )
+
+
+def pcm_response_headers(
+    *,
+    start_frame: int,
+    end_frame: int,
+    total_frames: int,
+    sample_rate: int,
+    channels: int,
+    content_range: str | None = None,
+    extra: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    headers = {
+        "accept-ranges": "bytes",
+        "x-frame-start": str(start_frame),
+        "x-frame-end": str(end_frame),
+        "x-frame-count": str(end_frame - start_frame),
+        "x-sample-rate": str(sample_rate),
+        "x-channels": str(channels),
+        "x-total-frames": str(total_frames),
+        "cache-control": "private, max-age=3600",
+    }
+    if content_range is not None:
+        headers["content-range"] = content_range
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def unsatisfiable_range_headers(total_bytes: int) -> dict[str, str]:
+    return {"accept-ranges": "bytes", "content-range": f"bytes */{total_bytes}"}
 
 
 @dataclass(frozen=True)
