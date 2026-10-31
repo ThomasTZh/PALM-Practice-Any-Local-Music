@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from basseparate import __version__, stems
+from basseparate import __version__, analysis_jobs, stems
 from basseparate.api import export_routes, import_routes, job_routes, project_routes
 from basseparate.api.errors import install_error_handlers
 from basseparate.api.import_routes import register_import_job
@@ -110,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # URL for the UI.
     app.include_router(export_routes.alias_router)
     stems.install(app)
+    analysis_jobs.install(app)
     mount_ui(app, settings.web_dir)
     return app
 
