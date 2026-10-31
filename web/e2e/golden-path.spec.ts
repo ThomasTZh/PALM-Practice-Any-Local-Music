@@ -65,14 +65,28 @@ async function audioCapability(page: Page): Promise<{
       };
     }
     const context = new Ctor();
-    await context.resume();
+    // A headless browser may expose a suspended AudioContext whose resume()
+    // never settles when there is no audio device. Record that instead of
+    // hanging the whole golden path; audible verification is never claimed.
+    const resumed = await Promise.race([
+      context.resume().then(() => "resumed" as const),
+      new Promise<"timeout">((resolve) => {
+        window.setTimeout(() => resolve("timeout"), 3_000);
+      }),
+    ]);
     const result = {
       secureContext: window.isSecureContext,
       audioWorklet: typeof AudioWorkletNode !== "undefined",
-      state: context.state,
+      state:
+        resumed === "timeout" ? `resume-timeout (${context.state})` : context.state,
       sampleRate: context.sampleRate,
     };
-    await context.close();
+    void Promise.race([
+      context.close(),
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 1_000);
+      }),
+    ]).catch(() => undefined);
     return result;
   });
 }
