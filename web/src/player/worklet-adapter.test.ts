@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * AudioWorklet adapter test (t2): loads `worklet-processor.js` in a
+ * AudioWorklet adapter test (t2): loads `mix-processor.js` in a
  * faked worklet scope, instantiates the real stretch WASM from the
  * processor options, and plays a seek + channel chunk end to end.
  */
@@ -50,7 +50,7 @@ describe("player worklet adapter", () => {
     const register = vi.fn();
     vi.stubGlobal("registerProcessor", register);
     vi.resetModules();
-    await import("./worklet-processor.js");
+    await import("./mix-processor.js");
     expect(register).toHaveBeenCalledTimes(1);
     const Processor = register.mock.calls[0][1] as new (options: {
       processorOptions: Record<string, unknown>;

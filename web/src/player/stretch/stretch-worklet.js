@@ -3,7 +3,7 @@
  * reworked in M2.10, spec §11/§12.3).
  *
  * No imports, no exports, on purpose: the browser loads this file into
- * the AudioWorklet by concatenation with `worklet-processor.js` into a
+ * the AudioWorklet by concatenation with `mix-processor.js` into a
  * Blob-URL module (a blob URL has no base for relative imports, so the
  * worklet cannot `import` it), and the unit tests import it for its side
  * effect. Both paths land in the same `globalThis.StretchWasm`

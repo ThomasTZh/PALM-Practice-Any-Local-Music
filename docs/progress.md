@@ -254,7 +254,7 @@ Recorded from actual runs on the committed tree, after t2's engine landed.
 ### What was ported, and what is new
 
 The legacy branch already had a working rolling-seek engine, so the core is a
-port, not a rewrite. `web/src/player/worklet-processor.js` carries the
+port, not a rewrite. `web/src/player/mix-processor.js` carries the
 `ConsumptionState` ring reader (shared SAB / transfer queue in one state
 machine), the `MixState` mixer with the Signalsmith Stretch rolling seek, the
 practice-loop stream model (pass crossings, join fades, wrap anchors) and the
@@ -275,6 +275,9 @@ New in t2:
 - Beat-list metronome inside the core: beats are project frames, mapped
   through the active loop and the current (ramped) rate, with a dedupe guard
   for the pass-boundary quantum and accented bar starts.
+- `web/src/player/time.ts`: the pure output-time -> stream-frame and
+  stream-frame -> project-frame conversions (loop wrap, paused anchors,
+  duration clamp), so the transport never mixes coordinate systems.
 - `web/src/player/transport.ts`: the seven contract states
   (`unloaded/loading/paused/playing/seeking/buffering/error`), seek
   generations, ranged prefetch through the worker (or the identical direct
@@ -337,11 +340,142 @@ it directly; no compiler or browser is involved.
 
 Recorded from actual runs on this tree.
 
-- `cd web && npx vitest run src/player`: exit 0, 5 files, 54 tests.
+- `web/node_modules/.bin/vitest run src/player` (from the repo root): exit 0,
+  6 files, 60 tests.
 - `make gate-lite`: exit 0 (ruff, format, fixtures, mypy, pytest 147 passed,
-  web tests 164 passed).
+  web tests 170 passed).
 - `make gate`: exit 0 (full suite, web typecheck, `vite build`, e2e skipped:
   no specs yet).
 - `web/node_modules/.bin/prettier --check` passes for all hand-written player
   sources; the generated `stretch/dist/*.js` are excluded from formatting so
   their BUILD.md hashes stay valid.
+
+## 2026-11-01 — Piper Vamp pipeline: chords, key, BPM and bars/beats (t5)
+
+### What changed
+
+- `src/basseparate/piper.py` is the only place that speaks Piper. It starts
+  the preserved `storage/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server`,
+  sets `LD_LIBRARY_PATH` to the AppImage `usr/lib` and `VAMP_PATH` to
+  `storage/tools/plugins`, resolves plugins by display name, feeds mono blocks
+  and returns raw features. Errors carry the child's stderr tail.
+- `src/basseparate/features.py` owns the analysis contract: decode, run the
+  three plugins, parse, derive BPM, and publish `beats.json`, `key.json`,
+  `chords.json` and `meta.json`.
+- `scripts/analysis_timing.py` measures a cold five-minute run.
+- `make analysis-check` now runs the analysis suites plus ruff/format/mypy in
+  addition to the existing offline asset check. `make analysis-timing` runs the
+  measurement.
+- Tests: `tests/unit/test_piper.py` (12), `tests/unit/test_piper_features.py`
+  (17), `tests/integration/test_analysis.py` (7).
+
+### Protocol, verified against the preserved server
+
+Start: `piper-vamp-simple-server json` with
+`LD_LIBRARY_PATH=$PWD/storage/tools/sv/squashfs-root/usr/lib` and
+`VAMP_PATH=$PWD/storage/tools/plugins`. The server lists 122 plugins. The
+message shapes that work are:
+
+```text
+{"method":"list","params":{}}
+{"method":"load","params":{"key":..., "inputSampleRate":..., "adapterFlags":["AdaptInputDomain"]}}
+{"method":"configure","params":{"handle":..., "configuration": <load defaultConfiguration>}}
+{"method":"process","params":{"handle":..., "processInput":{"inputBuffers":[<base64 float32>], "timestamp":{"s":..., "n":...}}}}
+{"method":"finish","params":{"handle":...}}
+```
+
+Three details matter:
+
+- `load` puts the framing inside `result.defaultConfiguration`; `configure`
+  returns the actual `framing` and `outputList`.
+- Without `adapterFlags:["AdaptInputDomain"]`, Chordino's time-domain blocks
+  are rejected (`expected 16386 values, obtained 16384`) and it returns no
+  features. With the adapter it returns `simplechord` regions. The adapter
+  names are case-sensitive Cap'n Proto names (`AdaptInputDomain`,
+  `AdaptBufferSize`, `AdaptChannelCount`); the lower-case spellings are
+  rejected.
+- Responses contain Latin-1 description text such as "João", so they are
+  decoded as Latin-1. Input blocks are sent as base64 float32 strings (the
+  protocol's string form): 0.38 s -> 0.13 s on the eight-second chord fixture,
+  with byte-identical output.
+
+The preferred framing is kept: at 44.1 kHz Chordino is 16384/2048, Key
+Detector 32768/32768 and Bar and Beat Tracker 1024/512; at 48 kHz the beat
+tracker scales to 1114/557.
+
+### Resolution and labels
+
+Display names are the primary lookup: `Chordino`, `Key Detector`, `Bar and
+Beat Tracker`. The current pack resolves them to
+`embed-07-8888130:chordino`, `embed-12-10378903:qm-keydetector` and
+`embed-12-10378903:qm-barbeattracker`; the recorded embed keys are used only
+as a fallback if the display name is absent. Nothing resolves by file name.
+Chord labels are copied verbatim (`C`, `Am`, `N`, and `C:maj` in the unit
+test); `chords.json` declares `labels_raw: true`, and normalisation is left to
+the UI.
+
+### Cache and cancellation
+
+The key is SHA-256 over the source bytes, the actual analysis sample rate,
+`bpb`, the lead-in and the ordered plugin display names with their parameter
+overrides. All four documents are written into a private
+`.<key>.XXXXXXXX` directory and the directory is renamed into place, so a
+reader sees all four or none. A second run reads the entry before decoding and
+before starting a server; the integration test replaces both `load_audio_mono`
+and `PiperSession` with exploding stubs to prove it. Cancellation is checked
+before every request and every block, kills the child, and leaves no cache
+directory. A corrupt or incomplete entry is a miss.
+
+### BPM and the C-Am-F-G fixture
+
+`bpm_from_beat_times` is a pure function: sorted finite beat times, positive
+intervals, median, `60 / median`, three decimals. One missed beat does not move
+it.
+
+Measured on the fixtures with the preserved pack:
+
+| Fixture | Chords (N filtered) | Key | BPM | Bars | First beat |
+| --- | --- | --- | --- | --- | --- |
+| `chords_c_am_f_g.wav` | `C, Am, F, G` | `C major` | **135.999** | 5 | 0.174 s |
+| `click_120bpm.wav` (2 s lead + 2 s tail) | `N` | `Db major` | **120.185** | 2 | 0.0 s |
+
+The chord progression and the C-major key are exact. The BPM and bar/beat
+clause is proven on the click fixture, not on the chord fixture. The reason is
+the fixture, not the feed: the chord fixture is four sustained triads with no
+beat-level onsets, and QM Bar and Beat Tracker estimates 136 BPM on it. The
+legacy native C++ host (`storage/tools/vamp-host`) produces exactly the same
+18 beats, 5 bars and 135.999 BPM from the same WAV, so this is plugin behaviour
+and not a Piper protocol mistake. A tempo-hint sweep over
+`inputtempo=110..140` with and without `constraintempo` produced no 120 BPM
+estimate. No fixture-specific correction was added: on a real five-minute mix
+the same code reports a plausible 139.745 BPM, 176 bars and 701 beats. The
+contract's BPM/bar/first-beat evidence therefore comes from the metronome
+fixture, where the tracker has an unambiguous pulse.
+
+### Timing (cold cache, 48 kHz, all three plugins)
+
+Recording: `audio2test/Carousel Theory Full Mix V1 (With Limiter).wav`,
+294.46 s. Two cold runs on this machine: **43.02 s** and **46.55 s**, both under
+the 60 s gate. The second run's output:
+
+```text
+analysis-timing: elapsed 46.55 s (limit 60.00 s) OK
+analysis-timing: bpm=139.745 key=Ab major bars=176 beats=701 chords=167
+```
+
+No native host was added: the 60 s gate passes with Piper alone. The measured
+time is also in the t5 task report.
+
+### Verification
+
+- `make analysis-check`: exit 0. Asset checks pass; ruff check and format check
+  pass; mypy reports no issues in the two modules; pytest reports 36 passed
+  (12 Piper unit, 17 feature/cache unit, 7 real-asset integration).
+- `make analysis-timing`: exit 0, 46.55 s for 294.46 s of audio.
+- The integration suite covers the exact chord order, C major, cached second
+  run with no decode and no server, cancellation with no cache entry, missing
+  `storage/tools/sv`, a missing plugin directory and a missing display name.
+- The unit suite covers display-name resolution, embed-key fallback, Latin-1
+  listing, base64 process requests, unknown parameters, timeout with stderr
+  tail, non-zero exit with stderr tail, and killing the child on cancellation.
+

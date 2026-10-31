@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { PlaybackCore } from "./worklet-processor";
+import { PlaybackCore } from "./mix-processor";
 import {
   clickOnsets,
   dominantFrequency,

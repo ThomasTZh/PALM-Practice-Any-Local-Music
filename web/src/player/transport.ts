@@ -33,7 +33,13 @@ import {
   type WorkerLike,
 } from "./fetch-source";
 import type { FetchBytes } from "./fetch-core";
-import processorSource from "./worklet-processor.js?raw";
+import {
+  clampFrame,
+  extrapolateStreamFrame,
+  framesToSeconds,
+  mapStreamToLoop,
+} from "./time";
+import processorSource from "./mix-processor.js?raw";
 import stretchWorkletSource from "./stretch/stretch-worklet.js?raw";
 
 export type TransportState =
@@ -281,16 +287,15 @@ export class PcmTransport {
       (this.stateValue === "playing" || this.stateValue === "buffering")
     ) {
       const now = this.context?.currentTime ?? anchor.time;
-      const elapsed = Math.max(0, now - anchor.time);
       return this.mapStreamToProject(
-        anchor.frame + elapsed * this.sampleRate * anchor.rate,
+        extrapolateStreamFrame(anchor, now, this.sampleRate),
       );
     }
     return this.pendingPosition;
   }
 
   get positionSeconds(): number {
-    return this.positionFrame / this.sampleRate;
+    return framesToSeconds(this.positionFrame, this.sampleRate);
   }
 
   snapshot(): TransportSnapshot {
@@ -685,24 +690,15 @@ export class PcmTransport {
   private streamPosition(): number {
     const anchor = this.anchor;
     if (!anchor) return this.fetchedStream;
-    if (anchor.paused) return anchor.frame;
     const now = this.context?.currentTime ?? anchor.time;
-    return (
-      anchor.frame +
-      Math.max(0, now - anchor.time) * this.sampleRate * anchor.rate
-    );
+    return extrapolateStreamFrame(anchor, now, this.sampleRate);
   }
 
   private mapStreamToProject(streamFrame: number): number {
-    const loop = this.loopValue;
-    const frame = loop
-      ? loop.startFrame +
-        wrapIndex(
-          streamFrame - loop.startFrame,
-          loop.endFrame - loop.startFrame,
-        )
-      : streamFrame;
-    return Math.max(0, Math.min(Math.round(frame), this.durationFrames));
+    return clampFrame(
+      mapStreamToLoop(streamFrame, this.loopValue),
+      this.durationFrames,
+    );
   }
 
   /**

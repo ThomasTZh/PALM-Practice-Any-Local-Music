@@ -2,7 +2,7 @@
  * AudioWorklet playback core for the local bass practice studio (t2).
  *
  * Ported from the proven legacy engine (`legacy:frontend/src/playback/
- * worklet-processor.js`): the `ConsumptionState` ring reader, the
+ * mix-processor.js`): the `ConsumptionState` ring reader, the
  * `MixState` multi-source mixer with the *rolling seek* Signalsmith
  * Stretch path, the practice-loop stream model, and the procedural
  * metronome clicks. The new parts are `stretch_set_transpose` support

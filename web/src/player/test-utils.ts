@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import "./stretch/stretch-worklet.js";
-import type { StretchEngineLike, PlaybackCore } from "./worklet-processor";
+import type { StretchEngineLike, PlaybackCore } from "./mix-processor";
 
 export const RATE = 48_000;
 export const QUANTUM = 128;

@@ -1,5 +1,5 @@
 /**
- * Type surface for `worklet-processor.js` (plain script, t2).
+ * Type surface for `mix-processor.js` (plain script, t2).
  *
  * The runtime file has no imports and no exports for the browser build:
  * it is concatenated with `stretch/stretch-worklet.js` into the
