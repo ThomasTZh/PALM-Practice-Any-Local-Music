@@ -23,6 +23,7 @@ half-written result.
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import math
@@ -30,6 +31,7 @@ import shutil
 import statistics
 import subprocess
 import tempfile
+import threading
 import time
 import wave
 from collections.abc import Callable, Mapping, Sequence
@@ -794,8 +796,15 @@ def _run_plugins(
     is_cancelled: CancelCheck | None,
     on_progress: ProgressReporter | None,
 ) -> tuple[list[tuple[str, LoadedPlugin, FeatureMap]], float]:
+    """Run the three plugins in parallel Piper sessions.
+
+    Each plugin has a different preferred framing and the beat tracker is the
+    slowest on a five-minute mix; separate children let the three analyses use
+    the machine's cores while keeping each session single-threaded. The raw
+    feature maps are merged in the fixed plugin order, so the result does not
+    depend on which child finishes first.
+    """
     specs = plugin_specs(bpb)
-    order = {name: index for index, (name, _) in enumerate(specs)}
     warm_up_frames = int(round(lead_in_seconds * sample_rate))
     beat_signal = signal
     if warm_up_frames > 0:
@@ -806,31 +815,55 @@ def _run_plugins(
         tail = np.zeros(int(round(TAIL_PADDING_SECONDS * sample_rate)), dtype=np.float32)
         beat_signal = np.concatenate((lead, signal, tail))
     signals = {CHORD_PLUGIN: signal, KEY_PLUGIN: signal, BEAT_PLUGIN: beat_signal}
+    fractions: dict[str, float] = {name: 0.0 for name, _ in specs}
+    progress_lock = threading.Lock()
+    internal_cancel = threading.Event()
+
+    def cancelled() -> bool:
+        if internal_cancel.is_set():
+            return True
+        return is_cancelled is not None and is_cancelled()
 
     def report(display_name: str, processed: int, total: int) -> None:
         if on_progress is None:
             return
-        index = order.get(display_name, 0)
         fraction = (processed / total) if total > 0 else 1.0
-        overall = (index + fraction) / len(specs)
+        with progress_lock:
+            fractions[display_name] = min(1.0, max(0.0, fraction))
+            overall = sum(fractions.values()) / len(specs)
         on_progress(min(1.0, max(0.0, overall)), display_name)
 
-    started = time.perf_counter()
-    runs: list[tuple[str, LoadedPlugin, FeatureMap]] = []
-    with PiperSession(
-        paths,
-        timeout_seconds=timeout_seconds,
-        is_cancelled=is_cancelled,
-        on_progress=report,
-    ) as session:
-        for display_name, parameters in specs:
+    def run_one(
+        display_name: str, parameters: Mapping[str, float]
+    ) -> tuple[str, LoadedPlugin, FeatureMap]:
+        with PiperSession(
+            paths,
+            timeout_seconds=timeout_seconds,
+            is_cancelled=cancelled,
+            on_progress=report,
+        ) as session:
             plugin, features = session.analyze(
                 display_name,
                 signals[display_name],
                 sample_rate=sample_rate,
                 parameters=parameters,
             )
-            runs.append((display_name, plugin, features))
+        return display_name, plugin, features
+
+    started = time.perf_counter()
+    runs: list[tuple[str, LoadedPlugin, FeatureMap]] = []
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=len(specs), thread_name_prefix="piper-analysis"
+    ) as pool:
+        futures = {name: pool.submit(run_one, name, parameters) for name, parameters in specs}
+        try:
+            for name, _ in specs:
+                runs.append(futures[name].result())
+        except BaseException:
+            internal_cancel.set()
+            for future in futures.values():
+                future.cancel()
+            raise
     return runs, time.perf_counter() - started
 
 

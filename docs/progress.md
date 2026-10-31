@@ -360,14 +360,14 @@ Recorded from actual runs on this tree.
   `storage/tools/plugins`, resolves plugins by display name, feeds mono blocks
   and returns raw features. Errors carry the child's stderr tail.
 - `src/basseparate/features.py` owns the analysis contract: decode, run the
-  three plugins, parse, derive BPM, and publish `beats.json`, `key.json`,
-  `chords.json` and `meta.json`.
+  three plugins in parallel Piper sessions, parse, derive BPM, and publish
+  `beats.json`, `key.json`, `chords.json` and `meta.json`.
 - `scripts/analysis_timing.py` measures a cold five-minute run.
-- `make analysis-check` now runs the analysis suites plus ruff/format/mypy in
-  addition to the existing offline asset check. `make analysis-timing` runs the
-  measurement.
-- Tests: `tests/unit/test_piper.py` (12), `tests/unit/test_piper_features.py`
-  (17), `tests/integration/test_analysis.py` (7).
+- Tests: `tests/unit/test_piper/test_protocol.py` (12),
+  `tests/unit/test_piper/test_features.py` (17),
+  `tests/integration/test_analysis/test_pipeline.py` (7). The task's verify
+  selection is `TESTS="tests/unit/test_piper tests/integration/test_analysis"`,
+  so both are directories.
 
 ### Protocol, verified against the preserved server
 
@@ -455,23 +455,31 @@ fixture, where the tracker has an unambiguous pulse.
 ### Timing (cold cache, 48 kHz, all three plugins)
 
 Recording: `audio2test/Carousel Theory Full Mix V1 (With Limiter).wav`,
-294.46 s. Two cold runs on this machine: **43.02 s** and **46.54 s**, both under
-the 60 s gate. The second run's output:
+294.46 s. The first sequential implementation measured **43.02 s** and
+**46.54 s** cold, under the gate but with little margin. Per-plugin timing
+showed Chordino at 35.4 s and the beat tracker at 32.9 s, so the three plugins
+now run in parallel Piper sessions; the final cold runs are **24.49 s** and
+**22.87 s**. The last run's output:
 
 ```text
-analysis-timing: elapsed 46.54 s (limit 60.00 s) OK
+analysis-timing: duration 294.46 s, project rate 48000 Hz, cold cache
+analysis-timing: elapsed 22.87 s (limit 60.00 s) OK
 analysis-timing: bpm=139.745 key=Ab major bars=176 beats=701 chords=167
 ```
 
-No native host was added: the 60 s gate passes with Piper alone. The measured
-time is also in the t5 task report.
+Parallelism is only across plugins: each Piper session remains single-threaded,
+uses its own preferred framing, and its features are merged in the fixed
+plugin order. No native host was added: the 60 s gate passes with Piper alone.
+The measured time is also in the t5 task report.
 
 ### Verification
 
-- `make analysis-check`: exit 0. Asset checks pass; ruff check and format check
-  pass; mypy reports no issues in the two modules; pytest reports 36 passed
-  (12 Piper unit, 17 feature/cache unit, 7 real-asset integration).
-- `make analysis-timing`: exit 0, 46.54 s for 294.46 s of audio.
+- `make test-backend TESTS="tests/unit/test_piper tests/integration/test_analysis"`:
+  exit 0. Fixtures match byte for byte and pytest reports 36 passed
+  (12 Piper unit, 17 feature/cache unit, 7 real-asset integration). ruff check,
+  ruff format check and mypy are clean on the analysis sources.
+- `.venv/bin/python scripts/analysis_timing.py`: exit 0, 22.87 s for 294.46 s
+  of audio.
 - The integration suite covers the exact chord order, C major, cached second
   run with no decode and no server, cancellation with no cache entry, missing
   `storage/tools/sv`, a missing plugin directory and a missing display name.

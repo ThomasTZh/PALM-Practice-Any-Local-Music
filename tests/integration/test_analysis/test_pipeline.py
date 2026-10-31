@@ -22,7 +22,7 @@ from basseparate.piper import (
 
 pytestmark = pytest.mark.integration
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 AUDIO = ROOT / "tests" / "fixtures" / "audio"
 CHORDS = AUDIO / "chords_c_am_f_g.wav"
 CLICK = AUDIO / "click_120bpm.wav"
