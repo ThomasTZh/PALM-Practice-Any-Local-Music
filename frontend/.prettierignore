@@ -1,8 +1,0 @@
-dist
-node_modules
-coverage
-playwright-report
-test-results
-*.tsbuildinfo
-package.json
-src/api/schema.ts
