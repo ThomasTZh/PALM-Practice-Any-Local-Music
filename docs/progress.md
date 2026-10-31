@@ -787,3 +787,65 @@ the loaded revision, debounced and paused while the transport is playing.
   default), keeping project open fast on long recordings.
 - Autosave writes when the transport is not playing; a position reached during a
   long take is saved when playback pauses or stops.
+
+## 2026-10-31 — apply completed analysis to the live transport (t18)
+
+### The gap
+
+t16 mounted the analysis panel on the already-open engine, but the engine's
+`PlaybackGrid` was fixed at construction: completing analysis changed the
+document, ribbon, readouts and section grid, yet the metronome, accents and
+count-in kept the fallback 120 BPM / 4/4 until the project was reopened.
+
+### Live grid update
+
+- `state/player.ts` adds an optional `StudioPlayer.updateGrid(grid)` seam and
+  `PlayerGrid` (bpm, bpb, beatsSeconds, offsetSeconds). Optional keeps the
+  local/fake players valid; engines that support it implement it.
+- `player/studio-player.ts` makes the engine grid mutable and adds
+  `updateGrid` to the player object and `StudioEngine`. It normalises the new
+  grid and runs the existing `applyControls()` path (`setTempo`, `setBeats`,
+  `setCountIn`, metronome volume) without touching speed, pitch, loop, position
+  or transport state. `main.tsx` needed no change because it already passes
+  `engine.player` through to the shell.
+- `App.handleAnalyzed` now feeds the job result into
+  `player.updateGrid({bpm, bpb, beatsSeconds, offsetSeconds})` before updating
+  the project state (analysis, chords, beats, bars, bpb, key, ruler grid), so
+  the chord ribbon, key/BPM readout, bar/beat overlay and section snapping use
+  the detected grid immediately. Existing sections stay on their seconds.
+- `clampLoopRangeToDuration` keeps an existing loop under a shorter duration;
+  if the range would collapse it keeps the shortest legal loop at the tail
+  instead of silently deleting it. The shell re-applies the loop (and its
+  enabled flag) only when clamping changed it, and analysis never pauses or
+  restarts playback.
+
+### Verification
+
+- `player/studio-player.test.ts` (2 new tests): replacing the grid mid-play
+  posts the detected beat frames and downbeat accents to the worklet, a later
+  Play sends `count-in` with `beatsPerBar: 3` and `beatFrames: 32000` for a
+  90 BPM/3 grid, and the engine keeps playing across `updateGrid`.
+- `state/player.test.ts` (4 new tests): loop clamping keeps fitting ranges,
+  clamps ends to a shorter duration, preserves a tail loop when the old range
+  falls past the end, and returns null only at zero duration.
+- `App.integration.test.tsx` new test with t9's real engine and no initial
+  analysis: fallback 120 BPM/4/4 count-in (24000 frames) plays; analysis while
+  playing delivers 100 BPM/3/4 beats (`0, 28800, 57600, ...`, downbeats every
+  3), keeps the same engine instance (creation count 1), keeps the transport
+  playing and the existing 0–2 s loop enabled, updates the key readout to G
+  major and ribbon to G, and the next Play sends a count-in with
+  `beatsPerBar: 3`, `beatFrames: 28800`. Adding a section afterwards snaps to
+  the detected 1.8 s bars (the fallback would have produced 2 s), while the
+  existing section stays editable.
+- `make test-web`: exit 0, 47 files / 416 tests.
+- `make build-web`: exit 0 (whole-tree `tsc --noEmit`, Vite build). No
+  dependency was added.
+
+### Limitations
+
+- The engine grid update does not change the recording duration (analysis does
+  not return a duration); loop clamping is therefore exercised by the pure
+  helper and applies whenever a shorter duration is present.
+- Chords feed the ribbon and shell state, not the audio engine (the engine only
+  needs beats/tempo); the transport uses beats plus bpb for accents, with the
+  analysed bpb matching the persisted bar boundaries.

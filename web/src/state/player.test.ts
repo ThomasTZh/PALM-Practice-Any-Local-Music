@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePlayer } from "./fakePlayer";
 import { createLocalPlayer } from "./localPlayer";
 import {
+  clampLoopRangeToDuration,
   clampPitchSemitones,
   clampSpeed,
   initialPlayerState,
@@ -38,6 +39,33 @@ describe("player state helpers", () => {
     expect(normalizeLoopRange({ startSeconds: 8, endSeconds: 20 }, 10)).toEqual(
       { startSeconds: 8, endSeconds: 10 },
     );
+  });
+});
+
+describe("clampLoopRangeToDuration", () => {
+  it("keeps a loop that still fits", () => {
+    expect(
+      clampLoopRangeToDuration({ startSeconds: 1, endSeconds: 2 }, 4),
+    ).toEqual({ startSeconds: 1, endSeconds: 2 });
+  });
+
+  it("clamps the end to a shorter duration", () => {
+    expect(
+      clampLoopRangeToDuration({ startSeconds: 1, endSeconds: 8 }, 4),
+    ).toEqual({ startSeconds: 1, endSeconds: 4 });
+  });
+
+  it("keeps the shortest legal loop at the tail instead of deleting it", () => {
+    expect(
+      clampLoopRangeToDuration({ startSeconds: 5, endSeconds: 8 }, 4),
+    ).toEqual({ startSeconds: 3.95, endSeconds: 4 });
+  });
+
+  it("returns null only when there is no time to loop", () => {
+    expect(
+      clampLoopRangeToDuration({ startSeconds: 1, endSeconds: 2 }, 0),
+    ).toBeNull();
+    expect(clampLoopRangeToDuration(null, 4)).toBeNull();
   });
 });
 

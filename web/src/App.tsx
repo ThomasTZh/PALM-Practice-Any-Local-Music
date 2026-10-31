@@ -22,7 +22,7 @@ import type { AnalysisJobClient, AnalysisSnapshot } from "./state/analysis";
 import { createAnalysisJobClient } from "./state/analysisApi";
 import { formatPosition } from "./state/format";
 import { createLocalStudioRuntime } from "./state/localStudio";
-import type { StudioPlayer } from "./state/player";
+import { clampLoopRangeToDuration, type StudioPlayer } from "./state/player";
 import {
   barTimesFromGrid,
   buildServerState,
@@ -271,32 +271,61 @@ export function App({
     [api, transport],
   );
 
-  const handleAnalyzed = useCallback((snapshot: AnalysisSnapshot) => {
-    setProject((current) => {
-      if (current === null) {
-        return current;
-      }
-      return {
-        ...current,
-        analysis: snapshot,
-        chords: snapshot.chords,
-        beats: snapshot.beats,
-        bars: snapshot.bars,
+  const handleAnalyzed = useCallback(
+    (snapshot: AnalysisSnapshot) => {
+      const player = active.player;
+      player.updateGrid?.({
+        bpm: snapshot.bpm ?? 120,
         bpb: snapshot.bpb,
-        key: snapshot.key,
-        grid: {
-          bpm: snapshot.bpm ?? current.grid?.bpm ?? 120,
-          meter: {
-            numerator: snapshot.bpb,
-            denominator: current.grid?.meter.denominator ?? 4,
+        beatsSeconds: snapshot.beats,
+        offsetSeconds: snapshot.beats[0] ?? 0,
+      });
+      // Analysis never shrinks the recording, but a shorter duration (or a
+      // future re-import) must clamp an existing loop rather than delete it.
+      const before = player.getState();
+      const clampedLoop = clampLoopRangeToDuration(
+        before.loopRange,
+        before.durationSeconds,
+      );
+      if (
+        clampedLoop !== null &&
+        (before.loopRange === null ||
+          clampedLoop.startSeconds !== before.loopRange.startSeconds ||
+          clampedLoop.endSeconds !== before.loopRange.endSeconds)
+      ) {
+        player.setLoopRange(clampedLoop);
+        player.setLoopEnabled(before.loopEnabled);
+      } else if (before.loopRange !== null && clampedLoop === null) {
+        player.setLoopRange(null);
+      }
+      setProject((current) => {
+        if (current === null) {
+          return current;
+        }
+        return {
+          ...current,
+          analysis: snapshot,
+          chords: snapshot.chords,
+          beats: snapshot.beats,
+          bars: snapshot.bars,
+          bpb: snapshot.bpb,
+          key: snapshot.key,
+          grid: {
+            bpm: snapshot.bpm ?? current.grid?.bpm ?? 120,
+            meter: {
+              numerator: snapshot.bpb,
+              denominator: current.grid?.meter.denominator ?? 4,
+            },
+            offsetSeconds:
+              snapshot.beats[0] ?? current.grid?.offsetSeconds ?? 0,
           },
-          offsetSeconds: snapshot.beats[0] ?? current.grid?.offsetSeconds ?? 0,
-        },
-      };
-    });
-    setTone("info");
-    setMessage("Analysis complete");
-  }, []);
+        };
+      });
+      setTone("info");
+      setMessage("Analysis complete");
+    },
+    [active.player],
+  );
 
   useEffect(() => {
     if (

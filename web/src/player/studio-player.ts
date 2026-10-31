@@ -132,6 +132,8 @@ export interface StudioEngine {
   readonly mixer: MixerController;
   readonly practice: PracticeController;
   readonly transport: PcmTransport;
+  /** Replace the musical grid on the running transport (no reload, no seek). */
+  updateGrid(grid: PlaybackGridInput): void;
   /** Resolves after the first load attempt (audio or mix fallback). */
   readonly ready: Promise<void>;
   getNotice(): string | null;
@@ -252,7 +254,7 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
     0,
     options.durationSeconds ?? groupFrames / sampleRate,
   );
-  const grid: PlaybackGrid = normalizeGrid(
+  let grid: PlaybackGrid = normalizeGrid(
     options.grid ?? {
       bpm: 120,
       bpb: 4,
@@ -448,6 +450,12 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
     emitPractice();
   }
 
+  function updateGridInternal(input: PlaybackGridInput): void {
+    grid = normalizeGrid(input);
+    applyControls();
+    emitPlayer();
+  }
+
   function setSpeedInternal(speed: number): void {
     practice = { ...practice, speed: clampSpeed(speed) };
     transport.setSpeed(practice.speed);
@@ -523,6 +531,7 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
     setPitchSemitones: setPitchInternal,
     setLoopEnabled: setLoopEnabledInternal,
     setLoopRange: setLoopRangeInternal,
+    updateGrid: updateGridInternal,
     setDuration(seconds) {
       if (transport.durationFrames > 0) return;
       const duration = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
@@ -684,6 +693,7 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
     mixer: mixerController,
     practice: practiceController,
     transport,
+    updateGrid: updateGridInternal,
     ready,
     getNotice: () => noticeCache,
     subscribeNotice(listener) {

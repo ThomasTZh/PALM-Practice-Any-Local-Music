@@ -140,6 +140,54 @@ async function finishSeek(node: FakeNode): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+describe("live grid replacement", () => {
+  it("updates metronome beats, accents and count-in without reloading", async () => {
+    const { engine, node } = await makeRig();
+    engine.practice.setCountInBars(1);
+    engine.player.setLoopRange({ startSeconds: 0, endSeconds: 2 });
+    engine.player.setLoopEnabled(true);
+    engine.player.play();
+    engine.player.pause();
+    node.clear();
+
+    engine.player.updateGrid?.({
+      bpm: 90,
+      bpb: 3,
+      beatsSeconds: [0, 2 / 3, 4 / 3, 2],
+      offsetSeconds: 0,
+    });
+
+    const metronome = node.messagesOf("metronome").at(-1);
+    expect(metronome?.beats).toEqual([
+      { frame: 0, strength: "downbeat" },
+      { frame: 32000, strength: "beat" },
+      { frame: 64000, strength: "beat" },
+      { frame: 96000, strength: "downbeat" },
+    ]);
+
+    engine.player.play();
+    const countIn = node.messagesOf("count-in").at(-1);
+    expect(countIn).toMatchObject({
+      bars: 1,
+      beatsPerBar: 3,
+      beatFrames: 32000,
+    });
+    engine.dispose();
+  });
+
+  it("keeps playback running across a grid replacement", async () => {
+    const { engine } = await makeRig();
+    engine.player.play();
+    expect(engine.player.getState().status).toBe("playing");
+
+    engine.updateGrid({ bpm: 100, bpb: 3, beatsSeconds: [0, 0.6, 1.2] });
+
+    expect(engine.player.getState().status).toBe("playing");
+    expect(engine.transport.state).toBe("playing");
+    engine.dispose();
+  });
+});
+
 describe("project loading and stem alignment", () => {
   it("loads the mix and four stems as one group", async () => {
     const { engine, processorOptions } = await makeRig();

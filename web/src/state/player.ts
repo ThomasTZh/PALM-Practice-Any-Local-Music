@@ -15,6 +15,14 @@ export interface LoopRange {
   endSeconds: number;
 }
 
+/** Live musical grid fed into a running transport after analysis completes. */
+export interface PlayerGrid {
+  bpm?: number | null;
+  bpb?: number | null;
+  beatsSeconds?: readonly number[] | null;
+  offsetSeconds?: number | null;
+}
+
 export interface PlayerState {
   status: PlaybackStatus;
   positionSeconds: number;
@@ -38,6 +46,8 @@ export interface StudioPlayer {
   setLoopEnabled(enabled: boolean): void;
   setLoopRange(range: LoopRange | null): void;
   setDuration(seconds: number): void;
+  /** Optional live grid update; engines that support it apply it without reloading. */
+  updateGrid?(grid: PlayerGrid): void;
   dispose(): void;
 }
 
@@ -88,6 +98,43 @@ export function normalizeLoopRange(
     return null;
   }
   return { startSeconds: start, endSeconds: end };
+}
+
+/**
+ * Clamps a loop into a (possibly shorter) track without silently discarding it:
+ * a range that collapses at the end keeps the shortest legal loop at the tail.
+ */
+export function clampLoopRangeToDuration(
+  range: LoopRange | null,
+  durationSeconds: number,
+): LoopRange | null {
+  if (range === null) {
+    return null;
+  }
+  const duration = Number.isFinite(durationSeconds)
+    ? Math.max(0, durationSeconds)
+    : 0;
+  if (!(duration > 0)) {
+    return null;
+  }
+  const start = clamp(
+    Math.min(range.startSeconds, range.endSeconds),
+    0,
+    duration,
+  );
+  const end = clamp(
+    Math.max(range.startSeconds, range.endSeconds),
+    0,
+    duration,
+  );
+  if (end - start >= MIN_LOOP_SECONDS) {
+    return { startSeconds: start, endSeconds: end };
+  }
+  const span = Math.min(MIN_LOOP_SECONDS, duration);
+  return {
+    startSeconds: Math.max(0, duration - span),
+    endSeconds: duration,
+  };
 }
 
 export function initialPlayerState(
