@@ -312,6 +312,8 @@ def decode_to_pcm(
         if cancelled() and target.exists():
             target.unlink(missing_ok=True)
 
+    if cancelled():
+        raise MediaCancelled("audio decode was cancelled")
     if returncode != 0:
         detail: list[str] = []
         if log_path.is_file():

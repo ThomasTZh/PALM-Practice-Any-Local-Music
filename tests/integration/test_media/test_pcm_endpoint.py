@@ -83,3 +83,9 @@ def test_invalid_query_types_are_validation_errors(client: TestClient) -> None:
 
 def test_unknown_project_is_404(client: TestClient) -> None:
     assert client.get("/api/projects/nope/pcm").status_code == 404
+
+
+def test_invalid_project_id_is_a_client_error_not_a_server_error(client: TestClient) -> None:
+    response = client.get("/api/projects/bad%20id")
+    assert response.status_code == 400
+    assert "invalid project id" in response.json()["detail"]

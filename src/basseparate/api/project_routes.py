@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from basseparate.projects import project_response
 router = APIRouter(tags=["projects"])
 
 BINARY_MEDIA_TYPE = "application/octet-stream"
+ASSET_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 
 def validate_bucket_size(bucket_size: int) -> int:
@@ -30,8 +32,14 @@ def validate_bucket_size(bucket_size: int) -> int:
     return bucket_size
 
 
+def validate_asset_id(asset_id: str) -> str:
+    if not ASSET_ID_PATTERN.fullmatch(asset_id):
+        raise HTTPException(status_code=404, detail=f"asset {asset_id!r} not found")
+    return asset_id
+
+
 def peaks_path(paths: DataPaths, asset_id: str, bucket_size: int) -> Path:
-    return paths.asset_dir(asset_id) / f"peaks-{bucket_size}.bin"
+    return paths.asset_dir(validate_asset_id(asset_id)) / f"peaks-{bucket_size}.bin"
 
 
 @router.get("/projects")
@@ -152,7 +160,7 @@ def asset_peaks(
 
 @router.get("/assets/{asset_id}")
 def asset_metadata(asset_id: str, paths: PathsDep) -> dict[str, Any]:
-    path = paths.asset_dir(asset_id) / "asset.json"
+    path = paths.asset_dir(validate_asset_id(asset_id)) / "asset.json"
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"asset {asset_id} not found")
     try:

@@ -233,7 +233,11 @@ class ProjectStore:
         self._locks.mkdir(exist_ok=True)
 
     def _path(self, project_id: str) -> Path:
-        return self.directory / f"{validate_project_id(project_id)}.json"
+        try:
+            identifier = validate_project_id(project_id)
+        except ValueError as error:
+            raise ProjectError(f"invalid project id {project_id!r}") from error
+        return self.directory / f"{identifier}.json"
 
     @contextlib.contextmanager
     def _lock(self, project_id: str) -> Iterator[None]:
@@ -272,7 +276,7 @@ class ProjectStore:
         for path in sorted(self.directory.glob("*.json")):
             try:
                 projects.append(self.get(path.stem))
-            except ProjectError:
+            except (ProjectError, ValueError):
                 continue
         return projects
 

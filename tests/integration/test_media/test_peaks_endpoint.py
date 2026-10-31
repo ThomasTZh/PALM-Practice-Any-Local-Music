@@ -81,3 +81,9 @@ def test_unsupported_bucket_size_is_a_clear_400(client: TestClient) -> None:
 
 def test_unknown_asset_peaks_is_404(client: TestClient) -> None:
     assert client.get("/api/assets/missing/peaks").status_code == 404
+
+
+def test_asset_ids_are_validated_before_becoming_path_components(client: TestClient) -> None:
+    response = client.get("/api/assets/bad%20id/peaks")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
