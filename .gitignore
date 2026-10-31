@@ -5,23 +5,23 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-# M2.9: the pinned WASM artifacts ARE committed (no compiler at launch).
-!frontend/src/playback/stretch/dist/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
 .coverage
 coverage/
+htmlcov/
 
-# Node / frontend
+# Node / web
 node_modules/
+web/node_modules/
+web/dist/
+web/coverage/
 /.pnpm-store/
-frontend/dist/
-frontend/coverage/
 playwright-report/
 test-results/
 
-# Local runtime storage (all app-owned categories when --storage-root is used)
+# Local runtime storage (app-owned data when a storage root is used)
 /storage/
 *.db
 *.db-wal
@@ -43,14 +43,18 @@ test-results/
 logs/
 docs/evidence/
 
-# Third-party build toolchains (pinned, installed locally; never tracked).
-# M2.9: emsdk (Emscripten) + signalsmith-stretch source. Built WASM
-# artifacts are committed under frontend/src/playback/stretch/dist/.
+# Third-party build toolchains (downloaded once, pinned, never tracked)
 third_party/
 
 # User-supplied recordings and local analysis tools (preserved, never tracked)
 audio2test/
 /chords auto/
+
+# Local git worktree used to exercise the legacy branch
+/.legacy-worktree/
+
+# Agent-team runtime state
+.agent-teams/
 
 # OS / editor noise
 .DS_Store
@@ -59,5 +63,5 @@ audio2test/
 # Playwright MCP scratch
 .playwright-mcp/
 
-# M2.21 app-level acceptance rig (scripts, reports, run artifacts)
+# App-level acceptance rig artifacts
 .m2.21-acceptance/

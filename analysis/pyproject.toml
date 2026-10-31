@@ -15,9 +15,11 @@ dependencies = [
     # torch resolves to the +cu128 wheel from the pytorch-cu128 index below,
     # which is the first official line covering both SM89 (RTX 4080) and
     # SM120 (RTX 5060 Ti, Blackwell).
+    # Kept at the versions already installed in analysis/.venv; the environment
+    # is preserved and offline. torch reports 2.9.1+cu128 for the pinned wheel.
     "demucs==4.1.0",
     "torch==2.9.1",
-    "soundfile>=0.12,<1.0",
+    "soundfile==0.14.0",
 ]
 
 # No build-system: this is a virtual environment project, not a package.

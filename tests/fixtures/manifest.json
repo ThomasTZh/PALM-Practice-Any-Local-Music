@@ -1,0 +1,71 @@
+{
+  "description": "Deterministic audio fixtures synthesised by scripts/studio.py fixtures.",
+  "fixtures": [
+    {
+      "accent_beats": [
+        1,
+        5
+      ],
+      "bars": 2,
+      "beats": 8,
+      "bpm": 120.0,
+      "channels": 1,
+      "file": "audio/click_120bpm.wav",
+      "frames": 176400,
+      "kind": "click",
+      "meter": "4/4",
+      "name": "click_120bpm.wav",
+      "sample_rate": 44100,
+      "seconds": 4.0
+    },
+    {
+      "bpm": 120.0,
+      "channels": 1,
+      "chord_seconds": 2.0,
+      "chords": [
+        "C:maj",
+        "A:min",
+        "F:maj",
+        "G:maj"
+      ],
+      "file": "audio/chords_c_am_f_g.wav",
+      "frames": 352800,
+      "key": "C major",
+      "kind": "chords",
+      "meter": "4/4",
+      "name": "chords_c_am_f_g.wav",
+      "sample_rate": 44100,
+      "seconds": 8.0
+    },
+    {
+      "channels": 1,
+      "file": "audio/tone_440hz.wav",
+      "frames": 88200,
+      "frequency_hz": 440.0,
+      "kind": "tone",
+      "name": "tone_440hz.wav",
+      "sample_rate": 44100,
+      "seconds": 2.0
+    },
+    {
+      "channels": 1,
+      "file": "audio/silence.wav",
+      "frames": 44100,
+      "kind": "silence",
+      "name": "silence.wav",
+      "sample_rate": 44100,
+      "seconds": 1.0
+    },
+    {
+      "channels": 2,
+      "file": "audio/tone_48k_stereo.wav",
+      "frames": 48000,
+      "frequency_hz": 440.0,
+      "kind": "tone",
+      "name": "tone_48k_stereo.wav",
+      "sample_rate": 48000,
+      "seconds": 1.0
+    }
+  ],
+  "version": 1
+}
