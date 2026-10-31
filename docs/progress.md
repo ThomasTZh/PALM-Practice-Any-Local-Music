@@ -487,3 +487,84 @@ The measured time is also in the t5 task report.
   listing, base64 process requests, unknown parameters, timeout with stderr
   tail, non-zero exit with stderr tail, and killing the child on cancellation.
 
+
+## 2026-10-31 — client-side spectrogram with a worker STFT (t6)
+
+### Contract with the ranged PCM endpoint
+
+The server exposes `GET /api/projects/{id}/pcm?start=&end=` with **frame**
+indices, interleaved little-endian float32, and the format in headers
+(`x-sample-rate`, `x-channels`, `x-frame-start`, `x-frame-end`, `x-frame-count`,
+`x-total-frames`). `spectrogram/pcm-loader.ts` validates the headers and the
+byte length, downmixes channels to mono and returns the requested frame range.
+A malformed response is a `PcmLoadError`, not a short buffer.
+
+The pane asks for one extra FFT window on each side of the visible range and
+transfers that mono buffer to the worker. The worker replies with the RGBA image
+and transfers the pixel buffer back; the UI thread never runs an FFT.
+
+### Pure modules
+
+- `fft.ts`: hand-written iterative radix-2 complex FFT with a precomputed plan
+  (bit reversal and per-stage twiddles), plus a real-input transform that packs
+  even/odd samples into one half-length complex transform and untangles it. The
+  tests compare every bin against a naive reference DFT for n = 2..32 and check
+  the real transform up to Nyquist.
+- `window.ts`: periodic Hann window (sum = N/2) with shape and symmetry tests.
+- `magnitude.ts`: amplitude to dB, clamp and normalization; silence is
+  `-Infinity` and clamps to the floor instead of becoming NaN.
+- `axis.ts`: log-frequency mapping (row 0 = Nyquist, last row = minHz),
+  canonical labels (`50 Hz`, `1 kHz`, `10 kHz`) positioned from the top.
+- `palette.ts`: dark-to-warm 256-entry RGBA palette with a monotonic luminance
+  test.
+- `stft.ts`: 2048-sample Hann windows, one FFT per output column, magnitudes
+  interpolated onto the log axis, then the dB palette. Windowing is packed
+  straight into the FFT scratch, and only the bins the axis touches are
+  measured (about a third of the spectrum).
+- `cache.ts`: `(start, width, FFT)` cache of in-flight and finished images with
+  a 12-entry LRU bound so a long practice session cannot accumulate images.
+  Failed entries evict themselves.
+- `worker-client.ts` / `spectrogram.worker.ts`: request ids, transferable PCM
+  and pixel buffers, error propagation, dispose that rejects pending work.
+
+### Pane and shell hand-off
+
+`panels/spectrogram/SpectrogramPane.tsx` takes the same `viewport`, `widthPx`
+and `positionSeconds` as the ruler and waveform pane, so time axis, zoom and
+playhead line up. It renders the frequency labels over the canvas, a dB colour
+scale in the header, and a collapse toggle that hides only the body. The section
+width is pinned to `widthPx`, so collapsing cannot move the timeline.
+
+The pane exports `SpectrogramPaneProps` and takes `loadPcm`, an optional
+`engine` (tests inject one) and layout options. `createRangedPcmLoader({ projectId })`
+wires the server. `main.tsx`/`App.tsx` are owned by t16, so this task only notes
+the mounting point: one `SpectrogramPane` below the waveform lanes inside the
+same timeline container (see `panels/spectrogram/README.md`).
+
+### Performance
+
+`src/spectrogram/performance.test.ts` computes five consecutive 1280 × 256 views
+of a five-minute 44.1 kHz project and records wall and CPU time for each. On a
+shared host it asserts the best wall time and the best CPU cost are both under
+100 ms and records the medians. Standalone: best wall 53.0 ms, best CPU 52.7 ms.
+With the other spectrogram suites in parallel: best wall 50.2 ms, best CPU
+50.2 ms. Details and caveats are in `web/src/spectrogram/PERFORMANCE.md`. A
+repeated view is a cache hit and runs no FFT.
+
+### Verification
+
+- `web/node_modules/.bin/vitest run src/spectrogram`: exit 0, 10 files,
+  61 tests. It includes the reference-DFT comparisons, Hann/magnitude/palette/
+  axis/stft/cache/PCM/worker-client suites and the recorded performance test.
+- `web/node_modules/.bin/vitest run src/panels/spectrogram`: exit 0, 8 tests:
+  ranged-PCM request, canvas from the worker image, frequency labels and dB
+  scale, playhead at the shared pixel, collapse leaving the ruler width
+  unchanged and reusing the cache, per-view caching, lazy compute while
+  collapsed, and both failure paths.
+- `make build-web`: exit 0 (typecheck, Vite build). A temporary library build of
+  `SpectrogramPane.tsx` emitted `spectrogram.worker-*.js` (6.36 kB) and the pane
+  bundle (9.86 kB), proving the worker is a real production chunk; the temporary
+  config and output were removed afterwards.
+- `web/node_modules/.bin/vitest run` (whole web suite): exit 0, 237 tests.
+- No dependency was added: `package.json`, the root manifest and the workspace
+  file are unchanged.
