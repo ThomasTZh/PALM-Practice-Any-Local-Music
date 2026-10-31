@@ -25,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import wave
 from array import array
@@ -358,12 +359,12 @@ TOOL_VERSION_ARGS: dict[str, tuple[str, ...]] = {
 }
 
 
-def tool_check(name: str) -> Check:
+def tool_check(name: str, cwd: Path = ROOT) -> Check:
     path = shutil.which(name)
     if path is None:
         return Check(name, False, "not on PATH", required=True)
     version_args = TOOL_VERSION_ARGS.get(name, ("--version",))
-    result = run([path, *version_args], timeout=20)
+    result = run([path, *version_args], cwd=cwd, timeout=20)
     if result.returncode != 0:
         return Check(name, False, f"{path} (version probe failed)", required=True)
     first = (result.stdout or result.stderr).strip().splitlines()
@@ -385,8 +386,11 @@ def doctor() -> int:
     report = DoctorReport()
     for name in ("make", "git", "ffmpeg", "ffprobe", "node"):
         report.add("Toolchain", tool_check(name))
-    report.add("Toolchain", tool_check("pnpm"))
     report.add("Toolchain", tool_check("uv"))
+    # pnpm 12 rewrites a lockfile for the `packageManager` pin on any
+    # invocation, so probe it outside the repository to keep doctor read-only.
+    with tempfile.TemporaryDirectory(prefix="basseparate-doctor-") as scratch:
+        report.add("Toolchain", tool_check("pnpm", Path(scratch)))
 
     if PY.exists():
         probe = run([PY, "-c", f"import {APP_IMPORTS}; print('python deps ok')"], timeout=60)
