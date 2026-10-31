@@ -12,7 +12,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+  type TestInfo,
+} from "@playwright/test";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = resolve(HERE, "../../tests/fixtures/audio/progression_120.wav");
@@ -52,6 +58,62 @@ async function waitForAdvance(
  * status, click Play only when the transport is not loading and not playing,
  * and only give up after the deadline.
  */
+/**
+ * Wait until the server's saved practice state contains the created section.
+ *
+ * The save-status label can already read "saved" from an earlier autosave when
+ * the test pauses, so it is not evidence that the new section was persisted.
+ * Poll the saved document instead and fail with the exact save path when it
+ * never appears; a real persistence bug must not be retried away as a flake.
+ */
+async function waitForSavedSection(
+  request: APIRequestContext,
+  projectId: string,
+  name: string,
+  timeoutMs = 20_000,
+): Promise<Array<Record<string, unknown>>> {
+  const url = `/api/projects/${projectId}/state`;
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus: number | null = null;
+  let lastSections: unknown = null;
+  let lastError: string | null = null;
+  while (Date.now() < deadline) {
+    try {
+      const response = await request.get(url);
+      lastStatus = response.status();
+      if (response.ok()) {
+        const payload = (await response.json()) as {
+          state?: { sections?: unknown };
+        };
+        const sections = payload.state?.sections;
+        lastSections = sections;
+        if (
+          Array.isArray(sections) &&
+          sections.some(
+            (entry) =>
+              typeof entry === "object" &&
+              entry !== null &&
+              (entry as { name?: unknown }).name === name,
+          )
+        ) {
+          return sections as Array<Record<string, unknown>>;
+        }
+      } else {
+        lastError = (await response.text()).slice(0, 200);
+      }
+    } catch (error) {
+      lastError = String(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(
+    `section ${JSON.stringify(name)} never appeared in the saved project state at ` +
+      `GET ${url} (autosave path); last status=${lastStatus ?? "none"}, ` +
+      `last sections=${JSON.stringify(lastSections)}, ` +
+      `last error=${lastError ?? "none"}`,
+  );
+}
+
 async function ensurePlaying(page: Page, timeoutMs = 30_000): Promise<void> {
   const status = page.getByTestId("transport-status");
   const deadline = Date.now() + timeoutMs;
@@ -365,8 +427,18 @@ test("golden path: import, analyze, reopen, practise and export", async ({
     await page.getByTestId("transport-toggle").click();
   }
   await expect(page.getByTestId("transport-status")).toHaveText("Paused");
-  await expect(page.getByTestId("save-status")).toHaveText("saved", {
-    timeout: 20_000,
+  // The save-status label is not persistence evidence (it can be stale from an
+  // earlier autosave). Wait for the created section to appear in the server's
+  // saved state, then reopen.
+  const savedSections = await waitForSavedSection(
+    request,
+    projectId,
+    "Section 1",
+    20_000,
+  );
+  testInfo.annotations.push({
+    type: "saved-sections",
+    description: JSON.stringify(savedSections),
   });
   await page.reload();
   await page.getByRole("button", { name: `Open ${title}` }).click();
