@@ -1114,3 +1114,51 @@ now has a regression test:
   failed.
 - Local UI sections are authoritative during a refresh; the server document is
   only read for the revision, so unsaved section edits are not overwritten.
+
+## 2026-10-31 — create and resize sections by dragging (t23)
+
+### Interaction
+
+The section lane timeline now uses pointer events:
+
+- Pressing on empty lane space and dragging shows a dashed `section-draft`
+  overlay for the snapped range. On release the range is passed through the
+  existing `addSection` helper, so Bar (default), Beat and Free behave like the
+  Add button. A small drag below a 4 px threshold is treated as a click and
+  only seeks.
+- Each section block has left/right edge handles. Dragging an edge previews the
+  snapped range with the same draft overlay and commits on release. The right
+  edge cannot come closer than one snap unit (one bar in Bar mode, one beat in
+  Beat mode, 100 ms in Free) to the start, and the left edge cannot come closer
+  than one unit to the end; `maximumStart`/`minimumEnd` derive the unit from the
+  detected grid.
+- Escape and pointer-cancel clear the interaction and discard the draft.
+- Plain clicks on empty lane space seek to the clicked time; clicks on a section
+  block still seek to its start. Add section, Split, rename, numeric start/end
+  editing, Delete and Loop are unchanged; the Loop button and editor controls
+  stop propagation so they do not start a create drag.
+- Handles and the draft are styled in `styles.css`; the timeline disables text
+  selection and touch panning while dragging.
+
+### Verification
+
+- Seven new SectionLane pointer tests (MouseEvent dispatched as pointer events
+  because jsdom has no PointerEvent): bar-snapped create with visible draft
+  (left/width 200/200 px) followed by onChange only on release; beat and free
+  create; empty-lane click seeks without any onChange; Escape and pointercancel
+  discard; right-edge resize snaps to 2–4 s and clamps a too-short drag to the
+  one-bar minimum; left-edge resize to 4–6 s; edge click without movement does
+  nothing. Existing Add/Split/rename/delete/Loop/click-seek tests still pass.
+- Real Firefox smoke test at 1280 px against a mocked API: drag created a draft
+  and a bar-snapped section (10–16 s), dragging its right handle resized it to
+  10–16 s with bars, a plain lane click made no section, Escape during a drag
+  discarded it, and there were no page errors.
+- `make test-web`: exit 0, 49 files / 449 tests.
+- `make build-web`: exit 0. No dependency added.
+
+### Limitations
+
+- Only the left/right edges resize a section; dragging its body is reserved for
+  the existing click-to-seek behaviour.
+- In Free mode the minimum section length is 100 ms because there is no musical
+  snap unit.

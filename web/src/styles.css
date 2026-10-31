@@ -1002,3 +1002,62 @@ button[aria-pressed="true"] {
   grid-column: 2;
   align-self: center;
 }
+
+/* Pointer editing on the section lane: drag empty space to create, edges to
+   resize. A dashed draft shows the snapped range until pointer-up. */
+
+.section-timeline {
+  touch-action: none;
+  user-select: none;
+}
+
+.section-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 2;
+  cursor: ew-resize;
+  background: rgba(111, 211, 182, 0.55);
+  opacity: 0.35;
+}
+
+.section-resize-handle:hover {
+  opacity: 0.9;
+}
+
+.section-resize-start {
+  left: 0;
+  border-radius: 3px 0 0 3px;
+}
+
+.section-resize-end {
+  right: 0;
+  border-radius: 0 3px 3px 0;
+}
+
+.section-block-name {
+  pointer-events: none;
+}
+
+.section-draft {
+  position: absolute;
+  top: 26px;
+  height: 24px;
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  padding: 0 0.35rem;
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+  background: rgba(111, 211, 182, 0.18);
+  color: var(--text);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.section-draft-resize {
+  background: rgba(111, 211, 182, 0.1);
+}

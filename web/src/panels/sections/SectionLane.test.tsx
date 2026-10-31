@@ -21,6 +21,18 @@ const VERSE: Section = {
   endSeconds: 8,
 };
 
+function pointer(element: Element, type: string, clientX: number): void {
+  fireEvent(
+    element,
+    new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      button: 0,
+    }),
+  );
+}
+
 function setup(overrides: Partial<Parameters<typeof SectionLane>[0]> = {}) {
   const onChange = vi.fn();
   const onLoop = vi.fn();
@@ -119,6 +131,170 @@ describe("SectionLane", () => {
 
     expect(onSeek).toHaveBeenCalledWith(0);
     expect(player.calls).toEqual([]);
+  });
+
+  it("creates a bar-snapped section by dragging empty lane space", () => {
+    const { onChange } = setup();
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+
+    pointer(timeline, "pointerdown", 150);
+    pointer(timeline, "pointermove", 350);
+
+    const draft = screen.getByTestId("section-draft");
+    expect(draft).toHaveTextContent("New section");
+    expect(draft).toHaveStyle({ left: "200px", width: "200px" });
+    expect(onChange).not.toHaveBeenCalled();
+
+    pointer(timeline, "pointerup", 350);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
+      name: "Section 1",
+      startSeconds: 2,
+      endSeconds: 4,
+    });
+    expect(screen.queryByTestId("section-draft")).not.toBeInTheDocument();
+  });
+
+  it("respects beat and free snapping while dragging", () => {
+    const { onChange } = setup();
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+
+    fireEvent.change(screen.getByLabelText("Snap"), {
+      target: { value: "beat" },
+    });
+    pointer(timeline, "pointerdown", 160);
+    pointer(timeline, "pointermove", 390);
+    pointer(timeline, "pointerup", 390);
+    expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
+      startSeconds: 1.5,
+      endSeconds: 4,
+    });
+
+    onChange.mockClear();
+    fireEvent.change(screen.getByLabelText("Snap"), {
+      target: { value: "free" },
+    });
+    pointer(timeline, "pointerdown", 150);
+    pointer(timeline, "pointermove", 350);
+    pointer(timeline, "pointerup", 350);
+    expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
+      startSeconds: 1.5,
+      endSeconds: 3.5,
+    });
+  });
+
+  it("seeks on a plain click in empty lane space without creating a section", () => {
+    const onSeek = vi.fn();
+    const { onChange } = setup({ onSeek });
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+
+    pointer(timeline, "pointerdown", 250);
+    pointer(timeline, "pointerup", 250);
+
+    expect(onSeek).toHaveBeenCalledWith(2.5);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("section-draft")).not.toBeInTheDocument();
+  });
+
+  it("abandons a create drag on Escape or pointer cancel", () => {
+    const { onChange } = setup();
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+
+    pointer(timeline, "pointerdown", 150);
+    pointer(timeline, "pointermove", 350);
+    expect(screen.getByTestId("section-draft")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("section-draft")).not.toBeInTheDocument();
+    pointer(timeline, "pointerup", 350);
+    expect(onChange).not.toHaveBeenCalled();
+
+    pointer(timeline, "pointerdown", 150);
+    pointer(timeline, "pointermove", 350);
+    fireEvent.pointerCancel(timeline);
+    expect(screen.queryByTestId("section-draft")).not.toBeInTheDocument();
+    pointer(timeline, "pointerup", 350);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("resizes the right edge with bar snapping and a one-bar minimum", () => {
+    const section: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 2,
+      endSeconds: 6,
+    };
+    const { onChange } = setup({ sections: [section] });
+    const handle = screen.getByTestId("section-resize-s1-end");
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+
+    pointer(handle, "pointerdown", 600);
+    pointer(timeline, "pointermove", 400);
+    expect(screen.getByTestId("section-draft")).toHaveTextContent("Resize");
+    pointer(timeline, "pointerup", 400);
+
+    expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
+      startSeconds: 2,
+      endSeconds: 4,
+    });
+
+    onChange.mockClear();
+    pointer(handle, "pointerdown", 600);
+    pointer(timeline, "pointermove", 250);
+    pointer(timeline, "pointerup", 250);
+    expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
+      startSeconds: 2,
+      endSeconds: 4,
+    });
+  });
+
+  it("resizes the left edge with bar snapping", () => {
+    const section: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 2,
+      endSeconds: 6,
+    };
+    const { onChange } = setup({ sections: [section] });
+    const handle = screen.getByTestId("section-resize-s1-start");
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+
+    pointer(handle, "pointerdown", 200);
+    pointer(timeline, "pointermove", 500);
+    pointer(timeline, "pointerup", 500);
+
+    expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
+      startSeconds: 4,
+      endSeconds: 6,
+    });
+  });
+
+  it("does not resize on an edge click without dragging", () => {
+    const section: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 2,
+      endSeconds: 6,
+    };
+    const { onChange } = setup({ sections: [section] });
+    const handle = screen.getByTestId("section-resize-s1-end");
+
+    pointer(handle, "pointerdown", 600);
+    pointer(handle, "pointerup", 600);
+
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("disables split outside every section", () => {

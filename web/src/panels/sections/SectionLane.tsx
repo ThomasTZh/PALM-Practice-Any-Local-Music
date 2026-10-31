@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   addSection,
   deleteSection,
   draftSectionRange,
+  nextBoundary,
   renameSection,
   resizeSection,
   sectionAt,
   sectionBlocks,
   sectionLoopRange,
+  snapRange,
+  snapTime,
   splitSection,
   type BeatGrid,
   type Section,
@@ -37,14 +40,109 @@ export interface SectionLaneProps {
   player?: Pick<StudioPlayer, "setLoopRange" | "setLoopEnabled">;
 }
 
+type Interaction =
+  | {
+      kind: "create";
+      startX: number;
+      startSeconds: number;
+      currentSeconds: number;
+      moved: boolean;
+    }
+  | {
+      kind: "resize";
+      sectionId: string;
+      edge: "start" | "end";
+      startX: number;
+      startSeconds: number;
+      currentSeconds: number;
+      moved: boolean;
+    };
+
+const DRAG_THRESHOLD_PX = 4;
+const FREE_MIN_SECONDS = 0.1;
+
 function edgeValue(seconds: number): number {
   return Number(seconds.toFixed(2));
 }
 
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function barBoundaryTimes(grid: BeatGrid): number[] {
+  const boundaries: number[] = [];
+  for (let index = 0; index < grid.beats.length; index += grid.bpb) {
+    boundaries.push(grid.beats[index]);
+  }
+  if (grid.beats.length >= 2 && grid.beats.length % grid.bpb === 0) {
+    const beatSeconds =
+      (grid.beats[grid.beats.length - 1] - grid.beats[0]) /
+      (grid.beats.length - 1);
+    if (beatSeconds > 0) {
+      boundaries.push(grid.beats[grid.beats.length - 1] + beatSeconds);
+    }
+  }
+  return boundaries;
+}
+
+function beatSpan(grid: BeatGrid): number {
+  return grid.beats.length >= 2
+    ? Math.max(0.01, grid.beats[1] - grid.beats[0])
+    : 1;
+}
+
+function unitSpan(mode: SnapMode, grid: BeatGrid): number {
+  return mode === "bar" ? beatSpan(grid) * grid.bpb : beatSpan(grid);
+}
+
+/** Largest snapped start that still leaves at least one snap unit. */
+function maximumStart(
+  endSeconds: number,
+  mode: SnapMode,
+  grid: BeatGrid | null,
+): number {
+  if (grid === null || mode === "free") {
+    return Math.max(0, endSeconds - FREE_MIN_SECONDS);
+  }
+  const candidates =
+    mode === "bar" ? barBoundaryTimes(grid) : grid.beats.slice();
+  const limit = endSeconds - unitSpan(mode, grid);
+  let best = 0;
+  for (const candidate of candidates) {
+    if (candidate <= limit + 1e-9) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/** One snap unit after the section start; free time falls back to 100 ms. */
+function minimumEnd(
+  startSeconds: number,
+  mode: SnapMode,
+  grid: BeatGrid | null,
+  durationSeconds: number,
+): number {
+  if (grid === null || mode === "free") {
+    return Math.min(durationSeconds, startSeconds + FREE_MIN_SECONDS);
+  }
+  const anchor = snapTime(startSeconds, mode, grid);
+  const next = nextBoundary(anchor, mode, grid);
+  return Math.min(
+    durationSeconds,
+    next ??
+      anchor +
+        (grid.beats.length >= 2
+          ? Math.max(0.01, grid.beats[1] - grid.beats[0])
+          : 1),
+  );
+}
+
 /**
  * Manual section lane. Add and split snap to the nearest bar by default and
- * follow the bar/beat/free selector; looping a section never removes or locks
- * it, so the name and boundaries stay editable.
+ * follow the bar/beat/free selector; dragging empty space creates a section,
+ * dragging an edge resizes it, and a plain click seeks. Looping a section never
+ * removes or locks it, so the name and boundaries stay editable.
  */
 export function SectionLane({
   sections,
@@ -62,9 +160,34 @@ export function SectionLane({
   player,
 }: SectionLaneProps) {
   const [innerSnap, setInnerSnap] = useState<SnapMode>("bar");
+  const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapMode = controlledSnap ?? innerSnap;
   const current = sectionAt(sections, positionSeconds);
   const blocks = sectionBlocks(sections, viewport, widthPx);
+  const sectionById = new Map(sections.map((section) => [section.id, section]));
+
+  function timeAt(clientX: number): number {
+    const rect = timelineRef.current?.getBoundingClientRect();
+    const left = rect?.left ?? 0;
+    return clamp(
+      viewport.startSeconds + (clientX - left) * viewport.secondsPerPixel,
+      0,
+      durationSeconds,
+    );
+  }
+
+  function capturePointer(
+    target: HTMLElement,
+    pointerId: number | undefined,
+  ): void {
+    if (pointerId === undefined) {
+      return;
+    }
+    if (typeof target.setPointerCapture === "function") {
+      target.setPointerCapture(pointerId);
+    }
+  }
 
   function changeSnap(mode: SnapMode): void {
     setInnerSnap(mode);
@@ -102,6 +225,179 @@ export function SectionLane({
     );
   }
 
+  function createDraftRange(draft: Interaction): TimeRange | null {
+    if (draft.kind !== "create") {
+      return null;
+    }
+    return snapRange(
+      {
+        startSeconds: Math.min(draft.startSeconds, draft.currentSeconds),
+        endSeconds: Math.max(draft.startSeconds, draft.currentSeconds),
+      },
+      snapMode,
+      grid,
+      durationSeconds,
+    );
+  }
+
+  function resizeDraftRange(draft: Interaction): TimeRange | null {
+    if (draft.kind !== "resize") {
+      return null;
+    }
+    const section = sectionById.get(draft.sectionId);
+    if (section === undefined) {
+      return null;
+    }
+    if (draft.edge === "end") {
+      const minimum = minimumEnd(
+        section.startSeconds,
+        snapMode,
+        grid,
+        durationSeconds,
+      );
+      const snapped = snapTime(draft.currentSeconds, snapMode, grid);
+      return {
+        startSeconds: section.startSeconds,
+        endSeconds: clamp(
+          Math.max(snapped, minimum),
+          section.startSeconds + 0.001,
+          durationSeconds,
+        ),
+      };
+    }
+    const maximum = maximumStart(section.endSeconds, snapMode, grid);
+    const snapped = snapTime(draft.currentSeconds, snapMode, grid);
+    return {
+      startSeconds: clamp(
+        Math.min(snapped, maximum),
+        0,
+        section.endSeconds - 0.001,
+      ),
+      endSeconds: section.endSeconds,
+    };
+  }
+
+  const draftRange =
+    interaction !== null && interaction.moved
+      ? interaction.kind === "create"
+        ? createDraftRange(interaction)
+        : resizeDraftRange(interaction)
+      : null;
+
+  useEffect(() => {
+    if (interaction === null) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setInteraction(null);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [interaction]);
+
+  function beginCreate(event: React.PointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    if ((event.target as HTMLElement).closest(".section-block") !== null) {
+      return;
+    }
+    const seconds = timeAt(event.clientX);
+    setInteraction({
+      kind: "create",
+      startX: event.clientX,
+      startSeconds: seconds,
+      currentSeconds: seconds,
+      moved: false,
+    });
+    capturePointer(event.currentTarget, event.pointerId);
+  }
+
+  function beginResize(
+    event: React.PointerEvent<HTMLDivElement>,
+    section: Section,
+    edge: "start" | "end",
+  ): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const seconds =
+      edge === "start" ? section.startSeconds : section.endSeconds;
+    setInteraction({
+      kind: "resize",
+      sectionId: section.id,
+      edge,
+      startX: event.clientX,
+      startSeconds: seconds,
+      currentSeconds: seconds,
+      moved: false,
+    });
+    capturePointer(event.currentTarget, event.pointerId);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>): void {
+    setInteraction((draft) => {
+      if (draft === null) {
+        return null;
+      }
+      return {
+        ...draft,
+        currentSeconds: timeAt(event.clientX),
+        moved:
+          draft.moved ||
+          Math.abs(event.clientX - draft.startX) >= DRAG_THRESHOLD_PX,
+      };
+    });
+  }
+
+  function handlePointerUp(event: React.PointerEvent<HTMLDivElement>): void {
+    if (interaction === null) {
+      return;
+    }
+    if (interaction.moved) {
+      if (interaction.kind === "create") {
+        const range = createDraftRange(interaction);
+        if (range !== null) {
+          onChange(
+            addSection(sections, range, snapMode, grid, { durationSeconds }),
+          );
+        }
+      } else {
+        const range = resizeDraftRange(interaction);
+        if (range !== null) {
+          onChange(
+            sections.map((section) =>
+              section.id === interaction.sectionId
+                ? {
+                    ...section,
+                    startSeconds: range.startSeconds,
+                    endSeconds: range.endSeconds,
+                  }
+                : section,
+            ),
+          );
+        }
+      }
+    } else if (interaction.kind === "create") {
+      onSeek?.(timeAt(event.clientX));
+    }
+    setInteraction(null);
+  }
+
+  function handlePointerCancel(): void {
+    setInteraction(null);
+  }
+
+  function draftStyle(range: TimeRange): { left: number; width: number } {
+    return {
+      left:
+        (range.startSeconds - viewport.startSeconds) / viewport.secondsPerPixel,
+      width: (range.endSeconds - range.startSeconds) / viewport.secondsPerPixel,
+    };
+  }
+
   return (
     <section
       className="section-lane"
@@ -135,7 +431,15 @@ export function SectionLane({
         </button>
       </header>
 
-      <div className="section-timeline" style={{ width: widthPx }}>
+      <div
+        ref={timelineRef}
+        className="section-timeline"
+        style={{ width: widthPx }}
+        onPointerDown={beginCreate}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+      >
         <BarBeatOverlay
           beats={grid?.beats ?? []}
           bpb={grid?.bpb ?? 4}
@@ -156,6 +460,16 @@ export function SectionLane({
               style={{ left: block.leftPx, width: block.widthPx }}
               onClick={() => onSeek?.(block.section.startSeconds)}
             >
+              <div
+                className="section-resize-handle section-resize-start"
+                data-testid={`section-resize-${block.section.id}-start`}
+                role="separator"
+                aria-label={`Resize ${block.section.name} start`}
+                onPointerDown={(event) =>
+                  beginResize(event, block.section, "start")
+                }
+                onClick={(event) => event.stopPropagation()}
+              />
               <span className="section-block-name">{block.section.name}</span>
               <button
                 type="button"
@@ -167,8 +481,29 @@ export function SectionLane({
               >
                 Loop
               </button>
+              <div
+                className="section-resize-handle section-resize-end"
+                data-testid={`section-resize-${block.section.id}-end`}
+                role="separator"
+                aria-label={`Resize ${block.section.name} end`}
+                onPointerDown={(event) =>
+                  beginResize(event, block.section, "end")
+                }
+                onClick={(event) => event.stopPropagation()}
+              />
             </div>
           ))
+        )}
+        {draftRange !== null && interaction !== null && (
+          <div
+            className={`section-draft${
+              interaction.kind === "resize" ? " section-draft-resize" : ""
+            }`}
+            data-testid="section-draft"
+            style={draftStyle(draftRange)}
+          >
+            {interaction.kind === "create" ? "New section" : "Resize"}
+          </div>
         )}
       </div>
 
