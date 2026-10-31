@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from basseparate import __version__
-from basseparate.api import import_routes, job_routes, project_routes
+from basseparate.api import export_routes, import_routes, job_routes, project_routes
 from basseparate.api.errors import install_error_handlers
 from basseparate.api.import_routes import register_import_job
 from basseparate.config import Settings
@@ -105,6 +105,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(import_routes.router, prefix="/api")
     app.include_router(project_routes.router, prefix="/api")
     app.include_router(job_routes.router, prefix="/api")
+    app.include_router(export_routes.router, prefix="/api")
+    # The literal /doctor alias requested by the task and an operator-friendly
+    # URL for the UI.
+    app.include_router(export_routes.alias_router)
     mount_ui(app, settings.web_dir)
     return app
 
