@@ -395,6 +395,72 @@ describe("createShellApi", () => {
     });
   });
 
+  it("refreshes the revision and retries once after a 409", async () => {
+    const puts: Array<{ revision?: number; sections?: unknown }> = [];
+    let gets = 0;
+    const api = createShellApi({
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/state")) {
+          const body = JSON.parse(String(init?.body)) as {
+            revision?: number;
+            state?: { sections?: unknown };
+          };
+          puts.push({
+            revision: body.revision,
+            sections: body.state?.sections,
+          });
+          if (puts.length === 1) {
+            return response({ detail: "revision conflict" }, 409);
+          }
+          return response({ project: { revision: 8 }, state: {} });
+        }
+        gets += 1;
+        return response({ ...RAW, revision: 7 });
+      },
+    });
+    const state = buildServerState({
+      sections: [{ id: "s1", name: "Verse", startSeconds: 0, endSeconds: 2 }],
+      bars: [0, 2, 4, 6],
+      sampleRate: 48000,
+      positionSeconds: 0,
+      loopRange: null,
+      practice: DEFAULT_PRACTICE_STATE,
+      mixer: {},
+    });
+
+    const revision = await api.saveState("p1", state, 3);
+
+    expect(puts).toHaveLength(2);
+    expect(puts[0].revision).toBe(3);
+    expect(puts[1].revision).toBe(7);
+    expect(puts[1].sections).toMatchObject([
+      { id: "s1", name: "Verse", start_bar: 0, end_bar: 1 },
+    ]);
+    expect(gets).toBe(1);
+    expect(revision).toBe(8);
+  });
+
+  it("does not retry other save failures", async () => {
+    const api = createShellApi({
+      fetchImpl: async () => response({ detail: "disk full" }, 500),
+    });
+    const state = buildServerState({
+      sections: [],
+      bars: [],
+      sampleRate: 48000,
+      positionSeconds: 0,
+      loopRange: null,
+      practice: DEFAULT_PRACTICE_STATE,
+      mixer: {},
+    });
+
+    await expect(api.saveState("p1", state, 3)).rejects.toMatchObject({
+      status: 500,
+      message: "disk full",
+    });
+  });
+
   it("reports a project HTTP failure with the server detail", async () => {
     const api = createShellApi({
       fetchImpl: async () => response({ detail: "project p9 not found" }, 404),

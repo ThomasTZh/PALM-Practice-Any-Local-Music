@@ -350,10 +350,29 @@ export function App({
           },
         };
       });
+      // The analysis job writes the document and bumps the server revision.
+      // Refresh the shell's revision so the next autosave is not a 409.
+      const projectId = projectRef.current?.id;
+      if (projectId !== undefined) {
+        void api
+          .openProject(projectId)
+          .then((refreshed) => {
+            if (projectRef.current?.id !== projectId) {
+              return;
+            }
+            revisionRef.current = refreshed.revision;
+            setProject((current) =>
+              current !== null && current.id === projectId
+                ? { ...current, revision: refreshed.revision }
+                : current,
+            );
+          })
+          .catch(() => undefined);
+      }
       setTone("info");
       setMessage("Analysis complete");
     },
-    [active.player],
+    [active.player, api],
   );
 
   const handleSeparate = useCallback(async () => {

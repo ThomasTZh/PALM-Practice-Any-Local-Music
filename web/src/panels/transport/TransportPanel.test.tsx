@@ -48,6 +48,22 @@ describe("TransportPanel", () => {
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
 
+  it("follows playback started or stopped outside the toggle", () => {
+    const player = createFakePlayer({ durationSeconds: 60 });
+    render(<TransportPanel player={player} />);
+
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+
+    act(() => player.play());
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(screen.getByTestId("transport-status")).toHaveTextContent("Playing");
+
+    act(() => player.pause());
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(screen.getByTestId("transport-status")).toHaveTextContent("Paused");
+    expect(player.calls).toEqual(["play", "pause"]);
+  });
+
   it("disables play while loading and reports errors", () => {
     const loading = createFakePlayer({
       status: "loading",

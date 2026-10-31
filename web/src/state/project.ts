@@ -662,40 +662,62 @@ export function createShellApi(options: ShellApiOptions = {}): ShellApi {
     }
   }
 
+  async function loadProject(
+    projectId: string,
+    requestOptions: { signal?: AbortSignal } = {},
+  ): Promise<StudioProject> {
+    const payload = await request(
+      `/api/projects/${encodeURIComponent(projectId)}`,
+      requestOptions.signal ? { signal: requestOptions.signal } : undefined,
+    );
+    return parseStudioProject(payload);
+  }
+
+  async function putState(
+    projectId: string,
+    state: ServerPracticeState,
+    revision?: number,
+  ): Promise<number> {
+    const payload = await request(
+      `/api/projects/${encodeURIComponent(projectId)}/state`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          revision === undefined ? { state } : { state, revision },
+        ),
+      },
+    );
+    const record = recordOf(payload);
+    const savedRevision = firstNumber(record?.project as RawRecord | null, [
+      "revision",
+    ]);
+    return Math.max(
+      1,
+      Math.round(
+        savedRevision ?? firstNumber(record, ["revision"]) ?? revision ?? 1,
+      ),
+    );
+  }
+
   return {
     listLibrary: base.listLibrary,
     importRecording: base.importRecording,
     fetchPeaks: base.fetchPeaks,
-
-    async openProject(projectId, requestOptions = {}) {
-      const payload = await request(
-        `/api/projects/${encodeURIComponent(projectId)}`,
-        requestOptions.signal ? { signal: requestOptions.signal } : undefined,
-      );
-      return parseStudioProject(payload);
-    },
+    openProject: loadProject,
 
     async saveState(projectId, state, revision) {
-      const payload = await request(
-        `/api/projects/${encodeURIComponent(projectId)}/state`,
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(
-            revision === undefined ? { state } : { state, revision },
-          ),
-        },
-      );
-      const record = recordOf(payload);
-      const savedRevision = firstNumber(record?.project as RawRecord | null, [
-        "revision",
-      ]);
-      return Math.max(
-        1,
-        Math.round(
-          savedRevision ?? firstNumber(record, ["revision"]) ?? revision ?? 1,
-        ),
-      );
+      try {
+        return await putState(projectId, state, revision);
+      } catch (error) {
+        // Analysis and separation jobs bump the server revision. Refresh once
+        // and retry so a stale shell revision does not drop a section save.
+        if (!(error instanceof ApiError) || error.status !== 409) {
+          throw error;
+        }
+        const refreshed = await loadProject(projectId);
+        return await putState(projectId, state, refreshed.revision);
+      }
     },
   };
 }

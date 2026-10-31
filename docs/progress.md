@@ -1056,3 +1056,61 @@ project id are guarded so a project switch aborts activation.
   the UI returns to idle, and the server job may still be running.
 - Separation activation disposes and reloads the audio group once; a short
   buffering gap is expected (the UI is not blocked during the job).
+
+## 2026-10-31 — autosave revision after analysis and explicit playback (t22)
+
+### Save failure and lost sections
+
+The analysis job writes the document and bumps the project revision server-side.
+The shell kept the revision read at open time, so the next autosave PUT carried
+a stale revision, the server returned 409, the footer showed "save failed", and
+sections never reached disk. Analysis itself was persisted by the job, which is
+why chords survived a restart while sections did not.
+
+- `App.handleAnalyzed` now refreshes the shell revision after the job: it
+  refetches the project, ignores a result if the user switched projects, and
+  updates both `revisionRef` and the local project revision without replacing
+  local chords/sections.
+- `createShellApi.saveState` catches a 409 once, refetches the project to get
+  the server revision, and retries the PUT with it. The retry returns the new
+  revision so the shell's next save is current. Other errors still fail
+  immediately.
+
+### Implicit playback
+
+No code change was needed for the three reported playback behaviours, but each
+now has a regression test:
+
+- Opening a project is asserted paused with the toggle reading Play, including
+  with t9's real engine (duration/status ready, transport not "Playing").
+- Clicking a section block calls `onSeek` only; a fake player receives no play,
+  pause or toggle calls.
+- `TransportPanel` already derives everything from `usePlayerState(player)`.
+  A test starts playback by calling `player.play()` directly (not the toggle)
+  and asserts the button becomes Pause and status Playing; calling
+  `player.pause()` directly returns it to Play/Paused.
+
+### Verification
+
+- `state/project.test.ts`: simulated 409 -> exactly one GET project refresh,
+  PUT retried with revision 7 instead of 3, second PUT body contains the latest
+  Section 1 (start_bar 0, end_bar 1), returned revision 8. A 500 response is
+  not retried.
+- `App.test.tsx`: after analysis, a project refetch supplies revision 5 and the
+  next autosave of a new section uses revision ≥ 5 (not the open-time 2), the
+  saved state contains Section 1 and the footer shows saved. Opening asserts
+  Play/no Playing.
+- `SectionLane.test.tsx`: block click seeks to its start and the fake player has
+  no playback calls.
+- `TransportPanel.test.tsx`: direct engine play/pause flips the toggle and
+  status, with only play/pause recorded (no toggle clicks).
+- `make test-web`: exit 0, 49 files / 442 tests.
+- `make build-web`: exit 0. No dependency added.
+
+### Limitations
+
+- The post-analysis revision refresh is a second project GET. If it fails, the
+  save still has the one-shot 409 recovery, but a second conflict reports save
+  failed.
+- Local UI sections are authoritative during a refresh; the server document is
+  only read for the revision, so unsaved section edits are not overwritten.

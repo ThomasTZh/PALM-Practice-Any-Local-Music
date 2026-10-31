@@ -210,13 +210,18 @@ function analysisClient(): AnalysisJobClient {
 function setup(
   options: {
     project?: StudioProject;
+    api?: ShellApi;
     failOpen?: boolean;
     notice?: string | null;
     autosaveDelayMs?: number;
   } = {},
 ) {
   const project = options.project ?? PROJECT;
-  const api = makeApi(project, { failOpen: options.failOpen });
+  const api = (options.api ??
+    makeApi(project, { failOpen: options.failOpen })) as ShellApi & {
+    calls: string[];
+    saved: ServerPracticeState[];
+  };
   const rig = makeRig(project, options.notice ?? null);
   const transport = createShellTransport(() => rig.runtime);
   const client = analysisClient();
@@ -356,6 +361,10 @@ describe("App integration", () => {
     expect(screen.getByTestId("analysis-cache-badge")).toHaveTextContent(
       "Cached",
     );
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(screen.getByTestId("transport-status")).not.toHaveTextContent(
+      "Playing",
+    );
   });
 
   it("shows the analysed key, tempo and chord ribbon", async () => {
@@ -451,6 +460,85 @@ describe("App integration", () => {
     expect(screen.getByText("G")).toBeInTheDocument();
     expect(screen.getByTestId("analysis-cache-badge")).toHaveTextContent(
       "Cached",
+    );
+  });
+
+  it("refreshes the revision after analysis so the next autosave persists sections", async () => {
+    const initial = PROJECT_WITHOUT_ANALYSIS;
+    const api = makeApi(initial);
+    let opens = 0;
+    api.openProject = async (projectId: string) => {
+      api.calls.push(`open:${projectId}`);
+      opens += 1;
+      return opens === 1 ? initial : { ...initial, revision: 5 };
+    };
+    const saved: Array<{
+      state: ServerPracticeState;
+      revision: number | undefined;
+    }> = [];
+    api.saveState = async (
+      projectId: string,
+      state: ServerPracticeState,
+      revision?: number,
+    ) => {
+      api.calls.push(`save:${projectId}:${state.sections.length}`);
+      saved.push({ state, revision });
+      return (revision ?? 1) + 1;
+    };
+
+    const { client } = setup({
+      project: initial,
+      api,
+      autosaveDelayMs: 5,
+    });
+    await openProject();
+    const start = vi.mocked(client.start);
+    const status = vi.mocked(client.status);
+    start.mockResolvedValue({
+      id: "job-1",
+      status: "running",
+      progress: 0.5,
+      message: "chords",
+      error: null,
+      snapshot: null,
+    });
+    status.mockResolvedValue({
+      id: "job-1",
+      status: "succeeded",
+      progress: 1,
+      message: "done",
+      error: null,
+      snapshot: {
+        bpb: 4,
+        bpm: 100,
+        key: "G major",
+        chords: [{ startSeconds: 0, endSeconds: 4, label: "G:maj" }],
+        beats: [0, 0.6, 1.2, 1.8],
+        bars: [0, 2.4],
+        cached: false,
+      },
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Run analysis" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("status-line")).toHaveTextContent(
+        "Analysis complete",
+      ),
+    );
+    await waitFor(() =>
+      expect(api.calls.filter((call) => call === "open:p1")).toHaveLength(2),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Add section" }));
+    await waitFor(() =>
+      expect(saved.some((entry) => entry.state.sections.length > 0)).toBe(true),
+    );
+    const persisted = saved.find((entry) => entry.state.sections.length > 0);
+    expect(persisted?.state.sections[0].name).toBe("Section 1");
+    expect(persisted?.revision).toBeGreaterThanOrEqual(5);
+    expect(persisted?.revision).not.toBe(initial.revision);
+    await waitFor(() =>
+      expect(screen.getByTestId("save-status")).toHaveTextContent("saved"),
     );
   });
 

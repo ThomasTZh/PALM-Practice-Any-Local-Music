@@ -306,6 +306,10 @@ describe("App with the real transport adapter", () => {
       speed: 1,
       loopRange: null,
     });
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(screen.getByTestId("transport-status")).not.toHaveTextContent(
+      "Playing",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
     await waitFor(() =>

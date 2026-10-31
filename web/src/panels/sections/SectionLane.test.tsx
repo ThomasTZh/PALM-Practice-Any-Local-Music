@@ -110,6 +110,17 @@ describe("SectionLane", () => {
     });
   });
 
+  it("seeks on a section click without starting playback", () => {
+    const player = createFakePlayer({ durationSeconds: 8 });
+    const onSeek = vi.fn();
+    setup({ sections: [VERSE], positionSeconds: 1, player, onSeek });
+
+    fireEvent.click(screen.getByTestId("section-block-s1"));
+
+    expect(onSeek).toHaveBeenCalledWith(0);
+    expect(player.calls).toEqual([]);
+  });
+
   it("disables split outside every section", () => {
     setup({ sections: [], positionSeconds: 3.2 });
     expect(
