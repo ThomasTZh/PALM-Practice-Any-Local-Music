@@ -809,6 +809,14 @@ def e2e_specs() -> list[Path]:
     return sorted(directory.glob("*.spec.ts"))
 
 
+def e2e_config() -> Path | None:
+    """Config owned by the e2e task, at the package root or inside web/e2e."""
+    for candidate in (WEB / "playwright.config.ts", WEB / "e2e" / "playwright.config.ts"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def gate_e2e() -> GateResult:
     specs = e2e_specs()
     if not specs:
@@ -816,7 +824,13 @@ def gate_e2e() -> GateResult:
     playwright = WEB_MODULES / ".bin" / "playwright"
     if not playwright.exists():
         return GateResult("fail", "web/node_modules is not linked; run make bootstrap")
-    result = run([playwright, "test"], cwd=WEB, timeout=1800)
+    config = e2e_config()
+    if config is not None:
+        args = [playwright, "test", "--config", str(config.relative_to(WEB))]
+    else:
+        # No config yet: run the specs in web/e2e on the installed browser.
+        args = [playwright, "test", "e2e", "--browser", "firefox"]
+    result = run(args, cwd=WEB, timeout=1800)
     if result.returncode != 0:
         return GateResult("fail", tail(result.stdout + result.stderr))
     return GateResult("pass", f"{len(specs)} spec file(s)")
