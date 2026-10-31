@@ -20,6 +20,12 @@ import {
 import { createRangedPcmLoader, type PcmLoader } from "./spectrogram";
 import type { AnalysisJobClient, AnalysisSnapshot } from "./state/analysis";
 import { createAnalysisJobClient } from "./state/analysisApi";
+import {
+  runSeparationJob,
+  type SeparationJobClient,
+  type SeparationJobState,
+} from "./state/separation";
+import { createSeparationJobClient } from "./state/separationApi";
 import { formatPosition } from "./state/format";
 import { createLocalStudioRuntime } from "./state/localStudio";
 import { clampLoopRangeToDuration, type StudioPlayer } from "./state/player";
@@ -37,6 +43,8 @@ import {
   type SnapMode,
 } from "./state/sections";
 import {
+  applyStudioRuntimeSnapshot,
+  captureStudioRuntime,
   createShellTransport,
   type ShellTransport,
   type StudioRuntime,
@@ -52,8 +60,10 @@ export interface AppProps {
   api?: ShellApi;
   transport?: ShellTransport;
   analysisClient?: AnalysisJobClient;
+  separationClient?: SeparationJobClient;
   createPcmLoader?: (projectId: string) => PcmLoader;
   autosaveDelayMs?: number;
+  separationPollIntervalMs?: number;
 }
 
 function errorMessage(error: unknown): string {
@@ -127,8 +137,10 @@ export function App({
   api: apiProp,
   transport: transportProp,
   analysisClient: clientProp,
+  separationClient: separationClientProp,
   createPcmLoader: pcmFactoryProp,
   autosaveDelayMs = 900,
+  separationPollIntervalMs = 400,
 }: AppProps) {
   const [api] = useState<ShellApi>(() => apiProp ?? createShellApi());
   const [transport] = useState<ShellTransport>(
@@ -138,6 +150,9 @@ export function App({
   );
   const [analysisClient] = useState<AnalysisJobClient>(
     () => clientProp ?? createAnalysisJobClient(),
+  );
+  const [separationClient] = useState<SeparationJobClient>(
+    () => separationClientProp ?? createSeparationJobClient(),
   );
   const [placeholderRuntime] = useState(() => createLocalStudioRuntime());
   const [runtime, setRuntime] = useState<StudioRuntime | null>(null);
@@ -163,9 +178,23 @@ export function App({
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [separation, setSeparation] = useState<{
+    running: boolean;
+    progress: number;
+    stage: string;
+    error: string | null;
+  }>({ running: false, progress: 0, stage: "", error: null });
   const revisionRef = useRef(1);
   const hydratedRef = useRef(false);
   const openTokenRef = useRef(0);
+  const sectionsRef = useRef<Section[]>([]);
+  const projectRef = useRef<StudioProject | null>(null);
+  const runtimeRef = useRef<StudioRuntime | null>(null);
+  const separationAbortRef = useRef<AbortController | null>(null);
+  const separationJobRef = useRef<SeparationJobState | null>(null);
+  sectionsRef.current = sections;
+  projectRef.current = project;
+  runtimeRef.current = runtime;
 
   const pcmLoaderFor = useCallback(
     (projectId: string): PcmLoader =>
@@ -200,7 +229,7 @@ export function App({
       role: stem.role,
     }));
     if (fromProject.length > 0) {
-      return fromProject;
+      return [{ id: "mix", name: "Mix", role: "mix" }, ...fromProject];
     }
     return Object.keys(mixerState)
       .filter((channelId) => channelId !== "mix")
@@ -325,6 +354,140 @@ export function App({
       setMessage("Analysis complete");
     },
     [active.player],
+  );
+
+  const handleSeparate = useCallback(async () => {
+    if (project === null || separation.running) {
+      return;
+    }
+    const separationProjectId = project.id;
+    const controller = new AbortController();
+    separationAbortRef.current?.abort();
+    separationAbortRef.current = controller;
+    setSeparation({
+      running: true,
+      progress: 0,
+      stage: "Queued",
+      error: null,
+    });
+    setTone("info");
+    setMessage("Separating stems…");
+    try {
+      const job = await runSeparationJob(separationClient, project.id, {
+        pollIntervalMs: separationPollIntervalMs,
+        signal: controller.signal,
+        onUpdate: (state) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          separationJobRef.current = state;
+          setSeparation({
+            running: true,
+            progress: Math.min(1, Math.max(0, state.progress)),
+            stage: state.message,
+            error: null,
+          });
+        },
+      });
+      separationJobRef.current = job;
+      if (projectRef.current?.id !== separationProjectId) {
+        setSeparation({
+          running: false,
+          progress: 0,
+          stage: "",
+          error: null,
+        });
+        return;
+      }
+      // Capture at activation time so a session that kept playing through a
+      // long separation resumes at its current position and settings.
+      const snapshot = captureStudioRuntime(runtimeRef.current ?? active);
+      const preservedSections = sectionsRef.current;
+      setSeparation((current) => ({
+        ...current,
+        progress: 1,
+        stage: "Activating stems…",
+      }));
+      const refreshed = await api.openProject(project.id);
+      if (controller.signal.aborted) {
+        return;
+      }
+      const opened = await transport.open(refreshed, refreshed.analysis);
+      if (controller.signal.aborted) {
+        opened.dispose?.();
+        return;
+      }
+      revisionRef.current = refreshed.revision;
+      setProject(refreshed);
+      setSections(preservedSections);
+      setRuntime(opened);
+      await opened.ready;
+      if (controller.signal.aborted) {
+        return;
+      }
+      applyStudioRuntimeSnapshot(opened, snapshot, {
+        resumePlayback: snapshot.wasPlaying,
+      });
+      if (refreshed.stems.length > 0) {
+        opened.mixer.setMuted("mix", true);
+      }
+      setSeparation({
+        running: false,
+        progress: 0,
+        stage: "",
+        error: null,
+      });
+      setTone("info");
+      setMessage("Stems ready");
+    } catch (error) {
+      if (isAbort(error) || controller.signal.aborted) {
+        return;
+      }
+      const detail = errorMessage(error);
+      setSeparation((current) => ({
+        ...current,
+        running: false,
+        error: detail,
+      }));
+      setTone("error");
+      setMessage(detail);
+    } finally {
+      if (separationAbortRef.current === controller) {
+        separationAbortRef.current = null;
+      }
+    }
+  }, [
+    project,
+    separation.running,
+    active,
+    api,
+    transport,
+    separationClient,
+    separationPollIntervalMs,
+  ]);
+
+  const handleCancelSeparation = useCallback(() => {
+    const job = separationJobRef.current;
+    separationAbortRef.current?.abort();
+    separationAbortRef.current = null;
+    if (job !== null) {
+      void separationClient.cancel(job.id).catch(() => undefined);
+    }
+    setSeparation({
+      running: false,
+      progress: 0,
+      stage: "",
+      error: null,
+    });
+    setTone("info");
+    setMessage("Separation cancelled");
+  }, [separationClient]);
+
+  useEffect(
+    () => () => {
+      separationAbortRef.current?.abort();
+    },
+    [],
   );
 
   useEffect(() => {
@@ -606,7 +769,21 @@ export function App({
                   client={analysisClient}
                   onAnalyzed={handleAnalyzed}
                 />
-                <MixerPanel stems={mixerStems} controller={active.mixer} />
+                <MixerPanel
+                  stems={mixerStems}
+                  controller={active.mixer}
+                  separation={{
+                    hasStems: project.stems.length > 0,
+                    running: separation.running,
+                    progress: separation.progress,
+                    stage: separation.stage,
+                    error: separation.error,
+                    onSeparate: () => {
+                      void handleSeparate();
+                    },
+                    onCancel: handleCancelSeparation,
+                  }}
+                />
                 <PracticePanel
                   controller={active.practice}
                   snapMode={snapMode}

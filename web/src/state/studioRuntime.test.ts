@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createLocalStudioRuntime } from "./localStudio";
-import { createShellTransport, type StudioRuntime } from "./studioRuntime";
+import {
+  applyStudioRuntimeSnapshot,
+  captureStudioRuntime,
+  createShellTransport,
+  type StudioRuntime,
+} from "./studioRuntime";
 import type { StudioProject } from "./project";
 
 const PROJECT = { id: "p1", durationSeconds: 8 } as StudioProject;
@@ -60,6 +65,92 @@ describe("createShellTransport", () => {
     await expect(transport.open(PROJECT)).rejects.toMatchObject({
       name: "AbortError",
     });
+  });
+});
+
+describe("studio runtime snapshots", () => {
+  function runtimeState(): StudioRuntime {
+    const local = createLocalStudioRuntime({
+      durationSeconds: 8,
+      stems: [{ id: "mix" }, { id: "bass" }],
+    });
+    local.practice.setSpeed(0.75);
+    local.practice.setPitchSemitones(-2);
+    local.practice.setCountInBars(1);
+    local.practice.setMetronomeEnabled(true);
+    local.practice.setMetronomeVolume(0.4);
+    local.practice.setAccentDownbeat(false);
+    local.player.setLoopRange({ startSeconds: 1, endSeconds: 3 });
+    local.player.setLoopEnabled(true);
+    local.player.seek(1.5);
+    local.mixer.setGain("bass", -6);
+    local.mixer.setPan("bass", 0.5);
+    local.mixer.setMuted("bass", true);
+    local.mixer.setMuted("mix", true);
+    return local;
+  }
+
+  it("captures and reapplies position, speed, pitch, loop, practice and mixer", () => {
+    const source = runtimeState();
+    const snapshot = captureStudioRuntime(source);
+    expect(snapshot).toMatchObject({
+      positionSeconds: 1.5,
+      speed: 0.75,
+      pitchSemitones: -2,
+      loopRange: { startSeconds: 1, endSeconds: 3 },
+      loopEnabled: true,
+      wasPlaying: false,
+    });
+
+    const target = createLocalStudioRuntime({
+      durationSeconds: 8,
+      stems: [{ id: "mix" }, { id: "bass" }],
+    });
+    applyStudioRuntimeSnapshot(target, snapshot);
+
+    expect(target.player.getState()).toMatchObject({
+      positionSeconds: 1.5,
+      speed: 0.75,
+      pitchSemitones: -2,
+      loopRange: { startSeconds: 1, endSeconds: 3 },
+      loopEnabled: true,
+      status: "paused",
+    });
+    expect(target.practice.getState()).toMatchObject({
+      speed: 0.75,
+      pitchSemitones: -2,
+      countInBars: 1,
+      metronomeEnabled: true,
+      metronomeVolume: 0.4,
+      accentDownbeat: false,
+    });
+    expect(target.mixer.getState().bass).toMatchObject({
+      gainDb: -6,
+      pan: 0.5,
+      muted: true,
+    });
+    expect(target.mixer.getState().mix.muted).toBe(true);
+  });
+
+  it("resumes playback only when it was playing and requested", () => {
+    const source = runtimeState();
+    source.player.play();
+    const snapshot = captureStudioRuntime(source);
+    expect(snapshot.wasPlaying).toBe(true);
+
+    const pausedTarget = createLocalStudioRuntime({ durationSeconds: 8 });
+    applyStudioRuntimeSnapshot(pausedTarget, snapshot);
+    expect(pausedTarget.player.getState().status).toBe("paused");
+
+    const resumedTarget = createLocalStudioRuntime({ durationSeconds: 8 });
+    applyStudioRuntimeSnapshot(resumedTarget, snapshot, {
+      resumePlayback: true,
+    });
+    expect(resumedTarget.player.getState().status).toBe("playing");
+
+    source.dispose?.();
+    pausedTarget.dispose?.();
+    resumedTarget.dispose?.();
   });
 });
 

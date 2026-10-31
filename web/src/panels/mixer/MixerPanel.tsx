@@ -9,6 +9,7 @@ import {
   type MixerController,
 } from "../../state/mixer";
 import { useMixerState } from "../../state/useMixerState";
+import "./mixer.css";
 
 export interface MixerStem {
   id: string;
@@ -16,9 +17,21 @@ export interface MixerStem {
   role?: string;
 }
 
+export interface MixerSeparation {
+  hasStems: boolean;
+  running: boolean;
+  /** 0..1 */
+  progress: number;
+  stage: string;
+  error: string | null;
+  onSeparate: () => void;
+  onCancel: () => void;
+}
+
 export interface MixerPanelProps {
   stems: MixerStem[];
   controller: MixerController;
+  separation?: MixerSeparation;
 }
 
 export function formatGainDb(gainDb: number): string {
@@ -38,9 +51,12 @@ export function formatPan(pan: number): string {
  * Stem mixer strips. Every control writes to the MixerController seam, which
  * the app maps onto the real engine's per-stem gain/mute/solo/pan.
  */
-export function MixerPanel({ stems, controller }: MixerPanelProps) {
+export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
   const state = useMixerState(controller);
   const soloActive = anySoloed(state);
+  const progressPercent = Math.round(
+    Math.min(1, Math.max(0, separation?.progress ?? 0)) * 100,
+  );
 
   return (
     <section className="mixer" data-testid="mixer" aria-label="Stem mixer">
@@ -48,6 +64,68 @@ export function MixerPanel({ stems, controller }: MixerPanelProps) {
         <h2>Mixer</h2>
         {soloActive && <span className="panel-badge">Solo</span>}
       </header>
+
+      {separation !== undefined && (
+        <div className="mixer-separation" data-testid="mixer-separation">
+          {separation.running ? (
+            <>
+              <div
+                className="mixer-separation-progress"
+                role="progressbar"
+                aria-label="Stem separation progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercent}
+                data-testid="separation-progress"
+              >
+                <div
+                  className="mixer-separation-progress-fill"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <div className="mixer-separation-row">
+                <span data-testid="separation-stage">
+                  {separation.stage || "Separating stems…"} · {progressPercent}%
+                </span>
+                <button
+                  type="button"
+                  aria-label="Cancel stem separation"
+                  onClick={separation.onCancel}
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="mixer-separation-button"
+                onClick={separation.onSeparate}
+              >
+                {separation.hasStems ? "Re-separate" : "Separate stems"}
+              </button>
+              <p
+                className="mixer-separation-hint"
+                data-testid="separation-hint"
+              >
+                {separation.hasStems
+                  ? "Stem separation is cached: a re-run is instant."
+                  : "Separate into drums, bass, other and vocals. Cached separations are instant."}
+              </p>
+            </>
+          )}
+          {separation.error !== null && (
+            <p
+              className="panel-error"
+              role="alert"
+              data-testid="separation-error"
+            >
+              {separation.error}
+            </p>
+          )}
+        </div>
+      )}
 
       {stems.length === 0 ? (
         <p className="panel-empty">Separate stems to mix them.</p>

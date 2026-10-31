@@ -2,10 +2,10 @@ import "@testing-library/jest-dom/vitest";
 
 import { act } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFakeMixer } from "../../state/fakeMixer";
-import { MixerPanel } from "./MixerPanel";
+import { MixerPanel, type MixerSeparation } from "./MixerPanel";
 
 const STEMS = [
   { id: "bass", name: "Bass", role: "bass" },
@@ -104,6 +104,99 @@ describe("MixerPanel", () => {
     expect(screen.getByRole("button", { name: "Mute Bass" })).toHaveAttribute(
       "aria-pressed",
       "true",
+    );
+  });
+});
+
+describe("MixerPanel stem separation", () => {
+  function separation(
+    overrides: Partial<MixerSeparation> = {},
+  ): MixerSeparation {
+    return {
+      hasStems: false,
+      running: false,
+      progress: 0,
+      stage: "",
+      error: null,
+      onSeparate: vi.fn(),
+      onCancel: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it("offers Separate stems when the project has no stems", () => {
+    const control = separation();
+    render(
+      <MixerPanel
+        stems={[]}
+        controller={createFakeMixer([])}
+        separation={control}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Separate stems" });
+    expect(button).toBeVisible();
+    fireEvent.click(button);
+    expect(control.onSeparate).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("separation-hint")).toHaveTextContent(
+      /Cached separations are instant/,
+    );
+  });
+
+  it("shows determinate progress, the stage and a cancel action", () => {
+    const control = separation({
+      running: true,
+      progress: 0.42,
+      stage: "separating window 2/4",
+    });
+    render(
+      <MixerPanel
+        stems={[]}
+        controller={createFakeMixer([])}
+        separation={control}
+      />,
+    );
+
+    const progress = screen.getByTestId("separation-progress");
+    expect(progress).toHaveAttribute("role", "progressbar");
+    expect(progress).toHaveAttribute("aria-valuenow", "42");
+    expect(screen.getByTestId("separation-stage")).toHaveTextContent(
+      "separating window 2/4 · 42%",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel stem separation" }),
+    );
+    expect(control.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Re-separate and explains the cache hit when stems exist", () => {
+    render(
+      <MixerPanel
+        stems={STEMS}
+        controller={createFakeMixer(["bass", "drums"])}
+        separation={separation({ hasStems: true })}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Re-separate" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("separation-hint")).toHaveTextContent(
+      "Stem separation is cached: a re-run is instant.",
+    );
+  });
+
+  it("shows the server's failure message", () => {
+    render(
+      <MixerPanel
+        stems={[]}
+        controller={createFakeMixer([])}
+        separation={separation({ error: "Demucs model bundle is missing" })}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Demucs model bundle is missing",
     );
   });
 });

@@ -996,3 +996,63 @@ date/initials. Run on Firefox or Chromium with real headphones, once per
 - Every number above is from the commands named beside it in this entry; no
   document quotes a run that is not committed or reproducible with those
   commands.
+
+## 2026-10-31 — stem separation control and live stem activation (t21)
+
+### Why
+
+The mixer only said "Separate stems to mix them." and there was no way to start
+the server's ready separation job. After a successful run the open engine also
+kept its mix-only source group until the project was reopened.
+
+### Control and API
+
+- `state/separation.ts`: separation job state and `runSeparationJob`, which
+  starts POST `/api/separate`, polls GET `/api/jobs/{id}` (fraction + stage
+  message), forwards updates, supports abort and raises the server's message on
+  failed/cancelled jobs.
+- `state/separationApi.ts`: `createSeparationJobClient` with the real request
+  shapes (`POST /api/separate {project_id}`, `GET /api/jobs/{id}`,
+  `POST /api/jobs/{id}/cancel`), tolerant job parsing and plain-language HTTP
+  errors.
+- Mixer panel: a separation block under the channels. No stems shows
+  "Separate stems"; stems show "Re-separate" with "Stem separation is cached: a
+  re-run is instant." Running shows a determinate progressbar with
+  `aria-valuenow`, the stage and percentage, and a Cancel button; failures show
+  the server message in a role=alert. Styles live in `panels/mixer/mixer.css`.
+
+### Activation
+
+On success App refetches the project (stems label/url), opens a new shell
+runtime through the existing transport factory, waits for it to be ready and
+reapplies a snapshot captured at activation time: position, duration, speed,
+pitch, loop range/enabled, count-in, metronome on/volume, accent, and per-channel
+mixer gains/pans/mutes/solos. The four stems plus the mix now appear in the
+mixer; the mix is muted after separation so the stems do not double the audio.
+Sections and snap mode are shell state and are preserved as-is, not overwritten
+by the refetched document. Playback resumes only when it was playing before
+activation; a paused project stays paused. Sections/analysis and the separation
+project id are guarded so a project switch aborts activation.
+
+### Verification
+
+- state tests: separation runner progress/stage/failure/cancel/abort and the API
+  client's POST body, status, cancel, HTTP detail and malformed payload.
+- mixer tests: Separate stems, determinate progress/stage/cancel, Re-separate
+  with cache hint, and the failure alert.
+- App tests with a fake separation API: start + progress + cancel (no runtime
+  rebuild), success activation with a second project fetch and new runtime,
+  preserved position 4 s / practice speed 0.75 / pitch -2 / loop 2–4 s / 1 count-in
+  bar / metronome 30% / accent off / Section 1, new channels mix, drums, bass,
+  other, vocals with mix muted, playing resumed; paused completion never calls
+  play; failure keeps the old runtime and Play still works; Re-separate shown
+  for an existing-stem project.
+- `make test-web`: exit 0, 49 files / 437 tests.
+- `make build-web`: exit 0. No dependency added.
+
+### Limitations
+
+- Cancelling before the POST returns has no job id to send; polling aborts and
+  the UI returns to idle, and the server job may still be running.
+- Separation activation disposes and reloads the audio group once; a short
+  buffering gap is expected (the UI is not blocked during the job).
