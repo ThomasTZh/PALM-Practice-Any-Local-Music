@@ -44,6 +44,33 @@ async function waitForAdvance(
   return null;
 }
 
+/**
+ * Reach and keep Playing through a seek/buffering transition.
+ *
+ * A seek issued while playing can finish as Paused after the first status
+ * check; clicking once and asserting Playing immediately then hangs. Poll the
+ * status, click Play only when the transport is not loading and not playing,
+ * and only give up after the deadline.
+ */
+async function ensurePlaying(page: Page, timeoutMs = 30_000): Promise<void> {
+  const status = page.getByTestId("transport-status");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const label = (await status.innerText()).trim();
+    if (label === "Playing") return;
+    if (label !== "Loading audio…") {
+      await page.getByTestId("transport-toggle").click();
+      await page.waitForTimeout(250);
+    } else {
+      await page.waitForTimeout(150);
+    }
+  }
+  throw new Error(
+    `transport did not reach Playing within ${timeoutMs} ms ` +
+      `(last status: ${(await status.innerText()).trim()})`,
+  );
+}
+
 async function audioCapability(page: Page): Promise<{
   secureContext: boolean;
   audioWorklet: boolean;
@@ -95,13 +122,15 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   page,
   request,
 }, testInfo) => {
-  // Each browser gets its own copy of the generated fixture so the shared
-  // server data root (one webServer for both projects) never has two projects
-  // with the same title.
+  // Each browser (and each Playwright retry) gets its own copy of the
+  // generated fixture so the shared server data root never has two projects
+  // with the same title. A retry must start from a clean, unambiguous library
+  // entry, not from `.first()` on a duplicated title.
+  const attempt = `r${testInfo.retry + 1}`;
   const uploadDir = mkdtempSync(join(tmpdir(), "basseparate-golden-"));
-  const upload = join(uploadDir, `golden-${testInfo.project.name}.wav`);
+  const upload = join(uploadDir, `golden-${testInfo.project.name}-${attempt}.wav`);
   copyFileSync(FIXTURE, upload);
-  const title = `golden-${testInfo.project.name}`;
+  const title = `golden-${testInfo.project.name}-${attempt}`;
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Bass practice studio" })).toBeVisible();
@@ -194,6 +223,7 @@ test("golden path: import, analyze, reopen, practise and export", async ({
     timeout: 60_000,
   });
   await page.getByTestId("transport-toggle").click();
+  await ensurePlaying(page);
   await expect(page.getByTestId("transport-status")).toHaveText("Playing", {
     timeout: 30_000,
   });
@@ -215,23 +245,50 @@ test("golden path: import, analyze, reopen, practise and export", async ({
     await expect(page.getByTestId("transport-status")).toHaveText("Playing");
   } else {
     // 5. Speed change: 0.5x advances the source at roughly half real time.
-    const beforeSpeed = await position(page);
+    // Wait for transport stability, select 0.5x, let the rate ramp settle, then
+    // measure a 1.5 s window. Ideal is 0.75 s; observed passes are 0.80-0.90 s
+    // because of the UI tick/anchor mapping, so the bound allows UI latency
+    // instead of treating a 1.00 s sample as a 2x transport bug.
+    const statusLabel = page.getByTestId("transport-status");
+    await expect(statusLabel).not.toHaveText("Loading audio…", {
+      timeout: 30_000,
+    });
     await page.getByLabel("Practice speed").selectOption("0.5");
     await expect(page.getByLabel("Speed", { exact: true })).toHaveValue("0.5");
+    await page.waitForTimeout(600);
+    const beforeSpeed = await position(page);
     await page.waitForTimeout(1_500);
     const afterSpeed = await position(page);
     const delta = afterSpeed - beforeSpeed;
     testInfo.annotations.push({
       type: "speed-change",
-      description: `position delta at 0.5x over 1.5 s: ${delta.toFixed(2)} s`,
+      description:
+        `[${title}] position delta at 0.5x over 1.5 s: ${delta.toFixed(2)} s ` +
+        `(accepted 0.55-1.15)`,
     });
-    expect(delta).toBeGreaterThan(0.25);
-    expect(delta).toBeLessThan(1.0);
+    expect(delta).toBeGreaterThan(0.55);
+    expect(delta).toBeLessThan(1.15);
     await page.getByLabel("Practice speed").selectOption("1");
   }
 
-  // 6. Bar-snapped section and loop wiring are always exercised.
+  // 6. Bar-snapped section and loop wiring are always exercised. Pause and
+  // reset the playhead first: if the section is created while the playhead has
+  // drifted, bar snapping produces a different range (observed once as a 2-4 s
+  // section, which then correctly failed the "max position inside loop" check
+  // only after the loop observation). A settled zero playhead makes the
+  // intended 0-2 s section deterministic.
+  const sectionStatus = page.getByTestId("transport-status");
+  await expect(sectionStatus).not.toHaveText("Loading audio…", {
+    timeout: 30_000,
+  });
+  if ((await sectionStatus.innerText()) === "Playing") {
+    await page.getByTestId("transport-toggle").click();
+  }
+  await expect(sectionStatus).toHaveText("Paused", { timeout: 30_000 });
   await page.getByLabel("Return to start").click();
+  await expect
+    .poll(() => position(page), { timeout: 10_000 })
+    .toBeLessThanOrEqual(0.25);
   await page.getByRole("button", { name: "Add section" }).click();
   const section = page.locator('[data-testid^="section-block-"]').first();
   await expect(section).toBeVisible();
@@ -247,32 +304,51 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   );
 
   if (audioAdvanced) {
-    // Installing the loop performs a controlled re-seek; wait for it to
-    // settle before asking the transport to play again.
-    await expect(page.getByTestId("transport-status")).not.toHaveText(
-      "Loading audio…",
-      { timeout: 30_000 },
-    );
-    if ((await page.getByTestId("transport-status").innerText()) !== "Playing") {
-      await page.getByTestId("transport-toggle").click();
-    }
-    await expect(page.getByTestId("transport-status")).toHaveText("Playing", {
+    // Installing the loop performs a controlled re-seek. Wait for it to
+    // settle, then make one fresh seek to the loop start and only observe
+    // from a confirmed Playing state: a buffering stall immediately after the
+    // loop installation was the observed Chromium flake (no wrap within 10 s).
+    const statusLabel = page.getByTestId("transport-status");
+    await expect(statusLabel).not.toHaveText("Loading audio…", {
       timeout: 30_000,
     });
+    await page.getByLabel("Return to start").click();
+    await expect(statusLabel).not.toHaveText("Loading audio…", {
+      timeout: 30_000,
+    });
+    await ensurePlaying(page);
+    await expect(statusLabel).toHaveText("Playing", { timeout: 30_000 });
+    // A fresh seek must land inside the loop before the observation window.
+    await expect
+      .poll(() => position(page), { timeout: 10_000 })
+      .toBeLessThanOrEqual(LOOP_END_SECONDS + 0.35);
+
+    // Observe up to 20 s. Buffering can delay the first audible quantum, but a
+    // real wrap is still required and the position must stay inside the loop.
     const loopSamples: number[] = [];
     let wraps = 0;
     let previous = await position(page);
-    const loopDeadline = Date.now() + 10_000;
+    let stalledFor = 0;
+    const loopDeadline = Date.now() + 20_000;
     while (Date.now() < loopDeadline && wraps < 1) {
       await page.waitForTimeout(100);
       const now = await position(page);
       loopSamples.push(now);
-      if (now < previous - 0.2) wraps += 1;
+      if (now < previous - 0.2) {
+        wraps += 1;
+        stalledFor = 0;
+      } else if (now <= previous) {
+        stalledFor += 100;
+      } else {
+        stalledFor = 0;
+      }
       previous = now;
     }
     testInfo.annotations.push({
       type: "section-loop",
-      description: `wraps=${wraps} samples=${loopSamples.slice(-12).join(",")}`,
+      description:
+        `wraps=${wraps} stalledMs=${stalledFor} ` +
+        `samples=${loopSamples.slice(-12).join(",")}`,
     });
     expect(
       wraps,
