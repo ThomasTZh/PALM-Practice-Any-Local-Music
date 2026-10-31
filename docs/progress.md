@@ -568,3 +568,68 @@ repeated view is a cache hit and runs no FFT.
 - `web/node_modules/.bin/vitest run` (whole web suite): exit 0, 237 tests.
 - No dependency was added: `package.json`, the root manifest and the workspace
   file are unchanged.
+
+## 2026-10-31 — analysis and practice UI (t7)
+
+### Contracts
+
+The shell task (t16) owns `App.tsx` and `main.tsx`, so every panel in this task
+is prop-driven and exports its interfaces. `web/src/state/UI_CONTRACTS.md`
+records the mounting table for t16.
+
+- Analysis job: `POST /api/jobs` with `{kind:"analysis", params:{project_id,bpb}}`
+  then `GET /api/jobs/{id}`; result `{cached, bpb, bpm, key, chords, beats, bars}`.
+  t17 owns the server job and persistence. The panel takes an injected
+  `AnalysisJobClient`, so tests use a fake and t16 wires `createAnalysisJobClient`.
+  The key is the label (`"C major"`), never the 1-based plugin tonic. The badge
+  shows `Cached` for a cached result, `Fresh` after a fresh run and
+  `Not analysed` before that.
+- Mixer: `MixerController` with `setGain`, `setPan`, `setMuted`, `setSoloed`.
+  Practice: `PracticeController` with speed, pitch, loop, count-in bars,
+  metronome on/volume and downbeat accent. t16 maps both to the engine; the
+  panels never import `web/src/player`.
+- Sections: `onLoop(section)` is the shell hook, and the optional `player` prop
+  additionally applies `setLoopRange`/`setLoopEnabled` so the loop is set
+  directly when the shell passes the transport. Sections remain editable after
+  looping (rename and snapped start/end inputs are always present).
+
+### Pure modules
+
+- `state/chords.ts`: Chordino raw labels become compact symbols. `C:maj` → `C`,
+  `A:min7` → `Am7`, `N` → `N.C.`, accidentals, slash bass and already-compact
+  labels all normalise; unknown qualities keep their text. `chordAt` and
+  `chordBlocks` drive the ribbon and its aria-current emphasis; blocks are
+  clipped to the shared viewport.
+- `state/sections.ts`: detected beats plus bpb produce beat/bar marks. Snapping
+  is nearest-bar by default, nearest-beat or free on request. Add, split,
+  resize, rename and delete are pure array operations; a collapsed bar range
+  grows to the next boundary, and the projected end of the final bar is a legal
+  boundary so a section can end at the track's end. `uniformBeats` synthesises a
+  grid from BPM/meter when analysis has no beats, so sections work before the
+  first analysis run.
+- `state/mixer.ts` and `state/practice.ts`: clamps and the solo/mute rules
+  (solo wins, muted always silent), plus pure reducers shared by the fakes and
+  the future adapter. `state/fakeMixer.ts` and `state/fakePractice.ts` log calls
+  and expose `sync()` for engine-reported changes.
+
+### Panels
+
+`ChordRibbon` (normalised blocks, current chord highlighted, click to seek),
+`KeyBpmReadout`, `SectionLane` (Add/Split, snap selector, Loop, inline editor,
+bar/beat overlay), `BarBeatOverlay`, `MixerPanel` (mute, solo, gain, pan, audible
+state), `PracticePanel` (speed, pitch, loop, count-in, metronome, volume, accent,
+snap mode) and `AnalysisPanel` (bpb select, Run, aria progressbar, cached badge,
+failure alert). Shared styles were appended to `web/src/styles.css`.
+
+### Verification
+
+- `web/node_modules/.bin/vitest run src/panels`: exit 0, 14 files, 119 tests.
+  New: chords 10, sections 12, mixer 7, practice 5, analysis 5.
+- `web/node_modules/.bin/vitest run src/state`: exit 0, including the new chord
+  normalisation (12), section snapping/add/split/loop (29), mixer (7), practice
+  (5), analysis runner (6) and analysis API (9) suites.
+- `web/node_modules/.bin/vitest run` (whole web suite): exit 0, 40 files,
+  346 tests.
+- `make build-web`: exit 0 (tsc and Vite build). No dependency was added:
+  `package.json`, the root manifest and the workspace file are unchanged.
+- `App.tsx` and `main.tsx` were not touched.
