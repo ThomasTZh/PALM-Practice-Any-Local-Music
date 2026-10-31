@@ -90,7 +90,45 @@ the set in memory and compares it with the committed files, so the
 
 ### Verification
 
-Filled in from the actual runs of this task; see the command output recorded
-with the task completion. Commands: `make doctor`, `make bootstrap` (twice),
-`make fixtures` (twice, with digest comparison), `make gate`,
-`python scripts/studio.py fixtures-check`, and the legacy worktree test.
+Recorded from the actual runs on the committed tree.
+
+- Recovery refs: `git rev-parse legacy-studio legacy` prints
+  `394a36952d92a493ba39cca0eb8be8ee5ba6ce33` for both. `legacy-studio` is a
+  lightweight tag so it points directly at the commit.
+- Worktree: `git worktree add ../basseparate-legacy legacy` fails in this
+  sandbox with `could not create leading directories of
+  '../basseparate-legacy/.git': Read-only file system`. The equivalent
+  in-workspace worktree `.legacy-worktree/basseparate-legacy` was created,
+  `PYTHONPATH=src ../../.venv/bin/python -m pytest
+  tests/unit/test_config.py tests/unit/test_project.py -q` reported
+  `48 passed in 0.41s`, and the worktree was removed again. The repository
+  side of the acceptance is satisfied; only the sibling-path write is blocked
+  by the execution sandbox.
+- Assets: `find models analysis third_party storage audio2test "chords auto"
+  .venv node_modules -newermt "2026-10-31 18:10"` lists only `analysis/` and
+  `analysis/pyproject.toml` (the in-scope pin edit). Every asset directory is
+  still present; nothing was deleted from `node_modules` or the model bundle.
+- `make doctor`: exit 0. Toolchain, `.venv` imports, analysis torch/demucs,
+  16 linked web dependencies, Vamp SDK/plugins/native host, Piper server,
+  model bundle, and recordings are reported ok. GPU is reported missing
+  (`nvidia-smi` cannot talk to the driver, torch reports `cuda False`), which
+  is expected on this machine and informational. No network access.
+- `make bootstrap`: exit 0. First run linked 16 direct dependencies from
+  `node_modules/.pnpm` and skipped the existing `.venv`; the second and third
+  runs reported all three steps skipped and "no network used".
+- `make fixtures`: exit 0. Running it twice leaves every WAV, `manifest.json`
+  and `SHA256SUMS` byte-identical (`sha256sum` diff empty); `make gate`
+  regenerates the set in memory and compares it on every run.
+- `make gate`: exit 0. ruff check, ruff format, fixture determinism, strict
+  mypy and vitest pass; pytest, web typecheck, web build and e2e report SKIP
+  because those suites and sources do not exist yet. Real failures fail the
+  gate (this was observed while fixing the harness: long lines and a
+  `PTH101` violation failed it before the fixes).
+- Dependencies: the 6 runtime and 6 dev Python pins and the 16 web pins all
+  match what is installed (`importlib.metadata` and `web/node_modules`), and
+  no manifest declares anything new.
+- Extra checks: `web/node_modules/.bin/tsc -p tsconfig.node.json` exits 0,
+  `pnpm --dir web test` exits 0 with "No test files found", and
+  `make dev`, `make build`, `make test`, `make e2e`, `make gate-lite` and
+  `make fix` all exit 0 on the empty skeleton.
+
