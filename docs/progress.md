@@ -718,3 +718,72 @@ accepts either (`role` label wins, otherwise `id`) and can derive the endpoint
 from the project id, so t16 can pass the parsed project once the parser maps
 `label`/`url`. Explicit `frameCount`/`channelCount` extras avoid
 duration×rate rounding differences.
+
+## 2026-10-31 — integrate panels and the real transport (t16)
+
+### What the shell owns now
+
+`main.tsx` constructs the real server API (`createShellApi`), the analysis job
+client and one `ShellTransport` whose factory maps t9's `createStudioPlayer`
+onto the t4 `StudioPlayer`, t7 `MixerController` and t7 `PracticeController`
+seams. App receives those as props. It mounts the library, ruler, mix waveform,
+collapsible spectrogram, chord ribbon, section lane, analysis, mixer and
+practice panels, and keeps the existing toolbar, keyboard shortcuts and follow
+behaviour. App/main were the only entry files touched; panels, player and
+spectrogram code are unchanged.
+
+The project boundary (`state/project.ts`) now parses the real server payload:
+stems come as `{label,url,frames,channels,sampleRate}` and are normalised to the
+t4 `Stem` shape; the analysis document (`grid`, `key`, `chords`, `analysis`)
+becomes an `AnalysisSnapshot`; persisted sections (`start_bar`/`end_bar` plus
+exact seconds), speed, pitch, position, loop and mixer are restored; the ruler
+grid is rebuilt from the analysis document when the top-level alias is absent.
+Autosave writes the same state back through `PUT /api/projects/{id}/state` with
+the loaded revision, debounced and paused while the transport is playing.
+
+### Two integration bugs found by running the real shell
+
+- **StrictMode disposed the shared transport.** An App cleanup effect called
+  `transport.dispose()`; React's development double-mount ran the cleanup on the
+  first mount, so every project open aborted silently and the UI sat on
+  "Opening…". The transport is owned by `main.tsx` for the page lifetime, so the
+  cleanup effects were removed. The shell now renders the project as soon as the
+  project payload, peaks and runtime factory resolve; restored practice state is
+  applied when `runtime.ready` settles, so a slow or blocked audio context
+  cannot hide the workspace. A stale-open token prevents an older project's
+  readiness callback from applying over a newer one.
+- **Real server stems did not parse.** The t4 parser required an `id` on stem
+  rows while t8 emits `label`/`url`; the shell project layer normalises them
+  instead of editing the t4 client.
+
+### Verification
+
+- `make test-web`: exit 0. The whole web suite is 47 files / 409 tests,
+  including the new App integration tests.
+- `make build-web`: exit 0 (whole-tree `tsc --noEmit`, Vite build).
+- `App.test.tsx` (8 tests): mounts all six panes, shows key/BPM/chords and the
+  cached badge, keeps Space/ruler/follow working, adds a bar-snapped section and
+  loops it through the player, runs analysis and updates ribbon/readout,
+  autosaves sections, shows the stem-fallback notice and reports a failed open
+  without leaving a broken shell.
+- `App.integration.test.tsx` (2 tests) drives t9's real `createStudioPlayer`
+  (fake AudioContext/worklet) through the mounted UI: the adapter satisfies
+  `StudioPlayer`, Play/Pause, the speed menu, the pitch slider, the transport
+  loop from a waveform selection and the section loop reach the real
+  transport/practice state, and follow toggles while the engine plays.
+- 1280 px layout check in a browser with a mocked API: six panes mounted, page
+  scroll width 1280 (no horizontal overflow), stage 978 px wide, section lane
+  and panel grid inside the right column, transport/full width; screenshots were
+  used during the check and removed afterwards.
+- No dependency was added (`web/package.json`, root manifest and workspace file
+  unchanged).
+
+### Known limitations
+
+- Completing analysis updates the ribbon, readouts and section grid but does not
+  rebuild the playing engine, so its metronome grid is the one loaded when the
+  project opened; reopening the project applies the analysed grid.
+- Spectrum PCM loads only when the spectrogram is expanded (collapsed by
+  default), keeping project open fast on long recordings.
+- Autosave writes when the transport is not playing; a position reached during a
+  long take is saved when playback pauses or stops.

@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { createStudioApi, type StudioApi } from "./api/client";
+import { AnalysisPanel } from "./panels/analysis";
+import { ChordRibbon } from "./panels/chords";
 import { LibraryPanel } from "./panels/library/LibraryPanel";
+import { MixerPanel } from "./panels/mixer";
+import { PracticePanel } from "./panels/practice";
 import { TimeRuler } from "./panels/ruler/TimeRuler";
+import { SectionLane } from "./panels/sections";
+import { SpectrogramPane } from "./panels/spectrogram/SpectrogramPane";
 import { TransportPanel } from "./panels/transport/TransportPanel";
 import { WaveformPane, type Lane } from "./panels/waveform/WaveformPane";
 import { hasSelection, type Selection } from "./panels/waveform/selection";
@@ -12,60 +17,139 @@ import {
   zoomViewport,
   type Viewport,
 } from "./panels/waveform/viewport";
+import { createRangedPcmLoader, type PcmLoader } from "./spectrogram";
+import type { AnalysisJobClient, AnalysisSnapshot } from "./state/analysis";
+import { createAnalysisJobClient } from "./state/analysisApi";
 import { formatPosition } from "./state/format";
-import { createLocalPlayer } from "./state/localPlayer";
+import { createLocalStudioRuntime } from "./state/localStudio";
 import type { StudioPlayer } from "./state/player";
-import type { Project } from "./state/types";
+import {
+  barTimesFromGrid,
+  buildServerState,
+  createShellApi,
+  type ShellApi,
+  type StudioProject,
+} from "./state/project";
+import {
+  uniformBeats,
+  type BeatGrid,
+  type Section,
+  type SnapMode,
+} from "./state/sections";
+import {
+  createShellTransport,
+  type ShellTransport,
+  type StudioRuntime,
+} from "./state/studioRuntime";
+import { useMixerState } from "./state/useMixerState";
 import { usePlayerState } from "./state/usePlayerState";
+import { usePracticeState } from "./state/usePracticeState";
 
-/** The stage is a fixed logical width; CSS scales it down on small screens. */
-const VIEW_WIDTH = 960;
+/** Fixed logical timeline width; smaller screens scroll it inside the stage. */
+export const VIEW_WIDTH = 940;
 
 export interface AppProps {
-  api?: StudioApi;
-  player?: StudioPlayer;
+  api?: ShellApi;
+  transport?: ShellTransport;
+  analysisClient?: AnalysisJobClient;
+  createPcmLoader?: (projectId: string) => PcmLoader;
+  autosaveDelayMs?: number;
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-interface LaneSource {
-  id: string;
-  name: string;
-  peaksAssetId: string;
+function isAbort(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "AbortError"
+  );
 }
 
-function laneSources(project: Project): LaneSource[] {
-  if (project.stems.length > 0) {
-    return project.stems.map((stem) => ({
-      id: stem.id,
-      name: stem.name,
-      peaksAssetId: stem.peaksAssetId,
-    }));
+function titleCase(value: string): string {
+  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
+}
+
+const FALLBACK_GRID = {
+  bpm: 120,
+  meter: { numerator: 4, denominator: 4 },
+  offsetSeconds: 0,
+};
+
+function sectionGrid(project: StudioProject | null): BeatGrid | null {
+  if (project === null) {
+    return null;
   }
-  return [
-    {
-      id: project.asset.id,
-      name: "Mix",
-      peaksAssetId: project.asset.id,
-    },
-  ];
+  if (project.analysis !== null && project.analysis.beats.length > 0) {
+    return { beats: project.analysis.beats, bpb: project.analysis.bpb };
+  }
+  return uniformBeats(project.grid ?? FALLBACK_GRID, project.durationSeconds);
+}
+
+function applyRestoredState(
+  runtime: StudioRuntime,
+  project: StudioProject,
+): void {
+  const { state, loopRange, positionSeconds, mixer } = project.restored;
+  runtime.practice.setSpeed(state.speed);
+  runtime.practice.setPitchSemitones(state.pitchSemitones);
+  runtime.practice.setCountInBars(state.countInBars);
+  runtime.practice.setMetronomeVolume(state.metronomeVolume);
+  runtime.practice.setMetronomeEnabled(state.metronomeEnabled);
+  runtime.practice.setAccentDownbeat(state.accentDownbeat);
+  if (loopRange !== null) {
+    runtime.player.setLoopRange(loopRange);
+    runtime.practice.setLoopEnabled(true);
+  }
+  const channels = runtime.mixer.getState();
+  for (const [channelId, channel] of Object.entries(mixer)) {
+    if (!(channelId in channels)) {
+      continue;
+    }
+    runtime.mixer.setGain(channelId, channel.gainDb);
+    runtime.mixer.setPan(channelId, channel.pan);
+    runtime.mixer.setMuted(channelId, channel.muted);
+    runtime.mixer.setSoloed(channelId, channel.soloed);
+  }
+  runtime.player.seek(positionSeconds);
 }
 
 /**
- * Studio shell: library, shared ruler, one waveform lane per stem (or the mix),
- * transport and a status line. The shell owns only view state; playback lives
- * behind the `StudioPlayer` seam and project data behind the API client.
+ * Studio shell. It owns view state (project, viewport, selection, sections and
+ * snap mode) and mounts the analysis and practice panels. Playback, mixer and
+ * practice state come from the runtime factory, so the shell never imports the
+ * audio engine directly.
  */
-export function App({ api: apiProp, player: playerProp }: AppProps) {
-  const [api] = useState<StudioApi>(() => apiProp ?? createStudioApi());
-  const [fallbackPlayer] = useState(() => createLocalPlayer());
-  const player = playerProp ?? fallbackPlayer;
-  const playerState = usePlayerState(player);
+export function App({
+  api: apiProp,
+  transport: transportProp,
+  analysisClient: clientProp,
+  createPcmLoader: pcmFactoryProp,
+  autosaveDelayMs = 900,
+}: AppProps) {
+  const [api] = useState<ShellApi>(() => apiProp ?? createShellApi());
+  const [transport] = useState<ShellTransport>(
+    () =>
+      transportProp ??
+      createShellTransport((project) => createLocalStudioRuntime(project)),
+  );
+  const [analysisClient] = useState<AnalysisJobClient>(
+    () => clientProp ?? createAnalysisJobClient(),
+  );
+  const [placeholderRuntime] = useState(() => createLocalStudioRuntime());
+  const [runtime, setRuntime] = useState<StudioRuntime | null>(null);
+  const active = runtime ?? placeholderRuntime;
+  const playerState = usePlayerState(active.player);
+  const mixerState = useMixerState(active.mixer);
+  const practiceState = usePracticeState(active.practice);
 
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<StudioProject | null>(null);
   const [lanes, setLanes] = useState<Lane[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [snapMode, setSnapMode] = useState<SnapMode>("bar");
   const [viewport, setViewport] = useState<Viewport>(() =>
     fitViewport(0, VIEW_WIDTH),
   );
@@ -75,69 +159,219 @@ export function App({ api: apiProp, player: playerProp }: AppProps) {
     "Choose a recording from the library.",
   );
   const [tone, setTone] = useState<"info" | "error">("info");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const revisionRef = useRef(1);
+  const hydratedRef = useRef(false);
+  const openTokenRef = useRef(0);
 
-  useEffect(
-    () => () => {
-      if (playerProp === undefined) {
-        fallbackPlayer.dispose();
-      }
-    },
-    [fallbackPlayer, playerProp],
+  const pcmLoaderFor = useCallback(
+    (projectId: string): PcmLoader =>
+      pcmFactoryProp
+        ? pcmFactoryProp(projectId)
+        : createRangedPcmLoader({ projectId }),
+    [pcmFactoryProp],
   );
+
+  useEffect(() => {
+    if (runtime === null || runtime.subscribeNotice === undefined) {
+      setNotice(null);
+      return;
+    }
+    return runtime.subscribeNotice(setNotice);
+  }, [runtime]);
 
   const durationSeconds = project?.durationSeconds ?? 0;
   const fitted = useMemo(
     () => fitViewport(durationSeconds, VIEW_WIDTH),
     [durationSeconds],
   );
+  const grid = useMemo(() => sectionGrid(project), [project]);
+  const pcmLoader = useMemo(
+    () => (project === null ? null : pcmLoaderFor(project.id)),
+    [project, pcmLoaderFor],
+  );
+  const mixerStems = useMemo(() => {
+    const fromProject = (project?.stems ?? []).map((stem) => ({
+      id: stem.id,
+      name: stem.name,
+      role: stem.role,
+    }));
+    if (fromProject.length > 0) {
+      return fromProject;
+    }
+    return Object.keys(mixerState)
+      .filter((channelId) => channelId !== "mix")
+      .map((channelId) => ({
+        id: channelId,
+        name: titleCase(channelId),
+        role: channelId,
+      }));
+  }, [project, mixerState]);
 
   const openProject = useCallback(
     async (projectId: string) => {
       setTone("info");
       setMessage(`Opening ${projectId}…`);
+      const token = openTokenRef.current + 1;
+      openTokenRef.current = token;
       try {
         const next = await api.openProject(projectId);
-        const sources = laneSources(next);
-        const peaks = await Promise.all(
-          sources.map((source) => api.fetchPeaks(source.peaksAssetId)),
-        );
+        const peaks = await api.fetchPeaks(next.asset.id);
+        const opened = await transport.open(next, next.analysis);
+        if (token !== openTokenRef.current) {
+          return;
+        }
+        revisionRef.current = next.revision;
+        hydratedRef.current = false;
         setProject(next);
-        setLanes(
-          sources.map((source, index) => ({
-            id: source.id,
-            name: source.name,
-            peaks: peaks[index],
-          })),
-        );
-        player.setDuration(next.durationSeconds);
-        player.seek(0);
-        player.setLoopRange(null);
-        player.setLoopEnabled(false);
-        player.setSpeed(1);
+        setLanes([{ id: next.asset.id, name: "Mix", peaks }]);
+        setSections(next.sections);
+        setSnapMode("bar");
         setSelection(null);
         setFollow(true);
         setViewport(fitViewport(next.durationSeconds, VIEW_WIDTH));
+        setRuntime(opened);
+        setSaveState("idle");
         setTone("info");
-        setMessage(`Loaded ${next.title}`);
+        setMessage(`Loading ${next.title}…`);
+        void (async () => {
+          try {
+            await opened.ready;
+            if (token !== openTokenRef.current) {
+              return;
+            }
+            applyRestoredState(opened, next);
+            hydratedRef.current = true;
+            setTone("info");
+            setMessage(`Loaded ${next.title}`);
+          } catch (error) {
+            if (token !== openTokenRef.current) {
+              return;
+            }
+            setTone("error");
+            setMessage(errorMessage(error));
+          }
+        })();
       } catch (error) {
+        if (isAbort(error) || token !== openTokenRef.current) {
+          return;
+        }
+        hydratedRef.current = false;
+        setRuntime(null);
+        setProject(null);
+        setLanes([]);
+        setSections([]);
         setTone("error");
         setMessage(errorMessage(error));
       }
     },
-    [api, player],
+    [api, transport],
   );
+
+  const handleAnalyzed = useCallback((snapshot: AnalysisSnapshot) => {
+    setProject((current) => {
+      if (current === null) {
+        return current;
+      }
+      return {
+        ...current,
+        analysis: snapshot,
+        chords: snapshot.chords,
+        beats: snapshot.beats,
+        bars: snapshot.bars,
+        bpb: snapshot.bpb,
+        key: snapshot.key,
+        grid: {
+          bpm: snapshot.bpm ?? current.grid?.bpm ?? 120,
+          meter: {
+            numerator: snapshot.bpb,
+            denominator: current.grid?.meter.denominator ?? 4,
+          },
+          offsetSeconds: snapshot.beats[0] ?? current.grid?.offsetSeconds ?? 0,
+        },
+      };
+    });
+    setTone("info");
+    setMessage("Analysis complete");
+  }, []);
+
+  useEffect(() => {
+    if (
+      project === null ||
+      runtime === null ||
+      !hydratedRef.current ||
+      autosaveDelayMs <= 0 ||
+      playerState.status === "playing" ||
+      playerState.status === "loading"
+    ) {
+      return;
+    }
+    const bars =
+      project.bars.length > 0
+        ? project.bars
+        : barTimesFromGrid(
+            project.beats,
+            [],
+            project.analysis?.bpm ?? project.grid?.bpm ?? null,
+            project.bpb,
+            project.grid?.offsetSeconds ?? 0,
+            project.durationSeconds,
+          );
+    const timer = setTimeout(() => {
+      const state = buildServerState({
+        sections,
+        bars,
+        sampleRate: project.asset.sampleRate,
+        positionSeconds: playerState.positionSeconds,
+        loopRange: playerState.loopRange,
+        practice: practiceState,
+        mixer: mixerState,
+      });
+      setSaveState("saving");
+      void api
+        .saveState(project.id, state, revisionRef.current)
+        .then((revision) => {
+          revisionRef.current = revision;
+          setSaveState("saved");
+        })
+        .catch((error) => {
+          if (isAbort(error)) {
+            return;
+          }
+          setSaveState("error");
+        });
+    }, autosaveDelayMs);
+    return () => clearTimeout(timer);
+  }, [
+    project,
+    runtime,
+    sections,
+    practiceState,
+    mixerState,
+    playerState.loopRange,
+    playerState.status,
+    Math.floor(playerState.positionSeconds),
+    api,
+    autosaveDelayMs,
+  ]);
 
   const handleSeek = useCallback(
     (seconds: number) => {
-      player.seek(seconds);
+      active.player.seek(seconds);
     },
-    [player],
+    [active.player],
   );
   const handleTogglePlay = useCallback(() => {
-    player.toggle();
-  }, [player]);
+    active.player.toggle();
+  }, [active.player]);
   const handleToggleFollow = useCallback(() => {
     setFollow((value) => !value);
+  }, []);
+  const handleLoopSection = useCallback((section: Section) => {
+    setMessage(`Looping ${section.name}`);
   }, []);
 
   const zoomIn = useCallback(() => {
@@ -177,6 +411,11 @@ export function App({ api: apiProp, player: playerProp }: AppProps) {
           selection.endSeconds,
         )}`
       : "no selection";
+  const keyLabel = project?.analysis?.key ?? project?.key ?? null;
+  const bpm = project?.analysis?.bpm ?? project?.grid?.bpm ?? null;
+  const bpb = project?.analysis?.bpb ?? project?.bpb ?? 4;
+  const player: StudioPlayer = active.player;
+  const transportNotice = notice ?? playerState.error;
 
   return (
     <div className="studio">
@@ -200,14 +439,12 @@ export function App({ api: apiProp, player: playerProp }: AppProps) {
           </div>
           <div>
             <dt>Key</dt>
-            <dd data-testid="key-readout">{project?.key ?? "—"}</dd>
+            <dd data-testid="key-readout">{keyLabel ?? "—"}</dd>
           </div>
           <div>
             <dt>BPM</dt>
             <dd data-testid="bpm-readout">
-              {project?.grid
-                ? `${Math.round(project.grid.bpm)} ${project.grid.meter.numerator}/${project.grid.meter.denominator}`
-                : "—"}
+              {bpm !== null ? `${Math.round(bpm * 10) / 10} · ${bpb}/4` : "—"}
             </dd>
           </div>
         </dl>
@@ -222,69 +459,134 @@ export function App({ api: apiProp, player: playerProp }: AppProps) {
           activeProjectId={project?.id ?? null}
         />
 
-        <section className="stage" aria-label="Waveform stage">
-          <div className="stage-toolbar">
-            <button type="button" aria-label="Zoom in" onClick={zoomIn}>
-              +
-            </button>
-            <button type="button" aria-label="Zoom out" onClick={zoomOut}>
-              −
-            </button>
-            <button type="button" aria-label="Fit" onClick={fit}>
-              Fit
-            </button>
-            <button
-              type="button"
-              aria-label="Zoom to selection"
-              onClick={zoomSelection}
-              disabled={selection === null || !hasSelection(selection)}
-            >
-              Zoom to selection
-            </button>
-            <button
-              type="button"
-              aria-label="Follow playhead"
-              aria-pressed={follow}
-              onClick={handleToggleFollow}
-            >
-              Follow
-            </button>
-          </div>
+        <div className="studio-column">
+          <section className="stage" aria-label="Waveform stage">
+            <div className="stage-toolbar">
+              <button type="button" aria-label="Zoom in" onClick={zoomIn}>
+                +
+              </button>
+              <button type="button" aria-label="Zoom out" onClick={zoomOut}>
+                −
+              </button>
+              <button type="button" aria-label="Fit" onClick={fit}>
+                Fit
+              </button>
+              <button
+                type="button"
+                aria-label="Zoom to selection"
+                onClick={zoomSelection}
+                disabled={selection === null || !hasSelection(selection)}
+              >
+                Zoom to selection
+              </button>
+              <button
+                type="button"
+                aria-label="Follow playhead"
+                aria-pressed={follow}
+                onClick={handleToggleFollow}
+              >
+                Follow
+              </button>
+              {transportNotice !== null && (
+                <span
+                  className="stage-notice"
+                  data-testid="transport-notice"
+                  role="status"
+                >
+                  {transportNotice}
+                </span>
+              )}
+            </div>
 
-          <div className="timeline" style={{ width: VIEW_WIDTH }}>
-            <TimeRuler
-              viewport={viewport}
-              widthPx={VIEW_WIDTH}
-              grid={project?.grid ?? null}
-              positionSeconds={playerState.positionSeconds}
-              onSeek={handleSeek}
-            />
-            {lanes.length === 0 ? (
-              <p className="stage-empty">
-                Open a recording to see its waveform.
-              </p>
-            ) : (
-              lanes.map((lane) => (
-                <WaveformPane
-                  key={lane.id}
-                  lane={lane}
+            <div className="timeline" style={{ width: VIEW_WIDTH }}>
+              <TimeRuler
+                viewport={viewport}
+                widthPx={VIEW_WIDTH}
+                grid={project?.grid ?? null}
+                positionSeconds={playerState.positionSeconds}
+                onSeek={handleSeek}
+              />
+              {lanes.length === 0 ? (
+                <p className="stage-empty">
+                  Open a recording to see its waveform.
+                </p>
+              ) : (
+                lanes.map((lane) => (
+                  <WaveformPane
+                    key={lane.id}
+                    lane={lane}
+                    viewport={viewport}
+                    durationSeconds={durationSeconds}
+                    selection={selection}
+                    positionSeconds={playerState.positionSeconds}
+                    playing={playerState.status === "playing"}
+                    follow={follow}
+                    widthPx={VIEW_WIDTH}
+                    onViewportChange={setViewport}
+                    onSelectionChange={setSelection}
+                    onSeek={handleSeek}
+                    onTogglePlay={handleTogglePlay}
+                    onToggleFollow={handleToggleFollow}
+                  />
+                ))
+              )}
+              {project !== null && pcmLoader !== null && (
+                <SpectrogramPane
+                  projectId={project.id}
                   viewport={viewport}
-                  durationSeconds={durationSeconds}
-                  selection={selection}
-                  positionSeconds={playerState.positionSeconds}
-                  playing={playerState.status === "playing"}
-                  follow={follow}
                   widthPx={VIEW_WIDTH}
-                  onViewportChange={setViewport}
-                  onSelectionChange={setSelection}
-                  onSeek={handleSeek}
-                  onTogglePlay={handleTogglePlay}
-                  onToggleFollow={handleToggleFollow}
+                  sampleRate={project.asset.sampleRate}
+                  positionSeconds={playerState.positionSeconds}
+                  loadPcm={pcmLoader}
+                  defaultCollapsed
                 />
-              ))
-            )}
-          </div>
-        </section>
+              )}
+            </div>
+          </section>
+
+          {project !== null && (
+            <>
+              <ChordRibbon
+                chords={project.chords}
+                viewport={viewport}
+                widthPx={VIEW_WIDTH}
+                positionSeconds={playerState.positionSeconds}
+                onSeek={handleSeek}
+              />
+
+              <SectionLane
+                sections={sections}
+                grid={grid}
+                viewport={viewport}
+                widthPx={VIEW_WIDTH}
+                durationSeconds={durationSeconds}
+                positionSeconds={playerState.positionSeconds}
+                snapMode={snapMode}
+                onSnapModeChange={setSnapMode}
+                selection={selection}
+                onChange={setSections}
+                onLoop={handleLoopSection}
+                onSeek={handleSeek}
+                player={player}
+              />
+
+              <div className="panel-grid">
+                <AnalysisPanel
+                  projectId={project.id}
+                  analysis={project.analysis}
+                  client={analysisClient}
+                  onAnalyzed={handleAnalyzed}
+                />
+                <MixerPanel stems={mixerStems} controller={active.mixer} />
+                <PracticePanel
+                  controller={active.practice}
+                  snapMode={snapMode}
+                  onSnapModeChange={setSnapMode}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </main>
 
       <TransportPanel
@@ -298,6 +600,15 @@ export function App({ api: apiProp, player: playerProp }: AppProps) {
           <span>{formatPosition(playerState.positionSeconds)}</span>
           <span>{selectionText}</span>
           <span>{`zoom ${zoomPercent}%`}</span>
+          <span data-testid="save-status">
+            {saveState === "idle"
+              ? ""
+              : saveState === "saved"
+                ? "saved"
+                : saveState === "saving"
+                  ? "saving…"
+                  : "save failed"}
+          </span>
         </span>
       </footer>
     </div>
