@@ -73,6 +73,7 @@ export class ConsumptionState {
     capacityFrames?: number;
   });
   readonly capacity: number;
+  readonly frameCount: number;
   readonly buffered: number;
   readonly queued: number;
   readonly position: number;
@@ -99,6 +100,7 @@ export class PlaybackCore {
     engine?: StretchEngineLike | null;
     capacityFrames?: number;
   });
+  readonly frameCount: number;
   readonly buffered: number;
   readonly capacity: number;
   readonly position: number;
@@ -109,6 +111,7 @@ export class PlaybackCore {
   readonly dryGain: number;
   readonly wetGain: number;
   readonly engine: StretchEngineLike | null;
+  readonly sources: ConsumptionState[];
   readonly transpose: number;
   readonly paused: boolean;
   readonly clicks: ClickMixer;
@@ -139,6 +142,8 @@ export class PlaybackCore {
   resume(): void;
   process(time: number, outputChannels: Float32Array[]): CoreResult;
   loopFadeFrames(rate: number): number;
+  loopSourceOf(streamFrame: number): number;
+  nextCrossingFrom(streamFrame: number): number;
 }
 
 export const MIN_RATE: number;

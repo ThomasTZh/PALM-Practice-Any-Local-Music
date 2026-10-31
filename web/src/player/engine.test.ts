@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from "vitest";
 import { PlaybackCore } from "./mix-processor";
+import { measureLoop } from "./measurements";
 import {
   clickOnsets,
   dominantFrequency,
@@ -367,5 +368,74 @@ describe("audio-thread error handling", () => {
     core.setSourceParams(0, { gain: 0.5, balance: 2 });
     core.setSourceParams(9, { gain: 1 });
     expect(core.params[0].balance).toBe(1);
+  });
+});
+
+describe("engine-path count-in and loop fade (t12 findings)", () => {
+  const LOOP = 2 * RATE;
+  const BEAT = RATE / 2;
+
+  it("runs the count-in on the wet engine path, then starts the loop", () => {
+    const core = makeCore({ frameCount: LOOP });
+    core.setRate(0.5);
+    const preRoll = 12_288;
+    core.seek(-preRoll, 0, 0, {
+      start: 0,
+      end: LOOP,
+      repeatCount: null,
+      fade: true,
+    });
+    let fed = -preRoll;
+    const quanta = Math.ceil((4 * BEAT + 2 * RATE) / QUANTUM);
+    let done = 0;
+    core.startCountIn({ bars: 1, beatsPerBar: 4, beatFrames: BEAT });
+    const { left, results } = render(core, quanta, (result) => {
+      if (result.countInDone) {
+        done += 1;
+        expect(core.position).toBe(0);
+      }
+      if (core.buffered < core.capacity / 2) {
+        const leftChunk = new Float32Array(LOOP);
+        const rightChunk = new Float32Array(LOOP);
+        for (let i = 0; i < LOOP; i += 1) {
+          const sourceFrame = (((fed + i) % LOOP) + LOOP) % LOOP;
+          const value =
+            0.5 * Math.sin((2 * Math.PI * 440 * sourceFrame) / RATE);
+          leftChunk[i] = value;
+          rightChunk[i] = value;
+        }
+        expect(core.enqueueChannels(0, [leftChunk, rightChunk])).toBe(true);
+        fed += LOOP;
+      }
+    });
+    expect(done).toBe(1);
+    const clicks = clickOnsets(left.slice(0, 4 * BEAT));
+    expect(clicks.length).toBe(4);
+    for (let i = 0; i < 4; i += 1) {
+      expect(Math.abs(clicks[i].frame - i * BEAT)).toBeLessThanOrEqual(2);
+    }
+    expect(clicks[0].peak).toBeGreaterThan(clicks[1].peak * 1.2);
+    // The wet engine has a ~16 ms pre-roll after the count-in; the loop
+    // audio must start immediately after it (not at the next pass).
+    const after = left.slice(4 * BEAT, 4 * BEAT + RATE);
+    const firstAudio = after.findIndex((_sample, index) => {
+      if (index % QUANTUM !== 0) return false;
+      return rms(after, index, QUANTUM) > 0.1;
+    });
+    expect(firstAudio).toBeGreaterThanOrEqual(0);
+    // The 5760-frame wet pre-roll is processed in ≤8-quantum batches; the
+    // loop audio then starts without waiting for another pass.
+    expect(firstAudio).toBeLessThanOrEqual(8 * QUANTUM);
+    expect(results.some((result) => result.underrun)).toBe(false);
+  });
+
+  it("separates the 16 ms warm-up from the 5 ms loop-join fade", () => {
+    for (const rate of [0.5, 1.5]) {
+      const measurement = measureLoop(rate, 8);
+      expect(measurement.warmupMs).toBeCloseTo(16, 1);
+      expect(measurement.maxQuietMsAfterWarmup).toBeLessThan(10);
+      expect(measurement.joinFadeMs).toBeGreaterThan(4);
+      expect(measurement.joinFadeMs).toBeLessThan(6);
+    }
   });
 });

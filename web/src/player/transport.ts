@@ -32,7 +32,7 @@ import {
   type PcmSource,
   type WorkerLike,
 } from "./fetch-source";
-import type { FetchBytes } from "./fetch-core";
+import { StaleGenerationError, type FetchBytes } from "./fetch-core";
 import {
   clampFrame,
   extrapolateStreamFrame,
@@ -58,6 +58,56 @@ export interface PlayerSource {
   sampleRate: number;
   channelCount: number;
   frameCount: number;
+  /** Optional explicit stem set; the single-source shape is the mix only. */
+  sources?: TransportSource[];
+  /** Channel id used for the single-source shape (default "mix"). */
+  id?: string;
+}
+
+/** One ranged PCM source in the aligned playback group. */
+export interface TransportSource {
+  /** Stable channel id: "mix" or a stem label (drums/bass/other/vocals). */
+  id: string;
+  url: string;
+  /** Defaults to the group channel count. */
+  channelCount?: number;
+  /** Defaults to the group frame count; all sources must match. */
+  frameCount?: number;
+}
+
+/** Per-channel mixer state, matching the UI's MixerController shape. */
+export interface MixerChannelState {
+  gainDb: number;
+  pan: number;
+  muted: boolean;
+  soloed: boolean;
+}
+
+export type MixerState = Record<string, MixerChannelState>;
+
+/** Bounded diagnostics for the status line (t9). */
+export interface TransportDiagnostics {
+  underruns: number;
+  lastUnderrunAt: number | null;
+  droppedChunks: number;
+  bufferedFrames: number;
+  capacityFrames: number;
+  /** Decoder/engine latency reported by the worklet, in seconds. */
+  latencySeconds: number;
+  sourceIds: string[];
+}
+
+const MIN_GAIN_DB = -60;
+const MAX_GAIN_DB = 6;
+
+function clampGainDb(gainDb: number): number {
+  if (!Number.isFinite(gainDb)) return 0;
+  return Math.min(MAX_GAIN_DB, Math.max(MIN_GAIN_DB, gainDb));
+}
+
+function clampPan(pan: number): number {
+  if (!Number.isFinite(pan)) return 0;
+  return Math.min(1, Math.max(-1, pan));
 }
 
 export interface TransportLoop {
@@ -131,6 +181,14 @@ interface Anchor {
   paused: boolean;
 }
 
+interface LoadedSource {
+  id: string;
+  url: string;
+  channelCount: number;
+  pcm: PcmSource;
+  ring: SharedRing | null;
+}
+
 const DEFAULT_PREBUFFER_SECONDS = 2;
 const DEFAULT_LOOKAHEAD_SECONDS = 4;
 const DEFAULT_CHUNK_SECONDS = 1;
@@ -193,9 +251,8 @@ export class PcmTransport {
   private context: AudioContextLike | null = null;
   private ownsContext = false;
   private node: WorkletNodeLike | null = null;
-  private pcm: PcmSource | null = null;
-  private ring: SharedRing | null = null;
-  private source: PlayerSource | null = null;
+  private loadedSources: LoadedSource[] = [];
+  private asset: PlayerSource | null = null;
   private loaded = false;
   private desiredPlaying = false;
   private generation = 0;
@@ -219,6 +276,12 @@ export class PcmTransport {
   private readonly capacityFrames: number;
   private stretchReady: { inputLatency: number; outputLatency: number } | null =
     null;
+  private mixerValue: MixerState = {};
+  private readonly mixerListeners = new Set<(state: MixerState) => void>();
+  private underruns = 0;
+  private droppedChunks = 0;
+  private lastUnderrunAt: number | null = null;
+  private reachedEndValue = false;
   private seekResolver: {
     generation: number;
     resolve: () => void;
@@ -244,12 +307,22 @@ export class PcmTransport {
     return this.errorValue;
   }
 
+  /** True after a natural end-of-source / finite-loop completion, not a seek. */
+  get reachedEnd(): boolean {
+    return this.reachedEndValue;
+  }
+
   get durationFrames(): number {
-    return this.source?.frameCount ?? 0;
+    return this.asset?.frameCount ?? 0;
   }
 
   get sampleRate(): number {
-    return this.source?.sampleRate ?? this.context?.sampleRate ?? 48_000;
+    return this.asset?.sampleRate ?? this.context?.sampleRate ?? 48_000;
+  }
+
+  /** Loaded channel ids in playback order (mix first, then stems). */
+  get sourceIds(): string[] {
+    return this.loadedSources.map((source) => source.id);
   }
 
   get speed(): number {
@@ -273,7 +346,84 @@ export class PcmTransport {
   }
 
   get mode(): "shared" | "transfer" {
-    return this.ring ? "shared" : "transfer";
+    return this.loadedSources.some((source) => source.ring !== null)
+      ? "shared"
+      : "transfer";
+  }
+
+  get diagnose(): TransportDiagnostics {
+    return {
+      underruns: this.underruns,
+      lastUnderrunAt: this.lastUnderrunAt,
+      droppedChunks: this.droppedChunks,
+      bufferedFrames: this.bufferedFrames,
+      capacityFrames: this.capacity(),
+      latencySeconds: this.stretchReady
+        ? (this.stretchReady.inputLatency + this.stretchReady.outputLatency) /
+          this.sampleRate
+        : 0,
+      sourceIds: this.sourceIds,
+    };
+  }
+
+  // -- mixer ---------------------------------------------------------------
+
+  getMixerState(): MixerState {
+    return Object.fromEntries(
+      Object.entries(this.mixerValue).map(([id, channel]) => [
+        id,
+        { ...channel },
+      ]),
+    );
+  }
+
+  subscribeMixer(listener: (state: MixerState) => void): () => void {
+    this.mixerListeners.add(listener);
+    listener(this.getMixerState());
+    return () => this.mixerListeners.delete(listener);
+  }
+
+  setGain(id: string, gainDb: number): void {
+    this.updateMixer(id, { gainDb: clampGainDb(gainDb) });
+  }
+
+  setPan(id: string, pan: number): void {
+    this.updateMixer(id, { pan: clampPan(pan) });
+  }
+
+  setMuted(id: string, muted: boolean): void {
+    this.updateMixer(id, { muted: muted === true });
+  }
+
+  setSoloed(id: string, soloed: boolean): void {
+    this.updateMixer(id, { soloed: soloed === true });
+  }
+
+  private emitMixer(): void {
+    const snapshot = this.getMixerState();
+    for (const listener of this.mixerListeners) listener(snapshot);
+  }
+
+  private updateMixer(id: string, change: Partial<MixerChannelState>): void {
+    const current = this.mixerValue[id];
+    if (!current) return;
+    this.mixerValue = {
+      ...this.mixerValue,
+      [id]: { ...current, ...change },
+    };
+    const index = this.loadedSources.findIndex((source) => source.id === id);
+    if (index >= 0 && this.node) {
+      const channel = this.mixerValue[id];
+      this.node.port.postMessage({
+        type: "params",
+        source: index,
+        gain: Math.pow(10, channel.gainDb / 20),
+        balance: channel.pan,
+        mute: channel.muted,
+        solo: channel.soloed,
+      });
+    }
+    this.emitMixer();
   }
 
   /** Audible position in project frames. */
@@ -351,14 +501,31 @@ export class PcmTransport {
       throw new RangeError("channelCount must be >= 1");
     if (!(source.frameCount >= 0))
       throw new RangeError("frameCount must be >= 0");
+    let specs: ReturnType<PcmTransport["normalizeSources"]>;
+    try {
+      specs = this.normalizeSources(source);
+    } catch (error) {
+      this.fail(error);
+      return;
+    }
     this.teardownGraph();
-    this.source = source;
+    this.asset = source;
     this.errorValue = null;
     this.desiredPlaying = false;
     this.loopValue = null;
     this.pendingPosition = 0;
     this.anchor = null;
     this.bufferedFrames = 0;
+    this.underruns = 0;
+    this.droppedChunks = 0;
+    this.lastUnderrunAt = null;
+    this.reachedEndValue = false;
+    this.mixerValue = Object.fromEntries(
+      specs.map((spec) => [
+        spec.id,
+        { gainDb: 0, pan: 0, muted: false, soloed: false },
+      ]),
+    );
     this.setState("loading");
     try {
       const context = this.options.contextFactory
@@ -377,13 +544,13 @@ export class PcmTransport {
           typeof SharedArrayBuffer !== "undefined" &&
           (globalThis as { crossOriginIsolated?: boolean })
             .crossOriginIsolated === true);
-      this.ring = useShared
-        ? createSharedRing(capacity, source.channelCount)
-        : null;
+      const rings = specs.map((spec) =>
+        useShared ? createSharedRing(capacity, spec.channelCount) : null,
+      );
       const processorOptions: Record<string, unknown> = {
         sampleRate: source.sampleRate,
         frameCount: source.frameCount,
-        sources: [{ channelCount: source.channelCount }],
+        sources: specs.map((spec) => ({ channelCount: spec.channelCount })),
         capacityFrames: capacity,
         stretch: {
           wasmBytes: stretchBytes,
@@ -394,32 +561,91 @@ export class PcmTransport {
         metronomeVolume: this.metronomeVolume,
         rate: this.speedValue,
         transpose: this.pitchValue,
-        ...(this.ring ? { sabs: [this.ring.sab] } : {}),
+        ...(rings.some((ring) => ring !== null)
+          ? { sabs: rings.map((ring) => ring?.sab) }
+          : {}),
       };
       const factory = this.options.workletFactory ?? defaultWorkletFactory;
       this.node = await factory(context, processorOptions);
       this.node.port.onmessage = (event) => this.onMessage(event.data);
-      const pcm = await createPcmSource({
-        url: source.url,
-        channelCount: source.channelCount,
-        ...(this.ring ? { sab: this.ring.sab } : {}),
-        ...(this.options.fetchBytes
-          ? { fetchBytes: this.options.fetchBytes }
-          : {}),
-        ...(this.options.workerFactory !== undefined
-          ? { workerFactory: this.options.workerFactory }
-          : {}),
-      });
-      this.pcm = pcm;
-      if (pcm.ring) this.ring = pcm.ring;
+      const sources = await Promise.all(
+        specs.map(async (spec, index) => {
+          const ring = rings[index];
+          const pcm = await createPcmSource({
+            url: spec.url,
+            channelCount: spec.channelCount,
+            ...(ring ? { sab: ring.sab } : {}),
+            ...(this.options.fetchBytes
+              ? { fetchBytes: this.options.fetchBytes }
+              : {}),
+            ...(this.options.workerFactory !== undefined
+              ? { workerFactory: this.options.workerFactory }
+              : {}),
+          });
+          return {
+            id: spec.id,
+            url: spec.url,
+            channelCount: spec.channelCount,
+            pcm,
+            ring: pcm.ring,
+          } satisfies LoadedSource;
+        }),
+      );
+      this.loadedSources = sources;
       this.loaded = true;
       this.generation += 1;
       this.postSeek(0);
+      this.emitMixer();
       await this.fill(this.prebuffer());
       if (this.stateValue !== "error") this.setState("paused");
     } catch (error) {
       this.fail(error);
     }
+  }
+
+  /**
+   * Resolve the single-source and multi-source shapes into one aligned
+   * group. The server constructs every stem at the project rate and frame
+   * count, so a mismatch is a boundary error, not something to resample.
+   */
+  private normalizeSources(source: PlayerSource): Array<{
+    id: string;
+    url: string;
+    channelCount: number;
+    frameCount: number;
+  }> {
+    const raw =
+      source.sources && source.sources.length > 0
+        ? source.sources
+        : [
+            {
+              id: source.id ?? "mix",
+              url: source.url,
+              channelCount: source.channelCount,
+              frameCount: source.frameCount,
+            },
+          ];
+    const specs = raw.map((entry) => ({
+      id: entry.id,
+      url: entry.url,
+      channelCount: entry.channelCount ?? source.channelCount,
+      frameCount: entry.frameCount ?? source.frameCount,
+    }));
+    for (const spec of specs) {
+      if (!spec.id) throw new RangeError("every source needs an id");
+      if (!spec.url) throw new RangeError(`source ${spec.id} has no url`);
+      if (!(spec.channelCount >= 1))
+        throw new RangeError(`source ${spec.id} has an invalid channelCount`);
+      if (spec.frameCount !== source.frameCount) {
+        throw new RangeError(
+          `source ${spec.id} has ${spec.frameCount} frames; expected ${source.frameCount}`,
+        );
+      }
+    }
+    const ids = new Set(specs.map((spec) => spec.id));
+    if (ids.size !== specs.length)
+      throw new RangeError("source ids must be unique");
+    return specs;
   }
 
   /** Start (or resume) playback from the current position. */
@@ -467,6 +693,7 @@ export class PcmTransport {
     }
     this.pendingPosition = target;
     this.anchor = null;
+    this.reachedEndValue = false;
     this.setState("seeking");
     this.generation += 1;
     this.postSeek(target);
@@ -570,13 +797,20 @@ export class PcmTransport {
   // -- internals ------------------------------------------------------------
 
   private teardownGraph(): void {
-    this.pcm?.dispose();
-    this.pcm = null;
+    for (const source of this.loadedSources) source.pcm.dispose();
+    this.loadedSources = [];
     this.node?.disconnect?.();
     this.node = null;
-    this.ring = null;
     this.stretchReady = null;
     this.loaded = false;
+  }
+
+  /** Shared ring/queue capacity the prefetch must stay inside. */
+  private capacity(): number {
+    return (
+      this.capacityFrames ||
+      Math.ceil(this.sampleRate * DEFAULT_CAPACITY_SECONDS)
+    );
   }
 
   private async resolveStretchBytes(): Promise<ArrayBuffer> {
@@ -645,14 +879,17 @@ export class PcmTransport {
       frame: fetchStart,
       audibleFrame,
       generation: this.generation,
+      generations: this.loadedSources.map(() => this.generation),
       loop,
     });
-    this.pcm?.setGeneration(this.generation);
-    // The writer index is absolute in stream coordinates (it may be
-    // negative for loop pre-roll), so reset it with the generation.
-    // Safe to do before the worklet processes the seek: the generation
-    // mismatch keeps the reader silent until it adopts the new one.
-    void this.pcm?.acknowledgeFlush(this.generation, fetchStart);
+    for (const source of this.loadedSources) {
+      source.pcm.setGeneration(this.generation);
+      // The writer index is absolute in stream coordinates (it may be
+      // negative for loop pre-roll), so reset it with the generation.
+      // Safe to do before the worklet processes the seek: the generation
+      // mismatch keeps the reader silent until it adopts the new one.
+      void source.pcm.acknowledgeFlush(this.generation, fetchStart);
+    }
     this.anchor = {
       frame: audibleFrame,
       time: this.context?.currentTime ?? 0,
@@ -708,12 +945,15 @@ export class PcmTransport {
    * receives contiguous passes in stream order.
    */
   private async fill(target: number): Promise<void> {
-    if (this.filling || !this.loaded || !this.pcm) return;
+    if (this.filling || !this.loaded || this.loadedSources.length === 0) return;
     this.filling = true;
     try {
-      while (this.loaded && this.pcm) {
+      while (this.loaded && this.loadedSources.length > 0) {
         const ahead = this.fetchedStream - this.streamPosition();
         if (ahead >= target) break;
+        // Stay inside the shared ring / transfer queue: a chunk that would
+        // overflow would desynchronise the group (one stem drops frames).
+        if (ahead + this.chunk() > this.capacity()) break;
         const start = this.fetchedStream;
         const progressed = await this.feedRange(start, start + this.chunk());
         if (progressed <= 0) break;
@@ -721,7 +961,15 @@ export class PcmTransport {
         if (!this.loopValue && this.fetchedStream >= this.durationFrames) break;
       }
     } catch (error) {
-      if (this.loaded) this.fail(error);
+      // A seek bumped the generation while this round was in flight: the
+      // result is intentionally discarded and the new position refills.
+      if (error instanceof StaleGenerationError) {
+        setTimeout(() => {
+          if (this.loaded) void this.fill(this.lookahead());
+        }, 0);
+      } else if (this.loaded) {
+        this.fail(error);
+      }
     } finally {
       this.filling = false;
     }
@@ -733,8 +981,7 @@ export class PcmTransport {
    * for consumption). Loop streams are split at pass boundaries.
    */
   private async feedRange(start: number, end: number): Promise<number> {
-    const pcm = this.pcm;
-    if (!pcm) return 0;
+    if (this.loadedSources.length === 0) return 0;
     let cursor = start;
     while (cursor < end) {
       let sourceStart: number;
@@ -750,22 +997,32 @@ export class PcmTransport {
         sourceStart = cursor;
         take = Math.min(end - cursor, this.durationFrames - cursor);
       }
-      const chunk = await pcm.fetchRange(sourceStart, sourceStart + take);
-      if (chunk.frames <= 0) return cursor - start;
-      this.deliver(chunk);
-      cursor += chunk.frames;
+      // Every stem reads the same source-frame range, in parallel, so the
+      // group cannot drift: the fetched length is the group's step.
+      const chunks = await Promise.all(
+        this.loadedSources.map((source) =>
+          source.pcm.fetchRange(sourceStart, sourceStart + take),
+        ),
+      );
+      const frames = Math.min(...chunks.map((chunk) => chunk.frames));
+      if (frames <= 0) return cursor - start;
+      chunks.forEach((chunk, index) => this.deliver(chunk, index));
+      cursor += frames;
       // A short read means the asset ended; a loop re-checks the pass map.
-      if (chunk.frames < take && !this.loopValue) break;
+      if (frames < take && !this.loopValue) break;
     }
     return cursor - start;
   }
 
-  private deliver(chunk: { frames: number; channels?: Float32Array[] }): void {
+  private deliver(
+    chunk: { frames: number; channels?: Float32Array[] },
+    index: number,
+  ): void {
     if (!chunk.channels || !this.node) return;
     this.node.port.postMessage(
       {
         type: "channels",
-        source: 0,
+        source: index,
         frames: chunk.frames,
         channels: chunk.channels,
       },
@@ -821,16 +1078,23 @@ export class PcmTransport {
         void this.fill(this.lookahead());
         return;
       case "underrun":
+        this.underruns += 1;
+        this.lastUnderrunAt = this.context?.currentTime ?? null;
         if (this.desiredPlaying && this.stateValue === "playing")
           this.setState("buffering");
         return;
+      case "chunk-dropped":
+        this.droppedChunks += 1;
+        return;
       case "ended":
         this.desiredPlaying = false;
+        this.reachedEndValue = true;
         this.pendingPosition = this.durationFrames;
         this.setState("paused");
         return;
       case "loop-complete":
         this.desiredPlaying = false;
+        this.reachedEndValue = true;
         this.pendingPosition = this.loopValue
           ? this.loopValue.endFrame
           : this.positionFrame;

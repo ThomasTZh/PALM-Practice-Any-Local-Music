@@ -340,3 +340,91 @@ describe("transport prefetch ranges", () => {
     transport.dispose();
   });
 });
+
+describe("multi-source transport (mix + stems)", () => {
+  it("loads every source into one seek and delivers them in step", async () => {
+    const context = { currentTime: 0, sampleRate: RATE, destination: null };
+    const node = new FakeNode();
+    const bytesFor = (value: number): ArrayBuffer =>
+      makeSourceBytes([
+        new Float32Array(FRAMES).fill(value),
+        new Float32Array(FRAMES).fill(value),
+      ]);
+    const byUrl = new Map([
+      ["memory://mix", bytesFor(0.05)],
+      ["memory://drums", bytesFor(0.1)],
+      ["memory://bass", bytesFor(0.2)],
+    ]);
+    const transport = new PcmTransport({
+      contextFactory: () => context,
+      workletFactory: (_context, options) => {
+        expect((options.sources as unknown[]).length).toBe(3);
+        return node;
+      },
+      fetchBytes: async (url, start, end) => {
+        const payload = byUrl.get(url);
+        if (!payload) throw new Error(`missing ${url}`);
+        return applyRange(payload, start, end);
+      },
+      workerFactory: null,
+      stretchBytes: new ArrayBuffer(8),
+      prebufferFrames: 1024,
+      lookaheadFrames: 2048,
+      chunkFrames: 1024,
+      preRollFrames: 0,
+      capacityFrames: 4096,
+    });
+    await transport.load({
+      url: "memory://mix",
+      sampleRate: RATE,
+      channelCount: 2,
+      frameCount: FRAMES,
+      sources: [
+        { id: "mix", url: "memory://mix" },
+        { id: "drums", url: "memory://drums" },
+        { id: "bass", url: "memory://bass" },
+      ],
+    });
+    expect(transport.sourceIds).toEqual(["mix", "drums", "bass"]);
+    const seek = node.messagesOf("seek").at(0);
+    expect(seek?.generations).toEqual([1, 1, 1]);
+    const chunks = node.messagesOf("channels");
+    expect(chunks.map((message) => message.source)).toEqual([0, 1, 2]);
+    expect(new Set(chunks.map((message) => message.frames)).size).toBe(1);
+
+    const seeksBefore = node.messagesOf("seek").length;
+    transport.setGain("bass", -6);
+    transport.setMuted("drums", true);
+    expect(node.messagesOf("seek").length).toBe(seeksBefore);
+    expect(
+      node
+        .messagesOf("params")
+        .filter((message) => message.source === 2)
+        .at(-1),
+    ).toMatchObject({ gain: Math.pow(10, -6 / 20) });
+    expect(
+      node
+        .messagesOf("params")
+        .filter((message) => message.source === 1)
+        .at(-1),
+    ).toMatchObject({ mute: true });
+    transport.dispose();
+  });
+
+  it("rejects a group with mismatched frame counts", async () => {
+    const transport = new PcmTransport({ workerFactory: null });
+    await transport.load({
+      url: "memory://mix",
+      sampleRate: RATE,
+      channelCount: 2,
+      frameCount: FRAMES,
+      sources: [
+        { id: "mix", url: "memory://mix" },
+        { id: "bass", url: "memory://bass", frameCount: FRAMES - 1 },
+      ],
+    });
+    expect(transport.state).toBe("error");
+    expect(transport.error).toContain("frames");
+    transport.dispose();
+  });
+});

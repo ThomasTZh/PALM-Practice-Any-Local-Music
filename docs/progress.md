@@ -633,3 +633,88 @@ failure alert). Shared styles were appended to `web/src/styles.css`.
 - `make build-web`: exit 0 (tsc and Vite build). No dependency was added:
   `package.json`, the root manifest and the workspace file are unchanged.
 - `App.tsx` and `main.tsx` were not touched.
+
+## 2026-11-01 — transport integration with assets, stems and grid metronome (t9)
+
+### What landed (web/src/player only)
+
+- **Multi-source transport.** `PcmTransport` now loads an aligned group: the
+  canonical mix plus the four server stems (`drums`, `bass`, `other`,
+  `vocals`) at one sample rate and frame count. Every source gets its own
+  ranged PCM source and ring; the prefetch step fetches the same source-frame
+  range for all of them in parallel and advances by the shortest result, so
+  the group cannot drift. Seek sends the group generation array and resets
+  every ring writer; mixer changes post per-source gain/balance/mute/solo
+  without a seek or restart.
+- **Grid and section loops.** `grid.ts` turns detected beats (or a 120 BPM /
+  4/4 fallback grid) into metronome `BeatSpec`s with a downbeat on every bar
+  start, and converts section seconds to clamped loop frames. `loopEnabled`
+  + `loopRange` are one source of truth shared by the transport panel and the
+  practice panel.
+- **Studio adapter.** `studio-player.ts` exports `createStudioPlayer(options)`
+  returning `{player, mixer, practice, transport, ready, getNotice,
+  subscribeNotice, diagnostics, dispose}`. `player` is exactly t4's
+  `StudioPlayer`; `mixer` and `practice` are the fixed controller surfaces
+  (`setGain` dB / `setPan` / `setMuted` / `setSoloed`; speed, pitch, loop,
+  count-in, metronome volume, accent). `studioPlayerOptionsFromProject`
+  derives endpoints, stem labels and grid from a parsed project plus the
+  analysis snapshot, with explicit overrides for server frame count.
+- **Fallbacks and reporting.** When a stem set is advertised but cannot be
+  fetched, the factory reloads the canonical mix only and publishes
+  `Stems unavailable; playing the mix.` through `getNotice()` /
+  `subscribeNotice`. Analysis-free projects use the mix with no notice.
+  Underruns increment `diagnostics().underruns` and surface
+  `Buffering audio…`; dropped chunks are counted. `latencySeconds` comes
+  from the stretcher's reported input+output latency.
+- **State mapping.** unloaded→idle; loading/seeking/buffering→loading;
+  playing→playing; paused→paused; error→error; ended only after a natural
+  end at the duration (never during seeking/buffering and never for an active
+  loop). Play from the end restarts at 0 like the shell fallback.
+
+### t12 review findings closed
+
+1. **Reproducible measurements.** `measurements.ts` is the committed
+   measurement code; `measurements.test.ts` prints the exact table and asserts
+   the tolerances. Quoted values below come from that run.
+2. **Loop fade vs 16 ms warm-up.** `measureLoop` reports `warmupMs`
+   separately and only scans quiet runs after the first audible quantum;
+   `measureJoinFade` measures the notch at sample resolution. At 0.5×/1.5×:
+   warm-up 16 ms, longest quiet run after warm-up 0 ms, join fade 5.02 ms. At
+   1× (dry bypass): warm-up 0 ms, join fade 5.00 ms.
+3. **Engine-path count-in.** A new engine test runs a one-bar count-in at
+   0.5× through the real WASM: four accented clicks at 0/24 000/48 000/
+   72 000 output frames, cursor frozen at 0, then the loop tone starts within
+   the 768-frame wet pre-roll. No underrun is reported.
+
+### Measured table (committed measurement code, real scalar WASM)
+
+- Pitch at 0.5×/1.5×: 439.9305 / 439.9297 Hz (0.016 % error).
+- +2 semitones at 1×/0.5×/1.5×: 494.524 / 494.633 / 494.473 Hz against
+  493.883 Hz (0.12–0.15 %).
+- Duration ratio at 0.5×/1×/1.5×: 1.9933 / 1.0000 / 0.6693 (expected
+  2 / 1 / 0.6667; ≤0.67 %).
+- 2 s loop over 61 s at 1×/0.5×/1.5×: 30/15/45 passes, wrap spacing exactly
+  96 000 stream frames, longest wrap-time error <4e-10 frames, warm-up 0/16/
+  16 ms, join fade 5.00/5.02/5.02 ms, longest quiet run after warm-up 0 ms.
+
+### Tests
+
+- `web/node_modules/.bin/vitest run src/player` (from the repo root): exit 0,
+  10 files, 99 tests at the time of this entry (engine 22, integration 7,
+  transport 17, fetch 13, stretch 5, time 6, grid 8, adapter 15, worklet
+  adapter 1, measurements 6).
+- `make build-web`: exit 0 (`tsc --noEmit` + Vite build).
+- New coverage: five-source sample-exact sync; mute/solo/gain while the cursor
+  keeps moving; bar-boundary loop at 1×/0.5×; 1×→1.5× pitch/position
+  continuity; 60 s sessions with five sources at 1×/0.5×; missing-stem
+  fallback; underrun notice and diagnostics; seek position within 30 ms;
+  count-in message ordering; grid fallback and accents.
+
+### Integration note for t16
+
+The server's stem entries carry `label` (`drums`, `bass`, `other`, `vocals`)
+and a `url`; the t4 project parser currently requires `id`. `studioPlayerOptionsFromProject`
+accepts either (`role` label wins, otherwise `id`) and can derive the endpoint
+from the project id, so t16 can pass the parsed project once the parser maps
+`label`/`url`. Explicit `frameCount`/`channelCount` extras avoid
+duration×rate rounding differences.
