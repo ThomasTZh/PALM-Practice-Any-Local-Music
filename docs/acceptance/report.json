@@ -1,13 +1,13 @@
 {
   "analysed": 5,
   "failed": 0,
-  "generated_at": "2026-10-31T20:05:17Z",
+  "generated_at": "2026-10-31T20:28:26Z",
   "missing": 0,
   "missing_expected": [],
   "mode": "offline headless analysis",
   "recordings": [
     {
-      "analysis_seconds": 8.669,
+      "analysis_seconds": 7.635,
       "bars": 40,
       "beats": 159,
       "bpm": 139.745,
@@ -154,7 +154,7 @@
       "status": "analyzed"
     },
     {
-      "analysis_seconds": 27.144,
+      "analysis_seconds": 26.717,
       "bars": 176,
       "beats": 701,
       "bpm": 139.745,
@@ -505,7 +505,7 @@
       "status": "analyzed"
     },
     {
-      "analysis_seconds": 15.144,
+      "analysis_seconds": 29.213,
       "bars": 52,
       "beats": 210,
       "bpm": 101.384,
@@ -678,7 +678,7 @@
       "status": "analyzed"
     },
     {
-      "analysis_seconds": 33.03,
+      "analysis_seconds": 73.33,
       "bars": 108,
       "beats": 434,
       "bpm": 84.763,
@@ -1038,7 +1038,7 @@
       "status": "analyzed"
     },
     {
-      "analysis_seconds": 44.444,
+      "analysis_seconds": 76.426,
       "bars": 159,
       "beats": 637,
       "bpm": 136.067,

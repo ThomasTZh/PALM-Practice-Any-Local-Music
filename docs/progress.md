@@ -849,3 +849,150 @@ count-in kept the fallback 120 BPM / 4/4 until the project was reopened.
 - Chords feed the ribbon and shell state, not the audio engine (the engine only
   needs beats/tempo); the transport uses beats plus bpb for accents, with the
   analysed bpb matching the persisted bar boundaries.
+
+## 2026-11-01 — documentation, limitations and acceptance evidence (t15)
+
+### Documentation map
+
+- [architecture.md](architecture.md): processes, data root, project document,
+  time model, playback path, analysis/separation pipelines, caching.
+- [api.md](api.md): every shipped route, request/response shapes, binary PCM and
+  BSPK formats, SSE and job contracts.
+- [troubleshooting.md](troubleshooting.md): setup, analysis, separation,
+  playback, projects/export and acceptance failure modes.
+- README.md: the user-facing quick start, commands, limitations and evidence.
+- [acceptance/report.md](acceptance/report.md) and `report.json`: the
+  five-recording report regenerated at the final gate (below).
+- `web/e2e/golden-path.spec.ts`, `web/e2e/playwright.config.ts` and
+  `scripts/e2e_server.py`: the browser acceptance path.
+
+### Final gate (run before README, after the HTTP Range fix)
+
+```text
+gate (offline)
+  [PASS] ruff check     ruff check 3 path(s) (0.1s)
+  [PASS] ruff format    ruff format --check (0.1s)
+  [PASS] fixtures       6 fixtures match the generator byte for byte (1.3s)
+  [PASS] mypy           mypy strict (0.5s)
+  [PASS] pytest         223 passed, 7 skipped, 1 warning in 49.99s (50.4s)
+  [PASS] web typecheck  tsc --noEmit (2.3s)
+  [PASS] web tests      vitest run (8.8s)
+  [PASS] web build      vite build (0.8s)
+  [PASS] e2e            1 spec file(s) (27.8s)
+gate: ok
+```
+
+`gate: ok`, exit 0. An independent `vitest run` in `web/` reported 47 test
+files / 416 tests; the Python gate number above is the authoritative one.
+The gate's e2e step runs the golden path on both configured browsers against
+the real FastAPI server with a fresh temporary data root per run.
+
+### Browser transport evidence (final run)
+
+A JSON-reporter run of the same e2e suite after the HTTP Range fix recorded:
+
+| Project | Result | Position | 0.5x delta / 1.5 s | Loop wrap | Export |
+| --- | --- | --- | --- | --- | --- |
+| Firefox | passed | 0.20 s → 0.60 s | 0.90 s | 1 wrap (…1.9 → 0.1) | 705600 frames @ 44.1 kHz |
+| Chromium | passed | 0.10 s → 0.40 s | 0.80 s | 1 wrap (…1.9 → 0.1) | 705600 frames @ 44.1 kHz |
+
+Both reported `AudioWorklet=true`, a running AudioContext, a secure loopback
+context, and no audible verification claim (headless). The earlier frozen
+position was a transport/HTTP bug: the player sends `Range: bytes=…` and the
+PCM routes ignored it until the fix that now returns `206` +
+`Content-Range`/`Accept-Ranges` and `416` for unsatisfiable ranges. There is no
+open browser-playback limitation; the only browser limitation is that automated
+runs cannot judge what a human hears.
+
+### Other measured results used by the docs
+
+- `make doctor` exit 0: all required toolchain and assets present, no network.
+  GPU section reports `nvidia-smi unavailable` and `torch cuda False`.
+- `make test-separation TESTS="tests/integration/test_stems"`: 14 passed in
+  30.50 s on the real CPU Demucs run.
+- Fresh separation probe: 8.00 s stereo at 48 kHz → four 384000-frame stereo
+  stems, 17.93 s wall (child 17.48 s, `device=cpu`), no network.
+- `make accept` exit 0: 5/5 recordings, 1103.98 s of audio, 213.32 s wall.
+  The Markdown printed to stdout was byte-identical to the committed
+  `docs/acceptance/report.md` for that run. Per-file results are in that report
+  (analysis times 7.635–76.426 s on this loaded machine).
+- `make fixtures`: 6 fixtures, byte-identical on rerun; `progression_120`
+  yields C major, 120.246 BPM at 48 kHz (120.185 at 44.1 kHz), 8 bars, raw
+  N,C,Am,F,G with bar-aligned starts.
+
+### Known limitations (measured, not intentions)
+
+1. **Beatless material confuses the tempo tracker.** The four sustained chords
+   in `chords_c_am_f_g.wav` have no beat-level onsets; QM Bar and Beat Tracker
+   returns 135.999 BPM and 5 bars. The preserved native host returns the same
+   18 beats / 5 bars / 135.999 BPM from the same WAV, so this is plugin
+   behaviour. `click_120.wav` (120.185 BPM, 2 bars) and `progression_120.wav`
+   (120.246 BPM, 8 bars, chords + click bed) are the tempo evidence. No
+   fixture-specific correction is applied.
+2. **The analysis cache key omits plugin versions.** The offline pack is
+   frozen; if it is ever replaced, bump `ANALYSIS_VERSION` in
+   `src/basseparate/features.py` so old entries cannot be reused. The cache
+   key already includes the source hash, actual rate, bpb, lead-in and ordered
+   plugin display names/parameters.
+3. **`qm-keydetector` tonic is 1-based in this pack** (C=1, A=10, mode 0
+   major/1 minor). Consumers must use the human key label (`key`,
+   `key_label`), never treat the raw tonic as a 0-based MIDI pitch class.
+4. **Stem separation is CPU-only here.** The NVIDIA driver is unavailable and
+   `torch.cuda.is_available()` is false (`make doctor`); the worker reports
+   `device=cpu`. A fresh 8 s stereo 48 kHz fixture took 17.93 s wall
+   (≈2.4× realtime), so a five-minute song takes roughly twelve minutes; the
+   worker uses 120 s windows with 8 s overlap and a 7.5/5/3 s OOM ladder.
+5. **Chord/key output is an estimate, not ground truth.** Chordino label
+   spelling varies with voicing/rate (`C` vs `C6`, `F` vs `F6`, slash chords)
+   and Key Detector can change its mind on ambiguous material; the UI
+   normalises chords for display and the raw labels remain in the cache. The
+   fixture values above are the reproducible acceptance values, not a claim of
+   universal accuracy.
+6. **Automated runs cannot verify audibility.** Node and browser tests assert
+   transport state, frame position, loop wraps and control state with the real
+   WASM/AudioWorklet, but no headless run claims what a human hears. The manual
+   listening checklist below is not performed by the agent.
+7. **Single platform and local-only by design.** Linux, loopback only, Python
+   3.11 and the preserved assets; project locks use `fcntl`; there is no macOS,
+   Windows or mobile support, no accounts, no cloud sync and no streaming
+   download.
+8. **Persistence boundaries.** Sections are stored as bar ranges and loops as
+   project frames; autosave skips while the transport is playing (it flushes on
+   pause/stop); the spectrogram loads PCM only when expanded. `make dev` starts
+   Vite plus an ephemeral API port, while the Vite proxy targets 8765; for
+   proxied development run the API on 8765 and Vite separately.
+9. **Dev/acceptance timing varies with machine load.** The committed
+   acceptance report records one cold run (213.32 s wall for 1103.98 s of
+   audio); musical values are stable, wall times are not a benchmark.
+
+### Manual listening checklist (not performed — requires a human)
+
+Status: **not performed**. Do not mark these as passed without a listener and a
+date/initials. Run on Firefox or Chromium with real headphones, once per
+`audio2test` recording plus `tests/fixtures/audio/progression_120.wav`:
+
+- [ ] Import the file; play 60 s at 1×; no clicks, dropouts or pitch drift.
+- [ ] 0.5× and 1.5×: pitch stays the same, no warble or metallic artefacts.
+- [ ] Pitch +2 / −2 semitones at 1×: expected transposition, position stays
+      continuous.
+- [ ] Separate stems: bass solo, bass mute, drums/other/vocals solo; no obvious
+      bleed that breaks practice, no start/stop glitch when switching.
+- [ ] Analyse: key, BPM and bar/beat grid match the recording by ear; chord
+      ribbon order matches the harmony (N.C. allowed in gaps).
+- [ ] Create a bar-snapped section (two bars), loop it five passes; the wrap is
+      seamless and the count-in/accented metronome lines up with the song.
+- [ ] Save, restart `basseparate serve`, reopen: speed, loop/section, mixer and
+      position restore; export WAV and confirm it plays and matches duration.
+- [ ] Record listener, date, browser and any defects in this file's next entry.
+
+### Acceptance evidence
+
+- Five-recording report: [acceptance/report.md](acceptance/report.md);
+  machine-readable rows: `docs/acceptance/report.json`.
+- Golden path: `web/e2e/golden-path.spec.ts`; run with `make e2e` (Firefox and
+  Chromium, real server, isolated temp data root).
+- Fixtures: six deterministic WAVs generated by `make fixtures`, described in
+  [tests/fixtures/README.md](../tests/fixtures/README.md).
+- Every number above is from the commands named beside it in this entry; no
+  document quotes a run that is not committed or reproducible with those
+  commands.
