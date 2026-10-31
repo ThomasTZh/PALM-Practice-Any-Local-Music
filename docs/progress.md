@@ -248,3 +248,100 @@ Recorded from actual runs on the committed tree, after t2's engine landed.
   patched from this task, and the tree went green when t2 fixed them.
 - No dependency was added: `web/package.json` is unchanged and the build uses
   the already linked React 19 / Vite 8 / Vitest 5 / testing-library set.
+
+## 2026-11-01 — playback core: speed, pitch, loop, metronome (t2)
+
+### What was ported, and what is new
+
+The legacy branch already had a working rolling-seek engine, so the core is a
+port, not a rewrite. `web/src/player/worklet-processor.js` carries the
+`ConsumptionState` ring reader (shared SAB / transfer queue in one state
+machine), the `MixState` mixer with the Signalsmith Stretch rolling seek, the
+practice-loop stream model (pass crossings, join fades, wrap anchors) and the
+procedural metronome click tables. The port trims diagnostics that belong to
+other tasks (peak metering, loop pinning, control-response latency) and keeps
+the audio-thread rules intact: no I/O, no allocation in steady state, no
+exceptions in the render callback.
+
+New in t2:
+
+- `stretch_set_transpose(semitones)` in `stretch_wrapper.cpp` and
+  `setTranspose()` on the JS engine, clamped to −12…+12. Pitch is orthogonal
+  to the playback rate; a non-zero transpose engages the wet path even at
+  exactly 1× (the dry 1× bypass would otherwise discard the pitch shift).
+- A count-in phase in the core: `bars × beatsPerBar` accented clicks at
+  `beatFrames`, with the audible cursor frozen until the last click, so the
+  first loop pass starts after the count-in.
+- Beat-list metronome inside the core: beats are project frames, mapped
+  through the active loop and the current (ramped) rate, with a dedupe guard
+  for the pass-boundary quantum and accented bar starts.
+- `web/src/player/transport.ts`: the seven contract states
+  (`unloaded/loading/paused/playing/seeking/buffering/error`), seek
+  generations, ranged prefetch through the worker (or the identical direct
+  fallback), loop-stream splitting at pass boundaries, anchor-based output-time
+  to project-frame mapping, and count-in/speed/pitch/beat plumbing. A failed
+  load or fetch stays in `error`; `play()` never throws.
+- `web/src/player/pcm.ts`, `fetch-core.ts`, `fetch-worker.ts`,
+  `fetch-source.ts`: HTTP Range fetch, whole-frame validation, 416 handling,
+  the 16-byte-header SAB ring with atomic indices, and stale-generation
+  rejection. The worker and the main-thread fallback share the same
+  `RangedPcmFetcher`, so the two paths cannot drift.
+
+### Rebuilding the WASM offline
+
+`node web/src/player/stretch/build.mjs` uses the preserved local
+`third_party/emsdk` (Emscripten 4.0.23) and the pinned signalsmith-stretch
+`a670068` / signalsmith-linear `de55e6a`. No download was used. The build now:
+
+- exports `_stretch_set_transpose` (minified export `o`) and records the full
+  API→wasm export map in `dist`/`BUILD.md`, so the hand-maintained letter
+  mapping has a checked source of truth;
+- adds `-fno-finite-math-only`: with plain `-ffast-math`, NaN controls fell
+  through every clamp (observed: `stretch_set_transpose(NaN)` returned NaN).
+  The wrapper's bit-pattern NaN check now survives compilation, and the JS
+  boundary also parses non-finite values to 0.
+
+Artifacts and BUILD.md hashes were regenerated together. Scalar `.wasm`
+`dc0df91c…`, SIMD `.wasm` `549e8f88…`, both `.js` glue files unchanged from the
+previous build (`83248bee…`, `a2fbcf01…`).
+
+### Tests (real WASM, Node)
+
+All player tests read the committed scalar artifact from disk and instantiate
+it directly; no compiler or browser is involved.
+
+- Pitch, FFT peak with Hann window and parabolic interpolation: 440 Hz at 0.5×
+  and 1.5× stays inside ±1%; +2 semitones measures 493.9 Hz ±1% at 1×, 0.5×
+  and 1.5×.
+- Duration: the audible span of a 4 s source at 0.5×/1×/1.5× matches
+  `1/rate` within 1.5% (measured 1.999 / 0.9997 / 0.669).
+- Loop: a 2 s loop at 0.5×/1×/1.5× over 61 s produces wrap anchors exactly
+  96 000 stream frames apart, steady-state wrap time spacing exactly one pass,
+  ≥10 passes, and no quiet run longer than 16 ms (< 20 ms). The 5 ms join
+  notch is the only dip.
+- Metronome: supplied beat lists click at the requested frames with a louder
+  downbeat; at 0.5× the 0.5 s beat spacing becomes 1 s of output. Count-in
+  plays four accent-correct clicks, keeps the cursor at 0, and the loop audio
+  resumes only after the last click.
+- Errors: missing source (silent, no throw), underrun on the engine path
+  (silence + flag, recovery when data arrives), out-of-range rate/pitch/NaN
+  control values all clamp without throwing.
+- Transport: lifecycle transitions, `seeking` during a seek, anchor mapping
+  to project frames, loop stream→loop-range mapping (104 800 → 8 800),
+  buffering on underrun, error on missing source, count-in before resume,
+  shared vs transfer mode, and ranged prefetch never crossing the source end.
+- Adapter: the worklet module registers `basseparate-player`, reports the
+  2 880/2 880 latencies and plays a seeked chunk in a faked worklet scope.
+
+### Verification
+
+Recorded from actual runs on this tree.
+
+- `cd web && npx vitest run src/player`: exit 0, 5 files, 54 tests.
+- `make gate-lite`: exit 0 (ruff, format, fixtures, mypy, pytest 147 passed,
+  web tests 164 passed).
+- `make gate`: exit 0 (full suite, web typecheck, `vite build`, e2e skipped:
+  no specs yet).
+- `web/node_modules/.bin/prettier --check` passes for all hand-written player
+  sources; the generated `stretch/dist/*.js` are excluded from formatting so
+  their BUILD.md hashes stay valid.
