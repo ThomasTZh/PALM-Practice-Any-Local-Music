@@ -65,6 +65,33 @@
       "name": "tone_48k_stereo.wav",
       "sample_rate": 48000,
       "seconds": 1.0
+    },
+    {
+      "bar_seconds": 2.0,
+      "bars": 8,
+      "bpm": 120.0,
+      "channels": 1,
+      "chord_seconds": [
+        8.0,
+        4.0,
+        2.0,
+        2.0
+      ],
+      "chords": [
+        "C:maj",
+        "A:min",
+        "F:maj",
+        "G:maj"
+      ],
+      "click_bed": "120 BPM click, accent on every bar",
+      "file": "audio/progression_120.wav",
+      "frames": 705600,
+      "key": "C major",
+      "kind": "progression",
+      "meter": "4/4",
+      "name": "progression_120.wav",
+      "sample_rate": 44100,
+      "seconds": 16.0
     }
   ],
   "version": 1

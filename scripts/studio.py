@@ -251,6 +251,66 @@ def synth_silence(seconds: float = 1.0, rate: int = SAMPLE_RATE) -> tuple[bytes,
     return _wav_bytes(rate, 1, _to_pcm([0.0] * total)), meta
 
 
+PROGRESSION_PLAN: tuple[tuple[str, tuple[float, ...], float], ...] = (
+    ("C:maj", (261.63, 329.63, 392.00), 8.0),
+    ("A:min", (220.00, 261.63, 329.63), 4.0),
+    ("F:maj", (87.31, 174.61, 220.00, 261.63), 2.0),
+    ("G:maj", (196.00, 246.94, 293.66), 2.0),
+)
+
+
+def synth_progression_120(rate: int = SAMPLE_RATE) -> tuple[bytes, dict]:
+    """C-Am-F-G triads over a 120 BPM click bed, bar-aligned.
+
+    Sixteen seconds at 120 BPM in 4/4 is eight bars. The tonic gets two bars
+    and each subsequent chord fewer, so Key Detector hears C major at both
+    44.1 and 48 kHz while Chordino still reports the four raw triads. The
+    lowest note of each chord is doubled to keep the root audible, and the
+    click bed supplies the beat-level onsets that sustained pads lack.
+    """
+    bpm = 120.0
+    meter = 4
+    beat_seconds = 60.0 / bpm
+    bar_seconds = beat_seconds * meter
+    seconds = sum(duration for _, _, duration in PROGRESSION_PLAN)
+    total = int(round(seconds * rate))
+    samples = [0.0] * total
+
+    start_frame = 0
+    for _, frequencies, duration in PROGRESSION_PLAN:
+        frames = int(round(duration * rate))
+        for offset in range(frames):
+            gain = 0.2 * _envelope(offset, frames, rate, 0.03, 0.08)
+            weighted = 2.0 * _sine(frequencies[0], offset, rate)
+            weighted += sum(_sine(freq, offset, rate) for freq in frequencies[1:])
+            samples[start_frame + offset] += gain * weighted / (len(frequencies) + 1)
+        start_frame += frames
+
+    beats = int(round(seconds / beat_seconds))
+    click_frames = int(round(0.04 * rate))
+    for beat in range(beats):
+        start = int(round(beat * beat_seconds * rate))
+        accent = beat % meter == 0
+        amplitude = 0.06 if accent else 0.036
+        for offset in range(min(click_frames, total - start)):
+            decay = math.exp(-6.0 * offset / click_frames)
+            samples[start + offset] += amplitude * decay * _sine(1200.0, offset, rate)
+
+    meta = {
+        "kind": "progression",
+        "bpm": bpm,
+        "meter": f"{meter}/4",
+        "key": "C major",
+        "chords": [name for name, _, _ in PROGRESSION_PLAN],
+        "chord_seconds": [duration for _, _, duration in PROGRESSION_PLAN],
+        "bar_seconds": bar_seconds,
+        "bars": int(round(seconds / bar_seconds)),
+        "click_bed": "120 BPM click, accent on every bar",
+        "seconds": round(total / rate, 6),
+    }
+    return _wav_bytes(rate, 1, _to_pcm(samples)), meta
+
+
 FIXTURE_BUILDERS: tuple[tuple[str, object], ...] = (
     ("audio/click_120bpm.wav", lambda: synth_click(bpm=120.0, bars=2)),
     ("audio/chords_c_am_f_g.wav", synth_chords),
@@ -260,6 +320,7 @@ FIXTURE_BUILDERS: tuple[tuple[str, object], ...] = (
         "audio/tone_48k_stereo.wav",
         lambda: synth_tone(frequency_hz=440.0, seconds=1.0, rate=48_000, channels=2),
     ),
+    ("audio/progression_120.wav", synth_progression_120),
 )
 
 
