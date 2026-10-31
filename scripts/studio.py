@@ -22,11 +22,17 @@ import io
 import json
 import math
 import os
+import queue
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import wave
 from array import array
 from dataclasses import dataclass, field
@@ -1002,6 +1008,220 @@ def e2e() -> int:
     return 0
 
 
+def test_backend(selection: list[str]) -> int:
+    """Fixture determinism plus the backend pytest suite (optionally scoped)."""
+    ok, detail = check_fixtures()
+    print(f"  [{'PASS' if ok else 'FAIL'}] fixtures  {detail}")
+    if not ok:
+        return 1
+    if pytest_target() is None:
+        print("  [SKIP] pytest    no backend tests yet")
+        return 0
+    result = run([python_bin(), "-m", "pytest", "-q", *selection], timeout=1800)
+    if result.returncode != 0:
+        print(tail(result.stdout + result.stderr))
+        return 1
+    lines = result.stdout.strip().splitlines()
+    print(f"  [PASS] pytest    {lines[-1] if lines else 'passed'}")
+    return 0
+
+
+def test_web() -> int:
+    result = gate_web_tests()
+    print(f"test-web: [{result.status.upper()}] {first_line(result.detail)}")
+    if result.status == "fail":
+        print(result.detail)
+        return 1
+    return 0
+
+
+def build_web() -> int:
+    if not web_sources_exist():
+        print("build-web: [SKIP] web/src is empty (UI tasks not landed yet)")
+        return 0
+    failures = 0
+    for name, step in (("typecheck", gate_web_typecheck), ("vite build", gate_web_build)):
+        result = step()
+        print(f"  [{result.status.upper()}] {name}: {first_line(result.detail)}")
+        if result.status == "fail":
+            print(result.detail)
+            failures += 1
+    return 1 if failures else 0
+
+
+def stem_tests() -> list[str]:
+    integration = TESTS / "integration"
+    if not integration.is_dir():
+        return []
+    return sorted(str(path) for path in integration.glob("test_stems*"))
+
+
+def test_separation(selection: list[str]) -> int:
+    """Run the real Demucs stem tests (expensive, opt-in by target)."""
+    targets = selection or stem_tests()
+    if not targets:
+        print("test-separation: [SKIP] no tests/integration/test_stems* yet")
+        return 0
+    env = {**os.environ, "RUN_SEPARATION": "1"}
+    result = run([python_bin(), "-m", "pytest", "-q", *targets], env=env, timeout=3600)
+    if result.returncode != 0:
+        print(tail(result.stdout + result.stderr))
+        return 1
+    lines = result.stdout.strip().splitlines()
+    print(f"test-separation: [PASS] {lines[-1] if lines else 'passed'}")
+    return 0
+
+
+def analysis_check() -> int:
+    """Check the local Vamp/Piper/model assets needed by the analysis pipeline."""
+    checks = [
+        path_check("Vamp SDK", TOOLS / "vamp-sdk"),
+        path_check("Vamp plugin pack", PLUGIN_PACK),
+        path_check("native Vamp host", NATIVE_HOST),
+        path_check("Piper server", PIPER),
+        path_check("model bundle", MODEL_DIR),
+        path_check("analysis/.venv", ANALYSIS_PY),
+    ]
+    required = [
+        Check(
+            "qm-vamp-plugins.so", (PLUGIN_PACK / "qm-vamp-plugins.so").is_file(), rel(PLUGIN_PACK)
+        ),
+        Check(
+            "htdemucs_ft checkpoints",
+            len(list(MODEL_DIR.glob("*.th"))) == 4,
+            rel(MODEL_DIR),
+        ),
+    ]
+    print("analysis-check (offline)")
+    missing = 0
+    for check in [*checks, *required]:
+        print(f"  [{'ok     ' if check.ok else 'MISSING'}] {check.name:24} {check.detail}")
+        missing += not check.ok
+    if missing:
+        print(f"analysis-check: {missing} item(s) missing")
+        return 1
+    print("analysis-check: Vamp plugin pack, Piper server, native host and model bundle present")
+    return 0
+
+
+def http_get(url: str, timeout: float = 15.0) -> tuple[int, bytes, str]:
+    request = urllib.request.Request(url, headers={"Accept": "*/*"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read()
+            return response.status, body, response.headers.get("content-type", "")
+    except urllib.error.HTTPError as error:
+        return error.code, error.read(), error.headers.get("content-type", "")
+
+
+def wait_for_url(process: subprocess.Popen[str], timeout: float) -> tuple[str | None, list[str]]:
+    """Read the child's stdout until it prints a loopback URL, or it exits."""
+    messages: queue.Queue[str | None] = queue.Queue()
+
+    def pump() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            messages.put(line.rstrip())
+        messages.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
+    lines: list[str] = []
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            line = messages.get(timeout=0.25)
+        except queue.Empty:
+            if process.poll() is not None:
+                break
+            continue
+        if line is None:
+            break
+        lines.append(line)
+        found = re.search(r"https?://(?:127\.0\.0\.1|localhost):\d+[^\s]*", line)
+        if found:
+            return found.group(0), lines
+    return None, lines
+
+
+def stop_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
+def dev_smoke() -> int:
+    """Start the real server, fetch its health and root URL, then stop it."""
+    if not server_ready():
+        print("dev-smoke: src/basseparate/cli.py is not importable yet (backend task)")
+        return 1
+    ensure_fixtures()
+    with tempfile.TemporaryDirectory(prefix="basseparate-smoke-") as scratch:
+        env = {**os.environ, "PYTHONPATH": str(SRC)}
+        command = [
+            python_bin(),
+            "-c",
+            "import sys; from basseparate.cli import main; sys.exit(main())",
+            "serve",
+            "--no-browser",
+            "--port",
+            "0",
+            "--data-root",
+            scratch,
+        ]
+        process = subprocess.Popen(
+            command,
+            cwd=str(ROOT),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            url, lines = wait_for_url(process, timeout=60)
+            if url is None:
+                print("dev-smoke: server did not print a loopback URL; output:")
+                print(tail("\n".join(lines), 3000))
+                return 1
+            origin = "{0.scheme}://{0.netloc}".format(urllib.parse.urlsplit(url))
+            print(f"  [ok] server   {url}")
+            status, body, _ = http_get(origin + "/api/health")
+            if not 200 <= status < 300 or not body:
+                print(f"  [FAIL] /api/health returned {status} ({len(body)} bytes)")
+                return 1
+            print(f"  [ok] health   /api/health {status}, {len(body)} bytes")
+            status, body, content_type = http_get(origin + "/")
+            if not 200 <= status < 300:
+                print(f"  [FAIL] / returned {status}")
+                return 1
+            web_dist = WEB / "dist" / "index.html"
+            if web_dist.is_file():
+                if "text/html" not in content_type or b"<html" not in body.lower():
+                    print(f"  [FAIL] / is not HTML ({content_type!r})")
+                    return 1
+                print(f"  [ok] root     / {status}, HTML {len(body)} bytes")
+            else:
+                print("  [skip] root   web/dist absent, HTML assertion skipped")
+            print("dev-smoke: ok (offline, scratch data root)")
+            return 0
+        finally:
+            stop_process(process)
+
+
+def accept() -> int:
+    script = ROOT / "scripts" / "accept.py"
+    if not script.is_file():
+        print("accept: scripts/accept.py is not implemented yet (acceptance task)")
+        return 1
+    result = run([python_bin(), str(script)], timeout=7200)
+    print(tail(result.stdout + result.stderr, 20000))
+    return 0 if result.returncode == 0 else 1
+
+
 def fix() -> int:
     failures = 0
     ruff = run([python_bin(), "-m", "ruff", "check", "--fix", SRC, ROOT / "scripts"], timeout=300)
@@ -1061,6 +1281,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_parser("dev", help="run the dev servers")
     sub.add_parser("build", help="compile Python and build the UI")
     sub.add_parser("test", help="run the test suites")
+    backend_parser = sub.add_parser(
+        "test-backend", help="fixture check plus backend pytest (optional paths)"
+    )
+    backend_parser.add_argument(
+        "selection", nargs=argparse.REMAINDER, help="pytest paths or options"
+    )
+    sub.add_parser("test-web", help="run the Vitest suite")
+    sub.add_parser("build-web", help="typecheck and build the UI")
+    separation_parser = sub.add_parser(
+        "test-separation", help="run the opt-in real Demucs separation tests"
+    )
+    separation_parser.add_argument(
+        "selection", nargs=argparse.REMAINDER, help="pytest paths or options"
+    )
+    sub.add_parser("analysis-check", help="check Vamp plugin pack, Piper server and model bundle")
+    sub.add_parser("dev-smoke", help="start the real server, fetch health and root, stop it")
+    sub.add_parser("accept", help="run scripts/accept.py once the acceptance task lands")
     sub.add_parser("e2e", help="run the browser end-to-end tests")
     sub.add_parser("fix", help="apply automatic formatting and lint fixes")
     sub.add_parser("demo", help="list the demo fixtures and next steps")
@@ -1091,6 +1328,20 @@ def main(argv: list[str] | None = None) -> int:
         return build()
     if args.command == "test":
         return test()
+    if args.command == "test-backend":
+        return test_backend(args.selection)
+    if args.command == "test-web":
+        return test_web()
+    if args.command == "build-web":
+        return build_web()
+    if args.command == "test-separation":
+        return test_separation(args.selection)
+    if args.command == "analysis-check":
+        return analysis_check()
+    if args.command == "dev-smoke":
+        return dev_smoke()
+    if args.command == "accept":
+        return accept()
     if args.command == "e2e":
         return e2e()
     if args.command == "fix":

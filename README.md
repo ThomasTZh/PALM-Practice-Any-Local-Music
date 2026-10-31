@@ -77,9 +77,16 @@ storage/tools/     local Vamp hosts and plugin pack (preserved)
 | `bootstrap` | offline, idempotent setup; skips completed work |
 | `fixtures` | writes the deterministic WAV fixtures |
 | `dev` | UI dev server and local API server once they exist |
+| `dev-smoke` | start the real server on port 0, fetch `/api/health` and `/`, stop it |
 | `build` | compile Python and build the production UI |
+| `build-web` | typecheck and build the UI only |
 | `test` | Python and web test suites |
+| `test-backend` | fixture check plus backend pytest; `TESTS="paths"` scopes it |
+| `test-web` | Vitest suite only |
+| `test-separation` | real Demucs stem tests (slow, opt-in); `TESTS="paths"` scopes it |
+| `analysis-check` | Vamp plugin pack, Piper server, native host and model bundle |
 | `e2e` | Playwright end-to-end suite |
+| `accept` | five-recording acceptance report (`scripts/accept.py`) |
 | `gate` / `gate-lite` | full / fast local gate |
 | `fix` | ruff and prettier fixes |
 | `demo` | list the demo fixtures and next steps |

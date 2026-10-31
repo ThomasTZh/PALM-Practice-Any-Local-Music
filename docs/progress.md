@@ -132,3 +132,44 @@ Recorded from the actual runs on the committed tree.
   `make dev`, `make build`, `make test`, `make e2e`, `make gate-lite` and
   `make fix` all exit 0 on the empty skeleton.
 
+
+## 2026-10-31 — split automation targets for downstream tasks (follow-up)
+
+Requested by media (t3): `make test-backend` and `make dev-smoke` were
+missing. One correction first: no task contract cites those names. The
+contract verify commands are `make test` / `make build` / `make gate-lite` /
+`make e2e` / `make accept`, plus the direct serve and script commands for
+t3 and t5. The split targets are still useful, so they were added to the
+harness rather than invented in each task.
+
+- `make test-backend TESTS="tests/unit/test_media tests/integration/test_media"`
+  runs the fixture determinism check and then `pytest -q` scoped to the
+  selection (`--` is inserted so pytest flags pass through). Without a
+  selection it runs the configured suite.
+- `make test-web` runs Vitest only; `make build-web` typechecks and builds
+  the UI only.
+- `make test-separation TESTS="tests/integration/test_stems"` sets
+  `RUN_SEPARATION=1` for the real Demucs tests and reports SKIP while no
+  stem tests exist.
+- `make dev-smoke` starts the real server with `PYTHONPATH=src` and
+  `serve --no-browser --port 0 --data-root <temp>`, parses the loopback URL
+  the CLI prints, GETs `/api/health` and `/`, asserts non-empty HTML only
+  when `web/dist/index.html` exists, and always terminates the child. It
+  fails with an explicit message while `src/basseparate/cli.py` is absent.
+- `make analysis-check` reports the Vamp SDK, plugin pack, native host,
+  Piper server, model bundle and analysis venv without network access.
+- `make accept` runs `scripts/accept.py` once the acceptance task provides
+  it and fails explicitly until then. No `e2e-*` aliases were added: the e2e
+  task owns `web/e2e` and `scripts/accept.py`, and `make e2e` already picks
+  up `web/playwright.config.ts` or `web/e2e/playwright.config.ts` when that
+  task adds one.
+
+Verified: `ruff check`/`ruff format --check scripts` clean; fixtures-check
+ok; analysis-check ok; test-backend and test-separation invocation proven
+with `TESTS="--version"` (`pytest 9.1.1`); dev-smoke and accept exit 1 with
+the explicit "not implemented yet" messages; the smoke HTTP and URL/process
+helpers were exercised against a local HTTP server (200 JSON + HTML) and a
+fake child that prints a URL and is then stopped (`-15`). The repository-wide
+`make gate` is momentarily red because t3 and t4 are actively landing
+untracked tests that import modules not written yet; this change touches
+only the harness, Makefile, README and this log.
