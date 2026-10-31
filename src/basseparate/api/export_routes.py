@@ -153,9 +153,7 @@ def save_state(
 ) -> dict[str, Any]:
     persistence = persistence_for(store, paths)
     try:
-        project = persistence.save_state(
-            project_id, body.state, expected_revision=body.revision
-        )
+        project = persistence.save_state(project_id, body.state, expected_revision=body.revision)
         saved = restore_state(project.document)
     except PersistenceError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

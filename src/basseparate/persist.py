@@ -182,9 +182,7 @@ def restore_state(document: Mapping[str, Any]) -> PracticeState:
                 "sections": migrated.get("sections", []),
                 "loop": migrated.get("loop"),
                 "speed": migrated.get("speed", 1.0),
-                "pitch_semitones": migrated.get(
-                    "pitch_semitones", migrated.get("pitch", 0.0)
-                ),
+                "pitch_semitones": migrated.get("pitch_semitones", migrated.get("pitch", 0.0)),
                 "position_frame": migrated.get("position_frame", 0),
                 "analysis": _analysis_reference(
                     migrated.get("analysis", migrated.get("analysis_reference"))
@@ -196,9 +194,7 @@ def restore_state(document: Mapping[str, Any]) -> PracticeState:
         raise PersistenceError(f"project state is invalid: {error}") from error
 
 
-def document_with_state(
-    document: Mapping[str, Any], state: PracticeState
-) -> dict[str, Any]:
+def document_with_state(document: Mapping[str, Any], state: PracticeState) -> dict[str, Any]:
     """Merge the practice state into an existing document, preserving unknown keys."""
     merged = migrate_document(document)
     merged.update(state.model_dump(mode="json"))
@@ -252,9 +248,7 @@ class ProjectPersistence:
         reopened = self.load_state(project_id)
         missing = self.missing_assets(reopened.project)
         if missing:
-            raise MissingAssetError(
-                project_id, reopened.project.audio.asset_id, tuple(missing)
-            )
+            raise MissingAssetError(project_id, reopened.project.audio.asset_id, tuple(missing))
         return reopened
 
     def autosave(
@@ -279,9 +273,7 @@ class TimerHandle(Protocol):
 
 
 class Scheduler(Protocol):
-    def __call__(
-        self, delay_seconds: float, callback: Callable[[], None]
-    ) -> TimerHandle: ...
+    def __call__(self, delay_seconds: float, callback: Callable[[], None]) -> TimerHandle: ...
 
 
 def _thread_timer(delay_seconds: float, callback: Callable[[], None]) -> TimerHandle:

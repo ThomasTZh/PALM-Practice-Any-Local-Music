@@ -8,9 +8,8 @@ import wave
 from pathlib import Path
 
 import numpy as np
-from fastapi.testclient import TestClient
-
 from conftest import fresh_client
+from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[3]
 AUDIO = ROOT / "tests" / "fixtures" / "audio"
@@ -140,9 +139,7 @@ def test_export_reports_a_missing_stem_clearly(client: TestClient, settings) -> 
     assert "pcm.f32" in response.json()["detail"]
 
 
-def test_reopen_after_service_restart_restores_practice_state(
-    client: TestClient, settings
-) -> None:
+def test_reopen_after_service_restart_restores_practice_state(client: TestClient, settings) -> None:
     project = import_fixture(client, TONE_44K, "Reopen take")
     state = {
         "sections": [
@@ -209,9 +206,7 @@ def test_missing_asset_error_keeps_the_project_readable(client: TestClient, sett
     assert "pcm.f32" in state.json()["assets"]["missing"][0]
 
 
-def test_doctor_endpoint_reports_dependencies_without_writing(
-    client: TestClient, settings
-) -> None:
+def test_doctor_endpoint_reports_dependencies_without_writing(client: TestClient, settings) -> None:
     before = {
         path: path.stat().st_mtime_ns
         for path in settings.data_paths.root.rglob("*")
@@ -255,7 +250,9 @@ def test_state_save_and_export_paths_are_scoped_to_the_project(
     assert missing.status_code == 404
     other = client.get("/api/projects/other/exports/" + metadata["filename"])
     assert other.status_code == 404
-    body = json.loads(
-        (settings.data_paths.projects / f"{project['id']}.json").read_text()
+    client.put(
+        f"/api/projects/{project['id']}/state",
+        json={"state": {"speed": 1.0}},
     )
+    body = json.loads((settings.data_paths.projects / f"{project['id']}.json").read_text())
     assert body["document"]["state_version"] == 1

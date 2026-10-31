@@ -11,7 +11,6 @@ from basseparate.persist import (
     CURRENT_STATE_VERSION,
     DebouncedAutosave,
     MissingAssetError,
-    PersistenceError,
     PracticeState,
     ProjectPersistence,
     StateVersionError,
@@ -197,9 +196,7 @@ class FakeScheduler:
 def test_autosave_is_debounced_to_the_latest_state(tmp_path: Path) -> None:
     store, persistence, project = make_project(tmp_path)
     scheduler = FakeScheduler()
-    autosave = DebouncedAutosave(
-        persistence, project.id, delay_seconds=0.25, scheduler=scheduler
-    )
+    autosave = DebouncedAutosave(persistence, project.id, delay_seconds=0.25, scheduler=scheduler)
     autosave.schedule(PracticeState(speed=0.5))
     autosave.schedule(PracticeState(speed=1.5, position_frame=99))
     assert store.get(project.id).revision == 1
@@ -270,8 +267,6 @@ def test_state_save_is_revision_checked(tmp_path: Path) -> None:
 def test_project_json_is_valid_after_state_save(tmp_path: Path) -> None:
     _store, persistence, project = make_project(tmp_path)
     persistence.save_state(project.id, saved_state())
-    document = json.loads(
-        (tmp_path / "data" / "projects" / f"{project.id}.json").read_text()
-    )
+    document = json.loads((tmp_path / "data" / "projects" / f"{project.id}.json").read_text())
     assert document["document"]["state_version"] == CURRENT_STATE_VERSION
     assert document["document"]["sections"][0]["start_bar"] == 1

@@ -9,6 +9,7 @@ making the server fail.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -243,7 +244,8 @@ def _check_model_bundle(layout: DoctorLayout) -> DoctorCheck:
     checkpoints = sorted(layout.model_dir.glob("*.th"))
     preset = layout.model_dir / "htdemucs_ft.yaml"
     ok = len(checkpoints) == 4 and preset.is_file()
-    detail = f"{len(checkpoints)} checkpoints; preset {'present' if preset.is_file() else 'missing'}"
+    preset_state = "present" if preset.is_file() else "missing"
+    detail = f"{len(checkpoints)} checkpoints; preset {preset_state}"
     return _check("model_bundle", "Demucs model bundle", ok, detail, path=layout.model_dir)
 
 
@@ -258,12 +260,39 @@ def _check_plugin_pack(layout: DoctorLayout) -> DoctorCheck:
             path=layout.vamp_plugins,
         )
     plugins = sorted(layout.vamp_plugins.glob("*.so"))
+    plugin_state = "present" if plugin.is_file() else "missing"
     return _check(
         "vamp_plugins",
         "Vamp plugin pack",
         plugin.is_file(),
-        f"{len(plugins)} plugin libraries; qm-vamp-plugins.so {'present' if plugin.is_file() else 'missing'}",
+        f"{len(plugins)} plugin libraries; qm-vamp-plugins.so {plugin_state}",
         path=layout.vamp_plugins,
+    )
+
+
+def _check_native_host(layout: DoctorLayout) -> DoctorCheck:
+    path = layout.native_host
+    if path.is_file():
+        executable = " executable" if os.access(path, os.X_OK) else " not executable"
+        return _check(
+            "native_host",
+            "Native Vamp host",
+            os.access(path, os.X_OK),
+            f"{path}{executable}",
+            required=False,
+            path=path,
+        )
+    if path.is_dir():
+        return _check(
+            "native_host",
+            "Native Vamp host",
+            True,
+            f"{path} (directory)",
+            required=False,
+            path=path,
+        )
+    return _check(
+        "native_host", "Native Vamp host", False, f"missing {path}", required=False, path=path
     )
 
 
@@ -272,12 +301,12 @@ def _check_piper(layout: DoctorLayout) -> DoctorCheck:
         return _check(
             "piper", "Piper Vamp server", False, f"missing {layout.piper}", path=layout.piper
         )
-    executable = " executable" if layout.piper.stat().st_mode & 0o111 else ""
+    executable = os.access(layout.piper, os.X_OK)
     return _check(
         "piper",
         "Piper Vamp server",
-        bool(executable),
-        f"{layout.piper}{executable}",
+        executable,
+        f"{layout.piper}{' executable' if executable else ' not executable'}",
         path=layout.piper,
     )
 
@@ -336,10 +365,18 @@ def diagnose(
     checks: list[DoctorCheck] = [
         _check_python(),
         _tool_check(
-            check_id="ffmpeg", label="ffmpeg", command="ffmpeg", tool_probe=probe
+            check_id="ffmpeg",
+            label="ffmpeg",
+            command="ffmpeg",
+            args=("-version",),
+            tool_probe=probe,
         ),
         _tool_check(
-            check_id="ffprobe", label="ffprobe", command="ffprobe", tool_probe=probe
+            check_id="ffprobe",
+            label="ffprobe",
+            command="ffprobe",
+            args=("-version",),
+            tool_probe=probe,
         ),
         _tool_check(
             check_id="node",
@@ -349,19 +386,13 @@ def diagnose(
             required=False,
             tool_probe=probe,
         ),
-        _directory_check(
-            layout, "data_root", "Data directory", layout.data_root, required=True
-        ),
+        _directory_check(layout, "data_root", "Data directory", layout.data_root, required=True),
         _check_model_bundle(layout),
         _check_plugin_pack(layout),
         _check_piper(layout),
         _check_analysis(layout),
-        _directory_check(
-            layout, "vamp_sdk", "Vamp SDK", layout.vamp_sdk, required=False
-        ),
-        _directory_check(
-            layout, "native_host", "Native Vamp host", layout.native_host, required=False
-        ),
+        _directory_check(layout, "vamp_sdk", "Vamp SDK", layout.vamp_sdk, required=False),
+        _check_native_host(layout),
         _directory_check(layout, "emsdk", "Emscripten SDK", layout.emsdk, required=False),
         _directory_check(
             layout,

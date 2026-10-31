@@ -104,7 +104,10 @@ def _channel_mix(
     if isinstance(document_channel, Mapping):
         base = ChannelMix(
             gain=max(0.0, _as_float(document_channel.get("gain", base.gain), base.gain)),
-            muted=_as_bool(document_channel.get("muted", document_channel.get("mute", base.muted)), base.muted),
+            muted=_as_bool(
+                document_channel.get("muted", document_channel.get("mute", base.muted)),
+                base.muted,
+            ),
             solo=_as_bool(document_channel.get("solo", base.solo), base.solo),
         )
     elif isinstance(document_channel, (int, float)) and not isinstance(document_channel, bool):
@@ -112,7 +115,9 @@ def _channel_mix(
     if spec is not None:
         override = spec.channels.get(stem_id) or spec.channels.get(str(stem.get("name", stem_id)))
         if override is not None:
-            base = ChannelMix(gain=max(0.0, override.gain), muted=override.muted, solo=override.solo)
+            base = ChannelMix(
+                gain=max(0.0, override.gain), muted=override.muted, solo=override.solo
+            )
     return base
 
 
@@ -180,7 +185,11 @@ def build_mix_layers(
                 raise ExportError(f"stem {stem_id} has no PCM at {pcm_path}")
             channel = _channel_mix(stem, document_mixer, mixer, stem_id)
             offset = stem.get("offset_frames", stem.get("offsetFrame", 0))
-            offset_frames = int(offset) if isinstance(offset, (int, float)) and not isinstance(offset, bool) else 0
+            offset_frames = (
+                int(offset)
+                if isinstance(offset, (int, float)) and not isinstance(offset, bool)
+                else 0
+            )
             mixed.append(
                 (
                     MixLayer(
@@ -212,8 +221,10 @@ def build_mix_layers(
     channel = _channel_mix({"gain": 1.0}, document_mixer, mixer, source_id)
     if channel.muted or channel.gain <= 0:
         raise ExportError("the project source is muted; there is nothing to export")
-    master = mixer.master_gain if mixer is not None else _as_float(
-        document_mixer.get("master_gain", 1.0), 1.0
+    master = (
+        mixer.master_gain
+        if mixer is not None
+        else _as_float(document_mixer.get("master_gain", 1.0), 1.0)
     )
     if master <= 0:
         raise ExportError("the master gain is zero; there is nothing to export")
@@ -267,8 +278,7 @@ def _read_layer_chunk(
         raw = handle.read(read_count * layer.channels * 4)
     if len(raw) != read_count * layer.channels * 4:
         raise ExportError(
-            f"stem {layer.id} is truncated at frame {source_start}: "
-            f"expected {read_count} frames"
+            f"stem {layer.id} is truncated at frame {source_start}: expected {read_count} frames"
         )
     data = np.frombuffer(raw, dtype="<f4").reshape(read_count, layer.channels)
     destination = slice(project_lo - start, project_hi - start)
