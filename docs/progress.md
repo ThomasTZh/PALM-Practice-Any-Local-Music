@@ -173,3 +173,78 @@ fake child that prints a URL and is then stopped (`-15`). The repository-wide
 `make gate` is momentarily red because t3 and t4 are actively landing
 untracked tests that import modules not written yet; this change touches
 only the harness, Makefile, README and this log.
+
+## 2026-10-31 — UI shell, ruler, waveform and transport (t4)
+
+### Contracts fixed before the code
+
+The UI needs two boundaries and neither existed yet. Both were agreed with the
+owning tasks before the panels were written:
+
+- **Server data** (t3): `GET /api/library` returns `{entries}` (a bare array is
+  also accepted), `POST /api/library/import` takes multipart field `file`,
+  `GET /api/projects/{id}` returns the UI aliases plus the canonical
+  snake_case fields, and `GET /api/assets/{id}/peaks?buckets=N` returns the
+  BSPK container. The binary layout is 20 bytes of header (`BSPK`, u8 version
+  1, u8 channels, u16 reserved, u32 sample rate, u32 bucket count, u32 samples
+  per bucket) followed by per-bucket per-channel int16 min/max scaled by 32767
+  and clamped to [-1, 1]. t3 confirmed the same bytes in writing; a later
+  change bumps the version instead of breaking version 1.
+- **Playback** (t2): `web/src/state/player.ts` defines `PlayerState` and
+  `StudioPlayer` (`play`, `pause`, `toggle`, `seek`, `setSpeed`,
+  `setPitchSemitones`, `setLoopEnabled`, `setLoopRange`, `setDuration`,
+  `subscribe`, `getState`, `dispose`). t2 exposes a lower-level frame
+  transport, so the adapter that maps it to this seam belongs to t9. The shell
+  does not import the engine.
+
+Response parsing happens once, in `api/client.ts`: a malformed entry, project
+or peaks response raises `ApiError` instead of leaking `undefined` into
+rendering.
+
+### Pure modules instead of component math
+
+- `panels/ruler/ticks.ts`: second ticks walk a fixed step list so labels stay
+  at least 80 px apart and always sit on multiples of the step (scrolling
+  reveals ticks rather than moving them). Bar/beat ticks derive from
+  BPM/meter/offset, label only downbeats, and thin bar numbers as bars get
+  narrow.
+- `panels/waveform/viewport.ts`: fit, zoom-at-an-anchor, scroll and follow.
+  Clamping is the single place that decides the legal window.
+- `panels/waveform/selection.ts`: drag direction, track clamping and the
+  50 ms minimum that distinguishes a click from a selection.
+- `panels/waveform/peaks.ts`: BSPK decoding, channel merge and the SVG column
+  path. `peaksFixture.ts` writes deterministic BSPK bytes so the pane tests
+  read real binary input.
+
+The ruler and every waveform lane share one viewport, so they cannot drift
+apart. The transport panel holds no playback state: it reads
+`usePlayerState(player)` and calls the player.
+
+### The follow-loop bug
+
+The first App test that played through a keyboard shortcut hung. Instrumenting
+the follow effect showed it firing continuously with identical values: the
+effect compared `next !== viewport`, but `clampViewport` returned the
+intermediate object it was given, which was always fresh. `followViewport` now
+compares the clamped result with the caller's viewport and returns the caller's
+object when nothing changed; `zoomViewport` and `scrollViewport` do the same so
+repeated keys at a limit do not re-render either.
+
+### Verification
+
+Recorded from actual runs on the committed tree, after t2's engine landed.
+
+- `make test`: exit 0. Fixtures match the generator byte for byte, `pytest`
+  reports 154 passed, and the web suite passes.
+- `make build`: exit 0. Python compiles, `tsc --noEmit` passes for the whole web
+  tree, and `vite build` reports 29 modules, 243.63 kB JS (76.27 kB gzip) and
+  6.53 kB CSS (1.99 kB gzip).
+- `web/node_modules/.bin/vitest run`: 16 files, 163 tests, exit 0. 110 of those
+  tests in 12 files belong to t4 (api client, state, panels, App); the rest are
+  the concurrent player suite.
+- While t2 was still landing, the shared `tsc` and Vitest runs failed only on
+  `web/src/player/stretch.test.ts` (a `Uint8Array`/`BufferSource` type error
+  and two stretch assertions). Those failures were reported to t2 rather than
+  patched from this task, and the tree went green when t2 fixed them.
+- No dependency was added: `web/package.json` is unchanged and the build uses
+  the already linked React 19 / Vite 8 / Vitest 5 / testing-library set.
