@@ -25,6 +25,7 @@ import os
 import queue
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -884,6 +885,20 @@ def e2e_config() -> Path | None:
     return None
 
 
+def e2e_port() -> int:
+    """One concrete port shared by the Playwright config and its webServer."""
+    configured = os.environ.get("BASSEPARATE_E2E_PORT")
+    if configured:
+        return int(configured)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def e2e_environment() -> dict[str, str]:
+    return {**os.environ, "BASSEPARATE_E2E_PORT": str(e2e_port())}
+
+
 def gate_e2e() -> GateResult:
     specs = e2e_specs()
     if not specs:
@@ -897,7 +912,7 @@ def gate_e2e() -> GateResult:
     else:
         # No config yet: run the specs in web/e2e on the installed browser.
         args = [playwright, "test", "e2e", "--browser", "firefox"]
-    result = run(args, cwd=WEB, timeout=1800)
+    result = run(args, cwd=WEB, timeout=1800, env=e2e_environment())
     if result.returncode != 0:
         return GateResult("fail", tail(result.stdout + result.stderr))
     return GateResult("pass", f"{len(specs)} spec file(s)")
@@ -1061,8 +1076,18 @@ def test() -> int:
 
 
 def e2e() -> int:
+    ensure_fixtures()
+    vite = WEB_MODULES / ".bin" / "vite"
+    if not vite.exists():
+        print("e2e: web/node_modules is not linked; run make bootstrap")
+        return 1
+    print("e2e: building web/dist for the real server")
+    built = run([vite, "build"], cwd=WEB, timeout=900)
+    if built.returncode != 0:
+        print(tail(built.stdout + built.stderr))
+        return 1
     result = gate_e2e()
-    print(f"e2e: {result.status.upper()} {result.detail.splitlines()[0] if result.detail else ''}")
+    print(f"e2e: {result.status.upper()} {first_line(result.detail)}")
     if result.status == "fail":
         print(result.detail)
         return 1
