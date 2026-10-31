@@ -455,11 +455,11 @@ fixture, where the tracker has an unambiguous pulse.
 ### Timing (cold cache, 48 kHz, all three plugins)
 
 Recording: `audio2test/Carousel Theory Full Mix V1 (With Limiter).wav`,
-294.46 s. Two cold runs on this machine: **43.02 s** and **46.55 s**, both under
+294.46 s. Two cold runs on this machine: **43.02 s** and **46.54 s**, both under
 the 60 s gate. The second run's output:
 
 ```text
-analysis-timing: elapsed 46.55 s (limit 60.00 s) OK
+analysis-timing: elapsed 46.54 s (limit 60.00 s) OK
 analysis-timing: bpm=139.745 key=Ab major bars=176 beats=701 chords=167
 ```
 
@@ -471,7 +471,7 @@ time is also in the t5 task report.
 - `make analysis-check`: exit 0. Asset checks pass; ruff check and format check
   pass; mypy reports no issues in the two modules; pytest reports 36 passed
   (12 Piper unit, 17 feature/cache unit, 7 real-asset integration).
-- `make analysis-timing`: exit 0, 46.55 s for 294.46 s of audio.
+- `make analysis-timing`: exit 0, 46.54 s for 294.46 s of audio.
 - The integration suite covers the exact chord order, C major, cached second
   run with no decode and no server, cancellation with no cache entry, missing
   `storage/tools/sv`, a missing plugin directory and a missing display name.

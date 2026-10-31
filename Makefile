@@ -10,7 +10,7 @@ STUDIO := $(PY) scripts/studio.py
 
 .DEFAULT_GOAL := help
 .PHONY: help doctor bootstrap dev dev-smoke build build-web test test-backend test-web \
-	test-separation e2e accept gate gate-lite analysis-check fix fixtures demo
+	test-separation e2e accept gate gate-lite analysis-check analysis-timing fix fixtures demo
 
 help: ## Show this target list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -58,8 +58,20 @@ gate: ## Full local gate: lint, format, types, fixtures, tests, build, e2e
 gate-lite: ## Fast gate: lint, format, types, fixtures, tests
 	@$(STUDIO) gate --lite
 
-analysis-check: ## Check Vamp plugin pack, Piper server, native host and model bundle
+analysis-check: ## Check Vamp/Piper assets, lint, types and the analysis test suites
 	@$(STUDIO) analysis-check
+	@$(PY) -m ruff check src/basseparate/piper.py src/basseparate/features.py \
+		scripts/analysis_timing.py tests/unit/test_piper.py \
+		tests/unit/test_piper_features.py tests/integration/test_analysis.py
+	@$(PY) -m ruff format --check src/basseparate/piper.py src/basseparate/features.py \
+		scripts/analysis_timing.py tests/unit/test_piper.py \
+		tests/unit/test_piper_features.py tests/integration/test_analysis.py
+	@$(PY) -m mypy src/basseparate/piper.py src/basseparate/features.py
+	@$(PY) -m pytest -q tests/unit/test_piper.py tests/unit/test_piper_features.py \
+		tests/integration/test_analysis.py
+
+analysis-timing: ## Measure cold analysis of the preserved five-minute recording
+	@$(PY) scripts/analysis_timing.py
 
 fix: ## Apply automatic formatting and lint fixes
 	@$(STUDIO) fix
