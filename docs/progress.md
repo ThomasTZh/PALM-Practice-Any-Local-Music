@@ -2028,3 +2028,22 @@ chord ribbon, sections, spectrogram. Collapsing leaves the ruler width unchanged
   750% (start window 0-8 s); an existing 15-30 s waveform selection still zooms
   to 345% (selection margin path).
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.
+
+## 2026-11-01 — fifth UI round (t45-t47) and final gate
+
+| Request | Result |
+|---|---|
+| Revert the stretched metronome volume slider | t45 `8fca17d`: content-sized again (96 px at 1280, 76 px below 1180) with the percentage 7.25 px after it. |
+| Play button at the centre of the whole bottom drawer, always on top | t45: equal side columns with an auto centre; Return/Play/Loop centred on the drawer, centre at z-index 3; play centre 640.05 / 511.98 / 449.93 at 1280 / 1024 / 900, gaps 5.25 px, no zone overlap. |
+| Move the time and bar/beat readouts to the top-right of the waveform area | t45: new `TransportReadouts` in the stage toolbar top-right; the drawer keeps only return/play/loop and the testids still work. |
+| Move the spectrogram below the section list | t46 `6728423`: order is mix, stem lanes, chords, sections, spectrogram; collapse leaves the ruler width unchanged. |
+| Spectrogram error "requested end frame ... outside the asset range" | t46: the pane now takes `project.frames` and clamps start/end (start <= frames-1, end <= frames, minimum one frame, zero-frame skip). The 2048-frame overshoot was the FFT padding; a 16 s fixture now requests exactly 0..705600, with a near-end regression asserting end == frameCount. |
+| Zoom to selection with no selection | t47 `25be70a`: `defaultZoomRange` builds ±4 bars around the playhead (detected bpm/bpb or 120/4, clamped to the track) and the view zooms to it; a real selection keeps its existing padded path, and the button is always enabled. |
+
+Final gate on the committed tree:
+
+- `make gate` exit 0: pytest 228 passed / 7 skipped; web 53 files / 515 tests
+  (serialized); tsc and Vite build; e2e 2 specs on Firefox and Chromium.
+- Remaining human step: one listening/visual pass over the drawer centring,
+  toolbar readouts, spectrogram position and note axis, and the previously
+  outstanding autoplay-silence confirmation.

@@ -52,20 +52,22 @@ dependencies from the preserved pnpm store; `pnpm install` is not used offline.
   a beats-per-bar hint. Results are content-addressed and cached; the analysed
   grid, key and chords are persisted in the project.
 - **Practise** in a full-width browser layout with one shared timeline: mix
-  waveform, then synced waveform lanes for vocals, drums, bass and other, then
-  the spectrogram, the chord ribbon and the sections. The left rail holds
-  Analysis, Mixer and Library; the pinned bottom bar has the practice controls on
-  the left, a symmetric transport (return, play, loop, time, bar/beat) in the
-  centre and the track, key and BPM readouts on the right. The spectrogram axis
-  is labelled with every semitone from C1 to C8. Sections are created by dragging
-  (four-bar default), moved by dragging their body (length preserved, overlaps
-  allowed), resized by their edges, and added ending at the playhead; the
-  single-row editor lists them sorted by start and can chain-loop several selected
-  sections with the gaps included. A green timeline scrollbar and
-  playhead-follow paging make zoomed views navigable; speed 0.25–2×, accented
-  metronome and a count-in that clicks even when the metronome is off. Pitch
-  shifting was removed on request. The engine starts silent and renders only
-  after an explicit play.
+  waveform, synced waveform lanes for vocals, drums, bass and other, the chord
+  ribbon, the sections and then the spectrogram. The left rail holds Analysis,
+  Mixer and Library. The pinned bottom bar has the practice controls on the left,
+  the transport (return, play, loop with play centred on the drawer) in the
+  middle and the track, key and BPM readouts on the right; the position and
+  bar/beat readouts sit in the top-right of the stage toolbar, and Zoom to
+  selection falls back to an eight-bar window around the playhead when nothing is
+  selected. The spectrogram axis is labelled with every semitone from C1 to C8.
+  Sections are created by dragging (four-bar default), moved by dragging their
+  body (length preserved, overlaps allowed), resized by their edges, and added
+  ending at the playhead; the single-row editor lists them sorted by start and
+  can chain-loop several selected sections with the gaps included. A green
+  timeline scrollbar and playhead-follow paging make zoomed views navigable;
+  speed 0.25–2×, accented metronome and a count-in that clicks even when the
+  metronome is off. Pitch shifting was removed on request. The engine starts
+  silent and renders only after an explicit play.
 - **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
   position and mixer; reopen restores the project; mixdown export writes a
   16-bit WAV at the project rate with exactly the project frame count.
@@ -99,7 +101,7 @@ Final gate (run for this documentation, exit 0):
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / mypy strict
 [PASS] pytest 228 passed, 7 skipped
-[PASS] web typecheck, web tests (52 files / 506 tests, serialized), web build
+[PASS] web typecheck, web tests (53 files / 515 tests, serialized), web build
 [PASS] e2e golden path + layout spec: Firefox and Chromium, isolated data root
 gate: ok
 ```
