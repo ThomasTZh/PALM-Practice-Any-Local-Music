@@ -2003,3 +2003,28 @@ chord ribbon, sections, spectrogram. Collapsing leaves the ruler width unchanged
   new near-end test; App order test updated to mix→stems→chords→sections→
   spectrogram. `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No
   dependency added.
+
+## 2026-11-01 — eight-bar default for Zoom to selection (t47)
+
+### Behaviour
+
+- `defaultZoomRange(position, duration, bpm, bpb)` builds four bars either side
+  of the playhead using the detected bpm/bpb, or 120 BPM in 4/4 when either is
+  missing/invalid, then clamps both ends to the track.
+- With no usable selection, App zooms exactly to that range (padding 0) via the
+  existing zoom function. At a middle playhead the range is exactly eight bars
+  and the playhead is the centre; at the start/end the window is clamped (e.g.
+  0-8 s / 52-60 s on a 60 s 120/4 track).
+- With a non-empty selection the previous path is unchanged, including its 8%
+  framing margin. The Zoom to selection button is no longer disabled when there
+  is no selection (or when the selection is empty).
+
+### Tests
+
+- viewport: fallback/NaN grid middle (22-38), start (0-8), end (52-60),
+  detected 100 BPM 3/4 (22.8-37.2), short-track positive range, exact fit with
+  playhead centre, existing selection margin.
+- App: button enabled with no selection; long 60 s track zooms from 100% to
+  750% (start window 0-8 s); an existing 15-30 s waveform selection still zooms
+  to 345% (selection margin path).
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.

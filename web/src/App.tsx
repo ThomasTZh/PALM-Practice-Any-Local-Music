@@ -15,6 +15,7 @@ import { WaveformPane, type Lane } from "./panels/waveform/WaveformPane";
 import { hasSelection, type Selection } from "./panels/waveform/selection";
 import {
   clampViewport,
+  defaultZoomRange,
   fitViewport,
   zoomToSelection as zoomViewportToSelection,
   zoomViewport,
@@ -747,13 +748,26 @@ export function App({
     setViewport(fitViewport(durationSeconds, stageWidth));
   }, [durationSeconds, stageWidth]);
   const zoomSelection = useCallback(() => {
-    if (selection === null) {
+    if (selection !== null && hasSelection(selection)) {
+      setViewport(
+        zoomViewportToSelection(selection, durationSeconds, stageWidth),
+      );
       return;
     }
-    setViewport(
-      zoomViewportToSelection(selection, durationSeconds, stageWidth),
+    const range = defaultZoomRange(
+      playerState.positionSeconds,
+      durationSeconds,
+      project?.analysis?.bpm ?? project?.grid?.bpm ?? null,
+      project?.analysis?.bpb ?? project?.bpb ?? 4,
     );
-  }, [durationSeconds, selection, stageWidth]);
+    setViewport(zoomViewportToSelection(range, durationSeconds, stageWidth, 0));
+  }, [
+    durationSeconds,
+    playerState.positionSeconds,
+    project,
+    selection,
+    stageWidth,
+  ]);
 
   const zoomPercent = Math.round(
     (fitted.secondsPerPixel / viewport.secondsPerPixel) * 100,
@@ -829,7 +843,6 @@ export function App({
               type="button"
               aria-label="Zoom to selection"
               onClick={zoomSelection}
-              disabled={selection === null || !hasSelection(selection)}
             >
               Zoom to selection
             </button>

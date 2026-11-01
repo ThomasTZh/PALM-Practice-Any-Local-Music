@@ -134,6 +134,41 @@ export function scrollViewport(
   return sameViewport(scrolled, viewport) ? viewport : scrolled;
 }
 
+const FALLBACK_BPM = 120;
+const FALLBACK_BPB = 4;
+const DEFAULT_ZOOM_BARS = 8;
+
+/**
+ * Eight bars around the playhead (four either side), clamped to the track.
+ * Uses the detected bpm/bpb when valid, else 120 BPM in 4/4.
+ */
+export function defaultZoomRange(
+  positionSeconds: number,
+  durationSeconds: number,
+  bpm: number | null | undefined,
+  bpb: number | null | undefined,
+): { startSeconds: number; endSeconds: number } {
+  const duration =
+    Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? durationSeconds
+      : 0;
+  const safeBpm =
+    typeof bpm === "number" && Number.isFinite(bpm) && bpm > 0
+      ? bpm
+      : FALLBACK_BPM;
+  const safeBpb =
+    typeof bpb === "number" && Number.isInteger(bpb) && bpb > 0
+      ? bpb
+      : FALLBACK_BPB;
+  const barSeconds = (60 / safeBpm) * safeBpb;
+  const half = (barSeconds * DEFAULT_ZOOM_BARS) / 2;
+  const position = clamp(positionSeconds, 0, duration);
+  return {
+    startSeconds: Math.max(0, position - half),
+    endSeconds: Math.min(duration, position + half),
+  };
+}
+
 export function zoomToSelection(
   selection: SelectionLike,
   durationSeconds: number,

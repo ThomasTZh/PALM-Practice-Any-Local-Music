@@ -515,6 +515,29 @@ describe("App integration", () => {
     expect(buttons[0]).toHaveTextContent("−");
     expect(buttons[1]).toHaveAccessibleName("Zoom in");
     expect(buttons[1]).toHaveTextContent("+");
+    expect(
+      screen.getByRole("button", { name: "Zoom to selection" }),
+    ).toBeEnabled();
+  });
+
+  it("zooms to eight bars around the playhead when nothing is selected", async () => {
+    const base = payload();
+    const longer = parseStudioProject({
+      ...base,
+      durationSeconds: 60,
+      duration_seconds: 60,
+      asset: { ...base.asset, frames: 60 * 44100 },
+    });
+    setup({ project: longer });
+    await openProject();
+
+    const zoom = screen.getByRole("button", { name: "Zoom to selection" });
+    expect(zoom).toBeEnabled();
+    expect(screen.getByTestId("status-detail")).toHaveTextContent("zoom 100%");
+
+    fireEvent.click(zoom);
+
+    expect(screen.getByTestId("status-detail")).toHaveTextContent("zoom 750%");
   });
 
   it("uses one measured full-stage width and reflows the panes on resize", async () => {
@@ -579,6 +602,27 @@ describe("App integration", () => {
     expect(
       Number(screen.getByTestId("waveform-playhead-a1").getAttribute("x1")),
     ).toBeCloseTo(360, 1);
+  });
+
+  it("still zooms exactly to an existing selection", async () => {
+    const base = payload();
+    const longer = parseStudioProject({
+      ...base,
+      durationSeconds: 60,
+      duration_seconds: 60,
+      asset: { ...base.asset, frames: 60 * 44100 },
+    });
+    setup({ project: longer });
+    await openProject();
+
+    const pane = screen.getByTestId("waveform-a1");
+    fireEvent.mouseDown(pane, { clientX: 235, button: 0 });
+    fireEvent.mouseMove(pane, { clientX: 470 });
+    fireEvent.mouseUp(pane, { clientX: 470 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom to selection" }));
+
+    expect(screen.getByTestId("status-detail")).toHaveTextContent("zoom 345%");
   });
 
   it("shows the horizontal scrollbar only when zoomed and drags the shared view", async () => {
