@@ -428,3 +428,37 @@ describe("multi-source transport (mix + stems)", () => {
     transport.dispose();
   });
 });
+
+describe("silence until explicit play (t30)", () => {
+  it("posts a pause to a new node before any PCM", async () => {
+    const { transport, node } = await makeRig();
+    const types = node.posted.map((message) => message.type);
+    expect(types[0]).toBe("pause");
+    expect(types.indexOf("pause")).toBeLessThan(types.indexOf("seek"));
+    expect(types.indexOf("pause")).toBeLessThan(types.indexOf("channels"));
+    expect(transport.state).toBe("paused");
+    transport.dispose();
+  });
+
+  it("keeps seek, updateGrid, setSpeed and setLoop paused without resume", async () => {
+    const { transport, node } = await makeRig();
+    node.clear();
+    transport.setSpeed(1.5);
+    transport.updateGrid({
+      bpm: 90,
+      bpb: 3,
+      beats: [{ frame: 0, strength: "downbeat" }],
+    });
+    transport.seek(24_000);
+    expect(transport.state).toBe("seeking");
+    await finishSeek(node);
+    expect(transport.state).toBe("paused");
+    expect(transport.speed).toBe(1.5);
+
+    transport.setLoop({ startFrame: 48_000, endFrame: 96_000 });
+    await finishSeek(node);
+    expect(transport.state).toBe("paused");
+    expect(node.messagesOf("resume").length).toBe(0);
+    transport.dispose();
+  });
+});

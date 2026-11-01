@@ -35,12 +35,15 @@ function makeCore(
   options: { engine?: boolean; frameCount?: number } = {},
 ): PlaybackCore {
   const engine = options.engine === false ? null : makeEngine();
-  return new PlaybackCore({
+  const core = new PlaybackCore({
     sampleRate: RATE,
     frameCount: options.frameCount ?? SOURCE_FRAMES,
     sources: [{ channelCount: 2 }],
     ...(engine ? { engine } : {}),
   });
+  // Test rigs explicitly start playback; production cores start paused.
+  core.resume();
+  return core;
 }
 
 /** Feed a full-length stereo tone once; the default ring holds 12 s. */
@@ -214,6 +217,7 @@ describe("2 s practice loop over 60 s", () => {
         );
       }
     },
+    30_000,
   );
 });
 

@@ -1325,3 +1325,53 @@ not touch that test.
 
 A full-suite run under host load hit the pre-existing spectrogram best-wall
 flake; the retry used for the final verification passed.
+
+## 2026-11-01 — silence until explicit play (t30)
+
+### Root cause
+
+`PlaybackCore` initialised `paused = false`, and `PcmTransport.load` created
+the worklet node, posted a seek and delivered PCM without ever posting a
+pause. The engine therefore rendered as soon as data arrived while the
+transport was paused: opening a project or seeking while paused could make
+sound the UI did not reflect. A second contributor was `core.seek()`, which
+reset `paused = false` on every reposition, so a paused seek resumed audio.
+
+### Fix (web/src/player only)
+
+- `PlaybackCore` now starts with `paused = true`; no PCM, metronome or
+  count-in render happens before `resume()`.
+- `seek()` no longer clears the pause flag. It still resets the stream,
+  engine state and ramps, so a paused seek is silent; a seek during playback
+  keeps playing.
+- `PcmTransport.load()` posts `{type: "pause"}` to the freshly created node
+  before any PCM source is created, before the seek and before the first
+  chunk. This is belt-and-braces: even if the worklet default changed, an
+  explicit pause is already queued ahead of all data.
+- `PcmTransport.updateGrid(grid)` is now a public control (bpm, bpb, beat
+  list). It updates tempo/beats without touching playback; the
+  `createStudioPlayer` adapter uses it for `player.updateGrid` and grid
+  changes. Speed, pitch, loop install, metronome and grid updates while
+  paused leave the pause flag and transport state untouched.
+- No UI state mapping or autoplay rule changed (`web/src/state/`, App and
+  main were not touched).
+
+### Tests
+
+- `silence.test.ts` (real committed WASM): a fresh core fed a 4 s tone but
+  never resumed renders 8 quanta of exact silence and leaves the PCM queued;
+  resume produces signal; pause fades through the existing 5 ms ramp and
+  stays silent; a second resume works; paused seek, loop install, rate and
+  transpose changes stay paused and silent.
+- `transport.test.ts`: a new node receives `pause` first, before `seek` and
+  before the first `channels` message; seek, updateGrid, setSpeed and setLoop
+  while paused settle back to `paused` and post no `resume`.
+- Heavy loop/session tests now declare a 30 s timeout (they were within the
+  default 5 s alone but could exceed it under the full-suite parallel load;
+  the assertions were unchanged).
+
+### Verification
+
+- `web/node_modules/.bin/vitest run src/player`: exit 0, 11 files, 107 tests.
+- `make test-web`: exit 0 (whole web suite).
+- `make build-web`: exit 0 (`tsc --noEmit` + Vite build).

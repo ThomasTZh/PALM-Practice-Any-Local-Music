@@ -382,15 +382,16 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
     transport.setSpeed(practice.speed);
     transport.setPitch(practice.pitchSemitones);
     transport.setCountIn(practice.countInBars);
-    transport.setTempo(grid.bpm, grid.bpb);
-    transport.setBeats(
-      gridBeatSpecs(
+    transport.updateGrid({
+      bpm: grid.bpm,
+      bpb: grid.bpb,
+      beats: gridBeatSpecs(
         grid,
         sampleRate,
         durationSeconds(),
         practice.accentDownbeat,
       ),
-    );
+    });
     transport.setMetronomeVolume(
       practice.metronomeEnabled ? practice.metronomeVolume : 0,
     );

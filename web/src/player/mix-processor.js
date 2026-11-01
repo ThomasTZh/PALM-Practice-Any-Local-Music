@@ -430,7 +430,10 @@ export class PlaybackCore {
     this.ended = false;
     this.endedNotified = false;
     this.underrunNotified = false;
-    this.paused = false;
+    // The engine must never make sound before an explicit resume. The
+    // transport also posts a pause before delivering PCM; both halves are
+    // intentional so a worklet default change cannot leak audio on load.
+    this.paused = true;
     this.rampTotal = 0;
     this.rampRemaining = 0;
     this.pauseAnchorSent = false;
@@ -752,7 +755,8 @@ export class PlaybackCore {
     this.ended = !active && audible >= this.frameCount;
     this.endedNotified = false;
     this.underrunNotified = false;
-    this.paused = false;
+    // A seek repositions the stream; it does not start playback. The pause
+    // flag survives, so a paused seek stays silent until `resume`.
     this.rampRemaining = 0;
     this.pauseAnchorSent = false;
     this.lastAnchorFrame = audible;

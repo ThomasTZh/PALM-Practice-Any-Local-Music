@@ -55,12 +55,14 @@ export interface LoopMeasurement {
 }
 
 function toneCore(frameCount: number): PlaybackCore {
-  return new PlaybackCore({
+  const core = new PlaybackCore({
     sampleRate: RATE,
     frameCount,
     sources: [{ channelCount: 2 }],
     engine: makeEngine(),
   });
+  core.resume();
+  return core;
 }
 
 /** Pitch of a 440 Hz source through the real engine (FFT peak). */

@@ -24,7 +24,7 @@ function makeGroup(
   engine = true,
 ): PlaybackCore {
   const stretch = engine ? makeEngine() : null;
-  return new PlaybackCore({
+  const core = new PlaybackCore({
     sampleRate: RATE,
     frameCount,
     sources: Array.from({ length: sourceCount }, () => ({
@@ -32,6 +32,8 @@ function makeGroup(
     })),
     ...(stretch ? { engine: stretch } : {}),
   });
+  core.resume();
+  return core;
 }
 
 function constantSource(value: number, frames: number): Float32Array[] {
@@ -211,37 +213,41 @@ describe("speed changes while playing", () => {
 });
 
 describe("60 s sessions", () => {
-  it.each([1, 0.5])("run without errors or silent stalls at %sx", (rate) => {
-    const seconds = 60;
-    const core = makeGroup(seconds * RATE, 5, true);
-    core.setRate(rate);
-    core.seek(0, 0, 0);
-    feedAll(core, 4 * RATE);
-    const quanta = Math.ceil((seconds * RATE) / QUANTUM);
-    const outL = new Float32Array(QUANTUM);
-    const outR = new Float32Array(QUANTUM);
-    let silentRun = 0;
-    let maxSilent = 0;
-    let underruns = 0;
-    for (let q = 0; q < quanta; q += 1) {
-      if (core.buffered < core.capacity / 3) {
-        feedAll(core, RATE);
-      }
-      const result = core.process((q * QUANTUM) / RATE, [outL, outR]);
-      if (result.underrun) underruns += 1;
-      if (q > 200) {
-        if (rms(outL) < 1e-4) {
-          silentRun += 1;
-          maxSilent = Math.max(maxSilent, silentRun);
-        } else {
-          silentRun = 0;
+  it.each([1, 0.5])(
+    "run without errors or silent stalls at %sx",
+    (rate) => {
+      const seconds = 60;
+      const core = makeGroup(seconds * RATE, 5, true);
+      core.setRate(rate);
+      core.seek(0, 0, 0);
+      feedAll(core, 4 * RATE);
+      const quanta = Math.ceil((seconds * RATE) / QUANTUM);
+      const outL = new Float32Array(QUANTUM);
+      const outR = new Float32Array(QUANTUM);
+      let silentRun = 0;
+      let maxSilent = 0;
+      let underruns = 0;
+      for (let q = 0; q < quanta; q += 1) {
+        if (core.buffered < core.capacity / 3) {
+          feedAll(core, RATE);
+        }
+        const result = core.process((q * QUANTUM) / RATE, [outL, outR]);
+        if (result.underrun) underruns += 1;
+        if (q > 200) {
+          if (rms(outL) < 1e-4) {
+            silentRun += 1;
+            maxSilent = Math.max(maxSilent, silentRun);
+          } else {
+            silentRun = 0;
+          }
         }
       }
-    }
-    expect(underruns).toBe(0);
-    expect(maxSilent * (QUANTUM / RATE)).toBeLessThan(0.02);
-    expect(core.position).toBeGreaterThan(seconds * RATE * rate * 0.95);
-    const positions = core.sources.map((source) => source.position);
-    expect(new Set(positions).size).toBe(1);
-  });
+      expect(underruns).toBe(0);
+      expect(maxSilent * (QUANTUM / RATE)).toBeLessThan(0.02);
+      expect(core.position).toBeGreaterThan(seconds * RATE * rate * 0.95);
+      const positions = core.sources.map((source) => source.position);
+      expect(new Set(positions).size).toBe(1);
+    },
+    30_000,
+  );
 });

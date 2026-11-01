@@ -122,6 +122,12 @@ export interface BeatSpec {
   strength: "downbeat" | "beat" | "subdivision";
 }
 
+export interface TransportGrid {
+  bpm: number;
+  bpb: number;
+  beats: BeatSpec[];
+}
+
 export interface TransportSnapshot {
   state: TransportState;
   positionFrame: number;
@@ -568,6 +574,9 @@ export class PcmTransport {
       const factory = this.options.workletFactory ?? defaultWorkletFactory;
       this.node = await factory(context, processorOptions);
       this.node.port.onmessage = (event) => this.onMessage(event.data);
+      // Explicit silence first: the core starts paused, and this message
+      // keeps a load silent even if the worklet default ever changes.
+      this.node.port.postMessage({ type: "pause" });
       const sources = await Promise.all(
         specs.map(async (spec, index) => {
           const ring = rings[index];
@@ -749,6 +758,21 @@ export class PcmTransport {
     } else {
       this.notify();
     }
+  }
+
+  /**
+   * Replace the tempo/beat grid without touching playback. Paused hosts
+   * update the ruler and metronome silently; a later resume uses the new
+   * grid.
+   */
+  updateGrid(grid: TransportGrid | null): void {
+    if (grid === null) {
+      this.setTempo(120, 4);
+      this.setBeats([]);
+      return;
+    }
+    this.setTempo(grid.bpm, grid.bpb);
+    this.setBeats(grid.beats);
   }
 
   setBeats(beats: BeatSpec[]): void {

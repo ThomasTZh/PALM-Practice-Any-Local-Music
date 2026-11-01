@@ -81,6 +81,9 @@ describe("player worklet adapter", () => {
         channels: [sine(96_000), sine(96_000)],
       },
     });
+    // The transport sends resume after load; the adapter must not make
+    // sound before it.
+    processor.port.onmessage?.({ data: { type: "resume" } });
     const scope = globalThis as unknown as { currentTime?: number };
     let sawAudio = false;
     for (let q = 0; q < 400; q += 1) {
