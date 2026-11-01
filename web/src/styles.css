@@ -1418,3 +1418,26 @@ body {
 .practice-control output {
   line-height: 1.2;
 }
+
+/* Width containment: the rail + stage consume the available main width, and
+   the timeline is a viewport (the green TimelineScrollbar is the only
+   horizontal navigation). No element may create a native horizontal scroller. */
+
+.studio,
+.studio-main,
+.studio-column,
+.stage {
+  width: 100%;
+  max-width: 100%;
+}
+
+.timeline {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+.studio-main {
+  overscroll-behavior-x: none;
+}

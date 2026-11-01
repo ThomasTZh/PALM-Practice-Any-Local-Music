@@ -1517,3 +1517,51 @@ KeyBPM readout/summary; every control remains.
 - Golden path now waits for `transport-toggle` (not the removed heading) and
   asserts the Practice speed select; `make e2e` passes.
 - `make test-web`, `make build-web`, `make e2e` all pass. No dependency added.
+
+## 2026-11-01 — stage width and native scrollbar containment (t35)
+
+### Reproduction and source
+
+On the current main the reported "stuck ~960 px stage, missing rail" state did
+not reproduce: prior layout commits already removed the fixed VIEW_WIDTH and
+put the rail in the grid. At 1280 the stage was already 963 px wide and ended at
+the main area's right edge. What remained was a native horizontal scroll
+container: `.timeline` had `overflow-x: auto`, so any transient mismatch between
+the measured SVG/timeline width and its host could produce the grey scrollbar in
+the screenshot. The containment was also implicit (grid/flex defaults) rather
+than declared.
+
+Source evidence before the fix (Firefox, 1280×800, mocked project, after open):
+`.timeline` computed overflowX `auto`; document/body 1280/1280; rail 280 px;
+stage 963 px. After zoom the custom green scrollbar appeared but the native
+container remained configured.
+
+### Fix
+
+- `.timeline` is now a clipped viewport (`overflow-x: hidden`, `overflow-y:
+  hidden`) with `width/max-width:100%`; the only horizontal navigation is the
+  green TimelineScrollbar, which moves the shared viewport rather than scrolling
+  a native element.
+- Declared width containment on `.studio`, `.studio-main`, `.studio-column` and
+  `.stage` (`width/max-width:100%`), and `overscroll-behavior-x:none` on main.
+- No fixed stage width is used; App still measures the stage and the rail stays
+  at 280 px.
+
+### Browser/e2e measurements (new web/e2e/layout.spec.ts)
+
+Both Firefox and Chromium pass the layout spec at 1280×800 and 1920×1080 after
+opening a real fixture and zooming twice:
+
+| viewport | rail | stage | stage right / main right | document client/scroll | green thumb | native overflow |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1280×800 | 280 | 963 | 1269 / 1269 | 1280 / 1280 | 417 | none |
+| 1920×1080 | 280 | 1603 | 1909 / 1909 | 1920 / 1920 | 701 | none |
+
+body scrollWidth equals clientWidth at both sizes, no descendant with
+overflowX auto/scroll has scrollWidth > clientWidth, and `.studio-main` reports
+scrollbar-width none while remaining `overflow-y:auto`. The spec also drags the
+green thumb (aria-valuenow increases) and wheels the main area at 1280×640,
+asserting main scrollTop advances with the transport still inside the viewport.
+`make e2e` passes 2 spec files (golden path + layout) on both browsers.
+
+`make test-web`, `make build-web` and `make e2e` pass. No dependency added.
