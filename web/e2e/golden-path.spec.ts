@@ -33,7 +33,9 @@ function parsePosition(text: string): number {
 }
 
 async function position(page: Page): Promise<number> {
-  return parsePosition(await page.getByTestId("transport-position").innerText());
+  return parsePosition(
+    await page.getByTestId("transport-position").innerText(),
+  );
 }
 
 async function waitForAdvance(
@@ -167,7 +169,9 @@ async function audioCapability(page: Page): Promise<{
       secureContext: window.isSecureContext,
       audioWorklet: typeof AudioWorkletNode !== "undefined",
       state:
-        resumed === "timeout" ? `resume-timeout (${context.state})` : context.state,
+        resumed === "timeout"
+          ? `resume-timeout (${context.state})`
+          : context.state,
       sampleRate: context.sampleRate,
     };
     void Promise.race([
@@ -190,12 +194,15 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   // entry, not from `.first()` on a duplicated title.
   const attempt = `r${testInfo.retry + 1}`;
   const uploadDir = mkdtempSync(join(tmpdir(), "basseparate-golden-"));
-  const upload = join(uploadDir, `golden-${testInfo.project.name}-${attempt}.wav`);
+  const upload = join(
+    uploadDir,
+    `golden-${testInfo.project.name}-${attempt}.wav`,
+  );
   copyFileSync(FIXTURE, upload);
   const title = `golden-${testInfo.project.name}-${attempt}`;
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Bass practice studio" })).toBeVisible();
+  await expect(page.getByTestId("transport-toggle")).toBeVisible();
 
   const health = await (await request.get("/api/health")).json();
   expect(health.status).toBe("ok");
@@ -220,7 +227,9 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   await expect(page.getByTestId("project-title")).toHaveText(title, {
     timeout: 120_000,
   });
-  await expect(page.locator('[data-testid^="waveform-"]').first()).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="waveform-"]').first(),
+  ).toBeVisible();
 
   // 2. Analysis job -> chords, key, BPM and bars from the preserved pack.
   await page.getByLabel("Run analysis").click();
@@ -236,7 +245,9 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   expect(summary).toContain("8 bars");
   expect(summary).toContain("5 chords"); // N + C + Am + F + G
 
-  const symbols = (await page.locator('[data-testid^="chord-block-"]').allInnerTexts())
+  const symbols = (
+    await page.locator('[data-testid^="chord-block-"]').allInnerTexts()
+  )
     .map((text) => text.trim())
     .filter((text) => text.length > 0 && text !== "N.C.");
   expect(symbols).toEqual(["C", "Am", "F", "G"]);
@@ -248,7 +259,9 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   );
   expect(entry).toBeDefined();
   const projectId = String(entry?.projectId ?? entry?.id);
-  const project = await (await request.get(`/api/projects/${projectId}`)).json();
+  const project = await (
+    await request.get(`/api/projects/${projectId}`)
+  ).json();
   const document = project.document as Record<string, unknown>;
   const grid = document.grid as Record<string, unknown>;
   expect((grid.bars as number[]).length).toBe(8);
@@ -316,7 +329,7 @@ test("golden path: import, analyze, reopen, practise and export", async ({
       timeout: 30_000,
     });
     await page.getByLabel("Practice speed").selectOption("0.5");
-    await expect(page.getByLabel("Speed", { exact: true })).toHaveValue("0.5");
+    await expect(page.getByLabel("Practice speed")).toHaveValue("0.5");
     await page.waitForTimeout(600);
     const beforeSpeed = await position(page);
     await page.waitForTimeout(1_500);
@@ -382,9 +395,7 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   });
   const createdSection = savedBeforeLoop.find(
     (entry) => (entry as { name?: unknown }).name === "Section 1",
-  ) as
-    | { start_seconds?: unknown; end_seconds?: unknown }
-    | undefined;
+  ) as { start_seconds?: unknown; end_seconds?: unknown } | undefined;
   const loopStartSeconds = Number(createdSection?.start_seconds);
   const loopEndSeconds = Number(createdSection?.end_seconds);
   if (
@@ -481,11 +492,12 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   await expect(page.getByTestId("key-readout")).toHaveText("C major");
   await expect(page.locator('[data-testid^="section-block-"]')).toHaveCount(1);
 
-  const media = await (await request.get(`/api/projects/${projectId}/media`)).json();
-  const exported = await request.post(
-    `/api/projects/${projectId}/exports`,
-    { data: { filename: "golden-path" } },
-  );
+  const media = await (
+    await request.get(`/api/projects/${projectId}/media`)
+  ).json();
+  const exported = await request.post(`/api/projects/${projectId}/exports`, {
+    data: { filename: "golden-path" },
+  });
   expect(exported.status()).toBe(201);
   const exportJson = await exported.json();
   expect(exportJson.frames).toBe(media.frames);

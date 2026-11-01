@@ -761,37 +761,6 @@ export function App({
 
   return (
     <div className="studio">
-      <header className="studio-header">
-        <div className="studio-heading">
-          <h1>Bass practice studio</h1>
-          <p
-            className={`status-line status-${tone}`}
-            data-testid="status-line"
-            role={tone === "error" ? "alert" : "status"}
-          >
-            {message}
-          </p>
-        </div>
-        <dl className="readouts">
-          <div>
-            <dt>Track</dt>
-            <dd data-testid="project-title">
-              {project?.title ?? "No project"}
-            </dd>
-          </div>
-          <div>
-            <dt>Key</dt>
-            <dd data-testid="key-readout">{keyLabel ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>BPM</dt>
-            <dd data-testid="bpm-readout">
-              {bpm !== null ? `${Math.round(bpm * 10) / 10} · ${bpb}/4` : "—"}
-            </dd>
-          </div>
-        </dl>
-      </header>
-
       <main className="studio-main">
         <aside className="studio-rail" data-testid="studio-rail">
           {project !== null && (
@@ -990,28 +959,39 @@ export function App({
         </div>
       </main>
 
-      <TransportPanel
-        player={player}
-        grid={project?.grid ?? null}
-        selection={selection}
-      />
-
-      <footer className="status-line-footer">
-        <span className="status-detail" data-testid="status-detail">
-          <span>{formatPosition(playerState.positionSeconds)}</span>
-          <span>{selectionText}</span>
-          <span>{`zoom ${zoomPercent}%`}</span>
-          <span data-testid="save-status">
-            {saveState === "idle"
-              ? ""
-              : saveState === "saved"
-                ? "saved"
-                : saveState === "saving"
-                  ? "saving…"
-                  : "save failed"}
+      <div className="studio-bottom">
+        <div className="studio-status">
+          <p
+            className={`status-line status-${tone}`}
+            data-testid="status-line"
+            role={tone === "error" ? "alert" : "status"}
+          >
+            {message}
+          </p>
+          <span className="status-detail" data-testid="status-detail">
+            <span>{selectionText}</span>
+            <span>{`zoom ${zoomPercent}%`}</span>
+            <span data-testid="save-status">
+              {saveState === "idle"
+                ? ""
+                : saveState === "saved"
+                  ? "saved"
+                  : saveState === "saving"
+                    ? "saving…"
+                    : "save failed"}
+            </span>
           </span>
-        </span>
-      </footer>
+        </div>
+        <TransportPanel
+          player={player}
+          grid={project?.grid ?? null}
+          selection={selection}
+          projectTitle={project?.title ?? null}
+          keyLabel={keyLabel}
+          bpm={bpm}
+          bpb={bpb}
+        />
+      </div>
     </div>
   );
 }

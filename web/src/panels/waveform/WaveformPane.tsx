@@ -134,10 +134,18 @@ export function WaveformPane({
       }
       const horizontal = event.deltaX !== 0 ? event.deltaX : event.deltaY;
       if (Math.abs(horizontal) >= 1) {
-        event.preventDefault();
-        onViewportChange(
-          scrollViewport(viewport, durationSeconds, widthPx, horizontal),
+        const next = scrollViewport(
+          viewport,
+          durationSeconds,
+          widthPx,
+          horizontal,
         );
+        // At fit the timeline cannot scroll horizontally, so leave the wheel
+        // to the page's vertical scroll container instead of trapping it.
+        if (next !== viewport) {
+          event.preventDefault();
+          onViewportChange(next);
+        }
       }
     }
     element.addEventListener("wheel", handleWheel, { passive: false });

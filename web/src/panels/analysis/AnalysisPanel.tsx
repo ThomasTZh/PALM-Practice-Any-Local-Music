@@ -123,35 +123,34 @@ export function AnalysisPanel({
         >
           {badgeText}
         </span>
-      </header>
-
-      <div className="analysis-controls">
-        <label className="analysis-control">
-          Beats per bar
-          <select
-            aria-label="Beats per bar"
-            value={bpb}
+        <div className="analysis-controls">
+          <label className="analysis-control">
+            Beats per bar
+            <select
+              aria-label="Beats per bar"
+              value={bpb}
+              disabled={running}
+              onChange={(event) => setBpb(Number(event.target.value))}
+            >
+              {BPB_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            aria-label="Run analysis"
             disabled={running}
-            onChange={(event) => setBpb(Number(event.target.value))}
+            onClick={() => {
+              void run();
+            }}
           >
-            {BPB_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          aria-label="Run analysis"
-          disabled={running}
-          onClick={() => {
-            void run();
-          }}
-        >
-          {running ? "Analysing…" : "Run analysis"}
-        </button>
-      </div>
+            {running ? "Analysing…" : "Run analysis"}
+          </button>
+        </div>
+      </header>
 
       {job !== null && (
         <div

@@ -1473,3 +1473,47 @@ Final verification on the committed tree (`3d86373` plus the docs commit):
 - Remaining human step: one listening pass for the silence-on-open/seek fix and
   the new layout, stem lanes and scrollbar. The manual checklist is otherwise
   satisfied by the two sessions above.
+
+## 2026-11-01 — compact bottom transport, no header, tighter panels (t34)
+
+### Shell
+
+- Removed the whole top header (title, status line, Track/Key/BPM row).
+- Track, Key and BPM/bpb now live in the bottom transport bar to the right of
+  the transport buttons/readout, keeping `project-title`, `key-readout` and
+  `bpm-readout`. The Speed select is gone from the transport; the Practice panel
+  still owns `Practice speed`.
+- The transport sits in a fixed-height bottom region of a 100dvh flex shell;
+  `.studio-main` is the only scrolling container (`overflow-y:auto`, hidden
+  scrollbar with `scrollbar-width:none` and ::-webkit-scrollbar display none).
+  `html/body/#root` are height-bound with overflow hidden, so no page scrollbar
+  exists. Status line, selection/zoom and `save-status` are a thin unobtrusive
+  strip above the transport (`status-line`, `status-detail`, `save-status` kept).
+- Waveform wheel handling now only prevents the default when the timeline can
+  actually scroll horizontally; at fit the wheel falls through to the page's
+  main scroll container instead of trapping it over the waveform.
+
+### Panel compaction (1280 × 800, Firefox, mocked API)
+
+| panel | before | after | reduction |
+| --- | --- | --- | --- |
+| Practice | 157 px | 110 px | 29.9 % |
+| Analysis | 141 px | 80 px | 43.3 % |
+
+Practice controls are a 3-column compact grid with smaller selects/buttons/
+sliders and no controls removed. Analysis moved Beats-per-bar and Run analysis
+into the header row next to the cached badge, tightened padding/gaps and the
+KeyBPM readout/summary; every control remains.
+
+### Browser smoke and e2e
+
+- At 1280×800: no header/h1, transport top 721 / bottom 795 (fully visible),
+  metadata at x 1091–1259 vs buttons x 21–193, main scrollHeight 993 / client
+  689, wheel scrolled it to 214 px with the transport still at 721–795,
+  document scroll size exactly 1280×800, no page scrollbars, no `Speed` select,
+  Practice speed present, status/save testids present.
+- At 1600×800: document 1600×800, transport 11–1589, no overflow. Wheel over
+  the waveform scrolled main by 262 px, transport stayed pinned.
+- Golden path now waits for `transport-toggle` (not the removed heading) and
+  asserts the Practice speed select; `make e2e` passes.
+- `make test-web`, `make build-web`, `make e2e` all pass. No dependency added.

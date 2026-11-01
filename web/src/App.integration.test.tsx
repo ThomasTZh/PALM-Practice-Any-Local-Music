@@ -332,7 +332,7 @@ describe("App with the real transport adapter", () => {
     );
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Speed" }), {
+    fireEvent.change(screen.getByLabelText("Practice speed"), {
       target: { value: "0.75" },
     });
     await waitFor(() => expect(engine.player.getState().speed).toBe(0.75));

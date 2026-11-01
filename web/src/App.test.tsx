@@ -422,6 +422,29 @@ describe("App integration", () => {
     );
   });
 
+  it("has no header and puts track, key and BPM in the bottom transport", async () => {
+    setup();
+    await openProject();
+
+    expect(
+      screen.queryByRole("heading", { name: "Bass practice studio" }),
+    ).not.toBeInTheDocument();
+    const transport = screen.getByRole("region", { name: "Transport" });
+    expect(within(transport).getByTestId("project-title")).toHaveTextContent(
+      "Demo take",
+    );
+    expect(within(transport).getByTestId("key-readout")).toHaveTextContent(
+      "C major",
+    );
+    expect(within(transport).getByTestId("bpm-readout")).toHaveTextContent(
+      "120 · 4/4",
+    );
+    expect(within(transport).queryByLabelText("Speed")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Practice speed")).toBeInTheDocument();
+    expect(screen.getByTestId("status-line")).toBeInTheDocument();
+    expect(screen.getByTestId("save-status")).toBeInTheDocument();
+  });
+
   it("uses one measured full-stage width and reflows the panes on resize", async () => {
     const { rig } = setup();
     await openProject();

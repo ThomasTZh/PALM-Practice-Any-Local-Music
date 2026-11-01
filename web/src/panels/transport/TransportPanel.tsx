@@ -1,9 +1,5 @@
-import { formatBarBeat, formatPosition, formatSpeed } from "../../state/format";
-import {
-  SPEED_OPTIONS,
-  type PlaybackStatus,
-  type StudioPlayer,
-} from "../../state/player";
+import { formatBarBeat, formatPosition } from "../../state/format";
+import { type PlaybackStatus, type StudioPlayer } from "../../state/player";
 import type { Grid } from "../../state/types";
 import { usePlayerState } from "../../state/usePlayerState";
 import { hasSelection, type Selection } from "../waveform/selection";
@@ -12,6 +8,10 @@ export interface TransportPanelProps {
   player: StudioPlayer;
   grid?: Grid | null;
   selection?: Selection | null;
+  projectTitle?: string | null;
+  keyLabel?: string | null;
+  bpm?: number | null;
+  bpb?: number | null;
 }
 
 const STATUS_LABELS: Record<PlaybackStatus, string> = {
@@ -33,16 +33,17 @@ export function TransportPanel({
   player,
   grid = null,
   selection = null,
+  projectTitle = null,
+  keyLabel = null,
+  bpm = null,
+  bpb = null,
 }: TransportPanelProps) {
   const state = usePlayerState(player);
   const playing = state.status === "playing";
   const canPlay = state.durationSeconds > 0 && state.status !== "loading";
   const barBeat = formatBarBeat(state.positionSeconds, grid);
-  const speeds = SPEED_OPTIONS.includes(
-    state.speed as (typeof SPEED_OPTIONS)[number],
-  )
-    ? [...SPEED_OPTIONS]
-    : [...SPEED_OPTIONS, state.speed].sort((a, b) => a - b);
+  const bpmText =
+    bpm === null ? "—" : `${Math.round(bpm * 10) / 10} · ${bpb ?? 4}/4`;
 
   function handleLoop(): void {
     if (state.loopEnabled) {
@@ -111,20 +112,20 @@ export function TransportPanel({
         </span>
       </div>
 
-      <label className="speed-control">
-        Speed
-        <select
-          aria-label="Speed"
-          value={state.speed}
-          onChange={(event) => player.setSpeed(Number(event.target.value))}
-        >
-          {speeds.map((speed) => (
-            <option key={speed} value={speed}>
-              {formatSpeed(speed)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <dl className="transport-meta" aria-label="Track details">
+        <div>
+          <dt>Track</dt>
+          <dd data-testid="project-title">{projectTitle ?? "No project"}</dd>
+        </div>
+        <div>
+          <dt>Key</dt>
+          <dd data-testid="key-readout">{keyLabel ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>BPM</dt>
+          <dd data-testid="bpm-readout">{bpmText}</dd>
+        </div>
+      </dl>
 
       {state.error !== null && (
         <p className="transport-error" role="alert">

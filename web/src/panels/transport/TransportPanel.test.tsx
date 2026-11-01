@@ -82,19 +82,22 @@ describe("TransportPanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("decoder failed");
   });
 
-  it("changes speed through the menu and reflects the player state", async () => {
+  it("shows the track, key and BPM readouts without a speed menu", () => {
     const player = createFakePlayer({ durationSeconds: 60 });
-    render(<TransportPanel player={player} />);
+    render(
+      <TransportPanel
+        player={player}
+        projectTitle="Carousel"
+        keyLabel="C major"
+        bpm={120}
+        bpb={4}
+      />,
+    );
 
-    const speed = screen.getByLabelText("Speed");
-    expect(speed).toHaveValue("1");
-
-    await userEvent.selectOptions(speed, "0.75");
-
-    expect(player.calls).toEqual(["setSpeed:0.75"]);
-    expect(player.getState().speed).toBe(0.75);
-    expect(speed).toHaveValue("0.75");
-    expect(screen.getByRole("option", { name: "0.75×" })).toBeInTheDocument();
+    expect(screen.getByTestId("project-title")).toHaveTextContent("Carousel");
+    expect(screen.getByTestId("key-readout")).toHaveTextContent("C major");
+    expect(screen.getByTestId("bpm-readout")).toHaveTextContent("120 · 4/4");
+    expect(screen.queryByLabelText("Speed")).not.toBeInTheDocument();
   });
 
   it("turns the selection into a loop when the loop is switched on", async () => {
