@@ -53,11 +53,17 @@ dependencies from the preserved pnpm store; `pnpm install` is not used offline.
   grid, key and chords are persisted in the project.
 - **Practise** in a full-width browser layout with one shared timeline: mix
   waveform, then synced waveform lanes for vocals, drums, bass and other, then
-  the spectrogram, the chord ribbon and the sections. The mixer is a left rail;
-  sections are created by dragging (four-bar default) and resized by their edges;
-  a real horizontal scrollbar and playhead-follow paging make zoomed views
-  navigable; speed 0.25–2× with independent pitch, accented metronome and
-  count-in. The engine starts silent and renders only after an explicit play.
+  the spectrogram, the chord ribbon and the sections. The left rail holds
+  Analysis, Mixer, Practice and Library in that order, and the compact transport
+  is pinned to the bottom with the track, key and BPM readouts. Sections are
+  created by dragging (four-bar default), moved by dragging their body (length
+  preserved, overlaps allowed), resized by their edges, and added ending at the
+  playhead; the editor lists them sorted by start and can chain-loop several
+  selected sections with the gaps included. A green timeline scrollbar and
+  playhead-follow paging make zoomed views navigable; speed 0.25–2×, accented
+  metronome and a count-in that clicks even when the metronome is off. Pitch
+  shifting was removed on request. The engine starts silent and renders only
+  after an explicit play.
 - **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
   pitch, position and mixer; reopen restores the project; mixdown export writes a
   16-bit WAV at the project rate with exactly the project frame count.
@@ -91,8 +97,8 @@ Final gate (run for this documentation, exit 0):
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / mypy strict
 [PASS] pytest 228 passed, 7 skipped
-[PASS] web typecheck, web tests (51 files / 469 tests, serialized), web build
-[PASS] e2e golden path: Firefox and Chromium, real server, isolated data root
+[PASS] web typecheck, web tests (52 files / 503 tests, serialized), web build
+[PASS] e2e golden path + layout spec: Firefox and Chromium, isolated data root
 gate: ok
 ```
 
@@ -115,9 +121,12 @@ field sessions are recorded there (Carousel on Firefox): playback, speed, pitch,
 chords, key, BPM and metronome pass by ear; stems, saving and section dragging
 were fixed after the first session and confirmed working in the second. The
 second session also found the engine rendering audio before any play press, whose
-root cause is fixed and covered by real-WASM silence tests; that fix and the new
-full-width layout, stem lanes, scrollbar and four-bar sections still need one
-final listening pass. The checklist is not claimed as fully passed.
+root cause is fixed and covered by real-WASM silence tests. After the second
+session the shell was reworked (header removed, pinned compact transport with
+track/key/BPM, ordered left rail, layout and scrollbar containment, sections
+timeline-first with sorted list, body drag, end-at-playhead Add and chain loop,
+pitch removed, count-in independent of the metronome). Those changes need one
+final listening pass; the checklist is not claimed as fully passed.
 
 ## Known limitations
 
@@ -136,6 +145,11 @@ final listening pass. The checklist is not claimed as fully passed.
   overlap and an OOM ladder bound memory.
 - **Chord/key accuracy varies:** Chordino spelling depends on voicing/rate
   (`C` vs `C6`, slash chords) and Key Detector can change on ambiguous material.
+- **Pitch shifting removed:** the UI and player API no longer expose it at the
+  user's request; the internal worklet transpose remains only for audio tests.
+- **Chain loop includes gaps:** looping several selected sections runs from the
+  earliest start to the latest end, so unselected material between them is
+  included by design.
   Raw labels are preserved; the UI normalises for display.
 - **Automated audio cannot be heard:** tests assert engine/transport state with
   the real WASM and AudioWorklet, but no headless run claims audible quality.

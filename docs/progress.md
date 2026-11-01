@@ -1789,3 +1789,29 @@ WASM stretch path while ensuring no user-facing pitch API remains.
   Speed/Loop/Count-in/Metronome/Accent/volume/Snap remained. The only "pitch"
   text matches were the test project title "NoPitch".
 - No dependency added.
+
+## 2026-11-01 — third layout round (t35-t41) and final gate
+
+Requests from the user's third pass, and what was done:
+
+| Request | Result |
+|---|---|
+| Native grey scrollbar still present, layout sometimes broken | t35 `740e6fd`: the remaining native scroller was `.timeline` (`overflow-x:auto`). It is now a clipped viewport; the green TimelineScrollbar is the only horizontal navigation. Explicit width containment on studio/main/column/stage, `overscroll-behavior-x:none`. New `web/e2e/layout.spec.ts` asserts document/body widths at 1280x800 and 1920x1080, rail 280, stage 963/1603, no native overflow. |
+| Move Analysis and Practice into the left rail, order Analysis, Mixer, Practice, Library | t36 `b4d8fb6`: right column removed, sticky 280 px rail with independent hidden scroll; stage takes the remaining width; transport stays pinned. |
+| Sections: timeline first, heading/snap below, sorted list, two columns (list left, loop right) | t38 `dc068e2`: exactly that order; list sorted by start time; `section-loop-editor` reserved and filled by t40. |
+| Section body drag moves; Add section ends at the playhead | t39 `58fbd53`: body drag preserves length, overlaps allowed and drawn as stacked lanes; click still seeks. Add with no selection ends at the snapped playhead, four bars, clamped after the previous section, with a status message when there is no room. The first downbeat case starts on the grid downbeat. |
+| Loop multiple connected sections | t40 `b5b746e`: checkboxes in the loop pane; Loop selected runs earliest start to latest end with gaps included, disabled below two; Clear loop; per-section Loop unchanged; persists through autosave. |
+| Remove pitch | t41 `eb010c0`: controls and readouts removed; `pitchSemitones`/`setPitchSemitones` removed from PlayerState/StudioPlayer/PracticeController and autosave; legacy saved fields are ignored. Internal transport transpose remains for audio tests only. |
+| Count-in clicks even with metronome off | t37 `4431b13`: count-in on any play when bars are set, dedicated 0.8 click pool independent of metronome volume; the metronome follows the toggle after the count-in. Real-WASM tests cover loop/no-loop x metronome off/on. |
+
+Final gate on the committed tree (`eb010c0` plus docs):
+
+- `make gate` exit 0: ruff/format, 6 fixtures, strict mypy, pytest 228 passed /
+  7 skipped in 57.3 s, tsc, serialized web suite 52 files / 503 tests in 87.2 s,
+  Vite build, e2e 2 specs (golden path + layout) in 45.8 s on Firefox and
+  Chromium.
+- Earlier stability evidence still stands: five consecutive e2e runs (t32) and
+  five consecutive `make test-web` runs under a concurrent backend suite (t33).
+- Remaining human step: one listening pass covering the silence-on-open fix, the
+  pinned/compact layout, stem lanes, section move/overlap, chain loop and the
+  count-in with the metronome off.
