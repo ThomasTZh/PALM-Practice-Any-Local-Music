@@ -1238,3 +1238,47 @@ Verification on the final tree:
 Still to do after these fixes: one repeat listening pass covering the new stem
 control and mixer, section dragging, and save/reopen/export. The relative-key
 ambiguity (Ab major vs F minor) is accepted as plugin behaviour.
+
+## 2026-11-01 — full-width stage, left mixer rail and waveform-first order (t26)
+
+### Layout
+
+- The fixed 940/960 px stage is gone. `App` measures a `.stage-measure` element
+  inside the stage with `getBoundingClientRect`, uses the fallback
+  `window.innerWidth - rail/gaps/padding` before the first measurement, and
+  observes both `ResizeObserver` and window `resize`. One `stageWidth` value is
+  passed to TimeRuler, every WaveformPane, SpectrogramPane, ChordRibbon and
+  SectionLane and used by fit/zoom/zoom-to-selection.
+- On a width change the viewport keeps its zoom factor relative to fit and its
+  start time, clamped to the new width, so the playhead and zoom stay aligned.
+  The playhead x position is identical in ruler and waveform (unit-tested).
+- `.studio-main` is a two-column grid: a 240–280 px left rail and the stage.
+  The rail holds the mixer first and the library below it. The stage is a
+  vertical flex column containing the toolbar, shared timeline (ruler, mix
+  waveform, stem slot, spectrogram), chord ribbon, section lane, then analysis
+  and practice.
+- `stem-lanes` is the reserved slot between the mix waveform and spectrogram.
+  It is driven by `project.stems` (`data-stem-count`, `data-stem-ids` and one
+  `stem-lane-slot-<id>` placeholder per stem) for t28 to replace with real
+  per-stem waveform panes.
+- All existing testids and controls are unchanged; the mixer keeps its
+  separation/progress/cancel UI inside the rail.
+
+### Verification
+
+- Unit tests measure a mocked 1234 px stage: ruler, waveform SVG, spectrogram,
+  chord ribbon and section timeline all report 1234 px; after a 720 px resize
+  all report 720 px. A seek at 4 s leaves ruler and waveform playheads at 617 px
+  (1234 px) and 360 px (720 px), proving shared alignment.
+- Order test: mix waveform → `stem-lanes` → spectrogram → chord ribbon →
+  sections; the stem slot reports 4 stems from the project; the mixer and
+  library are descendants of `studio-rail` and the mixer is not inside the
+  stage/right column.
+- Firefox smoke at 1280 and 1600 px with a mocked API: no horizontal overflow,
+  rail at x=19–299, stage 948/1268 px, all panes 924/1244 px, order correct,
+  4 stem slots, no page errors.
+- `make test-web`: exit 0; `make build-web`: exit 0. No dependency added.
+
+A first `make test-web` invocation hit the pre-existing spectrogram best-wall
+perf flake under host load; the immediate rerun passed. The layout change does
+not touch that test.

@@ -32,6 +32,14 @@ import {
 } from "./state/studioRuntime";
 import { App } from "./App";
 
+// The shell falls back to measuring the window in jsdom; 1300 px leaves
+// the same 940 px stage the fixed-width tests used for pointer coordinates.
+Object.defineProperty(window, "innerWidth", {
+  configurable: true,
+  writable: true,
+  value: 1300,
+});
+
 const BEATS = Array.from({ length: 16 }, (_, index) => index * 0.5);
 
 function payload(options: { analysis?: boolean; stems?: boolean } = {}) {
@@ -243,6 +251,31 @@ function setup(
   return { api, rig, client, view, project };
 }
 
+function mockMeasuredWidth(element: HTMLElement, width: number): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      width,
+      height: 0,
+      left: 0,
+      right: width,
+      top: 0,
+      bottom: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }),
+  });
+}
+
+function precedes(first: Element, second: Element): boolean {
+  return (
+    (first.compareDocumentPosition(second) &
+      Node.DOCUMENT_POSITION_FOLLOWING) !==
+    0
+  );
+}
+
 async function openProject() {
   await screen.findByRole("button", { name: "Open Demo take" });
   await userEvent.click(screen.getByRole("button", { name: "Open Demo take" }));
@@ -365,6 +398,93 @@ describe("App integration", () => {
     expect(screen.getByTestId("transport-status")).not.toHaveTextContent(
       "Playing",
     );
+  });
+
+  it("uses one measured full-stage width and reflows the panes on resize", async () => {
+    const { rig } = setup();
+    await openProject();
+    const measure = screen.getByTestId("stage-measure") as HTMLElement;
+
+    function paneWidths(): string[] {
+      const timeline = screen
+        .getByTestId("section-lane")
+        .querySelector(".section-timeline") as HTMLElement;
+      const waveform = screen
+        .getByTestId("waveform-a1")
+        .querySelector("svg") as SVGSVGElement;
+      return [
+        screen.getByTestId("time-ruler").style.width,
+        `${waveform.getAttribute("width")}px`,
+        screen.getByTestId("spectrogram").style.width,
+        screen.getByTestId("chord-ribbon").style.width,
+        timeline.style.width,
+      ];
+    }
+
+    expect(new Set(paneWidths())).toEqual(new Set(["940px"]));
+
+    mockMeasuredWidth(measure, 1234);
+    fireEvent(window, new Event("resize"));
+    await waitFor(() =>
+      expect(screen.getByTestId("time-ruler").style.width).toBe("1234px"),
+    );
+    expect(new Set(paneWidths())).toEqual(new Set(["1234px"]));
+
+    fireEvent.click(screen.getByTestId("time-ruler"), { clientX: 617 });
+    await waitFor(() =>
+      expect(rig.player.getState().positionSeconds).toBeCloseTo(4, 1),
+    );
+    const rulerLeft = Number.parseFloat(
+      screen.getByTestId("ruler-playhead").style.left,
+    );
+    const waveformX = Number(
+      screen.getByTestId("waveform-playhead-a1").getAttribute("x1"),
+    );
+    expect(waveformX).toBeCloseTo(rulerLeft, 1);
+    expect(waveformX).toBeCloseTo(617, 1);
+
+    mockMeasuredWidth(measure, 720);
+    fireEvent(window, new Event("resize"));
+    await waitFor(() =>
+      expect(screen.getByTestId("time-ruler").style.width).toBe("720px"),
+    );
+    expect(new Set(paneWidths())).toEqual(new Set(["720px"]));
+    expect(
+      Number.parseFloat(screen.getByTestId("ruler-playhead").style.left),
+    ).toBeCloseTo(360, 1);
+    expect(
+      Number(screen.getByTestId("waveform-playhead-a1").getAttribute("x1")),
+    ).toBeCloseTo(360, 1);
+  });
+
+  it("orders mix, stem slot, spectrogram, chords and sections with the mixer left", async () => {
+    setup();
+    await openProject();
+
+    const mix = screen.getByTestId("waveform-a1");
+    const stemSlot = screen.getByTestId("stem-lanes");
+    const spectrogram = screen.getByTestId("spectrogram");
+    const chords = screen.getByTestId("chord-ribbon");
+    const sections = screen.getByTestId("section-lane");
+
+    expect(precedes(mix, stemSlot)).toBe(true);
+    expect(precedes(stemSlot, spectrogram)).toBe(true);
+    expect(precedes(spectrogram, chords)).toBe(true);
+    expect(precedes(chords, sections)).toBe(true);
+
+    expect(stemSlot).toHaveAttribute("data-stem-count", "4");
+    expect(stemSlot).toHaveAttribute(
+      "data-stem-ids",
+      "drums,bass,other,vocals",
+    );
+    expect(screen.getByTestId("stem-lane-slot-drums")).toBeInTheDocument();
+    expect(screen.getByTestId("stem-lane-slot-vocals")).toBeInTheDocument();
+
+    const rail = screen.getByTestId("studio-rail");
+    const mixer = within(rail).getByTestId("mixer");
+    expect(mixer).toBeInTheDocument();
+    expect(rail.querySelector(".library")).not.toBeNull();
+    expect(screen.getByTestId("stage-measure").contains(mixer)).toBe(false);
   });
 
   it("shows the analysed key, tempo and chord ribbon", async () => {

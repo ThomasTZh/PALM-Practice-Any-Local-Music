@@ -25,6 +25,14 @@ import {
 import { createShellTransport } from "./state/studioRuntime";
 import { App } from "./App";
 
+// The shell falls back to measuring the window in jsdom; 1300 px leaves
+// the same 940 px stage the fixed-width tests used for pointer coordinates.
+Object.defineProperty(window, "innerWidth", {
+  configurable: true,
+  writable: true,
+  value: 1300,
+});
+
 const RATE = 48_000;
 const FRAMES = 4 * RATE;
 const DURATION = FRAMES / RATE;

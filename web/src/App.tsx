@@ -12,6 +12,7 @@ import { TransportPanel } from "./panels/transport/TransportPanel";
 import { WaveformPane, type Lane } from "./panels/waveform/WaveformPane";
 import { hasSelection, type Selection } from "./panels/waveform/selection";
 import {
+  clampViewport,
   fitViewport,
   zoomToSelection as zoomViewportToSelection,
   zoomViewport,
@@ -53,8 +54,29 @@ import { useMixerState } from "./state/useMixerState";
 import { usePlayerState } from "./state/usePlayerState";
 import { usePracticeState } from "./state/usePracticeState";
 
-/** Fixed logical timeline width; smaller screens scroll it inside the stage. */
-export const VIEW_WIDTH = 940;
+/** Smallest usable timeline; the real stage width follows the window. */
+export const MIN_STAGE_WIDTH = 320;
+/** Space left of the stage at first paint: rail, gaps and page padding. */
+const INITIAL_RAIL_ALLOWANCE = 360;
+
+export function measuredStageWidth(
+  element: { getBoundingClientRect(): { width: number } } | null,
+  fallback: number,
+): number {
+  const measured = element?.getBoundingClientRect().width ?? 0;
+  const width = measured > 0 ? measured : fallback;
+  return Math.max(MIN_STAGE_WIDTH, Math.round(width));
+}
+
+function initialStageWidth(): number {
+  if (typeof window === "undefined") {
+    return MIN_STAGE_WIDTH;
+  }
+  return Math.max(
+    MIN_STAGE_WIDTH,
+    Math.round(window.innerWidth - INITIAL_RAIL_ALLOWANCE),
+  );
+}
 
 export interface AppProps {
   api?: ShellApi;
@@ -165,8 +187,11 @@ export function App({
   const [lanes, setLanes] = useState<Lane[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [snapMode, setSnapMode] = useState<SnapMode>("bar");
+  const [stageWidth, setStageWidth] = useState(initialStageWidth);
+  const stageMeasureRef = useRef<HTMLDivElement | null>(null);
+  const previousStageWidthRef = useRef(stageWidth);
   const [viewport, setViewport] = useState<Viewport>(() =>
-    fitViewport(0, VIEW_WIDTH),
+    fitViewport(0, stageWidth),
   );
   const [selection, setSelection] = useState<Selection | null>(null);
   const [follow, setFollow] = useState(true);
@@ -214,9 +239,59 @@ export function App({
 
   const durationSeconds = project?.durationSeconds ?? 0;
   const fitted = useMemo(
-    () => fitViewport(durationSeconds, VIEW_WIDTH),
-    [durationSeconds],
+    () => fitViewport(durationSeconds, stageWidth),
+    [durationSeconds, stageWidth],
   );
+
+  useEffect(() => {
+    const element = stageMeasureRef.current;
+    if (element === null) {
+      return;
+    }
+    function measure(): void {
+      const fallback = Math.max(
+        MIN_STAGE_WIDTH,
+        Math.round(window.innerWidth - INITIAL_RAIL_ALLOWANCE),
+      );
+      const width = measuredStageWidth(element, fallback);
+      setStageWidth((current) => (current === width ? current : width));
+    }
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => measure());
+    observer?.observe(element);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  useEffect(() => {
+    const previousWidth = previousStageWidthRef.current;
+    if (previousWidth === stageWidth) {
+      return;
+    }
+    previousStageWidthRef.current = stageWidth;
+    setViewport((current) => {
+      if (!(durationSeconds > 0)) {
+        return fitViewport(0, stageWidth);
+      }
+      const previousFit = fitViewport(durationSeconds, previousWidth);
+      const nextFit = fitViewport(durationSeconds, stageWidth);
+      const zoom = previousFit.secondsPerPixel / current.secondsPerPixel;
+      return clampViewport(
+        {
+          startSeconds: current.startSeconds,
+          secondsPerPixel: nextFit.secondsPerPixel / zoom,
+        },
+        durationSeconds,
+        stageWidth,
+      );
+    });
+  }, [stageWidth, durationSeconds]);
   const grid = useMemo(() => sectionGrid(project), [project]);
   const pcmLoader = useMemo(
     () => (project === null ? null : pcmLoaderFor(project.id)),
@@ -240,6 +315,16 @@ export function App({
       }));
   }, [project, mixerState]);
 
+  const stemLanes = useMemo(
+    () =>
+      (project?.stems ?? []).map((stem) => ({
+        id: stem.id,
+        name: stem.name,
+        role: stem.role,
+      })),
+    [project],
+  );
+
   const openProject = useCallback(
     async (projectId: string) => {
       setTone("info");
@@ -261,7 +346,7 @@ export function App({
         setSnapMode("bar");
         setSelection(null);
         setFollow(true);
-        setViewport(fitViewport(next.durationSeconds, VIEW_WIDTH));
+        setViewport(fitViewport(next.durationSeconds, stageWidth));
         setRuntime(opened);
         setSaveState("idle");
         setTone("info");
@@ -297,7 +382,7 @@ export function App({
         setMessage(errorMessage(error));
       }
     },
-    [api, transport],
+    [api, transport, stageWidth],
   );
 
   const handleAnalyzed = useCallback(
@@ -587,31 +672,31 @@ export function App({
 
   const zoomIn = useCallback(() => {
     setViewport((current) =>
-      zoomViewport(current, durationSeconds, VIEW_WIDTH, 1.5, VIEW_WIDTH / 2),
+      zoomViewport(current, durationSeconds, stageWidth, 1.5, stageWidth / 2),
     );
-  }, [durationSeconds]);
+  }, [durationSeconds, stageWidth]);
   const zoomOut = useCallback(() => {
     setViewport((current) =>
       zoomViewport(
         current,
         durationSeconds,
-        VIEW_WIDTH,
+        stageWidth,
         1 / 1.5,
-        VIEW_WIDTH / 2,
+        stageWidth / 2,
       ),
     );
-  }, [durationSeconds]);
+  }, [durationSeconds, stageWidth]);
   const fit = useCallback(() => {
-    setViewport(fitViewport(durationSeconds, VIEW_WIDTH));
-  }, [durationSeconds]);
+    setViewport(fitViewport(durationSeconds, stageWidth));
+  }, [durationSeconds, stageWidth]);
   const zoomSelection = useCallback(() => {
     if (selection === null) {
       return;
     }
     setViewport(
-      zoomViewportToSelection(selection, durationSeconds, VIEW_WIDTH),
+      zoomViewportToSelection(selection, durationSeconds, stageWidth),
     );
-  }, [durationSeconds, selection]);
+  }, [durationSeconds, selection, stageWidth]);
 
   const zoomPercent = Math.round(
     (fitted.secondsPerPixel / viewport.secondsPerPixel) * 100,
@@ -662,16 +747,41 @@ export function App({
       </header>
 
       <main className="studio-main">
-        <LibraryPanel
-          api={api}
-          onOpen={(projectId) => {
-            void openProject(projectId);
-          }}
-          activeProjectId={project?.id ?? null}
-        />
+        <aside className="studio-rail" data-testid="studio-rail">
+          {project !== null && (
+            <MixerPanel
+              stems={mixerStems}
+              controller={active.mixer}
+              separation={{
+                hasStems: project.stems.length > 0,
+                running: separation.running,
+                progress: separation.progress,
+                stage: separation.stage,
+                error: separation.error,
+                onSeparate: () => {
+                  void handleSeparate();
+                },
+                onCancel: handleCancelSeparation,
+              }}
+            />
+          )}
+          <LibraryPanel
+            api={api}
+            onOpen={(projectId) => {
+              void openProject(projectId);
+            }}
+            activeProjectId={project?.id ?? null}
+          />
+        </aside>
 
         <div className="studio-column">
           <section className="stage" aria-label="Waveform stage">
+            <div
+              className="stage-measure"
+              data-testid="stage-measure"
+              ref={stageMeasureRef}
+              aria-hidden="true"
+            />
             <div className="stage-toolbar">
               <button type="button" aria-label="Zoom in" onClick={zoomIn}>
                 +
@@ -709,10 +819,10 @@ export function App({
               )}
             </div>
 
-            <div className="timeline" style={{ width: VIEW_WIDTH }}>
+            <div className="timeline" style={{ width: stageWidth }}>
               <TimeRuler
                 viewport={viewport}
-                widthPx={VIEW_WIDTH}
+                widthPx={stageWidth}
                 grid={project?.grid ?? null}
                 positionSeconds={playerState.positionSeconds}
                 onSeek={handleSeek}
@@ -732,7 +842,7 @@ export function App({
                     positionSeconds={playerState.positionSeconds}
                     playing={playerState.status === "playing"}
                     follow={follow}
-                    widthPx={VIEW_WIDTH}
+                    widthPx={stageWidth}
                     onViewportChange={setViewport}
                     onSelectionChange={setSelection}
                     onSeek={handleSeek}
@@ -741,11 +851,26 @@ export function App({
                   />
                 ))
               )}
+              <div
+                className="stem-lanes"
+                data-testid="stem-lanes"
+                data-stem-count={stemLanes.length}
+                data-stem-ids={stemLanes.map((stem) => stem.id).join(",")}
+              >
+                {stemLanes.map((stem) => (
+                  <div
+                    key={stem.id}
+                    className="stem-lane-slot"
+                    data-testid={`stem-lane-slot-${stem.id}`}
+                    aria-label={`${stem.name} stem lane`}
+                  />
+                ))}
+              </div>
               {project !== null && pcmLoader !== null && (
                 <SpectrogramPane
                   projectId={project.id}
                   viewport={viewport}
-                  widthPx={VIEW_WIDTH}
+                  widthPx={stageWidth}
                   sampleRate={project.asset.sampleRate}
                   positionSeconds={playerState.positionSeconds}
                   loadPcm={pcmLoader}
@@ -753,64 +878,49 @@ export function App({
                 />
               )}
             </div>
-          </section>
 
-          {project !== null && (
-            <>
-              <ChordRibbon
-                chords={project.chords}
-                viewport={viewport}
-                widthPx={VIEW_WIDTH}
-                positionSeconds={playerState.positionSeconds}
-                onSeek={handleSeek}
-              />
-
-              <SectionLane
-                sections={sections}
-                grid={grid}
-                viewport={viewport}
-                widthPx={VIEW_WIDTH}
-                durationSeconds={durationSeconds}
-                positionSeconds={playerState.positionSeconds}
-                snapMode={snapMode}
-                onSnapModeChange={setSnapMode}
-                selection={selection}
-                onChange={setSections}
-                onLoop={handleLoopSection}
-                onSeek={handleSeek}
-                player={player}
-              />
-
-              <div className="panel-grid">
-                <AnalysisPanel
-                  projectId={project.id}
-                  analysis={project.analysis}
-                  client={analysisClient}
-                  onAnalyzed={handleAnalyzed}
+            {project !== null && (
+              <>
+                <ChordRibbon
+                  chords={project.chords}
+                  viewport={viewport}
+                  widthPx={stageWidth}
+                  positionSeconds={playerState.positionSeconds}
+                  onSeek={handleSeek}
                 />
-                <MixerPanel
-                  stems={mixerStems}
-                  controller={active.mixer}
-                  separation={{
-                    hasStems: project.stems.length > 0,
-                    running: separation.running,
-                    progress: separation.progress,
-                    stage: separation.stage,
-                    error: separation.error,
-                    onSeparate: () => {
-                      void handleSeparate();
-                    },
-                    onCancel: handleCancelSeparation,
-                  }}
-                />
-                <PracticePanel
-                  controller={active.practice}
+
+                <SectionLane
+                  sections={sections}
+                  grid={grid}
+                  viewport={viewport}
+                  widthPx={stageWidth}
+                  durationSeconds={durationSeconds}
+                  positionSeconds={playerState.positionSeconds}
                   snapMode={snapMode}
                   onSnapModeChange={setSnapMode}
+                  selection={selection}
+                  onChange={setSections}
+                  onLoop={handleLoopSection}
+                  onSeek={handleSeek}
+                  player={player}
                 />
-              </div>
-            </>
-          )}
+
+                <div className="panel-grid">
+                  <AnalysisPanel
+                    projectId={project.id}
+                    analysis={project.analysis}
+                    client={analysisClient}
+                    onAnalyzed={handleAnalyzed}
+                  />
+                  <PracticePanel
+                    controller={active.practice}
+                    snapMode={snapMode}
+                    onSnapModeChange={setSnapMode}
+                  />
+                </div>
+              </>
+            )}
+          </section>
         </div>
       </main>
 
