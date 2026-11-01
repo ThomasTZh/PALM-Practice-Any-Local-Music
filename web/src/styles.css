@@ -1595,3 +1595,12 @@ body {
   padding: 0.1rem 0.4rem;
   font-size: 0.7rem;
 }
+
+/* Overlapping sections stack in readable lanes; the timeline's inline
+   min-height grows with the lane count. */
+
+.section-block[data-overlap="true"] {
+  border-style: solid;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  background: rgba(111, 211, 182, 0.16);
+}

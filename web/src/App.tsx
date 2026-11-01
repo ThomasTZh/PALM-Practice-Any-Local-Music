@@ -951,6 +951,10 @@ export function App({
                 onChange={setSections}
                 onLoop={handleLoopSection}
                 onSeek={handleSeek}
+                onActionError={(message) => {
+                  setTone("error");
+                  setMessage(message);
+                }}
                 player={player}
               />
             </>

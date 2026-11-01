@@ -7,7 +7,9 @@ import {
   barMarks,
   beatMarks,
   deleteSection,
+  draftSectionEndingAt,
   draftSectionRange,
+  moveSectionRange,
   renameSection,
   resizeSection,
   sectionAt,
@@ -21,6 +23,14 @@ import {
 
 const BEATS = Array.from({ length: 16 }, (_, index) => index * 0.5);
 const GRID = { beats: BEATS, bpb: 4 };
+const LONG_GRID = {
+  beats: Array.from({ length: 121 }, (_, index) => index * 0.5),
+  bpb: 4,
+};
+const OFFSET_GRID = {
+  beats: Array.from({ length: 32 }, (_, index) => 0.01161 + index * 0.5),
+  bpb: 4,
+};
 const TEMPO: Grid = {
   bpm: 120,
   meter: { numerator: 4, denominator: 4 },
@@ -276,6 +286,99 @@ describe("draftSectionRange", () => {
 
   it("returns null when there is no room left", () => {
     expect(draftSectionRange(7.9, null, "bar", GRID, 8)).toBeNull();
+  });
+});
+
+describe("draftSectionEndingAt", () => {
+  it("ends four bars at the snapped playhead", () => {
+    expect(draftSectionEndingAt(12, "bar", LONG_GRID, 60, [])).toEqual({
+      range: { startSeconds: 4, endSeconds: 12 },
+      reason: null,
+    });
+  });
+
+  it("clamps the start to the previous section end", () => {
+    const previous: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 7,
+    };
+    expect(draftSectionEndingAt(10, "bar", LONG_GRID, 60, [previous])).toEqual({
+      range: { startSeconds: 7, endSeconds: 10 },
+      reason: null,
+    });
+  });
+
+  it("refuses with a reason when the previous section leaves no room", () => {
+    const previous: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 10,
+    };
+    const draft = draftSectionEndingAt(8, "bar", LONG_GRID, 60, [previous]);
+    expect(draft.range).toBeNull();
+    expect(draft.reason).toContain("No room");
+    expect(draft.reason).toContain("Verse ends at 10.00 s");
+  });
+
+  it("creates the first four bars when the playhead is at the start", () => {
+    expect(draftSectionEndingAt(0, "bar", LONG_GRID, 60, [])).toEqual({
+      range: { startSeconds: 0, endSeconds: 8 },
+      reason: null,
+    });
+  });
+
+  it("uses the first downbeat when the grid starts after zero", () => {
+    expect(draftSectionEndingAt(0, "bar", OFFSET_GRID, 16, [])).toEqual({
+      range: { startSeconds: 0.01161, endSeconds: 8.01161 },
+      reason: null,
+    });
+  });
+
+  it("refuses at the start once a section exists", () => {
+    const existing: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 8,
+    };
+    expect(
+      draftSectionEndingAt(0, "bar", LONG_GRID, 60, [existing]).range,
+    ).toBeNull();
+  });
+});
+
+describe("moveSectionRange", () => {
+  it("moves the section while keeping its length", () => {
+    const section: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 2,
+      endSeconds: 4,
+    };
+    expect(moveSectionRange(section, 12, "bar", LONG_GRID, 60)).toEqual({
+      startSeconds: 12,
+      endSeconds: 14,
+    });
+  });
+
+  it("snaps the target and clamps it to the track end", () => {
+    const section: Section = {
+      id: "s1",
+      name: "Verse",
+      startSeconds: 2,
+      endSeconds: 6,
+    };
+    expect(moveSectionRange(section, 5, "bar", LONG_GRID, 60)).toEqual({
+      startSeconds: 4,
+      endSeconds: 8,
+    });
+    expect(moveSectionRange(section, 58, "bar", LONG_GRID, 60)).toEqual({
+      startSeconds: 56,
+      endSeconds: 60,
+    });
   });
 });
 

@@ -371,8 +371,8 @@ describe("App with the real transport adapter", () => {
     );
     await waitFor(() =>
       expect(engine.player.getState().loopRange).toEqual({
-        startSeconds: 2,
-        endSeconds: 4,
+        startSeconds: 0,
+        endSeconds: 2,
       }),
     );
     expect(engine.player.getState().loopEnabled).toBe(true);
@@ -477,11 +477,15 @@ describe("App with the real transport adapter", () => {
       beatFrames: 28800,
     });
 
-    // The four-bar default now uses the detected 3/4 grid: it snaps to the
-    // last detected bar at 3.6 s (the fallback grid would have reached 4 s),
-    // and the existing section stays editable.
+    // The section already ends at the playhead (0 s), so the new end-at-
+    // playhead Add has no room and must report it without creating anything.
     await userEvent.click(screen.getByRole("button", { name: "Add section" }));
-    expect(screen.getByLabelText("Section end section-2")).toHaveValue(3.6);
+    await waitFor(() =>
+      expect(screen.getByTestId("status-line")).toHaveTextContent("No room"),
+    );
+    expect(
+      screen.queryByLabelText("Section end section-2"),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText("Section name section-1")).toBeInTheDocument();
   });
 

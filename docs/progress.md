@@ -1672,3 +1672,43 @@ pass. No dependency added.
   rows are 60 px high and the lane is 337 px (down from 403 before the row CSS).
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency
   added.
+
+## 2026-11-01 — move sections, overlap lanes, end-at-playhead Add (t39)
+
+### Interactions
+
+- Section bodies can be dragged (pointer down on the body, move, release). The
+  move is snapped with the current Snap mode, clamped to the track, and keeps
+  the original length. A pointer capture plus a one-tick click guard prevents
+  the trailing click from also seeking; a plain click without movement still
+  seeks. Edge handles and the Loop button stop pointer-down so they keep their
+  resize/loop behavior.
+- Overlaps are allowed. Visible blocks are assigned to the first free lane using
+  their time ranges; the timeline min-height grows by 20 px per lane and blocks
+  are offset with z-index and a highlighted overlap style, so every block stays
+  visible. The existing blocks still render in time order independently of lane.
+- Add section with no selection now ends at the snapped playhead and starts four
+  bars earlier, clamped after the previous section's end. The end keeps the
+  chosen snap mode; free mode preserves the clamped start exactly. If there is
+  no room, it creates nothing and reports the reason (name/end/playhead) through
+  the App status line. With no sections at the very start it places the first
+  four bars from the first grid downbeat, which matters for recordings whose
+  bar grid starts at e.g. 0.01161 s.
+- Drag-create on empty lane space, edge resize, Split, click-seek, and list
+  sorting by start time remain unchanged.
+
+### Verification
+
+- SectionLane 29 tests (new: body move with length preserved + list re-sort,
+  overlap lanes and min-height, end-at-playhead with previous, start clamping,
+  no-room message, list re-sort after add). State 39 tests (moveSectionRange
+  snap/clamp/length; draftSectionEndingAt four bars, previous clamp, refusal,
+  no-sections start fallback, offset-grid first-downbeat fallback).
+- Firefox mock: overlapping Verse/Chorus drew at lanes 0/1 (top 26/46 px,
+  timeline 74 px); moving Verse two bars re-sorted list to Chorus, Verse, Outro;
+  Add at the start with an existing section reported "No room..." and created
+  nothing; no page errors. Real e2e server (grid offset 0.01161 s): Add created
+  Section 1 0.01161-8.01161 s (four bars), and the golden path loops/exports
+  successfully.
+- `make test-web`, `make build-web` and `make e2e` (2 specs, Firefox +
+  Chromium) pass. No dependency added.

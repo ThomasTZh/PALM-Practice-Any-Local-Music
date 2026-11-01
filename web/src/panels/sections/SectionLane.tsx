@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   addSection,
   deleteSection,
+  draftSectionEndingAt,
   draftSectionRange,
+  moveSectionRange,
   nextBoundary,
   renameSection,
   resizeSection,
@@ -15,6 +17,7 @@ import {
   splitSection,
   type BeatGrid,
   type Section,
+  type SectionBlock,
   type SnapMode,
   type TimeRange,
 } from "../../state/sections";
@@ -36,6 +39,7 @@ export interface SectionLaneProps {
   onChange: (sections: Section[]) => void;
   onLoop: (section: Section) => void;
   onSeek?: (seconds: number) => void;
+  onActionError?: (message: string) => void;
   /** Optional transport seam: looping a section also sets the real loop. */
   player?: Pick<StudioPlayer, "setLoopRange" | "setLoopEnabled">;
 }
@@ -52,6 +56,14 @@ type Interaction =
       kind: "resize";
       sectionId: string;
       edge: "start" | "end";
+      startX: number;
+      startSeconds: number;
+      currentSeconds: number;
+      moved: boolean;
+    }
+  | {
+      kind: "move";
+      sectionId: string;
       startX: number;
       startSeconds: number;
       currentSeconds: number;
@@ -157,14 +169,36 @@ export function SectionLane({
   onChange,
   onLoop,
   onSeek,
+  onActionError,
   player,
 }: SectionLaneProps) {
   const [innerSnap, setInnerSnap] = useState<SnapMode>("bar");
   const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const suppressClickRef = useRef(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapMode = controlledSnap ?? innerSnap;
   const current = sectionAt(sections, positionSeconds);
   const blocks = sectionBlocks(sections, viewport, widthPx);
+  const laidBlocks: Array<SectionBlock & { lane: number }> = [];
+  const laneEnds: number[] = [];
+  for (const block of [...blocks].sort(
+    (left, right) => left.section.startSeconds - right.section.startSeconds,
+  )) {
+    let lane = laneEnds.findIndex(
+      (end) => block.section.startSeconds >= end - 1e-9,
+    );
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(block.section.endSeconds);
+    } else {
+      laneEnds[lane] = block.section.endSeconds;
+    }
+    laidBlocks.push({ ...block, lane });
+  }
+  const maxLane = laidBlocks.reduce(
+    (maximum, block) => Math.max(maximum, block.lane),
+    0,
+  );
   const sortedSections = [...sections].sort((left, right) => {
     const byStart = left.startSeconds - right.startSeconds;
     return byStart !== 0 ? byStart : left.id.localeCompare(right.id);
@@ -199,17 +233,42 @@ export function SectionLane({
   }
 
   function handleAdd(): void {
-    const range = draftSectionRange(
+    if (
+      selection !== null &&
+      selection.endSeconds - selection.startSeconds > 1e-9
+    ) {
+      const range = draftSectionRange(
+        positionSeconds,
+        selection,
+        snapMode,
+        grid,
+        durationSeconds,
+      );
+      if (range !== null) {
+        onChange(
+          addSection(sections, range, snapMode, grid, { durationSeconds }),
+        );
+      }
+      return;
+    }
+    const draft = draftSectionEndingAt(
       positionSeconds,
-      selection,
       snapMode,
       grid,
       durationSeconds,
+      sections,
     );
-    if (range === null) {
+    if (draft.range === null) {
+      onActionError?.(
+        draft.reason ?? "No room to add a section at the playhead.",
+      );
       return;
     }
-    onChange(addSection(sections, range, snapMode, grid, { durationSeconds }));
+    // The end is already snapped and the start clamped; free mode keeps the
+    // exact range instead of snapping the clamped boundary again.
+    onChange(
+      addSection(sections, draft.range, "free", grid, { durationSeconds }),
+    );
   }
 
   function handleLoop(section: Section): void {
@@ -281,11 +340,30 @@ export function SectionLane({
     };
   }
 
+  function moveDraftRange(draft: Interaction): TimeRange | null {
+    if (draft.kind !== "move") {
+      return null;
+    }
+    const section = sectionById.get(draft.sectionId);
+    if (section === undefined) {
+      return null;
+    }
+    return moveSectionRange(
+      section,
+      draft.currentSeconds,
+      snapMode,
+      grid,
+      durationSeconds,
+    );
+  }
+
   const draftRange =
     interaction !== null && interaction.moved
       ? interaction.kind === "create"
         ? createDraftRange(interaction)
-        : resizeDraftRange(interaction)
+        : interaction.kind === "resize"
+          ? resizeDraftRange(interaction)
+          : moveDraftRange(interaction)
       : null;
 
   useEffect(() => {
@@ -341,18 +419,41 @@ export function SectionLane({
     capturePointer(event.currentTarget, event.pointerId);
   }
 
+  function beginMove(
+    event: React.PointerEvent<HTMLDivElement>,
+    section: Section,
+  ): void {
+    if (event.button !== 0) {
+      return;
+    }
+    setInteraction({
+      kind: "move",
+      sectionId: section.id,
+      startX: event.clientX,
+      startSeconds: section.startSeconds,
+      currentSeconds: section.startSeconds,
+      moved: false,
+    });
+    capturePointer(event.currentTarget, event.pointerId);
+  }
+
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>): void {
     setInteraction((draft) => {
       if (draft === null) {
         return null;
       }
-      return {
-        ...draft,
-        currentSeconds: timeAt(event.clientX),
-        moved:
-          draft.moved ||
-          Math.abs(event.clientX - draft.startX) >= DRAG_THRESHOLD_PX,
-      };
+      const moved =
+        draft.moved ||
+        Math.abs(event.clientX - draft.startX) >= DRAG_THRESHOLD_PX;
+      const currentSeconds =
+        draft.kind === "move"
+          ? Math.max(
+              0,
+              draft.startSeconds +
+                (event.clientX - draft.startX) * viewport.secondsPerPixel,
+            )
+          : timeAt(event.clientX);
+      return { ...draft, currentSeconds, moved };
     });
   }
 
@@ -368,7 +469,7 @@ export function SectionLane({
             addSection(sections, range, snapMode, grid, { durationSeconds }),
           );
         }
-      } else {
+      } else if (interaction.kind === "resize") {
         const range = resizeDraftRange(interaction);
         if (range !== null) {
           onChange(
@@ -383,6 +484,25 @@ export function SectionLane({
             ),
           );
         }
+      } else {
+        const range = moveDraftRange(interaction);
+        if (range !== null) {
+          onChange(
+            sections.map((section) =>
+              section.id === interaction.sectionId
+                ? {
+                    ...section,
+                    startSeconds: range.startSeconds,
+                    endSeconds: range.endSeconds,
+                  }
+                : section,
+            ),
+          );
+        }
+        suppressClickRef.current = true;
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
       }
     } else if (interaction.kind === "create") {
       onSeek?.(timeAt(event.clientX));
@@ -411,7 +531,7 @@ export function SectionLane({
       <div
         ref={timelineRef}
         className="section-timeline"
-        style={{ width: widthPx }}
+        style={{ width: widthPx, minHeight: 54 + maxLane * 20 }}
         onPointerDown={beginCreate}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -428,14 +548,28 @@ export function SectionLane({
             No sections yet. Add one to loop a passage.
           </p>
         ) : (
-          blocks.map((block) => (
+          laidBlocks.map((block) => (
             <div
               key={block.section.id}
               className="section-block"
               data-testid={`section-block-${block.section.id}`}
               data-current={block.section.id === current?.id}
-              style={{ left: block.leftPx, width: block.widthPx }}
-              onClick={() => onSeek?.(block.section.startSeconds)}
+              data-lane={block.lane}
+              data-overlap={block.lane > 0 ? "true" : undefined}
+              style={{
+                left: block.leftPx,
+                width: block.widthPx,
+                top: 26 + block.lane * 20,
+                zIndex: 1 + block.lane,
+              }}
+              onPointerDown={(event) => beginMove(event, block.section)}
+              onClick={() => {
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                onSeek?.(block.section.startSeconds);
+              }}
             >
               <div
                 className="section-resize-handle section-resize-start"
@@ -451,6 +585,7 @@ export function SectionLane({
               <button
                 type="button"
                 aria-label={`Loop ${block.section.name}`}
+                onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
                   handleLoop(block.section);
@@ -479,7 +614,11 @@ export function SectionLane({
             data-testid="section-draft"
             style={draftStyle(draftRange)}
           >
-            {interaction.kind === "create" ? "New section" : "Resize"}
+            {interaction.kind === "create"
+              ? "New section"
+              : interaction.kind === "resize"
+                ? "Resize"
+                : "Move"}
           </div>
         )}
       </div>

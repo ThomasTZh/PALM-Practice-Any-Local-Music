@@ -68,8 +68,8 @@ describe("SectionLane", () => {
     expect(sections).toHaveLength(1);
     expect(sections[0]).toMatchObject({
       name: "Section 1",
-      startSeconds: 2,
-      endSeconds: 10,
+      startSeconds: 0,
+      endSeconds: 2,
     });
   });
 
@@ -91,6 +91,167 @@ describe("SectionLane", () => {
     expect(created.endSeconds).toBeCloseTo(7.2);
   });
 
+  it("ends a four-bar section at the playhead after the previous section", () => {
+    const previous: Section = {
+      id: "prev",
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 4,
+    };
+    const { onChange } = setup({
+      grid: LONG_GRID,
+      sections: [previous],
+      positionSeconds: 12,
+      durationSeconds: 60,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add section" }));
+
+    expect((onChange.mock.calls[0][0] as Section[])[1]).toMatchObject({
+      startSeconds: 4,
+      endSeconds: 12,
+    });
+  });
+
+  it("re-sorts the list after adding a section before an existing one", () => {
+    const later: Section = {
+      id: "later",
+      name: "Chorus",
+      startSeconds: 20,
+      endSeconds: 22,
+    };
+    const { view, props, onChange } = setup({
+      grid: LONG_GRID,
+      sections: [later],
+      positionSeconds: 12,
+      durationSeconds: 60,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add section" }));
+    const updated = onChange.mock.calls[0][0] as Section[];
+    view.rerender(<SectionLane {...props} sections={updated} />);
+
+    const items = Array.from(
+      screen.getByTestId("section-list").querySelectorAll("li"),
+    ).map((item) => item.getAttribute("data-testid"));
+    expect(items).toEqual([
+      "section-editor-item-section-1",
+      "section-editor-item-later",
+    ]);
+  });
+
+  it("clamps the add start to the previous section end", () => {
+    const previous: Section = {
+      id: "prev",
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 7,
+    };
+    const { onChange } = setup({
+      grid: LONG_GRID,
+      sections: [previous],
+      positionSeconds: 10,
+      durationSeconds: 60,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add section" }));
+
+    expect((onChange.mock.calls[0][0] as Section[])[1]).toMatchObject({
+      startSeconds: 7,
+      endSeconds: 10,
+    });
+  });
+
+  it("refuses and reports why when the previous section leaves no room", () => {
+    const onActionError = vi.fn();
+    const previous: Section = {
+      id: "prev",
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 10,
+    };
+    const { onChange } = setup({
+      grid: LONG_GRID,
+      sections: [previous],
+      positionSeconds: 8,
+      durationSeconds: 60,
+      onActionError,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add section" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onActionError).toHaveBeenCalledWith(
+      expect.stringContaining("No room"),
+    );
+    expect(onActionError.mock.calls[0][0]).toContain("Verse ends at 10.00 s");
+  });
+
+  it("moves a section body while keeping its length and allows overlaps", () => {
+    const sections: Section[] = [
+      { id: "s1", name: "Verse", startSeconds: 2, endSeconds: 4 },
+      { id: "s2", name: "Chorus", startSeconds: 3, endSeconds: 6 },
+    ];
+    const { view, props, onChange } = setup({ sections });
+    const timeline = screen
+      .getByTestId("section-lane")
+      .querySelector(".section-timeline") as HTMLElement;
+    const block = screen.getByTestId("section-block-s1");
+
+    pointer(block, "pointerdown", 300);
+    pointer(timeline, "pointermove", 500);
+    expect(screen.getByTestId("section-draft")).toHaveTextContent("Move");
+    pointer(timeline, "pointerup", 500);
+
+    const moved = (onChange.mock.calls[0][0] as Section[]).find(
+      (section) => section.id === "s1",
+    );
+    expect(moved).toMatchObject({ startSeconds: 4, endSeconds: 6 });
+
+    const updated = onChange.mock.calls[0][0] as Section[];
+    view.rerender(<SectionLane {...props} sections={updated} />);
+    const listItems = Array.from(
+      screen.getByTestId("section-list").querySelectorAll("li"),
+    ).map((item) => item.getAttribute("data-testid"));
+    expect(listItems).toEqual([
+      "section-editor-item-s2",
+      "section-editor-item-s1",
+    ]);
+    expect(Number(screen.getByTestId("section-block-s2").dataset.lane)).toBe(0);
+    expect(Number(screen.getByTestId("section-block-s1").dataset.lane)).toBe(1);
+  });
+
+  it("draws overlapping blocks in separate readable lanes", () => {
+    setup({
+      sections: [
+        { id: "s1", name: "Verse", startSeconds: 0, endSeconds: 4 },
+        { id: "s2", name: "Chorus", startSeconds: 2, endSeconds: 6 },
+      ],
+    });
+
+    expect(screen.getByTestId("section-block-s1")).toHaveAttribute(
+      "data-lane",
+      "0",
+    );
+    expect(screen.getByTestId("section-block-s2")).toHaveAttribute(
+      "data-lane",
+      "1",
+    );
+    expect(screen.getByTestId("section-block-s2")).toHaveAttribute(
+      "data-overlap",
+      "true",
+    );
+    expect(
+      Number.parseFloat(
+        (
+          screen
+            .getByTestId("section-lane")
+            .querySelector(".section-timeline") as HTMLElement
+        ).style.minHeight,
+      ),
+    ).toBeGreaterThan(54);
+  });
+
   it("uses a four-bar length around a beat- or free-snapped start", () => {
     const { onChange } = setup({
       grid: LONG_GRID,
@@ -103,8 +264,8 @@ describe("SectionLane", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Add section" }));
     expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
-      startSeconds: 1.5,
-      endSeconds: 9.5,
+      startSeconds: 0,
+      endSeconds: 1.5,
     });
 
     onChange.mockClear();
@@ -113,8 +274,8 @@ describe("SectionLane", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Add section" }));
     expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
-      startSeconds: 1.7,
-      endSeconds: 9.7,
+      startSeconds: 0,
+      endSeconds: 1.7,
     });
   });
 

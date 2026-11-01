@@ -270,6 +270,94 @@ export function resizeSection(
   );
 }
 
+/** Moves a whole section while keeping its length, snapped and clamped. */
+export function moveSectionRange(
+  section: Section,
+  targetStartSeconds: number,
+  mode: SnapMode,
+  grid: BeatGrid | null,
+  durationSeconds: number,
+): TimeRange {
+  const duration =
+    Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? durationSeconds
+      : Infinity;
+  const length = Math.max(0, section.endSeconds - section.startSeconds);
+  const maxStart = Math.max(0, duration - length);
+  const start = Math.min(
+    maxStart,
+    Math.max(0, snapTime(targetStartSeconds, mode, grid)),
+  );
+  return { startSeconds: start, endSeconds: start + length };
+}
+
+export interface PlayheadSectionDraft {
+  range: TimeRange | null;
+  reason: string | null;
+}
+
+/**
+ * Add-section draft ending at the snapped playhead. It is four bars long and
+ * clamped after the previous section's end; when that leaves no room it
+ * returns a plain-language reason instead of a range.
+ */
+export function draftSectionEndingAt(
+  positionSeconds: number,
+  mode: SnapMode,
+  grid: BeatGrid | null,
+  durationSeconds: number,
+  sections: Section[],
+): PlayheadSectionDraft {
+  const duration =
+    Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? durationSeconds
+      : Infinity;
+  const end = Math.min(
+    duration,
+    Math.max(0, snapTime(positionSeconds, mode, grid)),
+  );
+  const fourBars = defaultBarSeconds(grid) * DEFAULT_SECTION_BARS;
+  const gridStart =
+    validGrid(grid) && grid.beats.length > 0
+      ? Math.max(0, cleanBeats(grid.beats)[0] ?? 0)
+      : 0;
+  if (end <= gridStart + EPSILON) {
+    // The first bar can start a few milliseconds into the recording. With no
+    // section yet, place the first four bars on that grid instead of making a
+    // zero-length sliver from 0 to the first downbeat.
+    if (sections.length === 0 && Number.isFinite(duration)) {
+      const start = Math.min(gridStart, duration);
+      const fallbackEnd = Math.min(duration, start + fourBars);
+      if (fallbackEnd > start + EPSILON) {
+        return {
+          range: { startSeconds: start, endSeconds: fallbackEnd },
+          reason: null,
+        };
+      }
+    }
+    return {
+      range: null,
+      reason: "No room: the playhead is at the start of the track.",
+    };
+  }
+  const previous = [...sections]
+    .filter((section) => section.startSeconds < end + EPSILON)
+    .sort((left, right) => right.endSeconds - left.endSeconds)[0];
+  const previousEnd = previous?.endSeconds ?? 0;
+  const start = Math.max(gridStart, end - fourBars, previousEnd);
+  if (start >= end - EPSILON) {
+    const where =
+      previous === undefined
+        ? "the start of the track"
+        : `${previous.name} ends at ${previous.endSeconds.toFixed(2)} s`;
+    return {
+      range: null,
+      reason: `No room: ${where} and the playhead is at ${end.toFixed(2)} s.`,
+    };
+  }
+  return { range: { startSeconds: start, endSeconds: end }, reason: null };
+}
+
 export function deleteSection(
   sections: Section[],
   sectionId: string,
