@@ -704,6 +704,7 @@ export function createShellApi(options: ShellApiOptions = {}): ShellApi {
     listLibrary: base.listLibrary,
     importRecording: base.importRecording,
     fetchPeaks: base.fetchPeaks,
+    fetchStemPeaks: base.fetchStemPeaks,
     openProject: loadProject,
 
     async saveState(projectId, state, revision) {
