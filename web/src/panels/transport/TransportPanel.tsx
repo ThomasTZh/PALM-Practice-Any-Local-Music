@@ -1,14 +1,11 @@
 import type { ReactNode } from "react";
 
-import { formatBarBeat, formatPosition } from "../../state/format";
 import { type PlaybackStatus, type StudioPlayer } from "../../state/player";
-import type { Grid } from "../../state/types";
 import { usePlayerState } from "../../state/usePlayerState";
 import { hasSelection, type Selection } from "../waveform/selection";
 
 export interface TransportPanelProps {
   player: StudioPlayer;
-  grid?: Grid | null;
   selection?: Selection | null;
   projectTitle?: string | null;
   keyLabel?: string | null;
@@ -35,7 +32,6 @@ const STATUS_LABELS: Record<PlaybackStatus, string> = {
  */
 export function TransportPanel({
   player,
-  grid = null,
   selection = null,
   projectTitle = null,
   keyLabel = null,
@@ -46,7 +42,6 @@ export function TransportPanel({
   const state = usePlayerState(player);
   const playing = state.status === "playing";
   const canPlay = state.durationSeconds > 0 && state.status !== "loading";
-  const barBeat = formatBarBeat(state.positionSeconds, grid);
   const bpmText =
     bpm === null ? "—" : `${Math.round(bpm * 10) / 10} · ${bpb ?? 4}/4`;
 
@@ -75,15 +70,6 @@ export function TransportPanel({
       </div>
 
       <div className="transport-center" data-testid="transport-center">
-        <span
-          className="transport-position"
-          role="timer"
-          aria-label="Position"
-          data-testid="transport-position"
-        >
-          {formatPosition(state.positionSeconds)} /{" "}
-          {formatPosition(state.durationSeconds)}
-        </span>
         <div className="transport-buttons">
           <button
             type="button"
@@ -113,9 +99,6 @@ export function TransportPanel({
             Loop
           </button>
         </div>
-        <span className="transport-bar-beat" data-testid="transport-bar-beat">
-          {barBeat ?? ""}
-        </span>
         <span
           className="transport-status visually-hidden"
           data-testid="transport-status"

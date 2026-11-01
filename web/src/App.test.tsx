@@ -484,6 +484,22 @@ describe("App integration", () => {
     expect(within(transport).getByTestId("transport-status")).toHaveClass(
       "visually-hidden",
     );
+    expect(
+      within(transport).queryByTestId("transport-position"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(transport).queryByTestId("transport-bar-beat"),
+    ).not.toBeInTheDocument();
+    const toolbar = screen
+      .getByTestId("stage-measure")
+      .parentElement?.querySelector(".stage-toolbar");
+    expect(toolbar).not.toBeNull();
+    expect(
+      within(toolbar as HTMLElement).getByTestId("transport-position"),
+    ).toBeInTheDocument();
+    expect(
+      within(toolbar as HTMLElement).getByTestId("transport-bar-beat"),
+    ).toBeInTheDocument();
   });
 
   it("orders the stage zoom buttons minus then plus", async () => {

@@ -1862,3 +1862,89 @@ body {
     font-size: 0.64rem;
   }
 }
+
+/* Drawer centring: symmetric side columns put the transport group at the
+   drawer centre. Readouts moved to the stage toolbar. */
+
+.transport {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  position: relative;
+}
+
+.transport-practice-zone {
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.transport-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: 3;
+}
+
+.transport-meta {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Normal content-sized volume control; no stretched row. */
+.practice-bar .practice-volume {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.practice-bar .practice-volume label {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.practice-bar .practice-volume input[type="range"] {
+  flex: 0 0 96px;
+  width: 96px;
+  min-width: 0;
+}
+
+.practice-bar .practice-volume output {
+  flex: 0 0 auto;
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.transport-readouts {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-left: auto;
+  padding-left: 0.5rem;
+  white-space: nowrap;
+}
+
+.transport-readouts .transport-position {
+  font-size: 0.85rem;
+}
+
+.transport-readouts .transport-bar-beat {
+  font-size: 0.76rem;
+}
+
+@media (max-width: 1180px) {
+  .transport {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .practice-bar .practice-volume input[type="range"] {
+    flex-basis: 76px;
+    width: 76px;
+  }
+}

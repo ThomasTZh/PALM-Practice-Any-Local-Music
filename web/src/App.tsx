@@ -9,6 +9,7 @@ import { TimeRuler } from "./panels/ruler/TimeRuler";
 import { SectionLane } from "./panels/sections";
 import { SpectrogramPane } from "./panels/spectrogram/SpectrogramPane";
 import { TransportPanel } from "./panels/transport/TransportPanel";
+import { TransportReadouts } from "./panels/transport/TransportReadouts";
 import { TimelineScrollbar } from "./panels/waveform/TimelineScrollbar";
 import { WaveformPane, type Lane } from "./panels/waveform/WaveformPane";
 import { hasSelection, type Selection } from "./panels/waveform/selection";
@@ -849,6 +850,7 @@ export function App({
                 {transportNotice}
               </span>
             )}
+            <TransportReadouts player={player} grid={project?.grid ?? null} />
           </div>
 
           <div className="timeline" style={{ width: stageWidth }}>
@@ -992,7 +994,6 @@ export function App({
         </div>
         <TransportPanel
           player={player}
-          grid={project?.grid ?? null}
           selection={selection}
           projectTitle={project?.title ?? null}
           keyLabel={keyLabel}

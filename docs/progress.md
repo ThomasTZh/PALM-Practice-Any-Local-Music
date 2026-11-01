@@ -1939,3 +1939,35 @@ Final gate on the committed tree:
 - Remaining human step: one listening/visual pass over the three-zone bottom bar,
   single-row section list and the 850 px note axis, plus the previously
   outstanding autoplay-silence confirmation.
+
+## 2026-11-01 — drawer centring, toolbar readouts, volume revert (t45)
+
+### Bottom drawer
+
+- The metronome volume control is content-sized again: 96 px slider at 1280
+  (76 px at ≤1180) with the percentage 7.25 px after it. It no longer spans the
+  practice zone; controls wrap naturally.
+- The drawer is now `minmax(0,1fr) auto minmax(0,1fr)`. The transport group sits
+  in the centred auto column with `z-index:3`; practice/meta are z-index 1, so
+  the transport stays above neighbouring content. Practice/meta columns
+  `min-width:0`/overflow containment prevent overlap.
+- Return/Play/Loop remain equal-width with 5.25 px gaps. Play centre equals the
+  whole drawer centre at every tested width: 640.05 px @1280, 511.98 @1024,
+  449.93 @900. Practice ends 11.25 px before the centre column; meta starts
+  well after it.
+- Position time and bar/beat moved out of the drawer into the top-right of the
+  stage toolbar via `TransportReadouts`; `transport-position` and
+  `transport-bar-beat` are unchanged. At 1280 they occupy x1090-1257, y29-47 in
+  the toolbar and are not inside the drawer. The hidden status node stays in
+  the drawer for test/golden-path compatibility.
+
+### Verification
+
+- New TransportReadouts tests cover position updates and bar/beat; the old
+  in-panel readout tests were removed. App test asserts the readouts are inside
+  the stage toolbar and absent from the Transport region.
+- Firefox at 1280/1024/900: play centre exactly equals drawer centre, equal
+  5.25 px side gaps, z-index 3, no zone overlap, slider 96/76 px with an
+  immediate percentage, readouts in toolbar, document/client widths equal and
+  no native scrollbar.
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.
