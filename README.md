@@ -132,8 +132,11 @@ timeline-first with sorted list, body drag, end-at-playhead Add and chain loop,
 pitch removed, count-in independent of the metronome), then a fourth round moved
 the practice controls into the bottom-left zone, centred the transport, restored
 single-row section entries and labelled the spectrogram axis with every semitone
-from C1 to C8. Those changes need one final listening and visual pass; the
-checklist is not claimed as fully passed.
+from C1 to C8. A fifth round put the play button at the drawer centre, moved the
+position and bar/beat readouts to the stage toolbar, moved the spectrogram below
+the sections and clamped its PCM window, and defaulted Zoom to selection to eight
+bars around the playhead. Those changes need one final listening and visual pass;
+the checklist is not claimed as fully passed.
 
 ## Known limitations
 
