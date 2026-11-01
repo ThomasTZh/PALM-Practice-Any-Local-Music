@@ -4,25 +4,17 @@ import {
   COUNT_IN_OPTIONS,
   type PracticeController,
 } from "../../state/practice";
-import type { SnapMode } from "../../state/sections";
 import { usePracticeState } from "../../state/usePracticeState";
 
 export interface PracticePanelProps {
   controller: PracticeController;
-  snapMode: SnapMode;
-  onSnapModeChange: (mode: SnapMode) => void;
 }
 
 /**
- * Practice controls: speed, loop, count-in, metronome and snap mode.
- * State and actions live behind PracticeController so the app can map it onto
- * the real transport and metronome without changing this panel.
+ * Compact practice controls in the bottom bar: speed, loop, count-in,
+ * metronome, accent and metronome volume. Snap lives only in Sections.
  */
-export function PracticePanel({
-  controller,
-  snapMode,
-  onSnapModeChange,
-}: PracticePanelProps) {
+export function PracticePanel({ controller }: PracticePanelProps) {
   const state = usePracticeState(controller);
   const speeds = SPEED_OPTIONS.includes(
     state.speed as (typeof SPEED_OPTIONS)[number],
@@ -31,11 +23,11 @@ export function PracticePanel({
     : [...SPEED_OPTIONS, state.speed].sort((a, b) => a - b);
 
   return (
-    <section className="practice" data-testid="practice" aria-label="Practice">
-      <header className="panel-header">
-        <h2>Practice</h2>
-      </header>
-
+    <section
+      className="practice practice-bar"
+      data-testid="practice"
+      aria-label="Practice"
+    >
       <div className="practice-controls">
         <label className="practice-control">
           Speed
@@ -100,7 +92,7 @@ export function PracticePanel({
           Accent
         </button>
 
-        <div className="practice-control">
+        <div className="practice-control practice-volume">
           <label>
             Metronome volume
             <input
@@ -119,21 +111,6 @@ export function PracticePanel({
             {Math.round(state.metronomeVolume * 100)}%
           </output>
         </div>
-
-        <label className="practice-control">
-          Snap
-          <select
-            aria-label="Snap mode"
-            value={snapMode}
-            onChange={(event) =>
-              onSnapModeChange(event.target.value as SnapMode)
-            }
-          >
-            <option value="bar">Bar</option>
-            <option value="beat">Beat</option>
-            <option value="free">Free</option>
-          </select>
-        </label>
       </div>
     </section>
   );

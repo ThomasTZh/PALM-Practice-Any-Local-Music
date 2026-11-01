@@ -2,22 +2,15 @@ import "@testing-library/jest-dom/vitest";
 
 import { act } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createFakePractice } from "../../state/fakePractice";
 import { PracticePanel } from "./PracticePanel";
 
 function setup() {
   const controller = createFakePractice();
-  const onSnapModeChange = vi.fn();
-  const view = render(
-    <PracticePanel
-      controller={controller}
-      snapMode="bar"
-      onSnapModeChange={onSnapModeChange}
-    />,
-  );
-  return { controller, onSnapModeChange, view };
+  const view = render(<PracticePanel controller={controller} />);
+  return { controller, view };
 }
 
 describe("PracticePanel", () => {
@@ -83,14 +76,11 @@ describe("PracticePanel", () => {
     expect(controller.getState().accentDownbeat).toBe(false);
   });
 
-  it("reports snap-mode changes", () => {
-    const { onSnapModeChange } = setup();
+  it("has no snap control in the practice bar", () => {
+    setup();
 
-    fireEvent.change(screen.getByLabelText("Snap mode"), {
-      target: { value: "beat" },
-    });
-
-    expect(onSnapModeChange).toHaveBeenCalledWith("beat");
+    expect(screen.queryByLabelText("Snap mode")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Snap")).not.toBeInTheDocument();
   });
 
   it("reflects engine-reported practice changes", () => {

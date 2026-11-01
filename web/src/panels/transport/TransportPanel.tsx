@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { formatBarBeat, formatPosition } from "../../state/format";
 import { type PlaybackStatus, type StudioPlayer } from "../../state/player";
 import type { Grid } from "../../state/types";
@@ -12,6 +14,8 @@ export interface TransportPanelProps {
   keyLabel?: string | null;
   bpm?: number | null;
   bpb?: number | null;
+  /** Practice controls rendered in the bottom bar's left zone. */
+  practice?: ReactNode;
 }
 
 const STATUS_LABELS: Record<PlaybackStatus, string> = {
@@ -37,6 +41,7 @@ export function TransportPanel({
   keyLabel = null,
   bpm = null,
   bpb = null,
+  practice = null,
 }: TransportPanelProps) {
   const state = usePlayerState(player);
   const playing = state.status === "playing";
@@ -62,37 +67,14 @@ export function TransportPanel({
 
   return (
     <section className="transport" aria-label="Transport">
-      <div className="transport-buttons">
-        <button
-          type="button"
-          className="transport-button transport-return"
-          aria-label="Return to start"
-          onClick={() => player.seek(0)}
-        >
-          ⏮
-        </button>
-        <button
-          type="button"
-          className="transport-button transport-toggle"
-          data-testid="transport-toggle"
-          aria-label={playing ? "Pause" : "Play"}
-          disabled={!canPlay}
-          onClick={() => player.toggle()}
-        >
-          {playing ? "Pause" : "Play"}
-        </button>
-        <button
-          type="button"
-          className="transport-button transport-loop"
-          aria-label="Loop"
-          aria-pressed={state.loopEnabled}
-          onClick={handleLoop}
-        >
-          Loop
-        </button>
+      <div
+        className="transport-practice-zone"
+        data-testid="transport-practice-zone"
+      >
+        {practice}
       </div>
 
-      <div className="transport-readout">
+      <div className="transport-center" data-testid="transport-center">
         <span
           className="transport-position"
           role="timer"
@@ -102,12 +84,42 @@ export function TransportPanel({
           {formatPosition(state.positionSeconds)} /{" "}
           {formatPosition(state.durationSeconds)}
         </span>
-        {barBeat !== null && (
-          <span className="transport-bar-beat" data-testid="transport-bar-beat">
-            {barBeat}
-          </span>
-        )}
-        <span className="transport-status" data-testid="transport-status">
+        <div className="transport-buttons">
+          <button
+            type="button"
+            className="transport-button transport-return"
+            aria-label="Return to start"
+            onClick={() => player.seek(0)}
+          >
+            ⏮
+          </button>
+          <button
+            type="button"
+            className="transport-button transport-toggle"
+            data-testid="transport-toggle"
+            aria-label={playing ? "Pause" : "Play"}
+            disabled={!canPlay}
+            onClick={() => player.toggle()}
+          >
+            {playing ? "Pause" : "Play"}
+          </button>
+          <button
+            type="button"
+            className="transport-button transport-loop"
+            aria-label="Loop"
+            aria-pressed={state.loopEnabled}
+            onClick={handleLoop}
+          >
+            Loop
+          </button>
+        </div>
+        <span className="transport-bar-beat" data-testid="transport-bar-beat">
+          {barBeat ?? ""}
+        </span>
+        <span
+          className="transport-status visually-hidden"
+          data-testid="transport-status"
+        >
           {STATUS_LABELS[state.status]}
         </span>
       </div>

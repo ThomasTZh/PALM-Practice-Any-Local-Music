@@ -1665,3 +1665,139 @@ body {
   padding: 0.15rem 0.45rem;
   font-size: 0.72rem;
 }
+
+/* Three-zone bottom bar: practice controls left, symmetric transport centre,
+   track/key/BPM right. The playback status is screen-reader-only; notices and
+   errors stay in the status strip above. */
+
+.transport {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(380px, auto) minmax(
+      150px,
+      0.65fr
+    );
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+}
+
+.transport-practice-zone {
+  min-width: 0;
+}
+
+.transport-center {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.transport-center .transport-position {
+  justify-self: end;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.transport-center .transport-bar-beat {
+  justify-self: start;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.transport-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 4.1rem);
+  gap: 0.35rem;
+  justify-content: center;
+}
+
+.transport-button {
+  min-width: 0;
+  padding: 0.35rem 0.2rem;
+  white-space: nowrap;
+}
+
+.transport-meta {
+  margin-left: 0;
+  justify-self: end;
+}
+
+.transport-error {
+  grid-column: 1 / -1;
+}
+
+.practice-bar {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.practice-bar .practice-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.45rem;
+}
+
+.practice-bar .practice-control {
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.7rem;
+}
+
+.practice-bar select,
+.practice-bar button {
+  padding: 0.12rem 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.practice-bar .practice-volume {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.practice-bar .practice-volume label {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.practice-bar .practice-volume input[type="range"] {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.practice-bar .practice-volume output {
+  flex: 0 0 auto;
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1180px) {
+  .transport {
+    grid-template-columns: minmax(0, 1fr) minmax(360px, auto) minmax(
+        140px,
+        0.5fr
+      );
+  }
+}

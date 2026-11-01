@@ -1815,3 +1815,46 @@ Final gate on the committed tree (`eb010c0` plus docs):
 - Remaining human step: one listening pass covering the silence-on-open fix, the
   pinned/compact layout, stem lanes, section move/overlap, chain loop and the
   count-in with the metronome off.
+
+## 2026-11-01 — three-zone bottom bar, practice controls moved down (t42)
+
+### Rail and practice controls
+
+- The left rail is now Analysis, Mixer, Library only. PracticePanel is rendered
+  in the bottom bar's left zone and no longer has its own panel header or Snap
+  control; Snap remains only in Sections (`select[aria-label="Snap"]`, count 1).
+- The bottom-left practice controls keep their testids/labels and behaviour:
+  Practice speed, Practice loop (kept for the golden path and loop state),
+  Count-in, Metronome, Accent, Metronome volume and its percentage. The volume
+  row is full-width: the range fills the zone and the percentage sits directly
+  beside it (no dead gap).
+- Stage zoom buttons are now minus (Zoom out) then plus (Zoom in); Fit, Zoom to
+  selection and Follow follow unchanged.
+
+### Bottom bar
+
+The transport is a three-column grid: practice zone, centred transport,
+track/key/BPM meta. Inside the centre, position time, [return][play][loop],
+bar/beat use a 1fr/auto/1fr grid. Play/pause uses an equal-width three-button
+grid so it is the exact centre of the button group.
+
+The paused/playing status text was removed visually. `transport-status` remains
+as a 1px screen-reader-only node so existing tests and the golden path keep
+their status assertions; notices/errors remain visible in the status strip and
+transport error row.
+
+### Measurements (Firefox mock, 1280×800)
+
+- rail children analysis/mixer/library; document 1280/1280×800/800, no scroll.
+- zones: practice 536×49, centre 389×33, meta 149×29 inside the 1258-wide bar.
+- play centre 762.95 = centre-zone centre 762.95; gap return→play 5.25 px =
+  gap play→loop 5.25 px. Position ends ~7 px left of the group, bar/beat starts
+  ~7 px right.
+- volume slider 404 px wide in the 536 px zone, percentage 8 px after it.
+- at 1600×800: document 1600/1600, practice 744 px, centre still 389 px,
+  play/zone centres 970.63, equal 5.25 px gaps, slider 607 px.
+- toolbar first two buttons Zoom out "−", Zoom in "+"; Snap only Sections;
+  `transport-status` is clipped 1×1 but keeps its text.
+
+`make test-web`, `make build-web` and `make e2e` (2 specs) pass. No dependency
+added.

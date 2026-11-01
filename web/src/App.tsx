@@ -798,13 +798,6 @@ export function App({
               }}
             />
           )}
-          {project !== null && (
-            <PracticePanel
-              controller={active.practice}
-              snapMode={snapMode}
-              onSnapModeChange={setSnapMode}
-            />
-          )}
           <LibraryPanel
             api={api}
             onOpen={(projectId) => {
@@ -822,11 +815,11 @@ export function App({
             aria-hidden="true"
           />
           <div className="stage-toolbar">
-            <button type="button" aria-label="Zoom in" onClick={zoomIn}>
-              +
-            </button>
             <button type="button" aria-label="Zoom out" onClick={zoomOut}>
               −
+            </button>
+            <button type="button" aria-label="Zoom in" onClick={zoomIn}>
+              +
             </button>
             <button type="button" aria-label="Fit" onClick={fit}>
               Fit
@@ -1005,6 +998,7 @@ export function App({
           keyLabel={keyLabel}
           bpm={bpm}
           bpb={bpb}
+          practice={<PracticePanel controller={active.practice} />}
         />
       </div>
     </div>

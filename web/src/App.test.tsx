@@ -439,13 +439,13 @@ describe("App integration", () => {
     expect(within(transport).getByTestId("bpm-readout")).toHaveTextContent(
       "120 · 4/4",
     );
-    expect(within(transport).queryByLabelText("Speed")).not.toBeInTheDocument();
+    expect(transport.querySelector('select[aria-label="Speed"]')).toBeNull();
     expect(screen.getByLabelText("Practice speed")).toBeInTheDocument();
     expect(screen.getByTestId("status-line")).toBeInTheDocument();
     expect(screen.getByTestId("save-status")).toBeInTheDocument();
   });
 
-  it("orders Analysis, Mixer, Practice and Library in the left rail without a right column", async () => {
+  it("orders Analysis, Mixer and Library in the rail and keeps Practice in the bottom bar", async () => {
     setup();
     await openProject();
 
@@ -454,16 +454,51 @@ describe("App integration", () => {
       if (element.classList.contains("library")) return "library";
       return element.getAttribute("data-testid");
     });
-    expect(children).toEqual(["analysis", "mixer", "practice", "library"]);
+    expect(children).toEqual(["analysis", "mixer", "library"]);
     expect(within(rail).getByTestId("analysis")).toBeInTheDocument();
     expect(within(rail).getByTestId("mixer")).toBeInTheDocument();
-    expect(within(rail).getByTestId("practice")).toBeInTheDocument();
+    expect(within(rail).queryByTestId("practice")).not.toBeInTheDocument();
     expect(rail.querySelector(".library")).not.toBeNull();
     expect(document.querySelector(".studio-column")).toBeNull();
     expect(document.querySelector(".studio-main > .stage")).not.toBeNull();
-    expect(screen.getByLabelText("Practice speed")).toBeInTheDocument();
+    const practice = screen.getByTestId("practice");
+    expect(practice).toBeInTheDocument();
+    expect(
+      within(practice).getByLabelText("Practice speed"),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Beats per bar")).toBeInTheDocument();
     expect(screen.queryByLabelText("Pitch")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Snap mode")).not.toBeInTheDocument();
+
+    const transport = screen.getByRole("region", { name: "Transport" });
+    expect(
+      within(transport).getByTestId("transport-practice-zone"),
+    ).toContainElement(practice);
+    const center = within(transport).getByTestId("transport-center");
+    const buttons = within(center).getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Return to start",
+      "Play",
+      "Loop",
+    ]);
+    expect(within(transport).getByTestId("transport-status")).toHaveClass(
+      "visually-hidden",
+    );
+  });
+
+  it("orders the stage zoom buttons minus then plus", async () => {
+    setup();
+    await openProject();
+
+    const toolbar = screen
+      .getByTestId("stage-measure")
+      .parentElement?.querySelector(".stage-toolbar");
+    expect(toolbar).not.toBeNull();
+    const buttons = within(toolbar as HTMLElement).getAllByRole("button");
+    expect(buttons[0]).toHaveAccessibleName("Zoom out");
+    expect(buttons[0]).toHaveTextContent("−");
+    expect(buttons[1]).toHaveAccessibleName("Zoom in");
+    expect(buttons[1]).toHaveTextContent("+");
   });
 
   it("uses one measured full-stage width and reflows the panes on resize", async () => {
