@@ -359,14 +359,20 @@ describe("App with the real transport adapter", () => {
     });
     expect(engine.player.getState().loopEnabled).toBe(true);
 
+    // Clear the transport selection so Add uses the four-bar default.
+    fireEvent.mouseDown(pane, { clientX: 470, button: 0 });
+    fireEvent.mouseUp(pane, { clientX: 470 });
+    await waitFor(() =>
+      expect(engine.player.getState().positionSeconds).toBeCloseTo(2),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Add section" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Loop Section 1" }),
     );
     await waitFor(() =>
       expect(engine.player.getState().loopRange).toEqual({
-        startSeconds: 0,
-        endSeconds: 2,
+        startSeconds: 2,
+        endSeconds: 4,
       }),
     );
     expect(engine.player.getState().loopEnabled).toBe(true);
@@ -404,7 +410,7 @@ describe("App with the real transport adapter", () => {
     await waitFor(() =>
       expect(engine.player.getState().loopRange).toEqual({
         startSeconds: 0,
-        endSeconds: 2,
+        endSeconds: 4,
       }),
     );
     await waitFor(() => expect(engine.player.getState().status).toBe("paused"));
@@ -435,7 +441,7 @@ describe("App with the real transport adapter", () => {
     expect(engine.player.getState().status).toBe("playing");
     expect(engine.player.getState().loopRange).toEqual({
       startSeconds: 0,
-      endSeconds: 2,
+      endSeconds: 4,
     });
     expect(engine.player.getState().loopEnabled).toBe(true);
 
@@ -471,10 +477,11 @@ describe("App with the real transport adapter", () => {
       beatFrames: 28800,
     });
 
-    // Adding a section now snaps to the detected 3/4 bars (1.8 s), not the
-    // fallback 4/4 bars (2 s), and the existing section stays editable.
+    // The four-bar default now uses the detected 3/4 grid: it snaps to the
+    // last detected bar at 3.6 s (the fallback grid would have reached 4 s),
+    // and the existing section stays editable.
     await userEvent.click(screen.getByRole("button", { name: "Add section" }));
-    expect(screen.getByLabelText("Section end section-2")).toHaveValue(1.8);
+    expect(screen.getByLabelText("Section end section-2")).toHaveValue(3.6);
     expect(screen.getByLabelText("Section name section-1")).toBeInTheDocument();
   });
 

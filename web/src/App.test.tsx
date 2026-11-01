@@ -276,6 +276,18 @@ function mockMeasuredWidth(element: HTMLElement, width: number): void {
   });
 }
 
+function pointerEvent(element: Element, type: string, clientX: number): void {
+  fireEvent(
+    element,
+    new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      button: 0,
+    }),
+  );
+}
+
 function precedes(first: Element, second: Element): boolean {
   return (
     (first.compareDocumentPosition(second) &
@@ -474,6 +486,76 @@ describe("App integration", () => {
     ).toBeCloseTo(360, 1);
   });
 
+  it("shows the horizontal scrollbar only when zoomed and drags the shared view", async () => {
+    setup();
+    await openProject();
+
+    expect(screen.queryByTestId("timeline-scrollbar")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    const scrollbar = await screen.findByTestId("timeline-scrollbar");
+    const thumb = screen.getByTestId("timeline-scrollbar-thumb");
+    const wideThumb = Number.parseFloat(thumb.style.width);
+    expect(wideThumb).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await waitFor(() =>
+      expect(
+        Number.parseFloat(
+          screen.getByTestId("timeline-scrollbar-thumb").style.width,
+        ),
+      ).toBeLessThan(wideThumb),
+    );
+
+    const before = Number(scrollbar.getAttribute("aria-valuenow"));
+    pointerEvent(thumb, "pointerdown", 300);
+    pointerEvent(thumb.parentElement as Element, "pointermove", 420);
+    await waitFor(() =>
+      expect(
+        Number(
+          screen
+            .getByTestId("timeline-scrollbar")
+            .getAttribute("aria-valuenow"),
+        ),
+      ).toBeGreaterThan(before),
+    );
+    pointerEvent(thumb.parentElement as Element, "pointerup", 420);
+  });
+
+  it("pages while following and stops auto-scrolling when follow is off", async () => {
+    const { rig } = setup();
+    await openProject();
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    const scrollbar = await screen.findByTestId("timeline-scrollbar");
+    const before = Number(scrollbar.getAttribute("aria-valuenow"));
+
+    act(() => rig.player.setState({ status: "playing", positionSeconds: 7.5 }));
+    await waitFor(() =>
+      expect(
+        Number(
+          screen
+            .getByTestId("timeline-scrollbar")
+            .getAttribute("aria-valuenow"),
+        ),
+      ).toBeGreaterThan(before),
+    );
+
+    const follow = screen.getByRole("button", { name: "Follow playhead" });
+    fireEvent.click(follow);
+    expect(follow).toHaveAttribute("aria-pressed", "false");
+    const stoppedAt = Number(
+      screen.getByTestId("timeline-scrollbar").getAttribute("aria-valuenow"),
+    );
+    act(() => rig.player.setState({ status: "playing", positionSeconds: 0 }));
+    await act(async () => undefined);
+    expect(
+      Number(
+        screen.getByTestId("timeline-scrollbar").getAttribute("aria-valuenow"),
+      ),
+    ).toBe(stoppedAt);
+  });
+
   it("orders mix, stem slot, spectrogram, chords and sections with the mixer left", async () => {
     const { api } = setup();
     await openProject();
@@ -600,7 +682,7 @@ describe("App integration", () => {
       screen.getByRole("button", { name: "Loop Section 1" }),
     );
     expect(rig.player.calls).toContain(
-      'setLoopRange:{"startSeconds":0,"endSeconds":2}',
+      'setLoopRange:{"startSeconds":0,"endSeconds":8}',
     );
     expect(rig.player.calls).toContain("setLoopEnabled:true");
     expect(screen.getByLabelText("Section name section-1")).toBeInTheDocument();

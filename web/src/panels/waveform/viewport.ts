@@ -160,24 +160,30 @@ export function zoomToSelection(
 }
 
 /**
- * Keeps the playhead visible while the transport runs. The viewport only moves
- * when the playhead leaves the middle band, which avoids a jittering window.
+ * Paginated follow: while the playhead is inside the visible window and before
+ * the 70 % page line, leave the viewport alone. Past that line (or when a loop
+ * jumps back before the window), page so the playhead sits at 20 % of the span.
  */
 export function followViewport(
   viewport: Viewport,
   positionSeconds: number,
   durationSeconds: number,
   widthPx: number,
+  pageFraction = 0.7,
 ): Viewport {
   const width = safeWidth(widthPx);
   const span = width * viewport.secondsPerPixel;
   const leftEdge = viewport.startSeconds;
-  const lowerBand = leftEdge + span * 0.1;
-  const upperBand = leftEdge + span * 0.85;
-  if (positionSeconds >= lowerBand && positionSeconds <= upperBand) {
+  const leftMargin = leftEdge + span * 0.05;
+  const pageLine = leftEdge + span * clamp(pageFraction, 0.05, 0.95);
+  if (
+    positionSeconds >= leftMargin &&
+    positionSeconds <= pageLine &&
+    positionSeconds < leftEdge + span
+  ) {
     return viewport;
   }
-  const targetStart = positionSeconds - span / 2;
+  const targetStart = positionSeconds - span * 0.2;
   const followed = clampViewport(
     { startSeconds: targetStart, secondsPerPixel: viewport.secondsPerPixel },
     durationSeconds,

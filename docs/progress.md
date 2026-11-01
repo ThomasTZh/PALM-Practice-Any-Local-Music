@@ -1375,3 +1375,49 @@ reset `paused = false` on every reposition, so a paused seek resumed audio.
 - `web/node_modules/.bin/vitest run src/player`: exit 0, 11 files, 107 tests.
 - `make test-web`: exit 0 (whole web suite).
 - `make build-web`: exit 0 (`tsc --noEmit` + Vite build).
+
+## 2026-11-01 — working follow, horizontal scrollbar, four-bar sections (t29)
+
+### Follow
+
+`followViewport` now pages instead of centering: while the playhead is before
+70 % of the visible span it leaves the viewport alone; at/after the page line
+(or when a loop jumps behind the window) it moves the start so the playhead sits
+at 20 % of the span, clamped to the track. WaveformPane only runs this while
+`follow && playing`, so toggling Follow off stops auto-scrolling immediately.
+Tests cover below/at the 70 % line, paging forward, loop-jump back, follow-off,
+and the App-level scrollbar thumb moving while following.
+
+### Scrollbar
+
+New `TimelineScrollbar` (panels/waveform) renders a real horizontal scrollbar
+under the shared timeline only when `widthPx * secondsPerPixel < duration`.
+The thumb width is the visible fraction of the track and its left is the
+viewport start fraction (minimum 24 px). Pointer drag on the thumb converts
+pixels to seconds and calls the shared `onViewportChange` with `clampViewport`,
+so ruler, mix and stem lanes move together; zooming updates the thumb; the
+scrollbar has role=scrollbar with aria values. Wired in App with the measured
+stage width; hidden at fit.
+
+### Four-bar default section
+
+`draftSectionRange` with no selection now spans four bars: bar length is derived
+from the detected grid (`beat span × bpb`), or 4/4 at 120 BPM when no grid is
+available. The start still follows the selected snap mode (Bar default), and
+the result is clamped to the track and passed through the existing bar/beat
+snapping. Add with a selection still uses the selection. SectionLane and state
+tests cover the detected 3/4 grid (7.2 s), 4/4 at 120 (8 s), beat/free starts,
+and the clamp at the end of a short track.
+
+### Verification
+
+- Pointer/component tests: scrollbar hidden at fit, proportional thumb at two
+  zoom levels, drag from 0 to 21.25 s, scrollbar-only-when-zoomed; follow paging
+  and follow-off; four-bar Add on detected and fallback grids. App test drags
+  the thumb and checks aria-valuenow advances; follow test uses the fake player
+  position to page and confirms no movement after Follow is toggled off.
+- Firefox smoke at 1280 px: scrollbar absent at fit, appears after two zooms
+  (thumb 411 px), drag moved aria-valuenow 17→30, Add produced Section 1
+  0–8 s (four bars at 120 BPM), no page errors or overflow.
+- `make test-web` passes (51 files / 469 tests in the full run); `make
+  build-web` passes. No dependency added.

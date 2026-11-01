@@ -14,6 +14,10 @@ const GRID = {
   bpb: 4,
 };
 const VIEWPORT: Viewport = { startSeconds: 0, secondsPerPixel: 0.01 };
+const LONG_GRID = {
+  beats: Array.from({ length: 121 }, (_, index) => index * 0.5),
+  bpb: 4,
+};
 const VERSE: Section = {
   id: "s1",
   name: "Verse",
@@ -54,8 +58,8 @@ function setup(overrides: Partial<Parameters<typeof SectionLane>[0]> = {}) {
 }
 
 describe("SectionLane", () => {
-  it("adds a bar-snapped section by default", () => {
-    const { onChange } = setup();
+  it("adds a four-bar bar-snapped section by default", () => {
+    const { onChange } = setup({ grid: LONG_GRID, durationSeconds: 60 });
 
     fireEvent.click(screen.getByRole("button", { name: "Add section" }));
 
@@ -65,12 +69,34 @@ describe("SectionLane", () => {
     expect(sections[0]).toMatchObject({
       name: "Section 1",
       startSeconds: 2,
-      endSeconds: 4,
+      endSeconds: 10,
     });
   });
 
-  it("changes the added boundary when snap switches to beat or free", () => {
-    const { onChange } = setup({ positionSeconds: 1.7 });
+  it("uses four bars of the detected grid for the default Add", () => {
+    const detected = {
+      beats: Array.from({ length: 12 }, (_, index) => index * 0.6),
+      bpb: 3,
+    };
+    const { onChange } = setup({
+      grid: detected,
+      positionSeconds: 0,
+      durationSeconds: 60,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add section" }));
+
+    const created = (onChange.mock.calls[0][0] as Section[])[0];
+    expect(created.startSeconds).toBe(0);
+    expect(created.endSeconds).toBeCloseTo(7.2);
+  });
+
+  it("uses a four-bar length around a beat- or free-snapped start", () => {
+    const { onChange } = setup({
+      grid: LONG_GRID,
+      positionSeconds: 1.7,
+      durationSeconds: 60,
+    });
 
     fireEvent.change(screen.getByLabelText("Snap"), {
       target: { value: "beat" },
@@ -78,7 +104,7 @@ describe("SectionLane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add section" }));
     expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
       startSeconds: 1.5,
-      endSeconds: 2,
+      endSeconds: 9.5,
     });
 
     onChange.mockClear();
@@ -88,7 +114,7 @@ describe("SectionLane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add section" }));
     expect((onChange.mock.calls[0][0] as Section[])[0]).toMatchObject({
       startSeconds: 1.7,
-      endSeconds: 2.7,
+      endSeconds: 9.7,
     });
   });
 

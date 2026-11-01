@@ -41,13 +41,15 @@ describe("beat and bar marks", () => {
     expect(marks).toHaveLength(16);
     expect(marks[0]).toMatchObject({ bar: 1, beat: 1, downbeat: true });
     expect(marks[5]).toMatchObject({ bar: 2, beat: 2, downbeat: false });
-    expect(marks.filter((mark) => mark.downbeat).map((mark) => mark.timeSeconds)).toEqual([
-      0, 2, 4, 6,
-    ]);
+    expect(
+      marks.filter((mark) => mark.downbeat).map((mark) => mark.timeSeconds),
+    ).toEqual([0, 2, 4, 6]);
   });
 
   it("returns bar downbeats only", () => {
-    expect(barMarks(BEATS, 4).map((mark) => [mark.timeSeconds, mark.bar])).toEqual([
+    expect(
+      barMarks(BEATS, 4).map((mark) => [mark.timeSeconds, mark.bar]),
+    ).toEqual([
       [0, 1],
       [2, 2],
       [4, 3],
@@ -84,29 +86,39 @@ describe("snapTime", () => {
 
 describe("snapRange", () => {
   it("snaps both boundaries", () => {
-    expect(snapRange({ startSeconds: 1.7, endSeconds: 3.2 }, "bar", GRID, 8)).toEqual({
+    expect(
+      snapRange({ startSeconds: 1.7, endSeconds: 3.2 }, "bar", GRID, 8),
+    ).toEqual({
       startSeconds: 2,
       endSeconds: 4,
     });
-    expect(snapRange({ startSeconds: 1.7, endSeconds: 3.2 }, "beat", GRID, 8)).toEqual({
+    expect(
+      snapRange({ startSeconds: 1.7, endSeconds: 3.2 }, "beat", GRID, 8),
+    ).toEqual({
       startSeconds: 1.5,
       endSeconds: 3,
     });
-    expect(snapRange({ startSeconds: 1.7, endSeconds: 3.2 }, "free", GRID, 8)).toEqual({
+    expect(
+      snapRange({ startSeconds: 1.7, endSeconds: 3.2 }, "free", GRID, 8),
+    ).toEqual({
       startSeconds: 1.7,
       endSeconds: 3.2,
     });
   });
 
   it("expands a collapsed bar range to the next bar", () => {
-    expect(snapRange({ startSeconds: 1.9, endSeconds: 2.1 }, "bar", GRID, 8)).toEqual({
+    expect(
+      snapRange({ startSeconds: 1.9, endSeconds: 2.1 }, "bar", GRID, 8),
+    ).toEqual({
       startSeconds: 2,
       endSeconds: 4,
     });
   });
 
   it("rejects a range that cannot exist", () => {
-    expect(snapRange({ startSeconds: 7.9, endSeconds: 8 }, "bar", GRID, 8)).toBeNull();
+    expect(
+      snapRange({ startSeconds: 7.9, endSeconds: 8 }, "bar", GRID, 8),
+    ).toBeNull();
   });
 });
 
@@ -156,7 +168,11 @@ describe("splitSection", () => {
     const sections = splitSection([VERSE], "s1", 3.2, "bar", GRID);
 
     expect(sections).toHaveLength(2);
-    expect(sections[0]).toMatchObject({ name: "Verse", startSeconds: 0, endSeconds: 4 });
+    expect(sections[0]).toMatchObject({
+      name: "Verse",
+      startSeconds: 0,
+      endSeconds: 4,
+    });
     expect(sections[1]).toMatchObject({
       name: "Verse (2)",
       startSeconds: 4,
@@ -179,7 +195,11 @@ describe("splitSection", () => {
 describe("editing sections", () => {
   it("renames a section without touching its bounds", () => {
     const sections = renameSection([VERSE], "s1", "Chorus");
-    expect(sections[0]).toMatchObject({ name: "Chorus", startSeconds: 0, endSeconds: 8 });
+    expect(sections[0]).toMatchObject({
+      name: "Chorus",
+      startSeconds: 0,
+      endSeconds: 8,
+    });
   });
 
   it("resizes an edge with snapping and enforces a minimum length", () => {
@@ -209,25 +229,48 @@ describe("editing sections", () => {
 describe("draftSectionRange", () => {
   it("uses the selection when one exists", () => {
     expect(
-      draftSectionRange(2, { startSeconds: 1.7, endSeconds: 3.2 }, "bar", GRID, 8),
+      draftSectionRange(
+        2,
+        { startSeconds: 1.7, endSeconds: 3.2 },
+        "bar",
+        GRID,
+        8,
+      ),
     ).toEqual({ startSeconds: 2, endSeconds: 4 });
   });
 
-  it("starts at the snapped playhead and ends at the next bar", () => {
-    expect(draftSectionRange(1.9, null, "bar", GRID, 8)).toEqual({
+  it("starts at the snapped playhead and spans four bars", () => {
+    expect(draftSectionRange(1.9, null, "bar", GRID, 60)).toEqual({
       startSeconds: 2,
-      endSeconds: 4,
+      endSeconds: 10,
     });
   });
 
-  it("uses beats and free time when the snap mode changes", () => {
-    expect(draftSectionRange(1.7, null, "beat", GRID, 8)).toEqual({
+  it("uses a four-bar length while respecting the snapped start", () => {
+    expect(draftSectionRange(1.7, null, "beat", GRID, 60)).toEqual({
       startSeconds: 1.5,
-      endSeconds: 2,
+      endSeconds: 9.5,
     });
-    expect(draftSectionRange(1.7, null, "free", GRID, 8)).toEqual({
+    expect(draftSectionRange(1.7, null, "free", GRID, 60)).toEqual({
       startSeconds: 1.7,
-      endSeconds: 2.7,
+      endSeconds: 9.7,
+    });
+  });
+
+  it("uses the detected beat grid for the four-bar length", () => {
+    const detected = {
+      beats: Array.from({ length: 12 }, (_, index) => index * 0.6),
+      bpb: 3,
+    };
+    const range = draftSectionRange(0, null, "bar", detected, 60);
+    expect(range?.startSeconds).toBe(0);
+    expect(range?.endSeconds).toBeCloseTo(7.2);
+  });
+
+  it("falls back to 4/4 at 120 BPM without a grid", () => {
+    expect(draftSectionRange(2.3, null, "bar", null, 60)).toEqual({
+      startSeconds: 2.3,
+      endSeconds: 10.3,
     });
   });
 

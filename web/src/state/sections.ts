@@ -297,7 +297,24 @@ export function sectionLoopRange(section: Section): TimeRange {
   };
 }
 
-/** Range the Add button should create: the selection, or one snapped unit. */
+const DEFAULT_SECTION_BARS = 4;
+const FALLBACK_BPM = 120;
+const FALLBACK_BPB = 4;
+
+/** One bar from the detected grid, or 4/4 at 120 BPM before analysis. */
+function defaultBarSeconds(grid: BeatGrid | null): number {
+  if (validGrid(grid) && grid.beats.length >= 2) {
+    const beatSeconds =
+      (grid.beats[grid.beats.length - 1] - grid.beats[0]) /
+      (grid.beats.length - 1);
+    if (beatSeconds > EPSILON) {
+      return beatSeconds * grid.bpb;
+    }
+  }
+  return (60 / FALLBACK_BPM) * FALLBACK_BPB;
+}
+
+/** Range the Add button should create: the selection, or four snapped bars. */
 export function draftSectionRange(
   positionSeconds: number,
   selection: TimeRange | null,
@@ -322,11 +339,10 @@ export function draftSectionRange(
   if (start >= duration - EPSILON) {
     return null;
   }
-  let end =
-    mode === "free"
-      ? start + 1
-      : (nextBoundary(start, mode, grid) ?? start + 1);
-  end = Math.min(duration, end);
+  const end = Math.min(
+    duration,
+    start + defaultBarSeconds(grid) * DEFAULT_SECTION_BARS,
+  );
   if (end <= start + EPSILON) {
     return null;
   }

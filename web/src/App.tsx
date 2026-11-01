@@ -9,6 +9,7 @@ import { TimeRuler } from "./panels/ruler/TimeRuler";
 import { SectionLane } from "./panels/sections";
 import { SpectrogramPane } from "./panels/spectrogram/SpectrogramPane";
 import { TransportPanel } from "./panels/transport/TransportPanel";
+import { TimelineScrollbar } from "./panels/waveform/TimelineScrollbar";
 import { WaveformPane, type Lane } from "./panels/waveform/WaveformPane";
 import { hasSelection, type Selection } from "./panels/waveform/selection";
 import {
@@ -934,6 +935,15 @@ export function App({
                 />
               )}
             </div>
+
+            {project !== null && (
+              <TimelineScrollbar
+                viewport={viewport}
+                durationSeconds={durationSeconds}
+                widthPx={stageWidth}
+                onViewportChange={setViewport}
+              />
+            )}
 
             {project !== null && (
               <>

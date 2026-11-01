@@ -4,7 +4,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Selection } from "./selection";
-import { fitViewport, zoomViewport, type Viewport } from "./viewport";
+import {
+  clampViewport,
+  fitViewport,
+  visibleEndSeconds,
+  zoomViewport,
+  type Viewport,
+} from "./viewport";
 import { WaveformPane, type WaveformPaneProps } from "./WaveformPane";
 import { makePeaksBuffer } from "./peaksFixture";
 
@@ -198,20 +204,23 @@ describe("WaveformPane scrolling and wheel zoom", () => {
 });
 
 describe("WaveformPane follow", () => {
-  it("scrolls the viewport when the playhead leaves the window", () => {
+  it("pages the viewport when the playhead reaches the right page line", () => {
     const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
     const { onViewportChange } = setup({
       viewport: zoomed,
       playing: true,
       follow: true,
-      positionSeconds: 7,
+      positionSeconds: 6,
     });
 
     const followed = onViewportChange.mock.calls[0][0] as Viewport;
-    expect(followed.startSeconds).toBeGreaterThan(5);
+    expect(followed.startSeconds).toBeGreaterThan(zoomed.startSeconds);
+    expect(
+      followed.startSeconds <= 6 && 6 <= visibleEndSeconds(followed, WIDTH),
+    ).toBe(true);
   });
 
-  it("does not scroll while the playhead is visible", () => {
+  it("does not scroll while the playhead is before the page line", () => {
     const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
     const { onViewportChange } = setup({
       viewport: zoomed,
@@ -221,5 +230,36 @@ describe("WaveformPane follow", () => {
     });
 
     expect(onViewportChange).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-scroll when follow is disabled", () => {
+    const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
+    const { onViewportChange } = setup({
+      viewport: zoomed,
+      playing: true,
+      follow: false,
+      positionSeconds: 6,
+    });
+
+    expect(onViewportChange).not.toHaveBeenCalled();
+  });
+
+  it("pages back when playback loops to the start", () => {
+    const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
+    const scrolled = clampViewport(
+      { startSeconds: 30, secondsPerPixel: zoomed.secondsPerPixel },
+      DURATION,
+      WIDTH,
+    );
+    const { onViewportChange } = setup({
+      viewport: scrolled,
+      playing: true,
+      follow: true,
+      positionSeconds: 0,
+    });
+
+    expect((onViewportChange.mock.calls[0][0] as Viewport).startSeconds).toBe(
+      0,
+    );
   });
 });

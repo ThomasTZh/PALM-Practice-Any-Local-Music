@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clampViewport,
   fitViewport,
   followViewport,
   scrollViewport,
@@ -104,26 +105,39 @@ describe("zoomToSelection", () => {
 });
 
 describe("followViewport", () => {
-  it("keeps the playhead in view by scrolling when it runs off the right edge", () => {
+  it("pages forward when the playhead reaches the 70% line", () => {
     const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
-    const followed = followViewport(zoomed, 40, DURATION, WIDTH);
+    const span = WIDTH * zoomed.secondsPerPixel;
+    const atPageLine = zoomed.startSeconds + span * 0.69;
+    expect(followViewport(zoomed, atPageLine, DURATION, WIDTH)).toBe(zoomed);
+
+    const pastPageLine = zoomed.startSeconds + span * 0.71;
+    const followed = followViewport(zoomed, pastPageLine, DURATION, WIDTH);
 
     expect(followed.startSeconds).toBeGreaterThan(zoomed.startSeconds);
+    expect(followed.startSeconds).toBeCloseTo(pastPageLine - span * 0.2);
     expect(
-      followed.startSeconds <= 40 && 40 <= visibleEndSeconds(followed, WIDTH),
+      followed.startSeconds <= pastPageLine &&
+        pastPageLine <= visibleEndSeconds(followed, WIDTH),
     ).toBe(true);
+    expect(timeToX(pastPageLine, followed)).toBeCloseTo(WIDTH * 0.2);
   });
 
-  it("leaves the viewport untouched while the playhead is visible", () => {
+  it("keeps a playhead that is still inside the page untouched", () => {
     const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
-    const inside = xToTime(WIDTH / 2, zoomed);
+    const inside = xToTime(WIDTH * 0.5, zoomed);
     expect(followViewport(zoomed, inside, DURATION, WIDTH)).toBe(zoomed);
   });
 
-  it("scrolls back to the start when the playhead jumps home", () => {
+  it("pages back when a loop jumps behind the visible window", () => {
     const zoomed = zoomViewport(FIT, DURATION, WIDTH, 4, 0);
-    const scrolled = scrollViewport(zoomed, DURATION, WIDTH, 400);
-    expect(followViewport(scrolled, 0, DURATION, WIDTH).startSeconds).toBe(0);
+    const scrolled = clampViewport(
+      { startSeconds: 30, secondsPerPixel: zoomed.secondsPerPixel },
+      DURATION,
+      WIDTH,
+    );
+    const followed = followViewport(scrolled, 0, DURATION, WIDTH);
+    expect(followed.startSeconds).toBe(0);
   });
 });
 
