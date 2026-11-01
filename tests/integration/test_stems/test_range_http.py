@@ -41,7 +41,9 @@ def make_stem_workspace(tmp_path: Path):
     expected: dict[str, bytes] = {}
     rows = []
     for index, label in enumerate(STEM_LABELS):
-        data = np.arange(frames * channels, dtype="<f4") + index * 100_000
+        t = np.arange(frames, dtype=np.float64) / rate
+        tone = 0.4 * np.sin(2 * np.pi * (220 + index * 110) * t)
+        data = np.stack([tone, -tone], axis=1).astype("<f4")
         expected[label] = data.tobytes()
         (cache / f"{label}.f32").write_bytes(expected[label])
         rows.append(
@@ -67,6 +69,7 @@ def make_stem_workspace(tmp_path: Path):
         )
     )
     store.update(project.id, document={"stemCacheKey": key})
+    project = store.get(project.id)
     client = TestClient(create_app(settings))
     return client, project, expected, frames, channels
 

@@ -47,6 +47,13 @@ from basseparate.media import (
     read_pcm_slice,
     unsatisfiable_range_headers,
 )
+from basseparate.peaks import (
+    PEAK_BUCKET_SIZES,
+    bucket_count,
+    compute_peaks_from_file,
+    decode_peaks,
+    encode_peaks,
+)
 from basseparate.projects import Project, ProjectStore, RevisionConflict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -737,6 +744,67 @@ def register_stems_job(manager: JobManager, *, paths: DataPaths, store: ProjectS
     manager.register("separate", _runner(store, paths))
 
 
+def stem_peaks_path(stem_set: StemSet, label: str, buckets: int) -> Path:
+    """Where a stem's waveform peaks live inside its content-addressed entry."""
+    return stem_set.directory / f"peaks-{label}-{buckets}.bin"
+
+
+def _cached_stem_peaks(
+    path: Path,
+    *,
+    buckets: int,
+    channels: int,
+    sample_rate: int,
+    frames: int,
+) -> bytes | None:
+    try:
+        payload = path.read_bytes()
+    except OSError:
+        return None
+    try:
+        decoded = decode_peaks(payload)
+    except ValueError:
+        return None
+    if (
+        decoded.bucket_size == buckets
+        and decoded.channels == channels
+        and decoded.sample_rate == sample_rate
+        and decoded.bucket_count == bucket_count(frames, buckets)
+    ):
+        return payload
+    return None
+
+
+def ensure_stem_peaks(stem_set: StemSet, stem: StemFile, buckets: int) -> bytes:
+    """Return the BSPK bytes for one stem, computing and atomically caching once."""
+    if buckets not in PEAK_BUCKET_SIZES:
+        choices = ", ".join(str(size) for size in PEAK_BUCKET_SIZES)
+        raise StemError(f"unsupported bucket size {buckets}; choose one of {choices}")
+    path = stem_peaks_path(stem_set, stem.label, buckets)
+    cached = _cached_stem_peaks(
+        path,
+        buckets=buckets,
+        channels=stem.channels,
+        sample_rate=stem_set.sample_rate,
+        frames=stem.frames,
+    )
+    if cached is not None:
+        return cached
+    path.unlink(missing_ok=True)
+    try:
+        peaks = compute_peaks_from_file(
+            stem.path,
+            channels=stem.channels,
+            frames=stem.frames,
+            bucket_size=buckets,
+        )
+        payload = encode_peaks(peaks, sample_rate=stem_set.sample_rate)
+        atomic_write_bytes(path, payload)
+    except OSError as error:
+        raise StemError(f"cannot cache waveform peaks for stem {stem.label}: {error}") from error
+    return payload
+
+
 router = APIRouter(tags=["stems"])
 
 
@@ -776,6 +844,44 @@ def _stem_range_error(error: RangeError, total_bytes: int) -> Response:
         status_code=416,
         media_type="application/json",
         headers=unsatisfiable_range_headers(total_bytes),
+    )
+
+
+@router.get("/projects/{project_id}/stems/{label}/peaks")
+def project_stem_peaks(
+    project_id: str,
+    label: str,
+    paths: PathsDep,
+    store: StoreDep,
+    buckets: int = Query(default=1024),
+) -> Response:
+    if label not in STEM_LABELS:
+        raise HTTPException(status_code=404, detail=f"unknown stem {label!r}")
+    if buckets not in PEAK_BUCKET_SIZES:
+        choices = ", ".join(str(size) for size in PEAK_BUCKET_SIZES)
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported bucket size {buckets}; choose one of {choices}",
+        )
+    project = store.get(project_id)
+    key = project.document.get("stemCacheKey")
+    if not isinstance(key, str):
+        raise HTTPException(status_code=404, detail=f"project {project_id} has no stem set")
+    stem_set = read_stem_cache(paths, key)
+    if stem_set is None:
+        raise HTTPException(status_code=404, detail=f"stem set {key} is missing or incomplete")
+    stem = stem_set.file(label)
+    payload = ensure_stem_peaks(stem_set, stem, buckets)
+    return Response(
+        content=payload,
+        media_type=BINARY_MEDIA_TYPE,
+        headers={
+            "x-bucket-size": str(buckets),
+            "x-channels": str(stem.channels),
+            "x-sample-rate": str(stem_set.sample_rate),
+            "x-stem-label": label,
+            "cache-control": "private, max-age=3600",
+        },
     )
 
 
