@@ -1501,3 +1501,97 @@ body {
     overflow: visible;
   }
 }
+
+/* Sections: timeline first, toolbar below it, then a two-column editor. */
+
+.section-toolbar {
+  margin-top: 0.55rem;
+  margin-bottom: 0.1rem;
+}
+
+.section-editor-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+}
+
+.section-list-pane,
+.section-loop-pane {
+  min-width: 0;
+}
+
+.section-list-pane h3,
+.section-loop-pane h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.section-list-pane .section-editor {
+  margin-top: 0.3rem;
+}
+
+.section-list-pane .section-editor li {
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-list-pane .section-editor li:last-child {
+  border-bottom: 0;
+}
+
+.section-loop-pane {
+  min-height: 5rem;
+  padding: 0.45rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: rgba(111, 211, 182, 0.03);
+}
+
+.section-loop-pane .panel-empty {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 760px) {
+  .section-editor-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Compact section rows: name on its own line, all four controls on the next. */
+
+.section-list-pane .section-editor li {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 0.2rem 0.45rem;
+  align-items: center;
+}
+
+.section-list-pane .section-editor input[type="text"] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.section-list-pane .section-editor label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+}
+
+.section-list-pane .section-editor input[type="number"] {
+  width: 4.2rem;
+}
+
+.section-list-pane .section-editor button {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+}

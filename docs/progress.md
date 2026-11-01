@@ -1639,3 +1639,36 @@ transport pinned, no native scrollbars.
 Golden path and the layout spec both pass with the panels in the rail
 (`make e2e` 2 specs, Firefox + Chromium). `make test-web` and `make build-web`
 pass. No dependency added.
+
+## 2026-11-01 — Sections timeline-first layout with sorted split editor (t38)
+
+### Layout
+
+- The Sections panel now renders, in order: the section timeline (blocks/drag
+  editing), then the heading row (Sections, Snap, Add section, Split), then the
+  editor.
+- The editor is a two-column grid: left `.section-list-pane` with the sorted
+  section list, right `.section-loop-pane` (`data-testid=section-loop-editor`,
+  aria-label "Loop customisation") reserved for t40's chain-loop controls.
+- The list sorts by start time ascending, then id. Each row shows the name
+  input, Start/End numeric resize inputs, Loop and Delete. Loop in the list uses
+  a distinct accessible name (`Loop <name> from section list`) so the block
+  Loop buttons keep their old labels.
+- Existing block drag-create/resize/click-seek and block Loop wiring are
+  untouched; the list uses the same rename/resize/delete/loop helpers.
+
+### Verification
+
+- SectionLane tests (23) add: lane children exactly timeline → toolbar →
+  editor split; split children list/loop panes; list order early/middle/later
+  for sections supplied in the order later/early/middle; name/start/end values;
+  and list Loop calling setLoopRange/setLoopEnabled/onLoop. All pointer
+  drag-create, resize, cancel, click-seek and block loop tests still pass.
+- Firefox mock at 1280×900: lane children
+  `section-timeline, panel-header section-toolbar, section-editor-split`;
+  split children `section-list-pane, section-loop-pane`; list order
+  early/middle/later with names Verse/Bridge/Chorus; halves 455/455 px; 3 loop
+  and 3 delete controls; loop placeholder text present; no page errors. Compact
+  rows are 60 px high and the lane is 337 px (down from 403 before the row CSS).
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency
+  added.

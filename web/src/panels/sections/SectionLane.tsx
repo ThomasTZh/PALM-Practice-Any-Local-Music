@@ -165,6 +165,10 @@ export function SectionLane({
   const snapMode = controlledSnap ?? innerSnap;
   const current = sectionAt(sections, positionSeconds);
   const blocks = sectionBlocks(sections, viewport, widthPx);
+  const sortedSections = [...sections].sort((left, right) => {
+    const byStart = left.startSeconds - right.startSeconds;
+    return byStart !== 0 ? byStart : left.id.localeCompare(right.id);
+  });
   const sectionById = new Map(sections.map((section) => [section.id, section]));
 
   function timeAt(clientX: number): number {
@@ -404,33 +408,6 @@ export function SectionLane({
       data-testid="section-lane"
       aria-label="Sections"
     >
-      <header className="panel-header">
-        <h2>Sections</h2>
-        <label className="snap-control">
-          Snap
-          <select
-            aria-label="Snap"
-            value={snapMode}
-            onChange={(event) => changeSnap(event.target.value as SnapMode)}
-          >
-            <option value="bar">Bar</option>
-            <option value="beat">Beat</option>
-            <option value="free">Free</option>
-          </select>
-        </label>
-        <button type="button" onClick={handleAdd}>
-          Add section
-        </button>
-        <button
-          type="button"
-          aria-label="Split section at playhead"
-          onClick={handleSplit}
-          disabled={current === null}
-        >
-          Split
-        </button>
-      </header>
-
       <div
         ref={timelineRef}
         className="section-timeline"
@@ -507,77 +484,137 @@ export function SectionLane({
         )}
       </div>
 
-      <ul className="section-editor" aria-label="Section editor">
-        {sections.map((section) => (
-          <li key={section.id}>
-            <input
-              type="text"
-              aria-label={`Section name ${section.id}`}
-              value={section.name}
-              onChange={(event) =>
-                onChange(
-                  renameSection(sections, section.id, event.target.value),
-                )
-              }
-            />
-            <label>
-              Start
-              <input
-                type="number"
-                aria-label={`Section start ${section.id}`}
-                value={edgeValue(section.startSeconds)}
-                step="0.1"
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isFinite(value)) {
-                    onChange(
-                      resizeSection(
-                        sections,
-                        section.id,
-                        "start",
-                        value,
-                        snapMode,
-                        grid,
-                      ),
-                    );
-                  }
-                }}
-              />
-            </label>
-            <label>
-              End
-              <input
-                type="number"
-                aria-label={`Section end ${section.id}`}
-                value={edgeValue(section.endSeconds)}
-                step="0.1"
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isFinite(value)) {
-                    onChange(
-                      resizeSection(
-                        sections,
-                        section.id,
-                        "end",
-                        value,
-                        snapMode,
-                        grid,
-                      ),
-                    );
-                  }
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              aria-label={`Delete ${section.name}`}
-              onClick={() => onChange(deleteSection(sections, section.id))}
+      <header className="panel-header section-toolbar">
+        <h2>Sections</h2>
+        <label className="snap-control">
+          Snap
+          <select
+            aria-label="Snap"
+            value={snapMode}
+            onChange={(event) => changeSnap(event.target.value as SnapMode)}
+          >
+            <option value="bar">Bar</option>
+            <option value="beat">Beat</option>
+            <option value="free">Free</option>
+          </select>
+        </label>
+        <button type="button" onClick={handleAdd}>
+          Add section
+        </button>
+        <button
+          type="button"
+          aria-label="Split section at playhead"
+          onClick={handleSplit}
+          disabled={current === null}
+        >
+          Split
+        </button>
+      </header>
+
+      <div className="section-editor-split">
+        <div className="section-list-pane">
+          <h3>Section list</h3>
+          {sortedSections.length === 0 ? (
+            <p className="panel-empty">No sections to edit yet.</p>
+          ) : (
+            <ul
+              className="section-editor"
+              data-testid="section-list"
+              aria-label="Section editor"
             >
-              Delete
-            </button>
-          </li>
-        ))}
-      </ul>
+              {sortedSections.map((section) => (
+                <li
+                  key={section.id}
+                  data-testid={`section-editor-item-${section.id}`}
+                >
+                  <input
+                    type="text"
+                    aria-label={`Section name ${section.id}`}
+                    value={section.name}
+                    onChange={(event) =>
+                      onChange(
+                        renameSection(sections, section.id, event.target.value),
+                      )
+                    }
+                  />
+                  <label>
+                    Start
+                    <input
+                      type="number"
+                      aria-label={`Section start ${section.id}`}
+                      value={edgeValue(section.startSeconds)}
+                      step="0.1"
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isFinite(value)) {
+                          onChange(
+                            resizeSection(
+                              sections,
+                              section.id,
+                              "start",
+                              value,
+                              snapMode,
+                              grid,
+                            ),
+                          );
+                        }
+                      }}
+                    />
+                  </label>
+                  <label>
+                    End
+                    <input
+                      type="number"
+                      aria-label={`Section end ${section.id}`}
+                      value={edgeValue(section.endSeconds)}
+                      step="0.1"
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isFinite(value)) {
+                          onChange(
+                            resizeSection(
+                              sections,
+                              section.id,
+                              "end",
+                              value,
+                              snapMode,
+                              grid,
+                            ),
+                          );
+                        }
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    aria-label={`Loop ${section.name} from section list`}
+                    onClick={() => handleLoop(section)}
+                  >
+                    Loop
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${section.name}`}
+                    onClick={() =>
+                      onChange(deleteSection(sections, section.id))
+                    }
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <aside
+          className="section-loop-pane"
+          data-testid="section-loop-editor"
+          aria-label="Loop customisation"
+        >
+          <h3>Loop customisation</h3>
+          <p className="panel-empty">Chain loop controls will appear here.</p>
+        </aside>
+      </div>
     </section>
   );
 }

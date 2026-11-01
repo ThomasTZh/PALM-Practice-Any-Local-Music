@@ -118,6 +118,57 @@ describe("SectionLane", () => {
     });
   });
 
+  it("puts the timeline first, toolbar second and a split editor below", () => {
+    const outOfOrder: Section[] = [
+      { id: "later", name: "Chorus", startSeconds: 5, endSeconds: 7 },
+      { id: "early", name: "Verse", startSeconds: 0, endSeconds: 2 },
+      { id: "middle", name: "Bridge", startSeconds: 2, endSeconds: 5 },
+    ];
+    setup({ sections: outOfOrder });
+
+    const lane = screen.getByTestId("section-lane");
+    expect(Array.from(lane.children).map((child) => child.className)).toEqual([
+      "section-timeline",
+      "panel-header section-toolbar",
+      "section-editor-split",
+    ]);
+    const split = lane.querySelector(".section-editor-split") as HTMLElement;
+    expect(Array.from(split.children).map((child) => child.className)).toEqual([
+      "section-list-pane",
+      "section-loop-pane",
+    ]);
+    expect(screen.getByTestId("section-loop-editor")).toHaveTextContent(
+      "Loop customisation",
+    );
+
+    const items = Array.from(
+      screen.getByTestId("section-list").querySelectorAll("li"),
+    ).map((item) => item.getAttribute("data-testid"));
+    expect(items).toEqual([
+      "section-editor-item-early",
+      "section-editor-item-middle",
+      "section-editor-item-later",
+    ]);
+    expect(screen.getByLabelText("Section name early")).toHaveValue("Verse");
+    expect(screen.getByLabelText("Section start early")).toHaveValue(0);
+    expect(screen.getByLabelText("Section end early")).toHaveValue(2);
+  });
+
+  it("loops a section from the editor list", () => {
+    const player = createFakePlayer({ durationSeconds: 8 });
+    const { onLoop } = setup({ sections: [VERSE], player });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Loop Verse from section list" }),
+    );
+
+    expect(player.calls).toContain(
+      'setLoopRange:{"startSeconds":0,"endSeconds":8}',
+    );
+    expect(player.calls).toContain("setLoopEnabled:true");
+    expect(onLoop).toHaveBeenCalledWith(VERSE);
+  });
+
   it("reports snap-mode changes to a controlled parent", () => {
     const { onSnapModeChange } = setup();
 
