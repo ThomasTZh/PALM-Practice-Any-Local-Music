@@ -270,6 +270,20 @@ export function resizeSection(
   );
 }
 
+/** Earliest start to latest end across the given sections (gaps included). */
+export function sectionChainRange(sections: Section[]): TimeRange | null {
+  if (sections.length === 0) {
+    return null;
+  }
+  let startSeconds = Infinity;
+  let endSeconds = -Infinity;
+  for (const section of sections) {
+    startSeconds = Math.min(startSeconds, section.startSeconds);
+    endSeconds = Math.max(endSeconds, section.endSeconds);
+  }
+  return { startSeconds, endSeconds };
+}
+
 /** Moves a whole section while keeping its length, snapped and clamped. */
 export function moveSectionRange(
   section: Section,

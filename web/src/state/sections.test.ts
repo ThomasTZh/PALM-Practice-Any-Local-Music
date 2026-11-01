@@ -11,6 +11,7 @@ import {
   draftSectionRange,
   moveSectionRange,
   renameSection,
+  sectionChainRange,
   resizeSection,
   sectionAt,
   sectionLoopRange,
@@ -347,6 +348,22 @@ describe("draftSectionEndingAt", () => {
     expect(
       draftSectionEndingAt(0, "bar", LONG_GRID, 60, [existing]).range,
     ).toBeNull();
+  });
+});
+
+describe("sectionChainRange", () => {
+  it("returns null for no sections", () => {
+    expect(sectionChainRange([])).toBeNull();
+  });
+
+  it("spans the earliest start to the latest end, gaps included", () => {
+    expect(
+      sectionChainRange([
+        { id: "s2", name: "Bridge", startSeconds: 8, endSeconds: 10 },
+        { id: "s1", name: "Verse", startSeconds: 0, endSeconds: 2 },
+        { id: "s3", name: "Chorus", startSeconds: 20, endSeconds: 24 },
+      ]),
+    ).toEqual({ startSeconds: 0, endSeconds: 24 });
   });
 });
 

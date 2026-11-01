@@ -1712,3 +1712,45 @@ pass. No dependency added.
   successfully.
 - `make test-web`, `make build-web` and `make e2e` (2 specs, Firefox +
   Chromium) pass. No dependency added.
+
+## 2026-11-01 — chain-loop selected sections (t40)
+
+### Loop customisation pane
+
+- The right pane of the Sections editor now lists the sections sorted by start
+  with a checkbox each (`Select <name> for loop chain`) and their start-end
+  range.
+- `Loop selected` is disabled until at least two sections are selected. It
+  sets the player loop from the earliest selected start to the latest selected
+  end, gaps included, enables looping, and reports both in the pane and in the
+  status line as e.g. `3 sections, 0.0-16.0 s`.
+- `Clear loop` clears the selection, disables the player loop and clears its
+  range, reports `Loop cleared`, and is available at all times.
+- Per-section Loop buttons (timeline blocks and sorted list) are unchanged and
+  still loop only that section.
+- The pane derives its chain from the sorted section list, so selecting,
+  moving or adding sections keeps the count/range in start order.
+
+`sectionChainRange` in state/sections.ts is the pure min-start/max-end helper.
+
+### Persistence
+
+The chain calls the same player `setLoopRange`/`setLoopEnabled` seam as the
+per-section loop, so the existing practice autosave writes the range to the
+server loop frames. A new App test selects two gapped sections, checks autosave
+writes start_frame 0/end_frame 264600 (6 s at 44.1 kHz), recreates the project
+from the saved loop, and verifies the reopened player range and Practice loop
+are restored.
+
+### Verification
+
+- SectionLane 32 tests (two-section chain with gaps, three-section chain ordered
+  by start, disabled at 0/1 selected, clear selection/loop, existing single
+  Loop); state 41 (chain range min/max); App 21 (chain status, autosave payload,
+  reopen practice loop). Full suite green.
+- Firefox mock: initial/one-selected disabled; two-selected enabled; loop
+  reported `2 sections, 0.0-8.0 s`, then `3 sections, 0.0-16.0 s`; Clear
+  reported `Loop cleared`, unchecked all, no page errors; screenshot shows the
+  right-pane checkboxes, selected count/range and both actions.
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency
+  added.

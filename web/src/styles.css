@@ -1604,3 +1604,64 @@ body {
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
   background: rgba(111, 211, 182, 0.16);
 }
+
+/* Chain loop selection in the Sections loop pane. */
+
+.section-chain-select {
+  margin: 0.35rem 0 0.25rem;
+  padding: 0;
+  border: 0;
+}
+
+.section-chain-select legend {
+  margin-bottom: 0.2rem;
+  color: var(--muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.section-chain-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.12rem 0;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.section-chain-option input {
+  accent-color: var(--accent-strong);
+}
+
+.section-chain-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-chain-range {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.section-chain-summary {
+  margin: 0.2rem 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-chain-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.section-chain-actions button {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.72rem;
+}

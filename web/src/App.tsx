@@ -44,6 +44,7 @@ import {
   type BeatGrid,
   type Section,
   type SnapMode,
+  type TimeRange,
 } from "./state/sections";
 import {
   applyStudioRuntimeSnapshot,
@@ -715,6 +716,16 @@ export function App({
   const handleLoopSection = useCallback((section: Section) => {
     setMessage(`Looping ${section.name}`);
   }, []);
+  const handleLoopChain = useCallback((range: TimeRange, count: number) => {
+    setTone("info");
+    setMessage(
+      `${count} sections, ${range.startSeconds.toFixed(1)}-${range.endSeconds.toFixed(1)} s`,
+    );
+  }, []);
+  const handleClearLoop = useCallback(() => {
+    setTone("info");
+    setMessage("Loop cleared");
+  }, []);
 
   const zoomIn = useCallback(() => {
     setViewport((current) =>
@@ -950,6 +961,8 @@ export function App({
                 selection={selection}
                 onChange={setSections}
                 onLoop={handleLoopSection}
+                onLoopChain={handleLoopChain}
+                onClearLoop={handleClearLoop}
                 onSeek={handleSeek}
                 onActionError={(message) => {
                   setTone("error");

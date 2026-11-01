@@ -11,6 +11,7 @@ import {
   resizeSection,
   sectionAt,
   sectionBlocks,
+  sectionChainRange,
   sectionLoopRange,
   snapRange,
   snapTime,
@@ -38,6 +39,8 @@ export interface SectionLaneProps {
   selection?: TimeRange | null;
   onChange: (sections: Section[]) => void;
   onLoop: (section: Section) => void;
+  onLoopChain?: (range: TimeRange, count: number) => void;
+  onClearLoop?: () => void;
   onSeek?: (seconds: number) => void;
   onActionError?: (message: string) => void;
   /** Optional transport seam: looping a section also sets the real loop. */
@@ -168,12 +171,16 @@ export function SectionLane({
   selection = null,
   onChange,
   onLoop,
+  onLoopChain,
+  onClearLoop,
   onSeek,
   onActionError,
   player,
 }: SectionLaneProps) {
   const [innerSnap, setInnerSnap] = useState<SnapMode>("bar");
   const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const [selectedChainIds, setSelectedChainIds] = useState<string[]>([]);
+  const [chainNotice, setChainNotice] = useState<string | null>(null);
   const suppressClickRef = useRef(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapMode = controlledSnap ?? innerSnap;
@@ -203,6 +210,16 @@ export function SectionLane({
     const byStart = left.startSeconds - right.startSeconds;
     return byStart !== 0 ? byStart : left.id.localeCompare(right.id);
   });
+  const chainSections = sortedSections.filter((section) =>
+    selectedChainIds.includes(section.id),
+  );
+  const chainRange = sectionChainRange(chainSections);
+  const chainSummary =
+    chainRange === null
+      ? "Select at least two sections."
+      : chainSections.length < 2
+        ? `1 section selected, ${chainRange.startSeconds.toFixed(1)}-${chainRange.endSeconds.toFixed(1)} s`
+        : `${chainSections.length} sections, ${chainRange.startSeconds.toFixed(1)}-${chainRange.endSeconds.toFixed(1)} s`;
   const sectionById = new Map(sections.map((section) => [section.id, section]));
 
   function timeAt(clientX: number): number {
@@ -277,6 +294,38 @@ export function SectionLane({
       player.setLoopEnabled(true);
     }
     onLoop(section);
+  }
+
+  function toggleChainSection(sectionId: string): void {
+    setChainNotice(null);
+    setSelectedChainIds((current) =>
+      current.includes(sectionId)
+        ? current.filter((id) => id !== sectionId)
+        : [...current, sectionId],
+    );
+  }
+
+  function handleLoopChain(): void {
+    if (chainSections.length < 2 || chainRange === null) {
+      return;
+    }
+    if (player) {
+      player.setLoopRange(chainRange);
+      player.setLoopEnabled(true);
+    }
+    const summary = `${chainSections.length} sections, ${chainRange.startSeconds.toFixed(1)}-${chainRange.endSeconds.toFixed(1)} s`;
+    setChainNotice(summary);
+    onLoopChain?.(chainRange, chainSections.length);
+  }
+
+  function handleClearLoop(): void {
+    setSelectedChainIds([]);
+    setChainNotice("Loop cleared");
+    if (player) {
+      player.setLoopRange(null);
+      player.setLoopEnabled(false);
+    }
+    onClearLoop?.();
   }
 
   function handleSplit(): void {
@@ -751,7 +800,52 @@ export function SectionLane({
           aria-label="Loop customisation"
         >
           <h3>Loop customisation</h3>
-          <p className="panel-empty">Chain loop controls will appear here.</p>
+          {sortedSections.length === 0 ? (
+            <p className="panel-empty">No sections to chain yet.</p>
+          ) : (
+            <fieldset className="section-chain-select">
+              <legend>Select sections</legend>
+              {sortedSections.map((section) => (
+                <label key={section.id} className="section-chain-option">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${section.name} for loop chain`}
+                    checked={selectedChainIds.includes(section.id)}
+                    onChange={() => toggleChainSection(section.id)}
+                  />
+                  <span className="section-chain-name">{section.name}</span>
+                  <span className="section-chain-range">
+                    {section.startSeconds.toFixed(1)}-
+                    {section.endSeconds.toFixed(1)} s
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <p
+            className="section-chain-summary"
+            data-testid="section-chain-summary"
+            aria-live="polite"
+          >
+            {chainNotice ?? chainSummary}
+          </p>
+          <div className="section-chain-actions">
+            <button
+              type="button"
+              data-testid="section-chain-loop"
+              disabled={chainSections.length < 2}
+              onClick={handleLoopChain}
+            >
+              Loop selected
+            </button>
+            <button
+              type="button"
+              data-testid="section-chain-clear"
+              onClick={handleClearLoop}
+            >
+              Clear loop
+            </button>
+          </div>
         </aside>
       </div>
     </section>

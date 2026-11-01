@@ -720,7 +720,9 @@ describe("App integration", () => {
     await openProject();
 
     await userEvent.click(screen.getByRole("button", { name: "Add section" }));
-    expect(await screen.findByText("Section 1")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("section-block-section-1"),
+    ).toHaveTextContent("Section 1");
 
     await userEvent.click(
       screen.getByRole("button", { name: "Loop Section 1" }),
@@ -874,6 +876,86 @@ describe("App integration", () => {
     );
     await waitFor(() =>
       expect(screen.getByTestId("save-status")).toHaveTextContent("saved"),
+    );
+  });
+
+  it("persists a chain loop and restores it as the practice loop", async () => {
+    const base = payload();
+    const sections = [
+      {
+        id: "s1",
+        name: "Verse",
+        start_bar: 0,
+        end_bar: 1,
+        start_seconds: 0,
+        end_seconds: 2,
+      },
+      {
+        id: "s2",
+        name: "Bridge",
+        start_bar: 2,
+        end_bar: 3,
+        start_seconds: 4,
+        end_seconds: 6,
+      },
+    ];
+    const raw = {
+      ...base,
+      document: { ...base.document, sections },
+    } as unknown;
+    const project = parseStudioProject(raw);
+    const first = setup({ project, autosaveDelayMs: 5 });
+    await openProject();
+
+    fireEvent.click(screen.getByLabelText("Select Verse for loop chain"));
+    fireEvent.click(screen.getByLabelText("Select Bridge for loop chain"));
+    fireEvent.click(screen.getByTestId("section-chain-loop"));
+
+    await waitFor(() =>
+      expect(first.rig.player.getState().loopRange).toEqual({
+        startSeconds: 0,
+        endSeconds: 6,
+      }),
+    );
+    expect(first.rig.player.getState().loopEnabled).toBe(true);
+    expect(screen.getByTestId("status-line")).toHaveTextContent(
+      "2 sections, 0.0-6.0 s",
+    );
+    await waitFor(() =>
+      expect(
+        first.api.saved.some(
+          (state) =>
+            state.loop?.start_frame === 0 &&
+            state.loop?.end_frame === 6 * 44100,
+        ),
+      ).toBe(true),
+    );
+    const saved = first.api.saved.at(-1);
+    expect(saved?.loop).toMatchObject({
+      start_frame: 0,
+      end_frame: 6 * 44100,
+    });
+
+    first.view.unmount();
+    const reopened = parseStudioProject({
+      ...base,
+      document: {
+        ...base.document,
+        sections,
+        loop: saved?.loop,
+      },
+    } as unknown);
+    const second = setup({ project: reopened, autosaveDelayMs: 0 });
+    await openProject();
+
+    expect(second.rig.player.getState().loopRange).toEqual({
+      startSeconds: 0,
+      endSeconds: 6,
+    });
+    expect(second.rig.practice.getState().loopEnabled).toBe(true);
+    expect(screen.getByLabelText("Practice loop")).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
   });
 
@@ -1049,7 +1131,9 @@ describe("App stem separation", () => {
     expect(mixer.getByText("Drums")).toBeInTheDocument();
     expect(mixer.getByText("Other")).toBeInTheDocument();
     expect(mixer.getByText("Vocals")).toBeInTheDocument();
-    expect(screen.getByText("Section 1")).toBeInTheDocument();
+    expect(screen.getByTestId("section-block-section-1")).toHaveTextContent(
+      "Section 1",
+    );
   });
 
   it("does not start playback when separation completes on a paused project", async () => {

@@ -542,6 +542,85 @@ describe("SectionLane", () => {
     ).toBeDisabled();
   });
 
+  it("loops two selected sections with gaps included", () => {
+    const onLoopChain = vi.fn();
+    const sections: Section[] = [
+      { id: "s1", name: "Verse", startSeconds: 0, endSeconds: 2 },
+      { id: "s2", name: "Bridge", startSeconds: 6, endSeconds: 8 },
+      { id: "s3", name: "Chorus", startSeconds: 12, endSeconds: 14 },
+    ];
+    const player = createFakePlayer({ durationSeconds: 20 });
+    setup({ sections, player, onLoopChain });
+    const loopButton = screen.getByTestId("section-chain-loop");
+
+    expect(loopButton).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Select Verse for loop chain"));
+    expect(loopButton).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Select Bridge for loop chain"));
+    expect(loopButton).toBeEnabled();
+    fireEvent.click(loopButton);
+
+    expect(player.calls).toContain(
+      'setLoopRange:{"startSeconds":0,"endSeconds":8}',
+    );
+    expect(player.calls).toContain("setLoopEnabled:true");
+    expect(onLoopChain).toHaveBeenCalledWith(
+      { startSeconds: 0, endSeconds: 8 },
+      2,
+    );
+    expect(screen.getByTestId("section-chain-summary")).toHaveTextContent(
+      "2 sections, 0.0-8.0 s",
+    );
+  });
+
+  it("loops three selected sections ordered by start", () => {
+    const onLoopChain = vi.fn();
+    const sections: Section[] = [
+      { id: "s3", name: "Chorus", startSeconds: 12, endSeconds: 14 },
+      { id: "s1", name: "Verse", startSeconds: 0, endSeconds: 2 },
+      { id: "s2", name: "Bridge", startSeconds: 6, endSeconds: 8 },
+    ];
+    const player = createFakePlayer({ durationSeconds: 20 });
+    setup({ sections, player, onLoopChain });
+    for (const name of ["Verse", "Bridge", "Chorus"]) {
+      fireEvent.click(screen.getByLabelText(`Select ${name} for loop chain`));
+    }
+    fireEvent.click(screen.getByTestId("section-chain-loop"));
+
+    expect(onLoopChain).toHaveBeenCalledWith(
+      { startSeconds: 0, endSeconds: 14 },
+      3,
+    );
+    expect(screen.getByTestId("section-chain-summary")).toHaveTextContent(
+      "3 sections, 0.0-14.0 s",
+    );
+  });
+
+  it("clears the chain loop and selection", () => {
+    const onClearLoop = vi.fn();
+    const sections: Section[] = [
+      { id: "s1", name: "Verse", startSeconds: 0, endSeconds: 2 },
+      { id: "s2", name: "Bridge", startSeconds: 6, endSeconds: 8 },
+    ];
+    const player = createFakePlayer({ durationSeconds: 20 });
+    setup({ sections, player, onClearLoop });
+    fireEvent.click(screen.getByLabelText("Select Verse for loop chain"));
+    fireEvent.click(screen.getByLabelText("Select Bridge for loop chain"));
+    fireEvent.click(screen.getByTestId("section-chain-loop"));
+    fireEvent.click(screen.getByTestId("section-chain-clear"));
+
+    expect(player.calls).toContain("setLoopEnabled:true");
+    expect(player.calls).toContain("setLoopEnabled:false");
+    expect(player.calls).toContain("setLoopRange:null");
+    expect(onClearLoop).toHaveBeenCalled();
+    expect(
+      screen.getByLabelText("Select Verse for loop chain"),
+    ).not.toBeChecked();
+    expect(screen.getByTestId("section-chain-summary")).toHaveTextContent(
+      "Loop cleared",
+    );
+  });
+
   it("loops a section, sets the transport loop and leaves it editable", () => {
     const player = createFakePlayer({ durationSeconds: 8 });
     const { onChange, onLoop } = setup({
