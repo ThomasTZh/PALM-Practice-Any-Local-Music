@@ -37,10 +37,11 @@ When `SectionLane.player` is supplied, pressing Loop on a section calls
   `setPan`, `setMuted`, `setSoloed`) plus `MixerState`, gain/pan clamps and the
   solo/mute audibility rules. The t16 adapter should map it to the engine's
   per-stem mix methods.
-- `state/practice.ts`: `PracticeController` (`setSpeed`, `setPitchSemitones`,
-  `setLoopEnabled`, `setCountInBars`, `setMetronomeEnabled`,
-  `setMetronomeVolume`, `setAccentDownbeat`) and `PracticeState`. The t16
-  adapter should map it to the transport plus the engine's metronome/count-in.
+- `state/practice.ts`: `PracticeController` (`setSpeed`, `setLoopEnabled`,
+  `setCountInBars`, `setMetronomeEnabled`, `setMetronomeVolume`,
+  `setAccentDownbeat`) and `PracticeState`. The t16 adapter should map it to the
+  transport plus the engine's metronome/count-in. Pitch shifting is not a
+  user-facing practice feature.
 - `state/analysis.ts`: `AnalysisSnapshot`, `AnalysisJobState`,
   `AnalysisJobClient`, `runAnalysisJob` (polling + abort).
 - `state/analysisApi.ts`: `createAnalysisJobClient({ baseUrl?, fetchImpl? })`

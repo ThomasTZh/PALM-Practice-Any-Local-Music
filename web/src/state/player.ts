@@ -28,7 +28,6 @@ export interface PlayerState {
   positionSeconds: number;
   durationSeconds: number;
   speed: number;
-  pitchSemitones: number;
   loopEnabled: boolean;
   loopRange: LoopRange | null;
   error: string | null;
@@ -42,7 +41,6 @@ export interface StudioPlayer {
   toggle(): void;
   seek(seconds: number): void;
   setSpeed(speed: number): void;
-  setPitchSemitones(semitones: number): void;
   setLoopEnabled(enabled: boolean): void;
   setLoopRange(range: LoopRange | null): void;
   setDuration(seconds: number): void;
@@ -56,8 +54,6 @@ export const SPEED_OPTIONS = [0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5] as const;
 
 export const MIN_SPEED = 0.25;
 export const MAX_SPEED = 2;
-export const MIN_PITCH_SEMITONES = -12;
-export const MAX_PITCH_SEMITONES = 12;
 export const MIN_LOOP_SECONDS = 0.05;
 
 function clamp(value: number, min: number, max: number): number {
@@ -66,12 +62,6 @@ function clamp(value: number, min: number, max: number): number {
 
 export function clampSpeed(speed: number): number {
   return Number.isFinite(speed) ? clamp(speed, MIN_SPEED, MAX_SPEED) : 1;
-}
-
-export function clampPitchSemitones(semitones: number): number {
-  return Number.isFinite(semitones)
-    ? clamp(semitones, MIN_PITCH_SEMITONES, MAX_PITCH_SEMITONES)
-    : 0;
 }
 
 export function normalizeLoopRange(
@@ -146,7 +136,6 @@ export function initialPlayerState(
     positionSeconds: 0,
     durationSeconds,
     speed: 1,
-    pitchSemitones: 0,
     loopEnabled: false,
     loopRange: null,
     error: null,

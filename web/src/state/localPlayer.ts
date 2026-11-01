@@ -1,5 +1,4 @@
 import {
-  clampPitchSemitones,
   clampSpeed,
   initialPlayerState,
   normalizeLoopRange,
@@ -155,10 +154,6 @@ export function createLocalPlayer(
     update({ speed: clampSpeed(speed) });
   }
 
-  function setPitchSemitones(semitones: number): void {
-    update({ pitchSemitones: clampPitchSemitones(semitones) });
-  }
-
   function setLoopEnabled(enabled: boolean): void {
     update({ loopEnabled: enabled && state.loopRange !== null });
   }
@@ -184,7 +179,6 @@ export function createLocalPlayer(
     toggle,
     seek,
     setSpeed,
-    setPitchSemitones,
     setLoopEnabled,
     setLoopRange,
     setDuration,

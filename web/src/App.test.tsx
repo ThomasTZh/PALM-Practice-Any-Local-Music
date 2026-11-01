@@ -463,7 +463,7 @@ describe("App integration", () => {
     expect(document.querySelector(".studio-main > .stage")).not.toBeNull();
     expect(screen.getByLabelText("Practice speed")).toBeInTheDocument();
     expect(screen.getByLabelText("Beats per bar")).toBeInTheDocument();
-    expect(screen.getByLabelText("Pitch")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Pitch")).not.toBeInTheDocument();
   });
 
   it("uses one measured full-stage width and reflows the panes on resize", async () => {
@@ -1061,9 +1061,6 @@ describe("App stem separation", () => {
     fireEvent.change(screen.getByLabelText("Practice speed"), {
       target: { value: "0.75" },
     });
-    fireEvent.change(screen.getByLabelText("Pitch"), {
-      target: { value: "-2" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Metronome" }));
     fireEvent.change(screen.getByLabelText("Count-in"), {
       target: { value: "1" },
@@ -1106,14 +1103,12 @@ describe("App stem separation", () => {
     expect(next.player.getState()).toMatchObject({
       positionSeconds: 4,
       speed: 0.75,
-      pitchSemitones: -2,
       loopRange: { startSeconds: 2, endSeconds: 4 },
       loopEnabled: true,
       status: "playing",
     });
     expect(next.practice.getState()).toMatchObject({
       speed: 0.75,
-      pitchSemitones: -2,
       countInBars: 1,
       metronomeEnabled: true,
       metronomeVolume: 0.3,

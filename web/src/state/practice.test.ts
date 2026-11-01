@@ -10,10 +10,9 @@ import {
 } from "./practice";
 
 describe("practice defaults", () => {
-  it("starts at normal speed, no pitch shift and metronome off", () => {
+  it("starts at normal speed with metronome off", () => {
     expect(DEFAULT_PRACTICE_STATE).toEqual({
       speed: 1,
-      pitchSemitones: 0,
       loopEnabled: false,
       countInBars: 0,
       metronomeEnabled: false,
@@ -52,15 +51,13 @@ describe("applyPracticeChange", () => {
     expect(state.speed).toBe(1);
   });
 
-  it("clamps pitch, count-in and volume", () => {
+  it("clamps count-in and volume", () => {
     const next = applyPracticeChange(state, {
-      pitchSemitones: -40,
       countInBars: 5,
       metronomeVolume: 4,
     });
 
     expect(next).toMatchObject({
-      pitchSemitones: -12,
       countInBars: 2,
       metronomeVolume: 1,
     });

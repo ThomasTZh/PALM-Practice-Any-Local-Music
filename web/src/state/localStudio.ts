@@ -64,7 +64,6 @@ export function createLocalPractice(
       };
     },
     setSpeed: (speed) => update({ speed }),
-    setPitchSemitones: (semitones) => update({ pitchSemitones: semitones }),
     setLoopEnabled: (enabled) => update({ loopEnabled: enabled }),
     setCountInBars: (bars) => update({ countInBars: bars }),
     setMetronomeEnabled: (enabled) => update({ metronomeEnabled: enabled }),

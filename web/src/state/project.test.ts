@@ -149,6 +149,20 @@ describe("parseStudioProject", () => {
     ]);
   });
 
+  it("ignores legacy pitch fields in an old saved document", () => {
+    const raw = {
+      ...RAW,
+      document: {
+        ...(RAW.document as Record<string, unknown>),
+        pitchSemitones: -3,
+        pitch_semitones: -3,
+      },
+    };
+    const project = parseStudioProject(raw);
+    expect(project.restored.state).not.toHaveProperty("pitchSemitones");
+    expect(project.restored.state.speed).toBe(0.75);
+  });
+
   it("restores sections from bar indices", () => {
     const project = parseStudioProject(RAW);
     expect(project.sections).toEqual([
@@ -156,13 +170,13 @@ describe("parseStudioProject", () => {
     ]);
   });
 
-  it("restores speed, pitch, position, loop and mixer", () => {
+  it("restores speed, position, loop and mixer and ignores old pitch", () => {
     const project = parseStudioProject(RAW);
     expect(project.restored.state).toMatchObject({
       speed: 0.75,
-      pitchSemitones: -2,
       loopEnabled: true,
     });
+    expect(project.restored.state).not.toHaveProperty("pitchSemitones");
     expect(project.restored.positionSeconds).toBeCloseTo(0.5);
     expect(project.restored.loopRange).toEqual({
       startSeconds: 1,
@@ -283,7 +297,7 @@ describe("section conversion", () => {
 });
 
 describe("practice state conversion", () => {
-  it("round-trips sections, loop, speed, pitch, position and mixer", () => {
+  it("round-trips sections, loop, speed, position and mixer", () => {
     const mixer: MixerState = {
       ...createInitialMixerState(["mix", "bass"]),
       bass: { gainDb: -6.0206, pan: 0.25, muted: true, soloed: true },
@@ -297,7 +311,6 @@ describe("practice state conversion", () => {
       practice: {
         ...DEFAULT_PRACTICE_STATE,
         speed: 0.75,
-        pitchSemitones: 2,
         loopEnabled: true,
       },
       mixer,
@@ -306,7 +319,6 @@ describe("practice state conversion", () => {
     expect(server).toMatchObject({
       state_version: 1,
       speed: 0.75,
-      pitch_semitones: 2,
       position_frame: 72000,
       loop: { start_frame: 48000, end_frame: 96000 },
       sections: [

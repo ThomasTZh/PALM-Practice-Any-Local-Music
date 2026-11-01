@@ -13,12 +13,8 @@ export interface PracticePanelProps {
   onSnapModeChange: (mode: SnapMode) => void;
 }
 
-function formatSemitones(semitones: number): string {
-  return `${semitones > 0 ? "+" : ""}${semitones} st`;
-}
-
 /**
- * Practice controls: speed, pitch, loop, count-in, metronome and snap mode.
+ * Practice controls: speed, loop, count-in, metronome and snap mode.
  * State and actions live behind PracticeController so the app can map it onto
  * the real transport and metronome without changing this panel.
  */
@@ -57,26 +53,6 @@ export function PracticePanel({
             ))}
           </select>
         </label>
-
-        <div className="practice-control">
-          <label>
-            Pitch
-            <input
-              type="range"
-              aria-label="Pitch"
-              min={-12}
-              max={12}
-              step={1}
-              value={state.pitchSemitones}
-              onChange={(event) =>
-                controller.setPitchSemitones(Number(event.target.value))
-              }
-            />
-          </label>
-          <output data-testid="pitch-value">
-            {formatSemitones(state.pitchSemitones)}
-          </output>
-        </div>
 
         <button
           type="button"

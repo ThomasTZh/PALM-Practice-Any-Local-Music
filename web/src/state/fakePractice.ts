@@ -41,9 +41,6 @@ export function createFakePractice(
     setSpeed(speed) {
       update("setSpeed", { speed });
     },
-    setPitchSemitones(semitones) {
-      update("setPitchSemitones", { pitchSemitones: semitones });
-    },
     setLoopEnabled(enabled) {
       update("setLoopEnabled", { loopEnabled: enabled });
     },

@@ -9,8 +9,9 @@
  *   error, positions in seconds);
  * - `mixer`: per-stem gain (dB), pan, mute and solo; changes go to the
  *   audio-thread mixer without a restart;
- * - `practice`: speed, pitch, loop, count-in, metronome and accent controls
- *   mapped onto `PcmTransport`.
+ * - `practice`: speed, loop, count-in, metronome and accent controls mapped
+ *   onto `PcmTransport`. Pitch shifting is intentionally not user-facing; the
+ *   transport's transpose stays an internal capability for audio tests.
  *
  * Stem labels follow the server exactly: drums, bass, other, vocals. When the
  * stem set cannot be loaded (analysis-free project, cache evicted, HTTP
@@ -27,7 +28,6 @@
  */
 
 import {
-  clampPitchSemitones,
   clampSpeed,
   normalizeLoopRange,
   type LoopRange,
@@ -72,7 +72,6 @@ export interface MixerController {
 
 export interface PracticeState {
   speed: number;
-  pitchSemitones: number;
   loopEnabled: boolean;
   countInBars: number;
   metronomeEnabled: boolean;
@@ -84,7 +83,6 @@ export interface PracticeController {
   getState(): PracticeState;
   subscribe(listener: (state: PracticeState) => void): () => void;
   setSpeed(speed: number): void;
-  setPitchSemitones(semitones: number): void;
   setLoopEnabled(enabled: boolean): void;
   setCountInBars(bars: number): void;
   setMetronomeEnabled(enabled: boolean): void;
@@ -94,7 +92,6 @@ export interface PracticeController {
 
 export const DEFAULT_PRACTICE_STATE: PracticeState = {
   speed: 1,
-  pitchSemitones: 0,
   loopEnabled: false,
   countInBars: 0,
   metronomeEnabled: false,
@@ -232,7 +229,6 @@ function samePlayerState(a: PlayerState, b: PlayerState): boolean {
     a.positionSeconds === b.positionSeconds &&
     a.durationSeconds === b.durationSeconds &&
     a.speed === b.speed &&
-    a.pitchSemitones === b.pitchSemitones &&
     a.loopEnabled === b.loopEnabled &&
     a.loopRange === b.loopRange &&
     a.error === b.error
@@ -350,7 +346,6 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
       ),
       durationSeconds: durationSeconds(),
       speed: practice.speed,
-      pitchSemitones: practice.pitchSemitones,
       loopEnabled: practice.loopEnabled,
       loopRange: practiceLoopRange,
       error: fatalError ?? transport.error,
@@ -380,7 +375,6 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
 
   function applyControls(): void {
     transport.setSpeed(practice.speed);
-    transport.setPitch(practice.pitchSemitones);
     transport.setCountIn(practice.countInBars);
     transport.updateGrid({
       bpm: grid.bpm,
@@ -463,12 +457,6 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
     emitPractice();
   }
 
-  function setPitchInternal(semitones: number): void {
-    practice = { ...practice, pitchSemitones: clampPitchSemitones(semitones) };
-    transport.setPitch(practice.pitchSemitones);
-    emitPractice();
-  }
-
   function startTicker(): void {
     if (ticker !== null) return;
     ticker = setInterval(() => emitPlayer(), 50);
@@ -529,7 +517,6 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
       emitPlayer();
     },
     setSpeed: setSpeedInternal,
-    setPitchSemitones: setPitchInternal,
     setLoopEnabled: setLoopEnabledInternal,
     setLoopRange: setLoopRangeInternal,
     updateGrid: updateGridInternal,
@@ -565,7 +552,6 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
       };
     },
     setSpeed: setSpeedInternal,
-    setPitchSemitones: setPitchInternal,
     setLoopEnabled: setLoopEnabledInternal,
     setCountInBars(bars) {
       practice = { ...practice, countInBars: clampCountInBars(bars) };

@@ -147,7 +147,6 @@ function applyRestoredState(
 ): void {
   const { state, loopRange, positionSeconds, mixer } = project.restored;
   runtime.practice.setSpeed(state.speed);
-  runtime.practice.setPitchSemitones(state.pitchSemitones);
   runtime.practice.setCountInBars(state.countInBars);
   runtime.practice.setMetronomeVolume(state.metronomeVolume);
   runtime.practice.setMetronomeEnabled(state.metronomeEnabled);

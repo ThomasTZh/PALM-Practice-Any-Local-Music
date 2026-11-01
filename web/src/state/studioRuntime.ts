@@ -21,7 +21,6 @@ export interface StudioRuntimeSnapshot {
   positionSeconds: number;
   durationSeconds: number;
   speed: number;
-  pitchSemitones: number;
   loopRange: LoopRange | null;
   loopEnabled: boolean;
   wasPlaying: boolean;
@@ -38,7 +37,6 @@ export function captureStudioRuntime(
     positionSeconds: player.positionSeconds,
     durationSeconds: player.durationSeconds,
     speed: practice.speed,
-    pitchSemitones: practice.pitchSemitones,
     loopRange: player.loopRange,
     loopEnabled: player.loopEnabled,
     wasPlaying: player.status === "playing",
@@ -57,13 +55,11 @@ export function applyStudioRuntimeSnapshot(
     player.setDuration(snapshot.durationSeconds);
   }
   runtime.practice.setSpeed(snapshot.speed);
-  runtime.practice.setPitchSemitones(snapshot.pitchSemitones);
   runtime.practice.setCountInBars(snapshot.practice.countInBars);
   runtime.practice.setMetronomeEnabled(snapshot.practice.metronomeEnabled);
   runtime.practice.setMetronomeVolume(snapshot.practice.metronomeVolume);
   runtime.practice.setAccentDownbeat(snapshot.practice.accentDownbeat);
   player.setSpeed(snapshot.speed);
-  player.setPitchSemitones(snapshot.pitchSemitones);
   player.setLoopRange(snapshot.loopRange);
   player.setLoopEnabled(snapshot.loopEnabled);
   player.seek(snapshot.positionSeconds);

@@ -289,14 +289,11 @@ describe("StudioPlayer state mapping", () => {
     engine.dispose();
   });
 
-  it("maps speed, pitch, loop seconds and duration onto the engine", async () => {
+  it("maps speed, loop seconds and duration onto the engine", async () => {
     const { engine, node } = await makeRig();
     engine.player.setSpeed(1.5);
     expect(engine.practice.getState().speed).toBe(1.5);
     expect(engine.transport.speed).toBe(1.5);
-    engine.player.setPitchSemitones(3);
-    expect(engine.practice.getState().pitchSemitones).toBe(3);
-    expect(engine.transport.pitchSemitones).toBe(3);
 
     engine.player.setLoopRange({ startSeconds: 1, endSeconds: 2 });
     engine.player.setLoopEnabled(true);

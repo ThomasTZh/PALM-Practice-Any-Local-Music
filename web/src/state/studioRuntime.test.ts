@@ -75,7 +75,6 @@ describe("studio runtime snapshots", () => {
       stems: [{ id: "mix" }, { id: "bass" }],
     });
     local.practice.setSpeed(0.75);
-    local.practice.setPitchSemitones(-2);
     local.practice.setCountInBars(1);
     local.practice.setMetronomeEnabled(true);
     local.practice.setMetronomeVolume(0.4);
@@ -90,13 +89,12 @@ describe("studio runtime snapshots", () => {
     return local;
   }
 
-  it("captures and reapplies position, speed, pitch, loop, practice and mixer", () => {
+  it("captures and reapplies position, speed, loop, practice and mixer", () => {
     const source = runtimeState();
     const snapshot = captureStudioRuntime(source);
     expect(snapshot).toMatchObject({
       positionSeconds: 1.5,
       speed: 0.75,
-      pitchSemitones: -2,
       loopRange: { startSeconds: 1, endSeconds: 3 },
       loopEnabled: true,
       wasPlaying: false,
@@ -111,14 +109,12 @@ describe("studio runtime snapshots", () => {
     expect(target.player.getState()).toMatchObject({
       positionSeconds: 1.5,
       speed: 0.75,
-      pitchSemitones: -2,
       loopRange: { startSeconds: 1, endSeconds: 3 },
       loopEnabled: true,
       status: "paused",
     });
     expect(target.practice.getState()).toMatchObject({
       speed: 0.75,
-      pitchSemitones: -2,
       countInBars: 1,
       metronomeEnabled: true,
       metronomeVolume: 0.4,

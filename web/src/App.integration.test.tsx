@@ -338,14 +338,6 @@ describe("App with the real transport adapter", () => {
     await waitFor(() => expect(engine.player.getState().speed).toBe(0.75));
     expect(engine.practice.getState().speed).toBe(0.75);
 
-    fireEvent.change(screen.getByLabelText("Pitch"), {
-      target: { value: "2" },
-    });
-    await waitFor(() =>
-      expect(engine.player.getState().pitchSemitones).toBe(2),
-    );
-    expect(engine.practice.getState().pitchSemitones).toBe(2);
-
     const pane = screen.getByTestId("waveform-a1");
     fireEvent.mouseDown(pane, { clientX: 235, button: 0 });
     fireEvent.mouseMove(pane, { clientX: 470 });

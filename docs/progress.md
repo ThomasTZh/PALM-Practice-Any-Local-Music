@@ -1754,3 +1754,38 @@ are restored.
   right-pane checkboxes, selected count/range and both actions.
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency
   added.
+
+## 2026-11-01 — remove user-facing pitch shifting (t41)
+
+### UI and public seams
+
+- Practice panel no longer renders the Pitch slider or `pitch-value` readout;
+  the transport never had one. The control grid now contains Speed, Loop,
+  Count-in, Metronome, Accent, volume and Snap unchanged.
+- `PlayerState`/`StudioPlayer`, `PracticeState`/`PracticeController` and both
+  fake/local implementations no longer expose `pitchSemitones` or
+  `setPitchSemitones`; pitch clamp constants were removed. The App, studio
+  runtime snapshot/restore and StudioPlayer adapter no longer copy pitch.
+- Autosave (`ServerPracticeState`/`buildServerState`) no longer writes
+  `pitch_semitones`. `practiceFromDocument` ignores old `pitch_semitones` and
+  camel-case `pitchSemitones` fields, so a saved project containing either loads
+  normally without a restored pitch value.
+
+### Internal transpose
+
+The audio transport/PlaybackCore transpose API stays internal for its existing
+speed/loop/audio tests. The StudioPlayer adapter no longer calls
+`transport.setPitch`; transport starts at transpose 0. This avoids ripping up the
+WASM stretch path while ensuring no user-facing pitch API remains.
+
+### Verification
+
+- Targeted 90 tests across state/player/practice/project/runtime, PracticePanel,
+  StudioPlayer adapter and App suites pass. Existing speed, loop, metronome,
+  count-in and section tests are unchanged and green. `make test-web`,
+  `make build-web` and `make e2e` (2 specs) pass.
+- Firefox mock with legacy `pitch_semitones:-3` and `pitchSemitones:-3` opened
+  without errors or alerts: zero Pitch controls, no semitone readout, while
+  Speed/Loop/Count-in/Metronome/Accent/volume/Snap remained. The only "pitch"
+  text matches were the test project title "NoPitch".
+- No dependency added.

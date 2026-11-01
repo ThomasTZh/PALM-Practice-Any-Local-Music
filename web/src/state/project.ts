@@ -78,7 +78,6 @@ export interface ServerPracticeState {
   sections: ServerSection[];
   loop: ServerLoop | null;
   speed: number;
-  pitch_semitones: number;
   position_frame: number;
   mixer: Record<string, ServerMixerChannel>;
 }
@@ -428,12 +427,12 @@ export function practiceFromDocument(
     Math.round(numberOf(document.position_frame, 0)),
   );
   const speed = numberOf(document.speed, 1);
-  const pitch = numberOf(document.pitch_semitones, 0);
+  // Older documents may still contain pitch_semitones/pitchSemitones; pitch
+  // shifting is no longer a practice feature, so those fields are ignored.
   const state = applyPracticeChange(
     { ...DEFAULT_PRACTICE_STATE },
     {
       speed,
-      pitchSemitones: pitch,
       loopEnabled: loopRange !== null,
     },
   );
@@ -499,7 +498,6 @@ export function buildServerState(
     sections: sectionsToServer(input.sections, input.bars),
     loop,
     speed: input.practice.speed,
-    pitch_semitones: input.practice.pitchSemitones,
     position_frame: Math.max(0, Math.round(input.positionSeconds * sampleRate)),
     mixer: mixerToServer(input.mixer),
   };

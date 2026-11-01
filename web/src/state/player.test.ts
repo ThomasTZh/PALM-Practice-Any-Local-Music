@@ -4,7 +4,6 @@ import { createFakePlayer } from "./fakePlayer";
 import { createLocalPlayer } from "./localPlayer";
 import {
   clampLoopRangeToDuration,
-  clampPitchSemitones,
   clampSpeed,
   initialPlayerState,
   normalizeLoopRange,
@@ -20,12 +19,10 @@ describe("player state helpers", () => {
     expect(initialPlayerState().status).toBe("idle");
   });
 
-  it("clamps speed and pitch to the practical range", () => {
+  it("clamps speed to the practical range", () => {
     expect(clampSpeed(0.1)).toBe(0.25);
     expect(clampSpeed(3)).toBe(2);
     expect(clampSpeed(Number.NaN)).toBe(1);
-    expect(clampPitchSemitones(-50)).toBe(-12);
-    expect(clampPitchSemitones(50)).toBe(12);
   });
 
   it("normalises a backwards loop range and drops a collapsed one", () => {
@@ -142,17 +139,13 @@ describe("local player transport", () => {
     player.dispose();
   });
 
-  it("applies speed, pitch and loop state and notifies subscribers", () => {
+  it("applies speed and loop state and notifies subscribers", () => {
     const player = createLocalPlayer({ durationSeconds: 10 });
     const seen: string[] = [];
     const unsubscribe = player.subscribe((state) => seen.push(state.status));
 
     player.setSpeed(0.75);
-    player.setPitchSemitones(-3.5);
-    expect(player.getState()).toMatchObject({
-      speed: 0.75,
-      pitchSemitones: -3.5,
-    });
+    expect(player.getState()).toMatchObject({ speed: 0.75 });
 
     player.setLoopRange(null);
     expect(player.getState().loopEnabled).toBe(false);
@@ -160,7 +153,7 @@ describe("local player transport", () => {
 
     unsubscribe();
     player.setDuration(0);
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(2);
     player.dispose();
   });
 });

@@ -25,8 +25,8 @@ describe("PracticePanel", () => {
     setup();
 
     expect(screen.getByLabelText("Practice speed")).toHaveValue("1");
-    expect(screen.getByLabelText("Pitch")).toHaveValue("0");
-    expect(screen.getByTestId("pitch-value")).toHaveTextContent("0 st");
+    expect(screen.queryByLabelText("Pitch")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pitch-value")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Practice loop" }),
     ).toHaveAttribute("aria-pressed", "false");
@@ -44,7 +44,7 @@ describe("PracticePanel", () => {
     );
   });
 
-  it("changes speed, pitch and loop", () => {
+  it("changes speed and loop", () => {
     const { controller } = setup();
 
     fireEvent.change(screen.getByLabelText("Practice speed"), {
@@ -52,13 +52,6 @@ describe("PracticePanel", () => {
     });
     expect(controller.calls).toContain("setSpeed");
     expect(controller.getState().speed).toBe(0.75);
-
-    fireEvent.change(screen.getByLabelText("Pitch"), {
-      target: { value: "-3" },
-    });
-    expect(controller.calls).toContain("setPitchSemitones");
-    expect(controller.getState().pitchSemitones).toBe(-3);
-    expect(screen.getByTestId("pitch-value")).toHaveTextContent("-3 st");
 
     fireEvent.click(screen.getByRole("button", { name: "Practice loop" }));
     expect(controller.getState().loopEnabled).toBe(true);

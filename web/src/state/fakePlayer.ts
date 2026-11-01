@@ -59,10 +59,6 @@ export function createFakePlayer(
       calls.push(`setSpeed:${speed}`);
       update({ speed });
     },
-    setPitchSemitones(semitones) {
-      calls.push(`setPitchSemitones:${semitones}`);
-      update({ pitchSemitones: semitones });
-    },
     setLoopEnabled(enabled) {
       calls.push(`setLoopEnabled:${enabled}`);
       update({ loopEnabled: enabled });
