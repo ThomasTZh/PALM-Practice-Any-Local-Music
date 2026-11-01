@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Section } from "../../state/sections";
@@ -313,6 +313,23 @@ describe("SectionLane", () => {
     expect(screen.getByLabelText("Section name early")).toHaveValue("Verse");
     expect(screen.getByLabelText("Section start early")).toHaveValue(0);
     expect(screen.getByLabelText("Section end early")).toHaveValue(2);
+  });
+
+  it("puts name, start, end, loop and delete in one list row", () => {
+    setup({ sections: [VERSE] });
+    const row = screen.getByTestId("section-editor-item-s1");
+    const children = Array.from(row.children);
+
+    expect(children).toHaveLength(5);
+    expect(children[0]).toHaveAttribute("type", "text");
+    expect(children[1]).toHaveClass("section-edge");
+    expect(children[1]).toHaveTextContent("Start");
+    expect(children[2]).toHaveClass("section-edge");
+    expect(children[2]).toHaveTextContent("End");
+    expect(children[3]).toHaveAccessibleName("Loop Verse from section list");
+    expect(children[4]).toHaveAccessibleName("Delete Verse");
+    expect(within(row).getByLabelText("Section start s1")).not.toBeDisabled();
+    expect(within(row).getByLabelText("Section end s1")).not.toBeDisabled();
   });
 
   it("loops a section from the editor list", () => {

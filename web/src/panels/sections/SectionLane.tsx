@@ -725,8 +725,8 @@ export function SectionLane({
                       )
                     }
                   />
-                  <label>
-                    Start
+                  <label className="section-edge">
+                    <span className="section-edge-label">Start</span>
                     <input
                       type="number"
                       aria-label={`Section start ${section.id}`}
@@ -749,8 +749,8 @@ export function SectionLane({
                       }}
                     />
                   </label>
-                  <label>
-                    End
+                  <label className="section-edge">
+                    <span className="section-edge-label">End</span>
                     <input
                       type="number"
                       aria-label={`Section end ${section.id}`}

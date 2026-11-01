@@ -1801,3 +1801,64 @@ body {
       );
   }
 }
+
+/* Single-row section list: name, editable start/end, Loop and Delete on one
+   line. The name shrinks; times stay inline. A container query drops the
+   visible Start/End words and narrows the numeric fields when the left half is
+   below 360 px, keeping every row on one line down to ~280 px. */
+
+.section-list-pane {
+  container-type: inline-size;
+}
+
+.section-list-pane .section-editor li {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.16rem 0;
+}
+
+.section-list-pane .section-editor input[type="text"] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 2.75rem;
+}
+
+.section-list-pane .section-edge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.section-list-pane .section-edge input[type="number"] {
+  flex: 0 0 auto;
+  width: 4rem;
+  min-width: 0;
+  padding: 0.1rem 0.2rem;
+}
+
+.section-list-pane .section-editor button {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+@container (max-width: 360px) {
+  .section-list-pane .section-edge-label {
+    display: none;
+  }
+
+  .section-list-pane .section-edge input[type="number"] {
+    width: 3.2rem;
+  }
+
+  .section-list-pane .section-editor button {
+    padding: 0.08rem 0.24rem;
+    font-size: 0.64rem;
+  }
+}

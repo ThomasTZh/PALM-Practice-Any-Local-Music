@@ -1858,3 +1858,29 @@ transport error row.
 
 `make test-web`, `make build-web` and `make e2e` (2 specs) pass. No dependency
 added.
+
+## 2026-11-01 — single-row section list (t43)
+
+### Layout
+
+- Section list rows are one flex line: name input flexes, then inline Start/End
+  numeric editors, Loop and Delete, all vertically centred. Rows use no wrap
+  and no fixed row height; each measured 34 px high.
+- The pane is a container query context. At the 455 px half width the visible
+  "Start"/"End" words and 4 rem numeric fields fit with a 194 px name field.
+  Below 360 px the words are hidden and number fields shrink to 3.2 rem; at a
+  forced 280 px half width the row still measures 34 px high with name 99 px,
+  Loop/Delete visible and row scrollWidth == clientWidth == 280.
+- Sorting by start time remains in the left half; chain-loop checkboxes stay in
+  the right half.
+
+### Verification
+
+- New SectionLane test asserts exactly five direct row children (text input,
+  Start edge label+number, End edge label+number, distinct list Loop, Delete)
+  and editable start/end. Existing rename, list/block Loop, Delete, drag-create,
+  move, resize and chain-selection tests remain green (33 SectionLane tests).
+- Firefox mock with rows supplied out of order (Chorus, Verse, Bridge): list
+  order Verse, Bridge, Chorus. At 455 the five controls share y≈489-503; at
+  280 all five remain one 34 px line and the labels collapse.
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.
