@@ -1609,3 +1609,33 @@ for a 100 BPM 3/4 detected grid with the metronome off and no loop.
 - `make e2e`: exit 0 (2 spec files; the earlier attempt lost Playwright trace
   artifacts to a concurrent run sharing `web/test-results`, not an app
   assertion failure — the rerun passed).
+
+## 2026-11-01 — ordered left rail with Analysis and Practice (t36)
+
+### Layout
+
+- The right `.studio-column` is gone. `.studio-main` is a two-item grid: the
+  rail and the stage. The rail contains, in DOM order, Analysis, Mixer, Practice,
+  then Library; the stage keeps all remaining width.
+- `.studio-rail` is sticky at the top of the main scroll area with its own
+  `max-height: calc(100dvh - 7.5rem)` and hidden `overflow-y:auto` scrollbar.
+  It therefore scrolls independently; the main area still scrolls the stage,
+  and the pinned transport/status strip is outside both.
+- Rail-specific compaction keeps Practice usable at 280 px (2-column controls,
+  48 px sliders); the panel testids/controls are unchanged.
+- At ≤820 px the stage comes first and the rail is static/non-scrolling.
+
+### Browser smoke (Firefox, mocked 4-stem project)
+
+At 1280×800: rail order `analysis, mixer, practice, library`, no
+`.studio-column`; rail 280×688 with scrollHeight 1142; wheel over the rail moved
+its scrollTop to 226.7 while main scrollTop stayed 0; transport stayed at
+y 721–795. Stage width 963 ending at main right 1269. Document/body
+1280×1280x800x800, no native overflow container.
+
+At 1600×800: stage 1283 ending at 1589, rail still 280, document 1600×1600,
+transport pinned, no native scrollbars.
+
+Golden path and the layout spec both pass with the panels in the rail
+(`make e2e` 2 specs, Firefox + Chromium). `make test-web` and `make build-web`
+pass. No dependency added.

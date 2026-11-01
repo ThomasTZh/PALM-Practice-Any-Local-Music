@@ -445,6 +445,27 @@ describe("App integration", () => {
     expect(screen.getByTestId("save-status")).toBeInTheDocument();
   });
 
+  it("orders Analysis, Mixer, Practice and Library in the left rail without a right column", async () => {
+    setup();
+    await openProject();
+
+    const rail = screen.getByTestId("studio-rail");
+    const children = Array.from(rail.children).map((element) => {
+      if (element.classList.contains("library")) return "library";
+      return element.getAttribute("data-testid");
+    });
+    expect(children).toEqual(["analysis", "mixer", "practice", "library"]);
+    expect(within(rail).getByTestId("analysis")).toBeInTheDocument();
+    expect(within(rail).getByTestId("mixer")).toBeInTheDocument();
+    expect(within(rail).getByTestId("practice")).toBeInTheDocument();
+    expect(rail.querySelector(".library")).not.toBeNull();
+    expect(document.querySelector(".studio-column")).toBeNull();
+    expect(document.querySelector(".studio-main > .stage")).not.toBeNull();
+    expect(screen.getByLabelText("Practice speed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Beats per bar")).toBeInTheDocument();
+    expect(screen.getByLabelText("Pitch")).toBeInTheDocument();
+  });
+
   it("uses one measured full-stage width and reflows the panes on resize", async () => {
     const { rig } = setup();
     await openProject();

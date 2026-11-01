@@ -764,6 +764,14 @@ export function App({
       <main className="studio-main">
         <aside className="studio-rail" data-testid="studio-rail">
           {project !== null && (
+            <AnalysisPanel
+              projectId={project.id}
+              analysis={project.analysis}
+              client={analysisClient}
+              onAnalyzed={handleAnalyzed}
+            />
+          )}
+          {project !== null && (
             <MixerPanel
               stems={mixerStems}
               controller={active.mixer}
@@ -780,6 +788,13 @@ export function App({
               }}
             />
           )}
+          {project !== null && (
+            <PracticePanel
+              controller={active.practice}
+              snapMode={snapMode}
+              onSnapModeChange={setSnapMode}
+            />
+          )}
           <LibraryPanel
             api={api}
             onOpen={(projectId) => {
@@ -789,174 +804,158 @@ export function App({
           />
         </aside>
 
-        <div className="studio-column">
-          <section className="stage" aria-label="Waveform stage">
-            <div
-              className="stage-measure"
-              data-testid="stage-measure"
-              ref={stageMeasureRef}
-              aria-hidden="true"
-            />
-            <div className="stage-toolbar">
-              <button type="button" aria-label="Zoom in" onClick={zoomIn}>
-                +
-              </button>
-              <button type="button" aria-label="Zoom out" onClick={zoomOut}>
-                −
-              </button>
-              <button type="button" aria-label="Fit" onClick={fit}>
-                Fit
-              </button>
-              <button
-                type="button"
-                aria-label="Zoom to selection"
-                onClick={zoomSelection}
-                disabled={selection === null || !hasSelection(selection)}
+        <section className="stage" aria-label="Waveform stage">
+          <div
+            className="stage-measure"
+            data-testid="stage-measure"
+            ref={stageMeasureRef}
+            aria-hidden="true"
+          />
+          <div className="stage-toolbar">
+            <button type="button" aria-label="Zoom in" onClick={zoomIn}>
+              +
+            </button>
+            <button type="button" aria-label="Zoom out" onClick={zoomOut}>
+              −
+            </button>
+            <button type="button" aria-label="Fit" onClick={fit}>
+              Fit
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom to selection"
+              onClick={zoomSelection}
+              disabled={selection === null || !hasSelection(selection)}
+            >
+              Zoom to selection
+            </button>
+            <button
+              type="button"
+              aria-label="Follow playhead"
+              aria-pressed={follow}
+              onClick={handleToggleFollow}
+            >
+              Follow
+            </button>
+            {transportNotice !== null && (
+              <span
+                className="stage-notice"
+                data-testid="transport-notice"
+                role="status"
               >
-                Zoom to selection
-              </button>
-              <button
-                type="button"
-                aria-label="Follow playhead"
-                aria-pressed={follow}
-                onClick={handleToggleFollow}
-              >
-                Follow
-              </button>
-              {transportNotice !== null && (
-                <span
-                  className="stage-notice"
-                  data-testid="transport-notice"
-                  role="status"
-                >
-                  {transportNotice}
-                </span>
-              )}
-            </div>
+                {transportNotice}
+              </span>
+            )}
+          </div>
 
-            <div className="timeline" style={{ width: stageWidth }}>
-              <TimeRuler
+          <div className="timeline" style={{ width: stageWidth }}>
+            <TimeRuler
+              viewport={viewport}
+              widthPx={stageWidth}
+              grid={project?.grid ?? null}
+              positionSeconds={playerState.positionSeconds}
+              onSeek={handleSeek}
+            />
+            {lanes.length === 0 ? (
+              <p className="stage-empty">
+                Open a recording to see its waveform.
+              </p>
+            ) : (
+              lanes.map((lane) => (
+                <WaveformPane
+                  key={lane.id}
+                  lane={lane}
+                  viewport={viewport}
+                  durationSeconds={durationSeconds}
+                  selection={selection}
+                  positionSeconds={playerState.positionSeconds}
+                  playing={playerState.status === "playing"}
+                  follow={follow}
+                  widthPx={stageWidth}
+                  onViewportChange={setViewport}
+                  onSelectionChange={setSelection}
+                  onSeek={handleSeek}
+                  onTogglePlay={handleTogglePlay}
+                  onToggleFollow={handleToggleFollow}
+                />
+              ))
+            )}
+            <div
+              className="stem-lanes"
+              data-testid="stem-lanes"
+              data-stem-count={orderedStems.length}
+              data-stem-ids={orderedStems.map((stem) => stem.id).join(",")}
+            >
+              {stemLanes.map((lane) => (
+                <WaveformPane
+                  key={lane.id}
+                  lane={lane}
+                  viewport={viewport}
+                  durationSeconds={durationSeconds}
+                  selection={selection}
+                  positionSeconds={playerState.positionSeconds}
+                  playing={playerState.status === "playing"}
+                  follow={false}
+                  widthPx={stageWidth}
+                  heightPx={64}
+                  onViewportChange={setViewport}
+                  onSelectionChange={setSelection}
+                  onSeek={handleSeek}
+                  onTogglePlay={handleTogglePlay}
+                  onToggleFollow={handleToggleFollow}
+                />
+              ))}
+            </div>
+            {project !== null && pcmLoader !== null && (
+              <SpectrogramPane
+                projectId={project.id}
                 viewport={viewport}
                 widthPx={stageWidth}
-                grid={project?.grid ?? null}
+                sampleRate={project.asset.sampleRate}
+                positionSeconds={playerState.positionSeconds}
+                loadPcm={pcmLoader}
+                defaultCollapsed
+              />
+            )}
+          </div>
+
+          {project !== null && (
+            <TimelineScrollbar
+              viewport={viewport}
+              durationSeconds={durationSeconds}
+              widthPx={stageWidth}
+              onViewportChange={setViewport}
+            />
+          )}
+
+          {project !== null && (
+            <>
+              <ChordRibbon
+                chords={project.chords}
+                viewport={viewport}
+                widthPx={stageWidth}
                 positionSeconds={playerState.positionSeconds}
                 onSeek={handleSeek}
               />
-              {lanes.length === 0 ? (
-                <p className="stage-empty">
-                  Open a recording to see its waveform.
-                </p>
-              ) : (
-                lanes.map((lane) => (
-                  <WaveformPane
-                    key={lane.id}
-                    lane={lane}
-                    viewport={viewport}
-                    durationSeconds={durationSeconds}
-                    selection={selection}
-                    positionSeconds={playerState.positionSeconds}
-                    playing={playerState.status === "playing"}
-                    follow={follow}
-                    widthPx={stageWidth}
-                    onViewportChange={setViewport}
-                    onSelectionChange={setSelection}
-                    onSeek={handleSeek}
-                    onTogglePlay={handleTogglePlay}
-                    onToggleFollow={handleToggleFollow}
-                  />
-                ))
-              )}
-              <div
-                className="stem-lanes"
-                data-testid="stem-lanes"
-                data-stem-count={orderedStems.length}
-                data-stem-ids={orderedStems.map((stem) => stem.id).join(",")}
-              >
-                {stemLanes.map((lane) => (
-                  <WaveformPane
-                    key={lane.id}
-                    lane={lane}
-                    viewport={viewport}
-                    durationSeconds={durationSeconds}
-                    selection={selection}
-                    positionSeconds={playerState.positionSeconds}
-                    playing={playerState.status === "playing"}
-                    follow={false}
-                    widthPx={stageWidth}
-                    heightPx={64}
-                    onViewportChange={setViewport}
-                    onSelectionChange={setSelection}
-                    onSeek={handleSeek}
-                    onTogglePlay={handleTogglePlay}
-                    onToggleFollow={handleToggleFollow}
-                  />
-                ))}
-              </div>
-              {project !== null && pcmLoader !== null && (
-                <SpectrogramPane
-                  projectId={project.id}
-                  viewport={viewport}
-                  widthPx={stageWidth}
-                  sampleRate={project.asset.sampleRate}
-                  positionSeconds={playerState.positionSeconds}
-                  loadPcm={pcmLoader}
-                  defaultCollapsed
-                />
-              )}
-            </div>
 
-            {project !== null && (
-              <TimelineScrollbar
+              <SectionLane
+                sections={sections}
+                grid={grid}
                 viewport={viewport}
-                durationSeconds={durationSeconds}
                 widthPx={stageWidth}
-                onViewportChange={setViewport}
+                durationSeconds={durationSeconds}
+                positionSeconds={playerState.positionSeconds}
+                snapMode={snapMode}
+                onSnapModeChange={setSnapMode}
+                selection={selection}
+                onChange={setSections}
+                onLoop={handleLoopSection}
+                onSeek={handleSeek}
+                player={player}
               />
-            )}
-
-            {project !== null && (
-              <>
-                <ChordRibbon
-                  chords={project.chords}
-                  viewport={viewport}
-                  widthPx={stageWidth}
-                  positionSeconds={playerState.positionSeconds}
-                  onSeek={handleSeek}
-                />
-
-                <SectionLane
-                  sections={sections}
-                  grid={grid}
-                  viewport={viewport}
-                  widthPx={stageWidth}
-                  durationSeconds={durationSeconds}
-                  positionSeconds={playerState.positionSeconds}
-                  snapMode={snapMode}
-                  onSnapModeChange={setSnapMode}
-                  selection={selection}
-                  onChange={setSections}
-                  onLoop={handleLoopSection}
-                  onSeek={handleSeek}
-                  player={player}
-                />
-
-                <div className="panel-grid">
-                  <AnalysisPanel
-                    projectId={project.id}
-                    analysis={project.analysis}
-                    client={analysisClient}
-                    onAnalyzed={handleAnalyzed}
-                  />
-                  <PracticePanel
-                    controller={active.practice}
-                    snapMode={snapMode}
-                    onSnapModeChange={setSnapMode}
-                  />
-                </div>
-              </>
-            )}
-          </section>
-        </div>
+            </>
+          )}
+        </section>
       </main>
 
       <div className="studio-bottom">
