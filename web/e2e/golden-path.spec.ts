@@ -24,7 +24,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = resolve(HERE, "../../tests/fixtures/audio/progression_120.wav");
 const BPM = 120;
 const BPM_TOLERANCE = 0.5;
-const LOOP_END_SECONDS = 2;
+const LOOP_RANGE_TOLERANCE = 0.35;
 
 function parsePosition(text: string): number {
   const match = /(\d+):(\d+(?:\.\d+)?)/.exec(text);
@@ -338,7 +338,9 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   // drifted, bar snapping produces a different range (observed once as a 2-4 s
   // section, which then correctly failed the "max position inside loop" check
   // only after the loop observation). A settled zero playhead makes the
-  // intended 0-2 s section deterministic.
+  // default section deterministic. Its actual range is then read from the
+  // saved state instead of assuming a fixed two bars, because Add section now
+  // defaults to four bars (8 s at 120 BPM).
   const sectionStatus = page.getByTestId("transport-status");
   await expect(sectionStatus).not.toHaveText("Loading audio…", {
     timeout: 30_000,
@@ -365,6 +367,37 @@ test("golden path: import, analyze, reopen, practise and export", async ({
     "true",
   );
 
+  // The section and loop are autosaved while paused. Read the persisted
+  // seconds so the wrap check uses the range the app actually created, not a
+  // hard-coded bar count. A missing range is a persistence/schema failure.
+  const savedBeforeLoop = await waitForSavedSection(
+    request,
+    projectId,
+    "Section 1",
+    20_000,
+  );
+  testInfo.annotations.push({
+    type: "saved-section-before-loop",
+    description: JSON.stringify(savedBeforeLoop),
+  });
+  const createdSection = savedBeforeLoop.find(
+    (entry) => (entry as { name?: unknown }).name === "Section 1",
+  ) as
+    | { start_seconds?: unknown; end_seconds?: unknown }
+    | undefined;
+  const loopStartSeconds = Number(createdSection?.start_seconds);
+  const loopEndSeconds = Number(createdSection?.end_seconds);
+  if (
+    !Number.isFinite(loopStartSeconds) ||
+    !Number.isFinite(loopEndSeconds) ||
+    loopEndSeconds <= loopStartSeconds
+  ) {
+    throw new Error(
+      `saved Section 1 at GET /api/projects/${projectId}/state has no usable ` +
+        `start_seconds/end_seconds: ${JSON.stringify(createdSection)}`,
+    );
+  }
+
   if (audioAdvanced) {
     // Installing the loop performs a controlled re-seek. Wait for it to
     // settle, then make one fresh seek to the loop start and only observe
@@ -380,10 +413,10 @@ test("golden path: import, analyze, reopen, practise and export", async ({
     });
     await ensurePlaying(page);
     await expect(statusLabel).toHaveText("Playing", { timeout: 30_000 });
-    // A fresh seek must land inside the loop before the observation window.
+    // A fresh seek must land inside the created section before observation.
     await expect
       .poll(() => position(page), { timeout: 10_000 })
-      .toBeLessThanOrEqual(LOOP_END_SECONDS + 0.35);
+      .toBeLessThanOrEqual(loopEndSeconds + LOOP_RANGE_TOLERANCE);
 
     // Observe up to 20 s. Buffering can delay the first audible quantum, but a
     // real wrap is still required and the position must stay inside the loop.
@@ -414,10 +447,13 @@ test("golden path: import, analyze, reopen, practise and export", async ({
     });
     expect(
       wraps,
-      "the section loop must wrap inside its two-bar range",
+      "the section loop must wrap inside the created section range",
     ).toBeGreaterThanOrEqual(1);
+    expect(Math.min(...loopSamples)).toBeGreaterThanOrEqual(
+      loopStartSeconds - LOOP_RANGE_TOLERANCE,
+    );
     expect(Math.max(...loopSamples)).toBeLessThanOrEqual(
-      LOOP_END_SECONDS + 0.35,
+      loopEndSeconds + LOOP_RANGE_TOLERANCE,
     );
   }
 
