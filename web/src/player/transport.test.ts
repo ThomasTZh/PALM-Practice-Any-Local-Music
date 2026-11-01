@@ -462,3 +462,21 @@ describe("silence until explicit play (t30)", () => {
     transport.dispose();
   });
 });
+
+describe("count-in on any play (t37)", () => {
+  it("sends a count-in with no loop and a muted metronome", async () => {
+    const { transport, node } = await makeRig();
+    transport.setCountIn(1);
+    transport.setMetronomeVolume(0);
+    expect(transport.loop).toBeNull();
+    node.clear();
+    transport.play();
+    expect(node.messagesOf("count-in").at(0)).toMatchObject({
+      bars: 1,
+      beatsPerBar: 4,
+      beatFrames: 24_000,
+    });
+    expect(transport.state).toBe("playing");
+    transport.dispose();
+  });
+});

@@ -300,6 +300,12 @@ const CLICK_TABLES = {
   subdivision: [800, 0.02, 0.3],
 };
 const MAX_CLICK_VOICES = 8;
+/**
+ * Count-in clicks are a separate voice pool with their own fixed level:
+ * the count-in must be audible even when the metronome toggle is off.
+ * The metronome pool keeps its user-controlled volume.
+ */
+const COUNT_IN_VOLUME = 0.8;
 
 /**
  * Procedural click voice pool. Beats and count-in clicks share it, so
@@ -482,8 +488,10 @@ export class PlaybackCore {
     this.loopCounted = false;
     this.loopAnchor = null;
     this.loopCompletion = null;
-    // Metronome: project-frame beats + count-in.
+    // Metronome: project-frame beats + count-in. The count-in has its own
+    // click pool so the metronome toggle cannot silence it.
     this.clicks = new ClickMixer(sampleRate);
+    this.countInClicks = new ClickMixer(sampleRate, COUNT_IN_VOLUME);
     this.beats = [];
     // Stream frames already clicked: a beat whose offset falls in the
     // last quantum of a pass must not fire again when the cursor lands
@@ -762,6 +770,7 @@ export class PlaybackCore {
     this.lastAnchorFrame = audible;
     this.lastSample.fill(0);
     this.clicks.reset();
+    this.countInClicks.reset();
     this.recentClickFrames.length = 0;
     this.countIn = null;
     if (active) {
@@ -813,6 +822,7 @@ export class PlaybackCore {
     this.paused = true;
     this.countIn = null;
     this.clicks.reset();
+    this.countInClicks.reset();
     this.rampTotal = Math.max(
       1,
       Math.round(PAUSE_RAMP_SECONDS * this.sampleRate),
@@ -878,6 +888,7 @@ export class PlaybackCore {
       beatFrames: safeBeatFrames,
     };
     this.clicks.reset();
+    this.countInClicks.reset();
     return this.countIn.total;
   }
 
@@ -898,10 +909,10 @@ export class PlaybackCore {
       const offset = beat * countIn.beatFrames - start;
       if (offset < 0 || offset >= frames) continue;
       const strength = beat % countIn.beatsPerBar === 0 ? "downbeat" : "beat";
-      this.clicks.trigger(strength, offset);
+      this.countInClicks.trigger(strength, offset);
     }
     this.fillOutputSilence(outputChannels, 0, frames);
-    this.clicks.render(outputChannels, frames, start);
+    this.countInClicks.render(outputChannels, frames, start);
     countIn.elapsed = end;
     if (countIn.elapsed >= countIn.total) {
       this.countIn = null;

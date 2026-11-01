@@ -667,8 +667,10 @@ export class PcmTransport {
     this.desiredPlaying = true;
     if (this.stateValue === "buffering") return;
     if (this.stateValue === "seeking") return;
-    const countIn = this.countInBarsValue > 0 && this.loopValue !== null;
-    if (countIn) {
+    // Count-in is a start-of-play feature, independent of the metronome
+    // toggle and of whether a loop is installed. The worklet owns a
+    // dedicated count-in click pool, so a muted metronome cannot silence it.
+    if (this.countInBarsValue > 0) {
       this.node?.port.postMessage({
         type: "count-in",
         bars: this.countInBarsValue,

@@ -485,3 +485,23 @@ describe("diagnostics and notices", () => {
     engine.dispose();
   });
 });
+
+describe("count-in independence (t37)", () => {
+  it("counts in with a detected grid, metronome off and no loop", async () => {
+    const { engine, node } = await makeRig({
+      stems: false,
+      grid: { bpm: 100, bpb: 3, beatsSeconds: [] },
+    });
+    engine.practice.setCountInBars(1);
+    node.clear();
+    engine.player.play();
+    expect(node.messagesOf("count-in").at(0)).toMatchObject({
+      bars: 1,
+      beatsPerBar: 3,
+      beatFrames: 28_800,
+    });
+    expect(engine.transport.loop).toBeNull();
+    expect(engine.practice.getState().metronomeEnabled).toBe(false);
+    engine.dispose();
+  });
+});

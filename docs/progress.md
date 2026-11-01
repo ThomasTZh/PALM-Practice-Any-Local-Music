@@ -1565,3 +1565,47 @@ asserting main scrollTop advances with the transport still inside the viewport.
 `make e2e` passes 2 spec files (golden path + layout) on both browsers.
 
 `make test-web`, `make build-web` and `make e2e` pass. No dependency added.
+
+## 2026-11-01 — count-in independent of metronome and loop (t37)
+
+### Rule change
+
+Count-in was gated on a loop being installed (`countInBars > 0 && loop`) and
+its clicks shared the metronome click pool, so a user with the metronome off
+heard nothing. Now:
+
+- `PcmTransport.play()` sends the count-in whenever `countInBars > 0`,
+  whether or not a loop is installed, using the current `setTempo`/`updateGrid`
+  bpm/bpb (detected grid or the 120/4 fallback).
+- `PlaybackCore` owns a second `ClickMixer` (`countInClicks`, fixed 0.8)
+  separate from the metronome pool. Count-in clicks are rendered only during
+  the count-in phase and are audible even when the metronome volume is 0.
+- After the count-in the normal path resumes: metronome clicks follow the
+  toggle exactly as before (0 = silent, 0.5 volume = audible), and loop
+  wrapping / speed / pitch behaviour is unchanged.
+- `pause()` and `seek()` clear both click pools; no count-in voice leaks into
+  playback.
+
+### Tests (real committed WASM)
+
+`count-in.test.ts` asserts the click frames for the four cases:
+loop/no-loop × metronome off/on. One bar at 120 BPM 4/4 gives count-in clicks
+at 0 / 24 000 / 48 000 / 72 000 output frames in every case; with the
+metronome off there are no clicks at or after 96 000; with it on the next four
+clicks land at 96 000 / 120 000 / 144 000 / 168 000. Additional cases cover a
+detected 3/4 grid at 100 BPM (28 800-frame beats), a two-bar fallback
+count-in, and 0.5× with no loop (count-in stays output-time, playback starts
+after it).
+
+`transport.test.ts` sends a count-in with `loop === null` and metronome volume
+0; `studio-player.test.ts` sends `{bars:1,beatsPerBar:3,beatFrames:28800}`
+for a 100 BPM 3/4 detected grid with the metronome off and no loop.
+
+### Verification
+
+- `web/node_modules/.bin/vitest run src/player`: exit 0, 12 files, 116 tests.
+- `make test-web`: exit 0.
+- `make build-web`: exit 0.
+- `make e2e`: exit 0 (2 spec files; the earlier attempt lost Playwright trace
+  artifacts to a concurrent run sharing `web/test-results`, not an app
+  assertion failure — the rerun passed).
