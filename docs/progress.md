@@ -1421,3 +1421,55 @@ and the clamp at the end of a short track.
   0–8 s (four bars at 120 BPM), no page errors or overflow.
 - `make test-web` passes (51 files / 469 tests in the full run); `make
   build-web` passes. No dependency added.
+
+## 2026-10-31 — second field report, layout round and the autoplay root cause
+
+Second Carousel session on Firefox after the t21-t25 fixes. Results as reported:
+
+| Item | User result |
+|---|---|
+| Stem separation | button found, separation works well |
+| Save/reopen | saving works now |
+| Sections | drag creation works, much easier to use |
+| Autoplay / button sync | still present: playback starts after opening and after clicking a section |
+| Pitch | still judged unnecessary (unchanged) |
+
+Root cause of the autoplay, found by inspection and confirmed by inspection of
+the committed worklet: `PlaybackCore` initialised with `paused = false`, and
+`PcmTransport.load()` created the node, posted a seek and delivered PCM without
+ever posting a pause. The engine therefore rendered audio as soon as data
+arrived while the transport state was `paused`; the UI was not lying, the audio
+was. Fixed in `19bc862`: the core starts paused, the transport posts a pause
+before any PCM, and a paused seek no longer clears the pause flag. Real-WASM
+tests assert exact silence on load/after pause and signal only after resume.
+This needs one listening confirmation from the user.
+
+Feature requests from the same session, implemented:
+
+- `178e623` (t26): full browser width via one measured stage width, mixer moved
+  to a left rail, vertical order mix waveform, stem-lane slot, spectrogram,
+  chords, sections.
+- `2d43bb2` (t27) + `4595c2a` (t28): per-stem BSPK peaks endpoint and synced
+  waveform lanes for vocals, drums, bass, other, sharing viewport, playhead,
+  zoom and width.
+- `8e34ef3` (t29): paginated follow at 70 percent of the visible span, a real
+  timeline scrollbar with proportional thumb, and a four-bar default section.
+- `413be8a` (t31) + `3d86373` (t32): serialized web suite with 30 s timeouts
+  (measured failures under load: 5 s timeouts in real-WASM player tests,
+  spectrogram samples of 100-571 ms), and a golden path that derives the loop
+  range from the created four-bar section instead of a hard-coded 2 s.
+- `3098d12`: missing `fetchStemPeaks` forwarder in `createShellApi`, which t28
+  had left uncommitted.
+
+Final verification on the committed tree (`3d86373` plus the docs commit):
+
+- `make gate` exit 0: ruff/format, 6 fixtures, strict mypy, pytest 228 passed /
+  7 skipped, tsc, serialized web suite 57.8 s (51 files / 469 tests), Vite build,
+  e2e 35.8 s on Firefox and Chromium.
+- t32: five consecutive `make e2e` runs passed, each deriving the 0-7.98 s
+  section range and observing a real wrap.
+- t33: five consecutive `make test-web` runs passed while the backend suite ran
+  continuously (64, 59, 62, 68, 68 s); spectrogram best wall 55 ms.
+- Remaining human step: one listening pass for the silence-on-open/seek fix and
+  the new layout, stem lanes and scrollbar. The manual checklist is otherwise
+  satisfied by the two sessions above.

@@ -42,20 +42,22 @@ dependencies from the preserved pnpm store; `pnpm install` is not used offline.
   metadata, one canonical PCM decode at the project rate, waveform peaks and an
   atomic, versioned project document.
 - **Separate stems** with the local `htdemucs_ft` bundle: four stereo stems
-  (drums, bass, other, vocals) cached by content hash, with hash-verified
-  checkpoints, progress, cancellation and stem PCM endpoints. A **Separate
-  stems** control in the mixer starts the job, shows a determinate progress bar
-  and activates the four stems on success. Falls back to the mix with a visible
-  notice when a stem set is unavailable.
+  (vocals, drums, bass, other) cached by content hash, with hash-verified
+  checkpoints, progress, cancellation and stem PCM and peaks endpoints. A
+  **Separate stems** control in the left mixer rail starts the job, shows a
+  determinate progress bar and activates the four stems on success. Falls back to
+  the mix with a visible notice when a stem set is unavailable.
 - **Analyse** with the preserved Vamp plugins through the local Piper host:
   Chordino chords, Key Detector key, and QM Bar and Beat Tracker beats/bars with
   a beats-per-bar hint. Results are content-addressed and cached; the analysed
   grid, key and chords are persisted in the project.
-- **Practise** in the browser: waveform with selection/zoom/seek, collapsible
-  spectrogram, chord ribbon, sections you create or resize by dragging (bar-
-  snapped by default) and loop, a five-source mixer with mute/solo/gain/pan,
-  speed 0.25–2× with independent pitch, accented metronome, count-in, and a
-  transport with frame-accurate position.
+- **Practise** in a full-width browser layout with one shared timeline: mix
+  waveform, then synced waveform lanes for vocals, drums, bass and other, then
+  the spectrogram, the chord ribbon and the sections. The mixer is a left rail;
+  sections are created by dragging (four-bar default) and resized by their edges;
+  a real horizontal scrollbar and playhead-follow paging make zoomed views
+  navigable; speed 0.25–2× with independent pitch, accented metronome and
+  count-in. The engine starts silent and renders only after an explicit play.
 - **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
   pitch, position and mixer; reopen restores the project; mixdown export writes a
   16-bit WAV at the project rate with exactly the project frame count.
@@ -88,8 +90,8 @@ Final gate (run for this documentation, exit 0):
 
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / mypy strict
-[PASS] pytest 223 passed, 7 skipped
-[PASS] web typecheck, web tests (49 files / 449 tests), web build
+[PASS] pytest 228 passed, 7 skipped
+[PASS] web typecheck, web tests (51 files / 469 tests, serialized), web build
 [PASS] e2e golden path: Firefox and Chromium, real server, isolated data root
 gate: ok
 ```
@@ -102,17 +104,20 @@ values, never fabricated.
 
 The golden path imports the deterministic `progression_120` fixture, analyses it
 (C major, 120.2 BPM, 8 bars, C/Am/F/G), reopens the project, asserts transport
-state and position movement, a 0.5× speed change, a bar-snapped section loop
-that wraps, the metronome UI, autosave, reopen and WAV export. In the final run
-both Firefox and Chromium advanced the transport, changed speed and wrapped the
-loop; headless runs explicitly do not claim audible verification.
+state and position movement, a 0.5× speed change, a four-bar section loop whose
+range is read back from the saved project state, the metronome UI, autosave,
+reopen and WAV export. In the final run both Firefox and Chromium advanced the
+transport, changed speed and wrapped the real section range; headless runs
+explicitly do not claim audible verification.
 
-The manual listening checklist is in [docs/progress.md](docs/progress.md). A
-first field session is recorded there (Carousel on Firefox: playback, speed,
-pitch, chords, key, BPM, metronome) together with the defects it found and the
-fixes that followed (stem separation control, autosave revision, section
-dragging). Items changed after that session still need a repeat listening pass;
-the checklist is not claimed as fully passed.
+The manual listening checklist is in [docs/progress.md](docs/progress.md). Two
+field sessions are recorded there (Carousel on Firefox): playback, speed, pitch,
+chords, key, BPM and metronome pass by ear; stems, saving and section dragging
+were fixed after the first session and confirmed working in the second. The
+second session also found the engine rendering audio before any play press, whose
+root cause is fixed and covered by real-WASM silence tests; that fix and the new
+full-width layout, stem lanes, scrollbar and four-bar sections still need one
+final listening pass. The checklist is not claimed as fully passed.
 
 ## Known limitations
 
