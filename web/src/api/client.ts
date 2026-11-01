@@ -37,6 +37,11 @@ export interface StudioApi {
     assetId: string,
     options?: PeaksRequestOptions,
   ): Promise<ArrayBuffer>;
+  fetchStemPeaks(
+    projectId: string,
+    label: string,
+    options?: PeaksRequestOptions,
+  ): Promise<ArrayBuffer>;
 }
 
 export interface StudioApiOptions {
@@ -343,6 +348,22 @@ export function createStudioApi(options: StudioApiOptions = {}): StudioApi {
       const buckets = normalizeBuckets(request.buckets);
       const response = await call(
         `/api/assets/${encodeURIComponent(assetId)}/peaks?buckets=${buckets}`,
+        request.signal ? { signal: request.signal } : undefined,
+      );
+      if (!response.ok) {
+        throw await httpError(response);
+      }
+      return response.arrayBuffer();
+    },
+
+    async fetchStemPeaks(
+      projectId: string,
+      label: string,
+      request: PeaksRequestOptions = {},
+    ) {
+      const buckets = normalizeBuckets(request.buckets);
+      const response = await call(
+        `/api/projects/${encodeURIComponent(projectId)}/stems/${encodeURIComponent(label)}/peaks?buckets=${buckets}`,
         request.signal ? { signal: request.signal } : undefined,
       );
       if (!response.ok) {

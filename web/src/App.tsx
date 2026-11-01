@@ -36,6 +36,7 @@ import {
   createShellApi,
   type ShellApi,
   type StudioProject,
+  type StudioStem,
 } from "./state/project";
 import {
   uniformBeats,
@@ -103,6 +104,23 @@ function isAbort(error: unknown): boolean {
 
 function titleCase(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
+}
+
+const STEM_LANE_ORDER = ["vocals", "drums", "bass", "other"] as const;
+
+/** Four known stems first in the requested order, then any extras. */
+export function orderStemLanes(stems: StudioStem[]): StudioStem[] {
+  const rank = (stem: StudioStem): number => {
+    const label = stem.role || stem.id;
+    const index = STEM_LANE_ORDER.indexOf(
+      label as (typeof STEM_LANE_ORDER)[number],
+    );
+    return index === -1 ? STEM_LANE_ORDER.length : index;
+  };
+  return [...stems].sort((left, right) => {
+    const difference = rank(left) - rank(right);
+    return difference !== 0 ? difference : left.id.localeCompare(right.id);
+  });
 }
 
 const FALLBACK_GRID = {
@@ -185,6 +203,7 @@ export function App({
 
   const [project, setProject] = useState<StudioProject | null>(null);
   const [lanes, setLanes] = useState<Lane[]>([]);
+  const [stemLanes, setStemLanes] = useState<Lane[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [snapMode, setSnapMode] = useState<SnapMode>("bar");
   const [stageWidth, setStageWidth] = useState(initialStageWidth);
@@ -315,14 +334,29 @@ export function App({
       }));
   }, [project, mixerState]);
 
-  const stemLanes = useMemo(
-    () =>
-      (project?.stems ?? []).map((stem) => ({
-        id: stem.id,
-        name: stem.name,
-        role: stem.role,
-      })),
+  const orderedStems = useMemo(
+    () => orderStemLanes(project?.stems ?? []),
     [project],
+  );
+
+  const loadStemLanes = useCallback(
+    async (next: StudioProject): Promise<Lane[]> => {
+      const ordered = orderStemLanes(next.stems);
+      return Promise.all(
+        ordered.map(async (stem): Promise<Lane> => {
+          const label = stem.role || stem.id;
+          try {
+            const peaks = await api.fetchStemPeaks(next.id, label);
+            return { id: stem.id, name: stem.name, peaks };
+          } catch {
+            // Keep the lane visible with its label even if its peaks are not
+            // cached yet; WaveformPane shows "Waveform unavailable".
+            return { id: stem.id, name: stem.name, peaks: new ArrayBuffer(0) };
+          }
+        }),
+      );
+    },
+    [api],
   );
 
   const openProject = useCallback(
@@ -333,7 +367,10 @@ export function App({
       openTokenRef.current = token;
       try {
         const next = await api.openProject(projectId);
-        const peaks = await api.fetchPeaks(next.asset.id);
+        const [peaks, nextStemLanes] = await Promise.all([
+          api.fetchPeaks(next.asset.id),
+          loadStemLanes(next),
+        ]);
         const opened = await transport.open(next, next.analysis);
         if (token !== openTokenRef.current) {
           return;
@@ -342,6 +379,7 @@ export function App({
         hydratedRef.current = false;
         setProject(next);
         setLanes([{ id: next.asset.id, name: "Mix", peaks }]);
+        setStemLanes(nextStemLanes);
         setSections(next.sections);
         setSnapMode("bar");
         setSelection(null);
@@ -377,12 +415,13 @@ export function App({
         setRuntime(null);
         setProject(null);
         setLanes([]);
+        setStemLanes([]);
         setSections([]);
         setTone("error");
         setMessage(errorMessage(error));
       }
     },
-    [api, transport, stageWidth],
+    [api, transport, stageWidth, loadStemLanes],
   );
 
   const handleAnalyzed = useCallback(
@@ -516,6 +555,10 @@ export function App({
       if (controller.signal.aborted) {
         return;
       }
+      const nextStemLanes = await loadStemLanes(refreshed);
+      if (controller.signal.aborted) {
+        return;
+      }
       const opened = await transport.open(refreshed, refreshed.analysis);
       if (controller.signal.aborted) {
         opened.dispose?.();
@@ -523,6 +566,7 @@ export function App({
       }
       revisionRef.current = refreshed.revision;
       setProject(refreshed);
+      setStemLanes(nextStemLanes);
       setSections(preservedSections);
       setRuntime(opened);
       await opened.ready;
@@ -568,6 +612,7 @@ export function App({
     transport,
     separationClient,
     separationPollIntervalMs,
+    loadStemLanes,
   ]);
 
   const handleCancelSeparation = useCallback(() => {
@@ -854,15 +899,26 @@ export function App({
               <div
                 className="stem-lanes"
                 data-testid="stem-lanes"
-                data-stem-count={stemLanes.length}
-                data-stem-ids={stemLanes.map((stem) => stem.id).join(",")}
+                data-stem-count={orderedStems.length}
+                data-stem-ids={orderedStems.map((stem) => stem.id).join(",")}
               >
-                {stemLanes.map((stem) => (
-                  <div
-                    key={stem.id}
-                    className="stem-lane-slot"
-                    data-testid={`stem-lane-slot-${stem.id}`}
-                    aria-label={`${stem.name} stem lane`}
+                {stemLanes.map((lane) => (
+                  <WaveformPane
+                    key={lane.id}
+                    lane={lane}
+                    viewport={viewport}
+                    durationSeconds={durationSeconds}
+                    selection={selection}
+                    positionSeconds={playerState.positionSeconds}
+                    playing={playerState.status === "playing"}
+                    follow={false}
+                    widthPx={stageWidth}
+                    heightPx={64}
+                    onViewportChange={setViewport}
+                    onSelectionChange={setSelection}
+                    onSeek={handleSeek}
+                    onTogglePlay={handleTogglePlay}
+                    onToggleFollow={handleToggleFollow}
                   />
                 ))}
               </div>

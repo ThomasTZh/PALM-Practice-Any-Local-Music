@@ -213,6 +213,13 @@ function shellApi(project: StudioProject): ShellApi {
         samplesPerBucket: 1000,
       });
     },
+    async fetchStemPeaks() {
+      return makePeaksBuffer({
+        buckets: 64,
+        sampleRate: 8000,
+        samplesPerBucket: 1000,
+      });
+    },
     async saveState() {
       return 2;
     },

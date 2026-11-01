@@ -185,6 +185,14 @@ function makeApi(
         samplesPerBucket: 1000,
       });
     },
+    async fetchStemPeaks(projectId, label) {
+      calls.push(`stemPeaks:${projectId}:${label}`);
+      return makePeaksBuffer({
+        buckets: 64,
+        sampleRate: 8000,
+        samplesPerBucket: 1000,
+      });
+    },
     async saveState(projectId, state) {
       calls.push(`save:${projectId}:${state.sections.length}`);
       saved.push(state);
@@ -388,8 +396,10 @@ describe("App integration", () => {
     expect(screen.getByTestId("spectrogram")).toBeInTheDocument();
     expect(screen.getByTestId("waveform-a1")).toBeInTheDocument();
 
-    expect(screen.getByText("Bass")).toBeInTheDocument();
-    expect(screen.getByText("Drums")).toBeInTheDocument();
+    const mixer = within(screen.getByTestId("mixer"));
+    expect(mixer.getByText("Bass")).toBeInTheDocument();
+    expect(mixer.getByText("Drums")).toBeInTheDocument();
+    expect(screen.getByTestId("waveform-vocals")).toBeInTheDocument();
     expect(screen.getByTestId("chord-block-0")).toHaveTextContent("C");
     expect(screen.getByTestId("analysis-cache-badge")).toHaveTextContent(
       "Cached",
@@ -412,12 +422,19 @@ describe("App integration", () => {
       const waveform = screen
         .getByTestId("waveform-a1")
         .querySelector("svg") as SVGSVGElement;
+      const stemWidths = ["vocals", "drums", "bass", "other"].map((label) => {
+        const svg = screen
+          .getByTestId(`waveform-${label}`)
+          .querySelector("svg") as SVGSVGElement;
+        return `${svg.getAttribute("width")}px`;
+      });
       return [
         screen.getByTestId("time-ruler").style.width,
         `${waveform.getAttribute("width")}px`,
         screen.getByTestId("spectrogram").style.width,
         screen.getByTestId("chord-ribbon").style.width,
         timeline.style.width,
+        ...stemWidths,
       ];
     }
 
@@ -458,7 +475,7 @@ describe("App integration", () => {
   });
 
   it("orders mix, stem slot, spectrogram, chords and sections with the mixer left", async () => {
-    setup();
+    const { api } = setup();
     await openProject();
 
     const mix = screen.getByTestId("waveform-a1");
@@ -475,10 +492,68 @@ describe("App integration", () => {
     expect(stemSlot).toHaveAttribute("data-stem-count", "4");
     expect(stemSlot).toHaveAttribute(
       "data-stem-ids",
-      "drums,bass,other,vocals",
+      "vocals,drums,bass,other",
     );
-    expect(screen.getByTestId("stem-lane-slot-drums")).toBeInTheDocument();
-    expect(screen.getByTestId("stem-lane-slot-vocals")).toBeInTheDocument();
+    const stemPanes = Array.from(
+      stemSlot.querySelectorAll(".waveform-pane"),
+    ).map((pane) => pane.getAttribute("data-testid"));
+    expect(stemPanes).toEqual([
+      "waveform-vocals",
+      "waveform-drums",
+      "waveform-bass",
+      "waveform-other",
+    ]);
+    expect(screen.getByTestId("waveform-vocals")).toHaveAttribute(
+      "aria-label",
+      "Vocals waveform pane",
+    );
+    expect(api.calls.filter((call) => call.startsWith("stemPeaks:"))).toEqual([
+      "stemPeaks:p1:vocals",
+      "stemPeaks:p1:drums",
+      "stemPeaks:p1:bass",
+      "stemPeaks:p1:other",
+    ]);
+
+    fireEvent.click(screen.getByTestId("time-ruler"), { clientX: 470 });
+    await waitFor(() =>
+      expect(screen.getByTestId("transport-position")).toHaveTextContent(
+        "0:04.0",
+      ),
+    );
+    const mixPlayhead = Number(
+      screen.getByTestId("waveform-playhead-a1").getAttribute("x1"),
+    );
+    const rulerPlayhead = Number.parseFloat(
+      screen.getByTestId("ruler-playhead").style.left,
+    );
+    expect(rulerPlayhead).toBeCloseTo(mixPlayhead, 0);
+    for (const label of ["vocals", "drums", "bass", "other"]) {
+      const x = Number(
+        screen.getByTestId(`waveform-playhead-${label}`).getAttribute("x1"),
+      );
+      expect(Math.abs(x - mixPlayhead)).toBeLessThanOrEqual(1);
+    }
+
+    const zoomBefore = screen.getByTestId("status-detail").textContent;
+    fireEvent.wheel(screen.getByTestId("waveform-vocals"), {
+      deltaY: -120,
+      ctrlKey: true,
+      clientX: 100,
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("status-detail")).not.toHaveTextContent(
+        zoomBefore ?? "",
+      ),
+    );
+    const zoomedMix = Number(
+      screen.getByTestId("waveform-playhead-a1").getAttribute("x1"),
+    );
+    for (const label of ["vocals", "drums", "bass", "other"]) {
+      const x = Number(
+        screen.getByTestId(`waveform-playhead-${label}`).getAttribute("x1"),
+      );
+      expect(Math.abs(x - zoomedMix)).toBeLessThanOrEqual(1);
+    }
 
     const rail = screen.getByTestId("studio-rail");
     const mixer = within(rail).getByTestId("mixer");
@@ -769,6 +844,11 @@ describe("App stem separation", () => {
     });
     await openProject();
     expect(rigs[0].player.getState().status).toBe("paused");
+    expect(screen.queryByTestId("waveform-vocals")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stem-lanes")).toHaveAttribute(
+      "data-stem-count",
+      "0",
+    );
 
     fireEvent.change(screen.getByLabelText("Practice speed"), {
       target: { value: "0.75" },

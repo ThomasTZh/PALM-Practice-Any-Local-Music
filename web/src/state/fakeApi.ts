@@ -38,5 +38,11 @@ export function createFakeApi(overrides: Partial<StudioApi> = {}): FakeApi {
         ? overrides.fetchPeaks(...args)
         : Promise.resolve(new ArrayBuffer(0));
     },
+    fetchStemPeaks(...args) {
+      calls.push(`fetchStemPeaks:${args[0]}:${args[1]}`);
+      return overrides.fetchStemPeaks
+        ? overrides.fetchStemPeaks(...args)
+        : Promise.resolve(new ArrayBuffer(0));
+    },
   };
 }

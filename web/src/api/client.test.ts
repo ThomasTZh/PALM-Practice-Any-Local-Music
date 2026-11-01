@@ -273,6 +273,40 @@ describe("fetchPeaks", () => {
   });
 });
 
+describe("fetchStemPeaks", () => {
+  it("requests a stem's peaks by project and label", async () => {
+    const { fetchImpl, calls } = fakeServer({
+      "/api/projects/p1/stems/vocals/peaks?buckets=4096": {
+        bytes: new ArrayBuffer(20),
+      },
+    });
+
+    const peaks = await createStudioApi({ fetchImpl }).fetchStemPeaks(
+      "p1",
+      "vocals",
+      { buckets: 4096 },
+    );
+
+    expect(calls[0].url).toBe(
+      "/api/projects/p1/stems/vocals/peaks?buckets=4096",
+    );
+    expect(peaks.byteLength).toBe(20);
+  });
+
+  it("reports a missing stem cache instead of returning empty bytes", async () => {
+    const { fetchImpl } = fakeServer({
+      "/api/projects/p1/stems/bass/peaks?buckets=1024": {
+        status: 404,
+        text: "stem peaks not found",
+      },
+    });
+
+    await expect(
+      createStudioApi({ fetchImpl }).fetchStemPeaks("p1", "bass"),
+    ).rejects.toMatchObject({ status: 404, message: "stem peaks not found" });
+  });
+});
+
 describe("importRecording", () => {
   it("posts the file as multipart form data", async () => {
     const { fetchImpl, calls } = fakeServer({

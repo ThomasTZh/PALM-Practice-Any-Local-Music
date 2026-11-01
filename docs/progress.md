@@ -1282,3 +1282,46 @@ ambiguity (Ab major vs F minor) is accepted as plugin behaviour.
 A first `make test-web` invocation hit the pre-existing spectrogram best-wall
 perf flake under host load; the immediate rerun passed. The layout change does
 not touch that test.
+
+## 2026-11-01 — synced per-stem waveform lanes (t28)
+
+### What landed
+
+- `fetchStemPeaks(projectId, label, {buckets})` on the t4 API client requests
+  `GET /api/projects/{id}/stems/{label}/peaks?buckets=N` from t27 and returns the
+  raw BSPK bytes, with the same 256/1024/4096/16384 validation and HTTP error
+  handling as mix peaks. `createShellApi` forwards it and `createFakeApi` records
+  it for component tests.
+- App loads peaks for every project stem on open and again after separation
+  activates a new stem set. Fetch failures keep the lane visible with its label
+  and "Waveform unavailable" rather than failing the whole project open.
+- Stem lanes are ordered vocals, drums, bass, other (unknown labels after them),
+  rendered as WaveformPane lanes between the mix waveform and the spectrogram,
+  each at 64 px, labelled from the project's stem name. The container keeps
+  `data-stem-count`/`data-stem-ids` in that order and is empty/hidden before
+  separation.
+- Stem lanes receive the mix's viewport, selection, playhead, seek, play/pause
+  and follow callbacks, and the measured stage width. `follow` is owned by the
+  mix lane to avoid four duplicate follow effects; zoom/scroll on any stem lane
+  updates the shared viewport.
+
+### Verification
+
+- API client tests assert the exact per-stem URL with buckets=4096 and a 404
+  stem-cache failure.
+- App component tests with a fake API: opening a 4-stem project calls
+  `stemPeaks:p1:vocals`, `drums`, `bass`, `other` and renders
+  waveform-vocals → waveform-drums → waveform-bass → waveform-other with labels
+  and the 4 ids in that order. After seeking to 4 s ruler and mix/stem playheads
+  are within one pixel; ctrl-wheel zoom on the vocals lane changes the shared
+  zoom and keeps every lane's playhead aligned. The resize test includes all
+  four stem SVG widths (924/1244 px in the browser smoke; 940/1234/720 px in
+  jsdom).
+- The separation success test asserts no stem lanes before separation and four
+  lanes plus a fresh set of per-label peaks calls after activation.
+- Firefox smoke at 1280/1600 px: mix and four stem SVGs all 924/1244 px, order
+  and labels correct, no horizontal overflow, no page errors.
+- `make test-web` and `make build-web` pass. No dependency added.
+
+A full-suite run under host load hit the pre-existing spectrogram best-wall
+flake; the retry used for the final verification passed.
