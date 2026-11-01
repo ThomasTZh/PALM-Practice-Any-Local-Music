@@ -1918,3 +1918,24 @@ added.
 - Spectrogram suite including the performance test passes (best wall 63.2 ms
   under load). `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No
   dependency added.
+
+## 2026-11-01 — fourth UI round (t42-t44)
+
+User requests and results:
+
+| Request | Result |
+|---|---|
+| Move all practice controls from the rail into the left part of the bottom drawer | t42 `261470a`: rail is Analysis, Mixer, Library; every practice control (speed, count-in, metronome, accent, volume, practice loop) sits in the bottom-left zone with no panel header. Snap remains only in Sections. |
+| Centre the transport with play/pause in the middle and symmetric arrangement; drop the paused/playing text | t42: three-zone bottom bar; equal-width Return/Play/Loop with play at the zone centre (measured 762.95 at 1280), time left and bar/beat right symmetric, track/key/BPM right. `transport-status` kept screen-reader-only; notices/errors still visible. |
+| Longer metronome slider | t42: the volume row fills its zone (404 px at 1280, 607 at 1600) with the percentage immediately beside it. |
+| Swap zoom buttons to minus then plus | t42: order changed, labels and aria unchanged. |
+| Section rows back to one line | t43 `f09f1a0`: name, editable Start, editable End, list Loop and Delete on one 34 px row in the sorted left half; a container query keeps it on one line at 280 px. |
+| Note names on the spectrogram axis, every semitone | t44 `a47383b`: C1..C8 (MIDI 24..108, 32.703..4186.009 Hz), every semitone labelled at its log-frequency row with `data-midi`/`data-hz`, pane height 85 × 10 = 850 px, Hz labels removed. Pure note helpers round-trip; the 1280×256 worker workload and 100 ms target are unchanged. |
+
+Final gate on the committed tree:
+
+- `make gate` exit 0: pytest 228 passed / 7 skipped; web 52 files / 506 tests
+  (serialized); tsc and Vite build; e2e 2 specs on Firefox and Chromium.
+- Remaining human step: one listening/visual pass over the three-zone bottom bar,
+  single-row section list and the 850 px note axis, plus the previously
+  outstanding autoplay-silence confirmation.

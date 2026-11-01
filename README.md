@@ -54,18 +54,20 @@ dependencies from the preserved pnpm store; `pnpm install` is not used offline.
 - **Practise** in a full-width browser layout with one shared timeline: mix
   waveform, then synced waveform lanes for vocals, drums, bass and other, then
   the spectrogram, the chord ribbon and the sections. The left rail holds
-  Analysis, Mixer, Practice and Library in that order, and the compact transport
-  is pinned to the bottom with the track, key and BPM readouts. Sections are
-  created by dragging (four-bar default), moved by dragging their body (length
-  preserved, overlaps allowed), resized by their edges, and added ending at the
-  playhead; the editor lists them sorted by start and can chain-loop several
-  selected sections with the gaps included. A green timeline scrollbar and
+  Analysis, Mixer and Library; the pinned bottom bar has the practice controls on
+  the left, a symmetric transport (return, play, loop, time, bar/beat) in the
+  centre and the track, key and BPM readouts on the right. The spectrogram axis
+  is labelled with every semitone from C1 to C8. Sections are created by dragging
+  (four-bar default), moved by dragging their body (length preserved, overlaps
+  allowed), resized by their edges, and added ending at the playhead; the
+  single-row editor lists them sorted by start and can chain-loop several selected
+  sections with the gaps included. A green timeline scrollbar and
   playhead-follow paging make zoomed views navigable; speed 0.25–2×, accented
   metronome and a count-in that clicks even when the metronome is off. Pitch
   shifting was removed on request. The engine starts silent and renders only
   after an explicit play.
 - **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
-  pitch, position and mixer; reopen restores the project; mixdown export writes a
+  position and mixer; reopen restores the project; mixdown export writes a
   16-bit WAV at the project rate with exactly the project frame count.
 
 ## Make targets
@@ -97,7 +99,7 @@ Final gate (run for this documentation, exit 0):
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / mypy strict
 [PASS] pytest 228 passed, 7 skipped
-[PASS] web typecheck, web tests (52 files / 503 tests, serialized), web build
+[PASS] web typecheck, web tests (52 files / 506 tests, serialized), web build
 [PASS] e2e golden path + layout spec: Firefox and Chromium, isolated data root
 gate: ok
 ```
@@ -125,8 +127,11 @@ root cause is fixed and covered by real-WASM silence tests. After the second
 session the shell was reworked (header removed, pinned compact transport with
 track/key/BPM, ordered left rail, layout and scrollbar containment, sections
 timeline-first with sorted list, body drag, end-at-playhead Add and chain loop,
-pitch removed, count-in independent of the metronome). Those changes need one
-final listening pass; the checklist is not claimed as fully passed.
+pitch removed, count-in independent of the metronome), then a fourth round moved
+the practice controls into the bottom-left zone, centred the transport, restored
+single-row section entries and labelled the spectrogram axis with every semitone
+from C1 to C8. Those changes need one final listening and visual pass; the
+checklist is not claimed as fully passed.
 
 ## Known limitations
 
