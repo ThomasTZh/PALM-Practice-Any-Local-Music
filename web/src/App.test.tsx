@@ -651,7 +651,7 @@ describe("App integration", () => {
     ).toBe(stoppedAt);
   });
 
-  it("orders mix, stem slot, spectrogram, chords and sections with the mixer left", async () => {
+  it("orders mix, stem slot, chords, sections and spectrogram with the mixer left", async () => {
     const { api } = setup();
     await openProject();
 
@@ -662,9 +662,9 @@ describe("App integration", () => {
     const sections = screen.getByTestId("section-lane");
 
     expect(precedes(mix, stemSlot)).toBe(true);
-    expect(precedes(stemSlot, spectrogram)).toBe(true);
-    expect(precedes(spectrogram, chords)).toBe(true);
+    expect(precedes(stemSlot, chords)).toBe(true);
     expect(precedes(chords, sections)).toBe(true);
+    expect(precedes(sections, spectrogram)).toBe(true);
 
     expect(stemSlot).toHaveAttribute("data-stem-count", "4");
     expect(stemSlot).toHaveAttribute(

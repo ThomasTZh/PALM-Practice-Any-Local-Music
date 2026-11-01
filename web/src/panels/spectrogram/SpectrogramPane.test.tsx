@@ -54,6 +54,7 @@ function setup(overrides: Partial<SpectrogramPaneProps> = {}) {
     viewport: VIEWPORT,
     widthPx: WIDTH,
     sampleRate: 44100,
+    frameCount: DURATION * 44100,
     positionSeconds: 15,
     loadPcm,
     engine,
@@ -84,7 +85,7 @@ describe("SpectrogramPane", () => {
     expect(Number.isInteger(startFrame)).toBe(true);
     expect(Number.isInteger(endFrame)).toBe(true);
     expect(startFrame).toBe(0);
-    expect(endFrame).toBeGreaterThan(300 * 44100);
+    expect(endFrame).toBe(300 * 44100);
 
     const input = compute.mock.calls[0][0];
     expect(input.widthPx).toBe(WIDTH);
@@ -140,6 +141,29 @@ describe("SpectrogramPane", () => {
     });
   });
 
+  it("clamps a near-end request to the asset frame count and keeps the cache stable", async () => {
+    const frameCount = DURATION * 44100;
+    const { compute, loadPcm } = setup({
+      viewport: { startSeconds: 299.9, secondsPerPixel: 0.001 },
+      frameCount,
+    });
+    await waitFor(() => expect(compute).toHaveBeenCalledTimes(1));
+
+    const [startFrame, endFrame] = loadPcm.mock.calls[0];
+    expect(startFrame).toBeGreaterThanOrEqual(0);
+    expect(startFrame).toBeLessThan(endFrame);
+    expect(endFrame).toBe(frameCount);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide spectrogram" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show spectrogram" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("spectrogram-status")).toHaveTextContent(
+        "1280 × 256",
+      ),
+    );
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
   it("collapses without moving the shared timeline and reuses the cached view", async () => {
     const compute = vi.fn(async (input: SpectrogramComputeInput) =>
       imageFor(input),
@@ -159,6 +183,7 @@ describe("SpectrogramPane", () => {
           viewport={viewport}
           widthPx={WIDTH}
           sampleRate={44100}
+          frameCount={DURATION * 44100}
           positionSeconds={15}
           loadPcm={async (startFrame, endFrame) => ({
             samples: new Float32Array(2048),
@@ -205,6 +230,7 @@ describe("SpectrogramPane", () => {
           viewport={viewport}
           widthPx={WIDTH}
           sampleRate={44100}
+          frameCount={DURATION * 44100}
           positionSeconds={15}
           loadPcm={async (startFrame, endFrame) => ({
             samples: new Float32Array(2048),

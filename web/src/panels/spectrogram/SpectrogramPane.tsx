@@ -33,6 +33,8 @@ export interface SpectrogramPaneProps {
   /** Shared timeline width in CSS pixels. */
   widthPx: number;
   sampleRate: number;
+  /** Asset length in frames; PCM requests are clamped to it. */
+  frameCount: number;
   positionSeconds: number;
   /** Ranged PCM provider; `createRangedPcmLoader` matches the server. */
   loadPcm: PcmLoader;
@@ -89,6 +91,7 @@ export function SpectrogramPane({
   viewport,
   widthPx,
   sampleRate,
+  frameCount,
   positionSeconds,
   loadPcm,
   engine: engineProp,
@@ -171,17 +174,25 @@ export function SpectrogramPane({
     }
 
     const controller = new AbortController();
+    const frames = Number.isFinite(frameCount)
+      ? Math.max(0, Math.floor(frameCount))
+      : 0;
+    if (frames <= 0) {
+      return;
+    }
     const visibleEnd =
       viewport.startSeconds + widthPx * viewport.secondsPerPixel;
     const paddingSeconds = fftSize / sampleRate;
-    const startFrame = Math.max(
+    const requestedStart = Math.max(
       0,
       Math.floor((viewport.startSeconds - paddingSeconds) * sampleRate),
     );
-    const endFrame = Math.max(
-      startFrame + 1,
+    const requestedEnd = Math.max(
+      requestedStart + 1,
       Math.ceil((visibleEnd + paddingSeconds) * sampleRate),
     );
+    const startFrame = Math.min(frames - 1, requestedStart);
+    const endFrame = Math.min(frames, Math.max(startFrame + 1, requestedEnd));
 
     setLoading(true);
     setError(null);
@@ -214,6 +225,7 @@ export function SpectrogramPane({
     collapsed,
     engine,
     sampleRate,
+    frameCount,
     viewport.startSeconds,
     viewport.secondsPerPixel,
     widthPx,

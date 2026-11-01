@@ -911,17 +911,6 @@ export function App({
                 />
               ))}
             </div>
-            {project !== null && pcmLoader !== null && (
-              <SpectrogramPane
-                projectId={project.id}
-                viewport={viewport}
-                widthPx={stageWidth}
-                sampleRate={project.asset.sampleRate}
-                positionSeconds={playerState.positionSeconds}
-                loadPcm={pcmLoader}
-                defaultCollapsed
-              />
-            )}
           </div>
 
           {project !== null && (
@@ -965,6 +954,19 @@ export function App({
                 player={player}
               />
             </>
+          )}
+
+          {project !== null && pcmLoader !== null && (
+            <SpectrogramPane
+              projectId={project.id}
+              viewport={viewport}
+              widthPx={stageWidth}
+              sampleRate={project.asset.sampleRate}
+              frameCount={project.frames}
+              positionSeconds={playerState.positionSeconds}
+              loadPcm={pcmLoader}
+              defaultCollapsed
+            />
           )}
         </section>
       </main>

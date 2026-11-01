@@ -1971,3 +1971,35 @@ Final gate on the committed tree:
   immediate percentage, readouts in toolbar, document/client widths equal and
   no native scrollbar.
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.
+
+## 2026-11-01 — spectrogram frame clamp and stage placement (t46)
+
+### Frame clamp
+
+- SpectrogramPane now takes the asset `frameCount` and clamps the requested
+  window before loading: `start = min(frames-1, max(0, floor((start-padding) *
+  sr)))`, `end = min(frames, max(start+1, ceil((visibleEnd+padding) * sr)))`.
+  If frameCount is zero no PCM request is made. The cache key remains the view
+  identity `(start seconds, width, FFT)`; since the clamp is deterministic,
+  collapse/re-expand still hits the same cached image.
+- App passes `project.frames` (the asset frame count) into the pane.
+- New pane regression at viewport `start=299.9`, `0.001 s/px`, frameCount
+  `300×44100`: loader gets start>=0, start<end and end exactly the frame count;
+  Hide/Show keeps compute at one call (cache stable).
+
+### Stage order
+
+The pane moved out of the timeline block and now renders after the Sections
+panel. Stage child order is stage-measure, toolbar, timeline (ruler/mix/stems),
+chord ribbon, sections, spectrogram. Collapsing leaves the ruler width unchanged
+(939 px before/after in the mock).
+
+### Verification
+
+- Firefox mock 16 s / 705600 frames: Show spectrogram requested
+  `/api/projects/p1/pcm?start=0&end=705600`, i.e. end == frameCount, in bounds;
+  no out-of-range error (the only error was the mock's deliberate 404).
+- Spectrogram suite 71 tests including performance (best wall 65.4 ms) and the
+  new near-end test; App order test updated to mix→stems→chords→sections→
+  spectrogram. `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No
+  dependency added.
