@@ -103,7 +103,7 @@ describe("SpectrogramPane", () => {
     expect(canvas).toHaveAttribute("height", "256");
   });
 
-  it("shows vertical frequency labels and the dB colour scale", async () => {
+  it("shows every semitone note label and the dB colour scale", async () => {
     setup();
     await waitFor(() =>
       expect(screen.getByTestId("spectrogram-status")).toHaveTextContent(
@@ -111,9 +111,17 @@ describe("SpectrogramPane", () => {
       ),
     );
 
-    expect(screen.getByText("100 Hz")).toBeInTheDocument();
-    expect(screen.getByText("1 kHz")).toBeInTheDocument();
-    expect(screen.getByText("10 kHz")).toBeInTheDocument();
+    const axis = screen.getByLabelText("Note axis");
+    const labels = Array.from(axis.querySelectorAll("span"));
+    expect(labels).toHaveLength(85);
+    expect(screen.getByText("C1")).toBeInTheDocument();
+    expect(screen.getByText("C#1")).toBeInTheDocument();
+    expect(screen.getByText("A4")).toBeInTheDocument();
+    expect(screen.getByText("C8")).toBeInTheDocument();
+    expect(screen.queryByText("100 Hz")).not.toBeInTheDocument();
+    expect(screen.getByTestId("spectrogram-canvas")).toHaveStyle({
+      height: "850px",
+    });
     expect(screen.getByText("-100 dB")).toBeInTheDocument();
     expect(screen.getByText("0 dB")).toBeInTheDocument();
     expect(screen.getByLabelText("dB colour scale")).toBeInTheDocument();

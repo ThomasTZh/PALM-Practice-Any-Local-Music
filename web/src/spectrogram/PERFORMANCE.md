@@ -49,3 +49,13 @@ the 100 ms budget.
   real transform, precomputed FFT plans (bit reversal and per-stage twiddles),
   direct windowing into the FFT scratch buffers, only the bins the log axis
   touches, and a precomputed 256-entry colour palette.
+
+## Note-label axis update
+
+The vertical axis is now labelled at every equal-tempered semitone in the
+default C1..C8 range (32.703..4186.009 Hz). This changes the displayed
+frequency range and raises the default pane height to 850 CSS px (85 notes at
+10 px), but the worker workload is unchanged: still 1280 columns × 256
+log-frequency rows with a 2048-sample FFT. The narrower range only changes
+which FFT bins the row mapping reads; the measured view-change cost and the
+100 ms acceptance target stay the same.

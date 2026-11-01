@@ -1884,3 +1884,37 @@ added.
   order Verse, Bridge, Chorus. At 455 the five controls share y≈489-503; at
   280 all five remain one 34 px line and the labels collapse.
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.
+
+## 2026-11-01 — equal-tempered note labels on the spectrogram axis (t44)
+
+### Axis
+
+- Added pure equal-tempered helpers in `spectrogram/axis.ts`:
+  `midiToFrequency`, `frequencyToMidi`, `nearestMidi`, `midiNoteName`,
+  `noteLabels` (every semitone inside the axis, highest first, with actual Hz
+  and log-axis percent) and `noteAxisHeight` (10 px per label, 148 px floor).
+- The default spectrogram range is now C1..C8 (MIDI 24..108,
+  32.703..4186.009 Hz). The pane labels every semitone from C1 through B7 to C8
+  with note names, positions them at their actual log-frequency rows and exposes
+  `data-midi`/`data-hz`; the old Hz labels were removed. Rows/FFT/worker/palette
+  are unchanged.
+- The pane height defaults to the semitone count (85 × 10 = 850 px); an explicit
+  `heightPx` override still works. Label CSS is 8 px/1 line-height at ~10.1 px
+  note spacing, so labels do not overlap. Collapse/re-expand still works.
+- PERFORMANCE.md notes the range/height change and that the 1280×256 worker
+  workload and 100 ms target are unchanged.
+
+### Verification
+
+- Axis tests: 85 labels C1..C8, unique MIDI notes, C#/A4 names, log positions
+  for C1/C8, every label round-trips through Hz↔MIDI and nearest-note name,
+  height 850/148 floor. Pane test asserts 85 note spans, C1/C#1/A4/C8, no
+  "100 Hz", and canvas height 850.
+- Firefox mock at 1280×900 after expanding: 85 labels, first C8 (MIDI108,
+  4186.009 Hz), last C1 (MIDI24, 32.703 Hz), minimum vertical gap 10.117 px
+  against 8 px label height, `overlaps=[]`; canvas style height 850 (bitmap rows
+  256); document 1280/1280 (no native scrollbar); Hide/Show toggles body
+  hidden/re-expanded.
+- Spectrogram suite including the performance test passes (best wall 63.2 ms
+  under load). `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No
+  dependency added.

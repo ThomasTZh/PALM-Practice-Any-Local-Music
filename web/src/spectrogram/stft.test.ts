@@ -46,8 +46,8 @@ describe("computeSpectrogram", () => {
   it("uses a 2048 sample Hann window by default", () => {
     expect(DEFAULT_FFT_SIZE).toBe(2048);
     expect(DEFAULT_ROWS).toBe(256);
-    expect(DEFAULT_MIN_HZ).toBe(30);
-    expect(DEFAULT_MAX_HZ).toBe(20000);
+    expect(DEFAULT_MIN_HZ).toBeCloseTo(32.7032, 3);
+    expect(DEFAULT_MAX_HZ).toBeCloseTo(4186.009, 2);
   });
 
   it("returns an RGBA image with the requested dimensions", () => {

@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_HIGHEST_MIDI,
+  DEFAULT_LOWEST_MIDI,
+  NOTE_LABEL_PX,
   createFrequencyAxis,
-  formatFrequency,
   frequencyAtRow,
-  frequencyLabels,
+  frequencyToMidi,
+  midiNoteName,
+  midiToFrequency,
+  nearestMidi,
+  noteAxisHeight,
+  noteLabels,
   rowAtFrequency,
 } from "./axis";
 
@@ -34,38 +41,51 @@ describe("frequency axis", () => {
   });
 });
 
-describe("frequencyLabels", () => {
-  const axis = createFrequencyAxis(30, 20000, 256);
+describe("noteLabels", () => {
+  const axis = createFrequencyAxis(
+    midiToFrequency(DEFAULT_LOWEST_MIDI),
+    midiToFrequency(DEFAULT_HIGHEST_MIDI),
+    256,
+  );
+  const labels = noteLabels(axis);
 
-  it("labels the octaves a musician reads", () => {
-    const labels = frequencyLabels(axis);
-    const values = labels.map((label) => label.hz);
-
-    expect(values).toContain(50);
-    expect(values).toContain(100);
-    expect(values).toContain(1000);
-    expect(values).toContain(10000);
-    expect(values.every((hz) => hz >= 30 && hz <= 20000)).toBe(true);
+  it("labels every semitone from C1 to C8", () => {
+    expect(labels).toHaveLength(85);
+    expect(labels[labels.length - 1].label).toBe("C1");
+    expect(labels[0].label).toBe("C8");
+    expect(labels.map((label) => label.label)).toEqual(
+      expect.arrayContaining(["C1", "C#1", "D1", "B1", "C2", "A4", "C8"]),
+    );
+    expect(new Set(labels.map((label) => label.midi)).size).toBe(85);
+    expect(labels[0].midi).toBe(108);
+    expect(labels[labels.length - 1].midi).toBe(24);
   });
 
-  it("positions labels logarithmically from the top", () => {
-    const labels = frequencyLabels(axis);
-    const low = labels.find((label) => label.hz === 100);
-    const high = labels.find((label) => label.hz === 10000);
-
+  it("positions labels at their logarithmically mapped frequencies", () => {
+    const low = labels.find((label) => label.label === "C1");
+    const high = labels.find((label) => label.label === "C8");
     expect(low).toBeDefined();
     expect(high).toBeDefined();
-    expect(low!.percentFromTop).toBeGreaterThan(high!.percentFromTop);
-    expect(high!.percentFromTop).toBeGreaterThanOrEqual(0);
-    expect(low!.percentFromTop).toBeLessThanOrEqual(100);
+    expect(high!.percentFromTop).toBeCloseTo(0, 6);
+    expect(low!.percentFromTop).toBeCloseTo(100, 6);
+    expect(high!.percentFromTop).toBeLessThan(low!.percentFromTop);
   });
-});
 
-describe("formatFrequency", () => {
-  it("uses Hz below one kilohertz and kHz above", () => {
-    expect(formatFrequency(50)).toBe("50 Hz");
-    expect(formatFrequency(1000)).toBe("1 kHz");
-    expect(formatFrequency(1500)).toBe("1.5 kHz");
-    expect(formatFrequency(20000)).toBe("20 kHz");
+  it("round-trips each note against the frequency mapping", () => {
+    for (const label of labels) {
+      expect(frequencyToMidi(label.hz)).toBeCloseTo(label.midi, 6);
+      expect(nearestMidi(label.hz)).toBe(label.midi);
+      expect(midiNoteName(nearestMidi(label.hz))).toBe(label.label);
+    }
+    expect(midiNoteName(24)).toBe("C1");
+    expect(midiNoteName(60)).toBe("C4");
+    expect(midiNoteName(108)).toBe("C8");
+    expect(midiNoteName(61)).toBe("C#4");
+  });
+
+  it("derives about ten pixels per label with a 148px floor", () => {
+    expect(noteAxisHeight(labels)).toBe(85 * NOTE_LABEL_PX);
+    expect(noteAxisHeight(labels)).toBe(850);
+    expect(noteAxisHeight([])).toBe(148);
   });
 });

@@ -1,6 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { createFrequencyAxis, frequencyLabels } from "../../spectrogram/axis";
+import {
+  createFrequencyAxis,
+  noteAxisHeight,
+  noteLabels,
+} from "../../spectrogram/axis";
 import { SpectrogramCache, spectrogramCacheKey } from "../../spectrogram/cache";
 import type { PcmLoader } from "../../spectrogram/pcm-loader";
 import { paletteTable } from "../../spectrogram/palette";
@@ -40,6 +44,7 @@ export interface SpectrogramPaneProps {
   ceilingDb?: number;
   minHz?: number;
   maxHz?: number;
+  /** Overrides the note-count-derived default height. */
   heightPx?: number;
   defaultCollapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
@@ -93,7 +98,7 @@ export function SpectrogramPane({
   ceilingDb = DEFAULT_CEILING_DB,
   minHz = DEFAULT_MIN_HZ,
   maxHz = DEFAULT_MAX_HZ,
-  heightPx = 148,
+  heightPx,
   defaultCollapsed = false,
   onCollapsedChange,
 }: SpectrogramPaneProps) {
@@ -130,10 +135,8 @@ export function SpectrogramPane({
       return null;
     }
   }, [sampleRate, minHz, maxHz, rows]);
-  const labels = useMemo(
-    () => (axis === null ? [] : frequencyLabels(axis)),
-    [axis],
-  );
+  const labels = useMemo(() => (axis === null ? [] : noteLabels(axis)), [axis]);
+  const paneHeight = heightPx ?? noteAxisHeight(labels);
 
   useEffect(() => {
     if (collapsed || engine === null || !(sampleRate > 0)) {
@@ -307,13 +310,14 @@ export function SpectrogramPane({
         data-testid="spectrogram-body"
         hidden={collapsed}
       >
-        <div className="spectrogram-axis" aria-label="Frequency axis">
+        <div className="spectrogram-axis" aria-label="Note axis">
           {axis !== null &&
             labels.map((label) => (
               <span
-                key={label.hz}
+                key={label.midi}
                 style={{ top: `${label.percentFromTop}%` }}
-                data-hz={label.hz}
+                data-midi={label.midi}
+                data-hz={label.hz.toFixed(3)}
               >
                 {label.label}
               </span>
@@ -326,7 +330,7 @@ export function SpectrogramPane({
             data-testid="spectrogram-canvas"
             width={widthPx}
             height={rows}
-            style={{ height: heightPx }}
+            style={{ height: paneHeight }}
             aria-label={`Spectrogram of project ${projectId}`}
           />
           {playheadX >= 0 && playheadX <= widthPx && (

@@ -1,6 +1,9 @@
 import {
+  DEFAULT_HIGHEST_MIDI,
+  DEFAULT_LOWEST_MIDI,
   createFrequencyAxis,
   frequencyAtRow,
+  midiToFrequency,
   type FrequencyAxis,
 } from "./axis";
 import { createRealFftScratch, isPowerOfTwo, realFftPackedInto } from "./fft";
@@ -11,8 +14,9 @@ import { hannWindow } from "./window";
 /** The analysis window the product specifies. */
 export const DEFAULT_FFT_SIZE = 2048;
 export const DEFAULT_ROWS = 256;
-export const DEFAULT_MIN_HZ = 30;
-export const DEFAULT_MAX_HZ = 20000;
+/** Default musical range C1..C8, matching the labelled note axis. */
+export const DEFAULT_MIN_HZ = midiToFrequency(DEFAULT_LOWEST_MIDI);
+export const DEFAULT_MAX_HZ = midiToFrequency(DEFAULT_HIGHEST_MIDI);
 export const DEFAULT_FLOOR_DB = -100;
 export const DEFAULT_CEILING_DB = 0;
 
