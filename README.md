@@ -37,7 +37,7 @@ no network and links the web dependencies from the preserved pnpm store. On a
 fresh checkout without those assets, `make install-tools` checks the OS and
 toolchain, downloads the pinned Sonic Visualiser and Vamp Plugin Pack releases
 from their official pages, verifies every SHA-256, and downloads the Demucs
-weights only after the explicit `--accept-model-terms` flag. See
+weights only after the explicit `--accept-model-terms` flag or an `accept` answer. See
 [THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md) for URLs, hashes, licences
 and credits. Nothing third-party is committed.
 

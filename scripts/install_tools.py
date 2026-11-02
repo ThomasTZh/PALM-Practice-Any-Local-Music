@@ -548,6 +548,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     TOOLS.mkdir(parents=True, exist_ok=True)
+    print(
+        "[licences] Sonic Visualiser is GPL-2.0-or-later and the Vamp Plugin "
+        "Pack is AGPL-3.0 with individual plugins under GPL/AGPL; they stay "
+        "under those licences and are not bundled or relicensed here."
+    )
     problems = check_environment()
     try:
         if not args.skip_tools:
