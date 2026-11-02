@@ -31,10 +31,15 @@ CLI above serving `web/dist`. By default the server keeps its data in the
 per-user application directory; pass `--data-root DIR` to use a different one
 (the e2e suite uses an isolated temporary root per run).
 
-There is no installer and no download step: the Python environment, web
-dependencies, Vamp plugins, Piper host, model bundle and test recordings are
-preserved in this workspace. `make bootstrap` verifies them and links the web
-dependencies from the preserved pnpm store; `pnpm install` is not used offline.
+This workspace preserves the Python environment, web dependencies, Vamp
+plugins, Piper host, model bundle and test recordings, so `make bootstrap` needs
+no network and links the web dependencies from the preserved pnpm store. On a
+fresh checkout without those assets, `make install-tools` checks the OS and
+toolchain, downloads the pinned Sonic Visualiser and Vamp Plugin Pack releases
+from their official pages, verifies every SHA-256, and downloads the Demucs
+weights only after the explicit `--accept-model-terms` flag. See
+[THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md) for URLs, hashes, licences
+and credits. Nothing third-party is committed.
 
 ## What it does
 
@@ -78,6 +83,8 @@ dependencies from the preserved pnpm store; `pnpm install` is not used offline.
 |---|---|
 | `doctor` | toolchain, assets, Vamp plugin pack, Piper, model bundle, GPU |
 | `bootstrap` | offline, idempotent setup; skips completed work |
+| `install-tools` | checks the machine and fetches pinned Vamp/Piper tools |
+| `install-model` | fetches the htdemucs_ft weights after accepting their terms |
 | `fixtures` | writes the six deterministic WAV fixtures |
 | `dev` / `dev-smoke` | dev servers / start the real server, fetch health and root, stop |
 | `build` / `build-web` | compile Python + build UI / typecheck + build UI only |
