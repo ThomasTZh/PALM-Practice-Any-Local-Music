@@ -70,12 +70,13 @@ download or redistribute any of them.
 
 ## Credits
 
-- Demucs code and `htdemucs_ft` weights: Meta AI Research and the Demucs
-  authors, https://github.com/facebookresearch/demucs.
+- Demucs code and `htdemucs_ft` weights: Simon Rouard, Francisco Massa and
+  Alexandre Defossez (Meta AI Research), https://github.com/facebookresearch/demucs.
 - Chordino and NNLS-Chroma: Matthias Mauch and contributors,
   https://github.com/c4dm/nnls-chroma.
-- QM Key Detector and QM Bar and Beat Tracker: Queen Mary University of London,
-  https://code.soundsoftware.ac.uk/projects/qm-vamp-plugins.
+- QM Key Detector (Katy Noland, Christian Landone) and QM Bar and Beat Tracker
+  (Matthew Davies, Christian Landone, Chris Cannam), Queen Mary University of
+  London, https://code.soundsoftware.ac.uk/projects/qm-vamp-plugins.
 - BeatRoot: Simon Dixon, https://code.soundsoftware.ac.uk/projects/beatroot-vamp.
 - Sonic Visualiser, Piper and the Vamp plugin SDK: Chris Cannam and Queen Mary
   University of London, https://www.sonicvisualiser.org/ and
