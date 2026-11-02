@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Headless five-recording acceptance run for the analysis pipeline.
+"""Headless acceptance run for the analysis pipeline.
 
 Runs the real offline Vamp pipeline (Piper + Chordino/Key Detector/Bar and Beat
-Tracker) over every recording in ``audio2test``, measures each cold run, and
-writes ``docs/acceptance/report.json`` and ``docs/acceptance/report.md``.
+Tracker) over the recordings in a directory, measures each cold run, and writes
+``report.json`` and ``report.md``.
 
-No browser, no network, no new dependencies. Missing recordings are reported
-as ``missing`` and never replaced with invented values; the exit status is 0
-only when every expected recording was analysed successfully.
+No browser, no network, no new dependencies. When an optional expected-recordings
+file is given, its names define the rows and any absent name is reported as
+``missing`` and never replaced with invented values; without it, every ``*.wav``
+in the directory is analysed. The exit status is 0 only when every expected
+recording was analysed successfully.
 """
 
 from __future__ import annotations
@@ -25,13 +27,6 @@ SRC = ROOT / "src"
 DEFAULT_RECORDINGS = ROOT / "audio2test"
 DEFAULT_REPORT = ROOT / "docs" / "acceptance"
 DEFAULT_SAMPLE_RATE = 48_000
-EXPECTED_RECORDINGS = (
-    "46.GIBBS - Simplicity.wav",
-    "Carousel Theory Full Mix V1 (With Limiter).wav",
-    "Summer By The Sea Instrumental Demo.wav",
-    "Sweet Demo.wav",
-    "Videoslave Instrumental Demo.wav",
-)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -49,6 +44,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"where report.json/report.md are written (default: {DEFAULT_REPORT})",
     )
     parser.add_argument(
+        "--expected-file",
+        type=Path,
+        default=None,
+        help="optional text file listing one expected recording filename per line",
+    )
+    parser.add_argument(
         "--sample-rate",
         type=int,
         default=DEFAULT_SAMPLE_RATE,
@@ -57,12 +58,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def discover(directory: Path) -> tuple[list[Path], list[str]]:
-    """Return recordings in a stable order plus any expected-but-missing names."""
+def read_expected(path: Path) -> tuple[str, ...]:
+    """Read expected recording names, ignoring blank lines and ``#`` comments."""
+    names: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        name = line.strip()
+        if name and not name.startswith("#"):
+            names.append(name)
+    return tuple(names)
+
+
+def discover(directory: Path, expected: tuple[str, ...]) -> tuple[list[Path], list[str], list[str]]:
+    """Return present paths, expected-but-present names and discovery notes."""
     present = sorted(path for path in directory.glob("*.wav") if path.is_file())
-    missing = [name for name in EXPECTED_RECORDINGS if not (directory / name).is_file()]
-    extras = sorted(path.name for path in present if path.name not in EXPECTED_RECORDINGS)
-    return present, missing + [f"extra:{name}" for name in extras]
+    if not expected:
+        return present, [path.name for path in present], []
+    expected_present = [name for name in expected if (directory / name).is_file()]
+    missing = [name for name in expected if not (directory / name).is_file()]
+    extras = sorted(path.name for path in present if path.name not in expected)
+    return present, expected_present, missing + [f"extra:{name}" for name in extras]
 
 
 def analyse(path: Path, sample_rate: int) -> dict[str, object]:
@@ -183,28 +197,29 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     sys.path.insert(0, str(SRC))
-    present, missing = discover(recording_dir)
+    expected = read_expected(args.expected_file) if args.expected_file else ()
+    present, expected_present, missing = discover(recording_dir, expected)
     rows: list[dict[str, object]] = []
-    for name in EXPECTED_RECORDINGS:
-        path = recording_dir / name
-        if path.is_file():
-            rows.append(analyse(path, args.sample_rate))
-        else:
-            rows.append(
-                {
-                    "file": name,
-                    "status": "missing",
-                    "duration_seconds": None,
-                    "analysis_seconds": None,
-                    "bpm": None,
-                    "key": None,
-                    "bars": None,
-                    "beats": None,
-                    "chords": [],
-                }
-            )
+    for name in expected_present:
+        rows.append(analyse(recording_dir / name, args.sample_rate))
+    for name in missing:
+        if name.startswith("extra:"):
+            continue
+        rows.append(
+            {
+                "file": name,
+                "status": "missing",
+                "duration_seconds": None,
+                "analysis_seconds": None,
+                "bpm": None,
+                "key": None,
+                "bars": None,
+                "beats": None,
+                "chords": [],
+            }
+        )
     for path in present:
-        if path.name not in EXPECTED_RECORDINGS:
+        if path.name not in expected_present:
             rows.append(analyse(path, args.sample_rate))
 
     generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

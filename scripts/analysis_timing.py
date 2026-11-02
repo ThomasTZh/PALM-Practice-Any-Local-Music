@@ -30,11 +30,6 @@ RECORDINGS = ROOT / "audio2test"
 DEFAULT_SAMPLE_RATE = 48_000
 DEFAULT_LIMIT_SECONDS = 60.0
 MINIMUM_FIVE_MINUTE_SECONDS = 240.0
-PREFERRED_NAMES = (
-    "Carousel Theory Full Mix V1 (With Limiter).wav",
-    "Sweet Demo.wav",
-    "Videoslave Instrumental Demo.wav",
-)
 
 
 def probe_duration(path: Path) -> float | None:
@@ -75,10 +70,6 @@ def choose_recording(explicit: str | None) -> Path:
         if not path.is_file():
             raise AnalysisError(f"BASSEPARATE_TIMING_AUDIO is not a file: {path}")
         return path
-    for name in PREFERRED_NAMES:
-        candidate = RECORDINGS / name
-        if candidate.is_file():
-            return candidate
     candidates = sorted(RECORDINGS.glob("*.wav")) if RECORDINGS.is_dir() else []
     if not candidates:
         raise AnalysisError(

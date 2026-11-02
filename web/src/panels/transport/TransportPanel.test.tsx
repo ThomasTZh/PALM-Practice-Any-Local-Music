@@ -63,14 +63,14 @@ describe("TransportPanel", () => {
     render(
       <TransportPanel
         player={player}
-        projectTitle="Carousel"
+        projectTitle="Example Track"
         keyLabel="C major"
         bpm={120}
         bpb={4}
       />,
     );
 
-    expect(screen.getByTestId("project-title")).toHaveTextContent("Carousel");
+    expect(screen.getByTestId("project-title")).toHaveTextContent("Example Track");
     expect(screen.getByTestId("key-readout")).toHaveTextContent("C major");
     expect(screen.getByTestId("bpm-readout")).toHaveTextContent("120 · 4/4");
     expect(screen.queryByLabelText("Speed")).not.toBeInTheDocument();
