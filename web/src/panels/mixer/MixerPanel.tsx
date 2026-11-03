@@ -1,3 +1,10 @@
+import type { SeparationModel } from "../../api/types";
+import {
+  formatModelSize,
+  modelCpuEstimate,
+  resolveSeparationModelId,
+  separationModelName,
+} from "../../state/separationModels";
 import {
   anySoloed,
   defaultStemMix,
@@ -26,6 +33,13 @@ export interface MixerSeparation {
   error: string | null;
   onSeparate: () => void;
   onCancel: () => void;
+  /** Model registry rows; omitted by older callers/tests. */
+  models?: SeparationModel[];
+  selectedModel?: string;
+  onModelChange?: (modelId: string) => void;
+  activeModel?: string | null;
+  songSeconds?: number;
+  modelsError?: string | null;
 }
 
 export interface MixerPanelProps {
@@ -67,6 +81,78 @@ export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
 
       {separation !== undefined && (
         <div className="mixer-separation" data-testid="mixer-separation">
+          {separation.models !== undefined && (
+            <fieldset
+              className="separation-models"
+              data-testid="separation-model-selector"
+            >
+              <legend>Separation model</legend>
+              {separation.models.length === 0 ? (
+                <p className="mixer-separation-hint">Loading models…</p>
+              ) : (
+                separation.models.map((model) => {
+                  const selected =
+                    (separation.selectedModel ??
+                      resolveSeparationModelId(
+                        separation.models ?? [],
+                        null,
+                      )) === model.id;
+                  const estimate = modelCpuEstimate(
+                    model,
+                    separation.songSeconds ?? 0,
+                  );
+                  const wall = model.metrics.wall_seconds;
+                  const fixture = model.metrics.fixture_seconds;
+                  return (
+                    <label
+                      key={model.id}
+                      className="separation-model"
+                      data-testid={`separation-model-${model.id}`}
+                      data-installed={model.installed}
+                    >
+                      <input
+                        type="radio"
+                        name="separation-model"
+                        aria-label={`Separation model ${model.name}`}
+                        checked={selected}
+                        disabled={!model.installed || separation.running}
+                        onChange={() => separation.onModelChange?.(model.id)}
+                      />
+                      <span className="separation-model-name">
+                        {model.name}
+                      </span>
+                      <span className="separation-model-size">
+                        {formatModelSize(model.size_bytes)}
+                      </span>
+                      {!model.installed && (
+                        <span className="separation-model-missing">
+                          missing · {model.install_command}
+                        </span>
+                      )}
+                      {model.engine === "msst" && estimate !== null && (
+                        <span
+                          className="separation-model-cpu"
+                          data-testid={`separation-model-cpu-${model.id}`}
+                        >
+                          {estimate}
+                          {typeof wall === "number" &&
+                          typeof fixture === "number"
+                            ? ` · measured ${wall.toFixed(2)} s / ${fixture.toFixed(1)} s`
+                            : ""}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })
+              )}
+              {separation.modelsError !== undefined &&
+                separation.modelsError !== null && (
+                  <p className="mixer-separation-hint" role="alert">
+                    {separation.modelsError}
+                  </p>
+                )}
+            </fieldset>
+          )}
           {separation.running ? (
             <>
               <div
@@ -124,6 +210,19 @@ export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
               {separation.error}
             </p>
           )}
+          {separation.activeModel !== undefined &&
+            separation.activeModel !== null && (
+              <p
+                className="mixer-active-model"
+                data-testid="active-separation-model"
+              >
+                Active model:{" "}
+                {separationModelName(
+                  separation.models ?? [],
+                  separation.activeModel,
+                )}
+              </p>
+            )}
         </div>
       )}
 

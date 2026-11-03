@@ -22,6 +22,7 @@ import {
   type Viewport,
 } from "./panels/waveform/viewport";
 import { createRangedPcmLoader, type PcmLoader } from "./spectrogram";
+import type { SeparationModelsResponse } from "./api/types";
 import type { AnalysisJobClient, AnalysisSnapshot } from "./state/analysis";
 import { createAnalysisJobClient } from "./state/analysisApi";
 import {
@@ -30,6 +31,10 @@ import {
   type SeparationJobState,
 } from "./state/separation";
 import { createSeparationJobClient } from "./state/separationApi";
+import {
+  DEFAULT_SEPARATION_MODEL_ID,
+  resolveSeparationModelId,
+} from "./state/separationModels";
 import { formatPosition } from "./state/format";
 import { createLocalStudioRuntime } from "./state/localStudio";
 import { clampLoopRangeToDuration, type StudioPlayer } from "./state/player";
@@ -110,9 +115,16 @@ function titleCase(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }
 
-const STEM_LANE_ORDER = ["vocals", "drums", "bass", "other"] as const;
+const STEM_LANE_ORDER = [
+  "vocals",
+  "drums",
+  "bass",
+  "other",
+  "guitar",
+  "piano",
+] as const;
 
-/** Four known stems first in the requested order, then any extras. */
+/** Known stems first in the requested order, then any extras. */
 export function orderStemLanes(stems: StudioStem[]): StudioStem[] {
   const rank = (stem: StudioStem): number => {
     const label = stem.role || stem.id;
@@ -231,6 +243,17 @@ export function App({
     stage: string;
     error: string | null;
   }>({ running: false, progress: 0, stage: "", error: null });
+  const [separationModels, setSeparationModels] =
+    useState<SeparationModelsResponse>({
+      default: DEFAULT_SEPARATION_MODEL_ID,
+      models: [],
+    });
+  const [separationModelsError, setSeparationModelsError] = useState<
+    string | null
+  >(null);
+  const [selectedModel, setSelectedModel] = useState(
+    DEFAULT_SEPARATION_MODEL_ID,
+  );
   const revisionRef = useRef(1);
   const hydratedRef = useRef(false);
   const openTokenRef = useRef(0);
@@ -239,9 +262,13 @@ export function App({
   const runtimeRef = useRef<StudioRuntime | null>(null);
   const separationAbortRef = useRef<AbortController | null>(null);
   const separationJobRef = useRef<SeparationJobState | null>(null);
+  const selectedModelRef = useRef(selectedModel);
+  const separationModelsRef = useRef(separationModels);
   sectionsRef.current = sections;
   projectRef.current = project;
   runtimeRef.current = runtime;
+  selectedModelRef.current = selectedModel;
+  separationModelsRef.current = separationModels;
 
   const pcmLoaderFor = useCallback(
     (projectId: string): PcmLoader =>
@@ -250,6 +277,45 @@ export function App({
         : createRangedPcmLoader({ projectId }),
     [pcmFactoryProp],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .fetchSeparationModels()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setSeparationModels(response);
+        setSeparationModelsError(null);
+        setSelectedModel((current) =>
+          resolveSeparationModelId(
+            response.models,
+            projectRef.current?.stemModel ?? current,
+          ),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSeparationModelsError(errorMessage(error));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    if (separationModels.models.length === 0) {
+      return;
+    }
+    setSelectedModel((current) =>
+      resolveSeparationModelId(
+        separationModels.models,
+        project?.stemModel ?? current,
+      ),
+    );
+  }, [project?.id, project?.stemModel, separationModels]);
 
   useEffect(() => {
     if (runtime === null || runtime.subscribeNotice === undefined) {
@@ -521,6 +587,7 @@ export function App({
     try {
       const job = await runSeparationJob(separationClient, project.id, {
         pollIntervalMs: separationPollIntervalMs,
+        modelId: selectedModelRef.current,
         signal: controller.signal,
         onUpdate: (state) => {
           if (controller.signal.aborted) {
@@ -810,6 +877,12 @@ export function App({
                   void handleSeparate();
                 },
                 onCancel: handleCancelSeparation,
+                models: separationModels.models,
+                selectedModel,
+                onModelChange: setSelectedModel,
+                activeModel: project.stemModel,
+                songSeconds: project.durationSeconds,
+                modelsError: separationModelsError,
               }}
             />
           )}

@@ -21,6 +21,11 @@ import { createFakePlayer } from "./state/fakePlayer";
 import { createFakePractice } from "./state/fakePractice";
 import { makePeaksBuffer } from "./panels/waveform/peaksFixture";
 import {
+  defaultSeparationModels,
+  HTDEMUCS_MODEL,
+} from "./state/separationModels";
+import type { SeparationModel, SeparationModelsResponse } from "./api/types";
+import {
   parseStudioProject,
   type ShellApi,
   type ServerPracticeState,
@@ -107,6 +112,68 @@ const PROJECT_WITHOUT_ANALYSIS = parseStudioProject(
   payload({ analysis: false }),
 );
 
+const SCNET_MODEL: SeparationModel = {
+  ...HTDEMUCS_MODEL,
+  id: "scnet-xl-ihf",
+  name: "SCNet XL IHF",
+  engine: "msst",
+  default: false,
+  bundled: false,
+  installed: false,
+  status: "missing",
+  size_bytes: 214069684,
+  install_command: "make models-install ID=scnet-xl-ihf",
+  labels: ["drums", "bass", "other", "vocals"],
+  metrics: {
+    device: "cpu",
+    fixture_seconds: 8,
+    wall_seconds: 58.2,
+    child_seconds: 55.32,
+  },
+};
+
+const BS_ROFORMER_MODEL: SeparationModel = {
+  ...SCNET_MODEL,
+  id: "bs-roformer-sw",
+  name: "BS-RoFormer-SW",
+  installed: true,
+  status: "installed",
+  size_bytes: 699416765,
+  install_command: "make models-install ID=bs-roformer-sw",
+  labels: ["bass", "drums", "other", "vocals", "guitar", "piano"],
+  metrics: {
+    device: "cpu",
+    fixture_seconds: 8,
+    wall_seconds: 67.35,
+    child_seconds: 65.97,
+  },
+};
+
+const MODEL_RESPONSE: SeparationModelsResponse = {
+  default: "htdemucs_ft",
+  models: [HTDEMUCS_MODEL, SCNET_MODEL, BS_ROFORMER_MODEL],
+};
+
+function sixStemProject(stemModel: string | null = "bs-roformer-sw") {
+  const raw = payload({ stems: false });
+  const labels = ["piano", "vocals", "guitar", "bass", "other", "drums"];
+  return parseStudioProject({
+    ...raw,
+    stems: labels.map((label) => ({
+      label,
+      url: `/api/projects/p1/stems/${label}/pcm`,
+      frames: 352800,
+      channels: 1,
+      sampleRate: 44100,
+      model: stemModel,
+    })),
+    document: {
+      ...raw.document,
+      stemModel,
+    },
+  });
+}
+
 interface Rig {
   player: ReturnType<typeof createFakePlayer>;
   mixer: ReturnType<typeof createFakeMixer>;
@@ -192,6 +259,10 @@ function makeApi(
         sampleRate: 8000,
         samplesPerBucket: 1000,
       });
+    },
+    async fetchSeparationModels() {
+      calls.push("separationModels");
+      return defaultSeparationModels();
     },
     async saveState(projectId, state) {
       calls.push(`save:${projectId}:${state.sections.length}`);
@@ -358,8 +429,13 @@ function separationApp(options: {
   initial: StudioProject;
   refreshed?: StudioProject;
   client: SeparationJobClient;
+  models?: SeparationModelsResponse;
 }) {
   const api = makeApi(options.initial);
+  if (options.models !== undefined) {
+    api.fetchSeparationModels = async () =>
+      options.models as SeparationModelsResponse;
+  }
   const projects = [options.initial, options.refreshed ?? options.initial];
   let opens = 0;
   api.openProject = async (projectId: string) => {
@@ -1090,7 +1166,9 @@ describe("App stem separation", () => {
     await openProject();
 
     fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
-    await waitFor(() => expect(server.client.start).toHaveBeenCalledWith("p1"));
+    await waitFor(() =>
+      expect(server.client.start).toHaveBeenCalledWith("p1", "htdemucs_ft"),
+    );
     expect(await screen.findByTestId("separation-progress")).toHaveAttribute(
       "aria-valuenow",
       "10",
@@ -1287,6 +1365,127 @@ describe("App stem separation", () => {
     await waitFor(() =>
       expect(rigs[0].player.getState().status).toBe("playing"),
     );
+  });
+
+  it("shows model states, starts with the selected model and reports the active one", async () => {
+    const server = separationServer({
+      states: [separationJob("succeeded", 1, { stems: 6 })],
+    });
+    const refreshed = sixStemProject("bs-roformer-sw");
+    const { api } = separationApp({
+      initial: PROJECT_WITHOUT_STEMS,
+      refreshed,
+      client: server.client,
+      models: MODEL_RESPONSE,
+    });
+    await openProject();
+
+    const demucs = await screen.findByRole("radio", {
+      name: "Separation model Demucs htdemucs_ft",
+    });
+    expect(demucs).toBeChecked();
+    const scnet = screen.getByRole("radio", {
+      name: "Separation model SCNet XL IHF",
+    });
+    expect(scnet).toBeDisabled();
+    expect(
+      screen.getByTestId("separation-model-scnet-xl-ihf"),
+    ).toHaveTextContent("make models-install ID=scnet-xl-ihf");
+    const bs = screen.getByRole("radio", {
+      name: "Separation model BS-RoFormer-SW",
+    });
+    expect(bs).toBeEnabled();
+    fireEvent.click(bs);
+    expect(bs).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
+
+    await waitFor(() =>
+      expect(server.client.start).toHaveBeenCalledWith("p1", "bs-roformer-sw"),
+    );
+    expect(
+      await screen.findByTestId("active-separation-model"),
+    ).toHaveTextContent("Active model: BS-RoFormer-SW");
+    expect(api.calls.filter((call) => call === "open:p1")).toHaveLength(2);
+  });
+
+  it("restores the stored model and renders six lanes and channels", async () => {
+    const project = sixStemProject("bs-roformer-sw");
+    const api = makeApi(project);
+    api.fetchSeparationModels = async () => MODEL_RESPONSE;
+    setup({ project, api });
+    await openProject();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("radio", {
+          name: "Separation model BS-RoFormer-SW",
+        }),
+      ).toBeChecked(),
+    );
+
+    const laneHost = screen.getByTestId("stem-lanes");
+    const laneIds = Array.from(laneHost.querySelectorAll(".waveform-pane")).map(
+      (lane) => lane.getAttribute("data-testid"),
+    );
+    expect(laneIds).toEqual([
+      "waveform-vocals",
+      "waveform-drums",
+      "waveform-bass",
+      "waveform-other",
+      "waveform-guitar",
+      "waveform-piano",
+    ]);
+
+    const mixer = screen.getByTestId("mixer");
+    for (const id of [
+      "mix",
+      "vocals",
+      "drums",
+      "bass",
+      "other",
+      "guitar",
+      "piano",
+    ]) {
+      expect(
+        within(mixer).getByTestId(`mixer-channel-${id}`),
+      ).toBeInTheDocument();
+    }
+    expect(
+      within(mixer).getByText("Active model: BS-RoFormer-SW"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("time-ruler"), { clientX: 470 });
+    await waitFor(() =>
+      expect(screen.getByTestId("transport-position")).toHaveTextContent(
+        "0:04.0",
+      ),
+    );
+    const mixX = screen.getByTestId("waveform-playhead-a1").getAttribute("x1");
+    for (const label of [
+      "vocals",
+      "drums",
+      "bass",
+      "other",
+      "guitar",
+      "piano",
+    ]) {
+      expect(
+        screen.getByTestId(`waveform-playhead-${label}`).getAttribute("x1"),
+      ).toBe(mixX);
+    }
+  });
+
+  it("falls back to Demucs when the stored model is unavailable", async () => {
+    const project = sixStemProject("retired-model");
+    setup({ project });
+    await openProject();
+
+    expect(
+      await screen.findByRole("radio", {
+        name: "Separation model Demucs htdemucs_ft",
+      }),
+    ).toBeChecked();
   });
 
   it("offers Re-separate with the cache note when stems exist", async () => {

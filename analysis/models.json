@@ -20,13 +20,20 @@
       "install_dir": "models/htdemucs_ft",
       "checkpoint_manifest": "analysis/checkpoints.json",
       "config_name": "htdemucs_ft.yaml",
-      "files": []
+      "files": [],
+      "metrics": {
+        "device": "cpu",
+        "fixture_seconds": 8.0,
+        "wall_seconds": 19.24,
+        "child_seconds": 18.85,
+        "source": "t8 measured run"
+      }
     },
     {
       "id": "scnet-xl-ihf",
       "name": "SCNet XL IHF",
       "engine": "msst",
-      "engine_command": "analysis-models/.venv/bin/python analysis/separate_msst.py --model scnet-xl-ihf --device {device}",
+      "engine_command": "analysis-models/.venv/bin/python analysis/separate_msst.py --model-id scnet-xl-ihf --device {device}",
       "labels": [
         "drums",
         "bass",
@@ -54,13 +61,21 @@
           "size_bytes": 5906,
           "sha256": "54ddcb8aeeae85c8d0e148741e7d87b0fbd38bd21cffa5d59ba124fe1e672f40"
         }
-      ]
+      ],
+      "metrics": {
+        "device": "cpu",
+        "fixture_seconds": 8.0,
+        "wall_seconds": 58.2,
+        "child_seconds": 55.32,
+        "peak_rss_mib": 3965.4,
+        "source": "t49 measured run"
+      }
     },
     {
       "id": "bs-roformer-sw",
       "name": "BS-RoFormer-SW",
       "engine": "msst",
-      "engine_command": "analysis-models/.venv/bin/python analysis/separate_msst.py --model bs-roformer-sw --device {device}",
+      "engine_command": "analysis-models/.venv/bin/python analysis/separate_msst.py --model-id bs-roformer-sw --device {device}",
       "labels": [
         "bass",
         "drums",
@@ -90,7 +105,15 @@
           "size_bytes": 4613,
           "sha256": "f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b"
         }
-      ]
+      ],
+      "metrics": {
+        "device": "cpu",
+        "fixture_seconds": 8.0,
+        "wall_seconds": 67.35,
+        "child_seconds": 65.97,
+        "peak_rss_mib": 3006.4,
+        "source": "t49 measured run"
+      }
     }
   ]
 }

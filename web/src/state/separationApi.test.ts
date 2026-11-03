@@ -51,6 +51,18 @@ describe("createSeparationJobClient", () => {
     });
   });
 
+  it("sends the selected model_id when one is given", async () => {
+    const { fetchImpl, calls } = server({ "/api/separate": response(JOB) });
+    const client = createSeparationJobClient({ fetchImpl });
+
+    await client.start("p1", "bs-roformer-sw");
+
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      project_id: "p1",
+      model_id: "bs-roformer-sw",
+    });
+  });
+
   it("reads progress and ignores the result payload beyond the stem count", async () => {
     const { fetchImpl } = server({
       "/api/jobs/sep-1": response({

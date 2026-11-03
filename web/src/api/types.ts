@@ -110,11 +110,7 @@ export interface ProjectUpdateRequest {
 }
 
 export type JobState =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
@@ -170,6 +166,15 @@ export interface PcmFrameHeaders {
   totalFrames: number;
 }
 
+export interface SeparationModelMetrics {
+  device?: string;
+  fixture_seconds?: number;
+  wall_seconds?: number;
+  child_seconds?: number;
+  peak_rss_mib?: number;
+  source?: string;
+}
+
 /** One entry from GET /api/separation/models (local registry + install state). */
 export interface SeparationModel {
   id: string;
@@ -192,7 +197,7 @@ export interface SeparationModel {
   detail: string;
   default: boolean;
   /** Locally measured cost on the 8 s fixture; may be empty for other models. */
-  metrics: Record<string, unknown>;
+  metrics: SeparationModelMetrics;
   file_states: Array<Record<string, unknown>>;
 }
 

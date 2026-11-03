@@ -2047,3 +2047,56 @@ Final gate on the committed tree:
 - Remaining human step: one listening/visual pass over the drawer centring,
   toolbar readouts, spectrogram position and note axis, and the previously
   outstanding autoplay-silence confirmation.
+
+## 2026-11-03 — model selector and six-stem presentation (t51)
+
+### Backend data exposed to the UI
+
+- `GET /api/separation/models` is fetched through StudioApi
+  (`fetchSeparationModels`), with a parsed SeparationModelsResponse. Models
+  carry installed/missing status, labels, size, engine, install command and the
+  measured CPU metrics.
+- analysis/models.json now carries the t49 measured metrics and its msst
+  `engine_command` templates use `--model-id` (matching separate_msst.py).
+  `make models-list`/`models-verify` remain green with all three rows.
+- StudioProject parses `stemModel` (document/raw/stem model fallback) and each
+  stem's model; old projects without it load unchanged.
+
+### Mixer selector and separation
+
+- The mixer separation panel lists model radio rows. Installed rows are
+  selectable; missing rows are disabled and show size plus the exact
+  `make models-install ID=...` command. htdemucs_ft is the initial/default
+  selection. Missing rows still show their measured CPU note, so choosing is
+  not blocked by a missing local model.
+- msst rows show a CPU estimate generated from the measured 8 s wall/child
+  times; for a 5 minute song the displayed ranges are ~35-36 min (SCNet) and
+  ~41-42 min (BS-RoFormer), with the measured seconds (`58.20 s / 8.0 s`,
+  `67.35 s / 8.0 s`).
+- Separation starts with the selected model (`client.start(projectId,
+  modelId)`/`model_id` in POST). Progress/cancel remain unchanged and disable
+  selection only while a job is running. The active model label appears from
+  project.stemModel after success; reopen restores that model when installed,
+  otherwise resolveSeparationModelId falls back to Demucs/default.
+- App fetches the model registry on mount, retries selection resolution when
+  the response/project changes, and passes models, selected id, active id and
+  song duration to the mixer.
+
+### Six stems
+
+STEM_LANE_ORDER is vocals, drums, bass, other, guitar, piano, then extras.
+The mix + six project renders six lanes in that order and seven mixer strips
+(mix plus six), sharing viewport/seek/playhead/width; mute and gain were
+exercised on guitar/piano.
+
+### Verification
+
+- Added client model-parse test, Api/start payload tests (`model_id`),
+  selector/default/missing/command/CPU tests, active-model test, App selector
+  + sends BS-RoFormer, stored-model restore, unavailable-model fallback, and
+  six-lane/six-channel/playhead test. Existing four-stem/Demucs tests remain.
+- Firefox mock with six stems and a missing SCNet row: three radios (SCNet
+  disabled, BS selected), missing command visible, active model label present,
+  six lanes in canonical order, seven mixer channels, document 1280/1280.
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency
+  or model download added.

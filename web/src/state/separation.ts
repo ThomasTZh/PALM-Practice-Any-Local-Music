@@ -13,13 +13,14 @@ export interface SeparationJobState {
 }
 
 export interface SeparationJobClient {
-  start(projectId: string): Promise<SeparationJobState>;
+  start(projectId: string, modelId?: string): Promise<SeparationJobState>;
   status(jobId: string): Promise<SeparationJobState>;
   cancel(jobId: string): Promise<SeparationJobState>;
 }
 
 export interface SeparationRunOptions {
   pollIntervalMs?: number;
+  modelId?: string;
   signal?: AbortSignal;
   onUpdate?: (state: SeparationJobState) => void;
 }
@@ -78,7 +79,10 @@ export async function runSeparationJob(
 ): Promise<SeparationJobState> {
   const pollIntervalMs = options.pollIntervalMs ?? 400;
   checkAborted(options.signal);
-  let job = await client.start(projectId);
+  let job =
+    options.modelId === undefined
+      ? await client.start(projectId)
+      : await client.start(projectId, options.modelId);
   options.onUpdate?.(job);
   while (!isTerminalSeparationStatus(job.status)) {
     checkAborted(options.signal);

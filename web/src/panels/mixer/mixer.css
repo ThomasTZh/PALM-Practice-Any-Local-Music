@@ -48,3 +48,64 @@
   padding: 0.1rem 0.45rem;
   font-size: 0.7rem;
 }
+
+.separation-models {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--line, #2a3340);
+  border-radius: 8px;
+}
+
+.separation-models legend {
+  padding: 0 0.25rem;
+  color: var(--muted, #93a1b1);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.separation-model {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.15rem 0.4rem;
+  align-items: center;
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.separation-model input {
+  accent-color: var(--accent-strong, #31a888);
+}
+
+.separation-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separation-model-size,
+.separation-model-missing,
+.separation-model-cpu {
+  color: var(--muted, #93a1b1);
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.separation-model-missing,
+.separation-model-cpu {
+  grid-column: 2 / -1;
+}
+
+.separation-model-missing {
+  color: var(--danger, #ff8b86);
+  overflow-wrap: anywhere;
+}
+
+.mixer-active-model {
+  margin: 0;
+  color: var(--accent, #6fd3b6);
+  font-size: 0.7rem;
+}

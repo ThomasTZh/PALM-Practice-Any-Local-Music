@@ -23,6 +23,7 @@ import {
   type StudioProject,
 } from "./state/project";
 import { createShellTransport } from "./state/studioRuntime";
+import { defaultSeparationModels } from "./state/separationModels";
 import { App } from "./App";
 
 // The shell falls back to measuring the window in jsdom; 1300 px leaves
@@ -212,6 +213,9 @@ function shellApi(project: StudioProject): ShellApi {
         sampleRate: 8000,
         samplesPerBucket: 1000,
       });
+    },
+    async fetchSeparationModels() {
+      return defaultSeparationModels();
     },
     async fetchStemPeaks() {
       return makePeaksBuffer({

@@ -307,6 +307,63 @@ describe("fetchStemPeaks", () => {
   });
 });
 
+describe("fetchSeparationModels", () => {
+  it("parses installed and missing model rows", async () => {
+    const { fetchImpl, calls } = fakeServer({
+      "/api/separation/models": {
+        json: {
+          default: "htdemucs_ft",
+          models: [
+            {
+              id: "htdemucs_ft",
+              name: "Demucs htdemucs_ft",
+              engine: "demucs",
+              labels: ["drums", "bass", "other", "vocals"],
+              size_bytes: 336565084,
+              installed: true,
+              status: "installed",
+              default: true,
+              install_command: "bundled with the checkout",
+              metrics: { wall_seconds: 19.24, fixture_seconds: 8 },
+            },
+            {
+              id: "bs-roformer-sw",
+              name: "BS-RoFormer-SW",
+              engine: "msst",
+              labels: ["bass", "drums", "other", "vocals", "guitar", "piano"],
+              size_bytes: 699416765,
+              installed: false,
+              status: "missing",
+              install_command: "make models-install ID=bs-roformer-sw",
+              metrics: {
+                wall_seconds: 67.35,
+                child_seconds: 65.97,
+                fixture_seconds: 8,
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await createStudioApi({
+      fetchImpl,
+    }).fetchSeparationModels();
+
+    expect(calls[0].url).toBe("/api/separation/models");
+    expect(response.default).toBe("htdemucs_ft");
+    expect(response.models).toHaveLength(2);
+    expect(response.models[1]).toMatchObject({
+      id: "bs-roformer-sw",
+      engine: "msst",
+      installed: false,
+      status: "missing",
+      install_command: "make models-install ID=bs-roformer-sw",
+      metrics: { wall_seconds: 67.35, fixture_seconds: 8 },
+    });
+  });
+});
+
 describe("importRecording", () => {
   it("posts the file as multipart form data", async () => {
     const { fetchImpl, calls } = fakeServer({

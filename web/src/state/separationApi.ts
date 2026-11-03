@@ -159,11 +159,14 @@ export function createSeparationJobClient(
   }
 
   return {
-    async start(projectId) {
+    async start(projectId, modelId) {
       const payload = await request("/api/separate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project_id: projectId }),
+        body: JSON.stringify({
+          project_id: projectId,
+          ...(modelId !== undefined ? { model_id: modelId } : {}),
+        }),
       });
       return parseJob(payload);
     },

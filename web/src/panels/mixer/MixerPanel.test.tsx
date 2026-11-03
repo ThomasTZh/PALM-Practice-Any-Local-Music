@@ -5,6 +5,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { createFakeMixer } from "../../state/fakeMixer";
+import { HTDEMUCS_MODEL } from "../../state/separationModels";
 import { MixerPanel, type MixerSeparation } from "./MixerPanel";
 
 const STEMS = [
@@ -183,6 +184,120 @@ describe("MixerPanel stem separation", () => {
     ).toBeInTheDocument();
     expect(screen.getByTestId("separation-hint")).toHaveTextContent(
       "Stem separation is cached: a re-run is instant.",
+    );
+  });
+
+  it("lists installed and missing models with sizes, commands and CPU notes", () => {
+    const scnet = {
+      ...HTDEMUCS_MODEL,
+      id: "scnet-xl-ihf",
+      name: "SCNet XL IHF",
+      engine: "msst",
+      default: false,
+      bundled: false,
+      installed: false,
+      status: "missing" as const,
+      size_bytes: 214069684,
+      install_command: "make models-install ID=scnet-xl-ihf",
+      labels: ["drums", "bass", "other", "vocals"],
+      metrics: {
+        device: "cpu",
+        fixture_seconds: 8,
+        wall_seconds: 58.2,
+        child_seconds: 55.32,
+      },
+    };
+    const bs = {
+      ...scnet,
+      id: "bs-roformer-sw",
+      name: "BS-RoFormer-SW",
+      installed: true,
+      status: "installed" as const,
+      size_bytes: 699416765,
+      install_command: "make models-install ID=bs-roformer-sw",
+      labels: ["bass", "drums", "other", "vocals", "guitar", "piano"],
+      metrics: {
+        device: "cpu",
+        fixture_seconds: 8,
+        wall_seconds: 67.35,
+        child_seconds: 65.97,
+      },
+    };
+    const onModelChange = vi.fn();
+    render(
+      <MixerPanel
+        stems={[]}
+        controller={createFakeMixer([])}
+        separation={separation({
+          models: [HTDEMUCS_MODEL, scnet, bs],
+          selectedModel: "htdemucs_ft",
+          onModelChange,
+          songSeconds: 300,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByRole("radio", {
+        name: "Separation model Demucs htdemucs_ft",
+      }),
+    ).toBeChecked();
+    const missing = screen.getByRole("radio", {
+      name: "Separation model SCNet XL IHF",
+    });
+    expect(missing).toBeDisabled();
+    expect(
+      screen.getByTestId("separation-model-scnet-xl-ihf"),
+    ).toHaveTextContent("204 MB");
+    expect(
+      screen.getByTestId("separation-model-scnet-xl-ihf"),
+    ).toHaveTextContent("make models-install ID=scnet-xl-ihf");
+    expect(
+      screen.getByTestId("separation-model-cpu-scnet-xl-ihf"),
+    ).toHaveTextContent("35-36 min");
+    expect(
+      screen.getByTestId("separation-model-cpu-scnet-xl-ihf"),
+    ).toHaveTextContent("58.20 s / 8.0 s");
+    const bsRadio = screen.getByRole("radio", {
+      name: "Separation model BS-RoFormer-SW",
+    });
+    expect(bsRadio).toBeEnabled();
+    expect(
+      screen.getByTestId("separation-model-cpu-bs-roformer-sw"),
+    ).toHaveTextContent("41-42 min");
+    expect(
+      screen.getByTestId("separation-model-cpu-bs-roformer-sw"),
+    ).toHaveTextContent("67.35 s / 8.0 s");
+
+    fireEvent.click(bsRadio);
+    expect(onModelChange).toHaveBeenCalledWith("bs-roformer-sw");
+  });
+
+  it("shows the active model after separation", () => {
+    render(
+      <MixerPanel
+        stems={STEMS}
+        controller={createFakeMixer(["bass", "drums"])}
+        separation={separation({
+          hasStems: true,
+          models: [
+            HTDEMUCS_MODEL,
+            {
+              ...HTDEMUCS_MODEL,
+              id: "bs-roformer-sw",
+              name: "BS-RoFormer-SW",
+              installed: true,
+              default: false,
+            },
+          ],
+          selectedModel: "bs-roformer-sw",
+          activeModel: "bs-roformer-sw",
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("active-separation-model")).toHaveTextContent(
+      "Active model: BS-RoFormer-SW",
     );
   });
 

@@ -72,6 +72,17 @@ describe("runSeparationJob", () => {
     expect(status).toHaveBeenCalledWith("job-1");
   });
 
+  it("passes the selected model to the client", async () => {
+    const { client, start } = fakeClient([job("succeeded", 1, { stems: 6 })]);
+
+    await runSeparationJob(client, "p1", {
+      pollIntervalMs: 1,
+      modelId: "bs-roformer-sw",
+    });
+
+    expect(start).toHaveBeenCalledWith("p1", "bs-roformer-sw");
+  });
+
   it("fails with the server's plain-language message", async () => {
     const { client } = fakeClient([
       job("running", 0.1),

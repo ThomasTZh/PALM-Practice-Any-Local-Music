@@ -1,4 +1,9 @@
 import type {
+  SeparationModel,
+  SeparationModelMetrics,
+  SeparationModelsResponse,
+} from "./types";
+import type {
   Asset,
   Grid,
   LibraryEntry,
@@ -42,6 +47,9 @@ export interface StudioApi {
     label: string,
     options?: PeaksRequestOptions,
   ): Promise<ArrayBuffer>;
+  fetchSeparationModels(
+    options?: RequestOptions,
+  ): Promise<SeparationModelsResponse>;
 }
 
 export interface StudioApiOptions {
@@ -228,6 +236,90 @@ export function parseProject(value: unknown): Project {
   };
 }
 
+function parseModelMetrics(value: unknown): SeparationModelMetrics {
+  const raw = recordOrNull(value);
+  if (raw === null) {
+    return {};
+  }
+  const metrics: SeparationModelMetrics = {};
+  if (typeof raw.device === "string") metrics.device = raw.device;
+  if (typeof raw.source === "string") metrics.source = raw.source;
+  for (const key of [
+    "fixture_seconds",
+    "wall_seconds",
+    "child_seconds",
+    "peak_rss_mib",
+  ] as const) {
+    const number = raw[key];
+    if (typeof number === "number" && Number.isFinite(number)) {
+      metrics[key] = number;
+    }
+  }
+  return metrics;
+}
+
+function parseSeparationModel(value: unknown): SeparationModel {
+  const raw = recordOrNull(value);
+  const id = firstString(raw, ["id"]);
+  const name = firstString(raw, ["name"]);
+  if (raw === null || id === null || name === null) {
+    throw new ApiError(0, "malformed separation model: missing id or name");
+  }
+  const labels = Array.isArray(raw.labels)
+    ? raw.labels.filter((label): label is string => typeof label === "string")
+    : [];
+  const status =
+    raw.status === "installed" ||
+    raw.status === "missing" ||
+    raw.status === "hash-mismatch"
+      ? raw.status
+      : raw.installed === true
+        ? "installed"
+        : "missing";
+  return {
+    id,
+    name,
+    engine: firstString(raw, ["engine"]) ?? "demucs",
+    engine_command: firstString(raw, ["engine_command"]) ?? "",
+    labels,
+    sample_rate: firstNumber(raw, ["sample_rate"], 44100),
+    size_bytes: firstNumber(raw, ["size_bytes", "size"], 0),
+    source_url: firstString(raw, ["source_url"]) ?? "",
+    license: firstString(raw, ["license"]) ?? "",
+    bundled: raw.bundled === true,
+    install_dir: firstString(raw, ["install_dir"]) ?? "",
+    install_command: firstString(raw, ["install_command"]) ?? "",
+    checkpoint_manifest: firstString(raw, ["checkpoint_manifest"]),
+    config_name: firstString(raw, ["config_name"]),
+    status,
+    installed: raw.installed === true || status === "installed",
+    model_dir: firstString(raw, ["model_dir"]) ?? "",
+    detail: firstString(raw, ["detail"]) ?? "",
+    default: raw.default === true,
+    metrics: parseModelMetrics(raw.metrics),
+    file_states: Array.isArray(raw.file_states)
+      ? raw.file_states.map((state) => recordOrNull(state) ?? {})
+      : [],
+  };
+}
+
+function parseSeparationModels(value: unknown): SeparationModelsResponse {
+  const raw = recordOrNull(value);
+  if (raw === null || !Array.isArray(raw.models)) {
+    throw new ApiError(
+      0,
+      "malformed separation models: expected a models array",
+    );
+  }
+  const models = raw.models.map(parseSeparationModel);
+  const fallback =
+    models.find((model) => model.default)?.id ?? models[0]?.id ?? "htdemucs_ft";
+  return {
+    default: firstString(raw, ["default"]) ?? fallback,
+    models,
+  };
+}
+
 function normalizeBuckets(buckets: number | undefined): number {
   const requested = buckets ?? DEFAULT_PEAKS_BUCKETS;
   return PEAKS_BUCKET_OPTIONS.includes(
@@ -354,6 +446,15 @@ export function createStudioApi(options: StudioApiOptions = {}): StudioApi {
         throw await httpError(response);
       }
       return response.arrayBuffer();
+    },
+
+    async fetchSeparationModels(request: RequestOptions = {}) {
+      const payload = await requestJson(
+        "/api/separation/models",
+        "separation models",
+        request.signal ? { signal: request.signal } : undefined,
+      );
+      return parseSeparationModels(payload);
     },
 
     async fetchStemPeaks(

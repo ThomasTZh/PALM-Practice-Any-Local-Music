@@ -28,6 +28,7 @@ export interface StudioStem extends Stem {
   frames: number;
   channels: number;
   sampleRate: number;
+  model: string | null;
 }
 
 export interface RestoredPractice {
@@ -47,6 +48,7 @@ export interface StudioProject extends Project {
   bars: number[];
   bpb: number;
   sections: Section[];
+  stemModel: string | null;
   restored: RestoredPractice;
 }
 
@@ -163,6 +165,7 @@ interface RawStemMeta {
   frames: number | null;
   channels: number | null;
   sampleRate: number | null;
+  model: string | null;
 }
 
 function parseStemRows(value: unknown): RawStemMeta[] {
@@ -186,6 +189,7 @@ function parseStemRows(value: unknown): RawStemMeta[] {
       frames: firstNumber(raw, ["frames", "frameCount", "frame_count"]),
       channels: firstNumber(raw, ["channels", "channelCount", "channel_count"]),
       sampleRate: firstNumber(raw, ["sampleRate", "sample_rate"]),
+      model: textOf(raw.model) ?? textOf(raw.model_id),
     });
   });
   return rows;
@@ -551,8 +555,15 @@ export function parseStudioProject(value: unknown): StudioProject {
       frames: Math.max(0, Math.round(meta?.frames ?? frames)),
       channels: Math.max(1, Math.round(meta?.channels ?? base.asset.channels)),
       sampleRate: Math.max(1, Math.round(meta?.sampleRate ?? sampleRate)),
+      model: meta?.model ?? null,
     };
   });
+  const stemModel =
+    textOf(document.stemModel) ??
+    textOf(document.stem_model) ??
+    textOf(raw.stemModel) ??
+    stems.find((stem) => stem.model !== null)?.model ??
+    null;
   const barTimes = barTimesFromGrid(
     grid.beats,
     grid.bars,
@@ -591,6 +602,7 @@ export function parseStudioProject(value: unknown): StudioProject {
     bars: grid.bars,
     bpb,
     sections,
+    stemModel,
     restored,
   };
 }
@@ -703,6 +715,7 @@ export function createShellApi(options: ShellApiOptions = {}): ShellApi {
     importRecording: base.importRecording,
     fetchPeaks: base.fetchPeaks,
     fetchStemPeaks: base.fetchStemPeaks,
+    fetchSeparationModels: base.fetchSeparationModels,
     openProject: loadProject,
 
     async saveState(projectId, state, revision) {

@@ -163,6 +163,17 @@ describe("parseStudioProject", () => {
     expect(project.restored.state.speed).toBe(0.75);
   });
 
+  it("restores the active stem model", () => {
+    const project = parseStudioProject({
+      ...RAW,
+      document: {
+        ...(RAW.document as Record<string, unknown>),
+        stemModel: "bs-roformer-sw",
+      },
+    });
+    expect(project.stemModel).toBe("bs-roformer-sw");
+  });
+
   it("restores sections from bar indices", () => {
     const project = parseStudioProject(RAW);
     expect(project.sections).toEqual([

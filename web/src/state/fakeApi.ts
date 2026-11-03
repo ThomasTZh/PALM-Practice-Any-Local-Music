@@ -1,4 +1,5 @@
 import type { StudioApi } from "../api/client";
+import { defaultSeparationModels } from "./separationModels";
 
 /**
  * Test double for the API boundary. Components receive the client as a prop,
@@ -43,6 +44,12 @@ export function createFakeApi(overrides: Partial<StudioApi> = {}): FakeApi {
       return overrides.fetchStemPeaks
         ? overrides.fetchStemPeaks(...args)
         : Promise.resolve(new ArrayBuffer(0));
+    },
+    fetchSeparationModels(...args) {
+      calls.push("fetchSeparationModels");
+      return overrides.fetchSeparationModels
+        ? overrides.fetchSeparationModels(...args)
+        : Promise.resolve(defaultSeparationModels());
     },
   };
 }
