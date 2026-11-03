@@ -86,15 +86,16 @@ Demucs remains the default and is bundled with the checkout. The two optional
 models run through the isolated MSST environment and are not downloaded by
 `make bootstrap` or the default gate.
 
-| Model id | Default | Stems | Installed size | 8 s CPU fixture (measured) | 60 s estimate |
+| Model id | Default | Stems | Installed size | 8 s CPU fixture (measured) | 5 min song estimate (linear) |
 | --- | --- | --- | ---: | --- | --- |
-| `htdemucs_ft` | yes, bundled | vocals, drums, bass, other | 321.0 MiB | 19.24 s wall (18.85 s child) | ~2.4x realtime (about 2.4 min) |
-| `scnet-xl-ihf` | optional | vocals, drums, bass, other | 204.2 MiB | 58.20 s wall (55.32 s child), 3.9 GiB peak RSS | ~7.3 min |
-| `bs-roformer-sw` | optional | bass, drums, other, vocals, guitar, piano | 667.0 MiB | 67.35 s wall (65.97 s child), 3.0 GiB peak RSS | ~8.4 min |
+| `htdemucs_ft` | yes, bundled | vocals, drums, bass, other | 321.0 MiB | 19.24 s wall (18.85 s child) | ~2.4x realtime, about 12 min |
+| `scnet-xl-ihf` | optional | vocals, drums, bass, other | 204.2 MiB | 58.20 s wall (55.32 s child), 3.9 GiB peak RSS | ~7.3x realtime, about 36 min |
+| `bs-roformer-sw` | optional | bass, drums, other, vocals, guitar, piano | 667.0 MiB | 67.35 s wall (65.97 s child), 3.0 GiB peak RSS | ~8.4x realtime, about 41 min |
 
-All timings are CPU-only on this machine (CUDA is unavailable); the 60 s values
-are linear estimates from the measured 8 s runs. Peak memory is model-dominated
-and scnet-xl-ihf is the heavier of the two.
+All timings are CPU-only on this machine (CUDA is unavailable); the full-song
+values are linear estimates from the measured 8 s runs, not measured on a whole
+song. Peak memory is model-dominated and scnet-xl-ihf is the heavier of the two.
+The UI states the same figures before you start a run.
 
 ```sh
 make models-list                         # offline status: installed/missing/hash-mismatch
