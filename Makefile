@@ -9,7 +9,7 @@ PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 STUDIO := $(PY) scripts/studio.py
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor bootstrap install-tools install-model models-list models-install models-verify \
+.PHONY: help doctor bootstrap install-tools install-model models-list models-install models-verify models-env test-models-real \
 	htdemucs_ft scnet-xl-ihf bs-roformer-sw dev dev-smoke build build-web test test-backend test-web \
 	test-separation e2e accept gate gate-lite analysis-check fix fixtures demo
 
@@ -44,6 +44,12 @@ models-install-%: ## Install a model by id suffix (models-install-<id>)
 
 models-verify: ## Verify installed model files by size and sha256 (no network)
 	@$(PY) scripts/models.py verify
+
+models-env: ## Build analysis-models/.venv offline from the preserved uv cache
+	@uv sync --offline --directory analysis-models
+
+test-models-real: ## Real 8s SCNet/BS-RoFormer runs (weights installed; slow)
+	@RUN_SEPARATION_MODELS=1 $(PY) -m pytest -q tests/integration/test_models_real.py
 
 $(MODEL_NAMES):
 	@:

@@ -182,6 +182,7 @@ def list_models(states: tuple[ModelState, ...], *, as_json: bool = False) -> int
             f"[{stems}]"
         )
         print(f"  {'':20} {entry.name} · {entry.sample_rate} Hz · {install}")
+    print("status legend: installed / missing / hash-mismatch")
     return 0
 
 
