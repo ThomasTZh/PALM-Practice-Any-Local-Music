@@ -382,3 +382,56 @@ The following components have missing or ambiguous license metadata:
 - **lightningcss-linux-x64-musl** (javascript, transitive)
 - **lightningcss-win32-arm64-msvc** (javascript, transitive)
 - **lightningcss-win32-x64-msvc** (javascript, transitive)
+
+## Separation models (multi-model release)
+
+This section supplements the model table above for the optional separation
+models added after the initial checkout. The application is private and
+unpublished; the weights are untracked local assets and are not redistributed
+with this repository.
+
+### MSST (Music Source Separation Training)
+
+- Project: https://github.com/ZFTurbo/Music-Source-Separation-Training
+- License: MIT (code). Copyright belongs to the MSST authors and contributors.
+- Role: inference framework for SCNet XL IHF and BS-RoFormer-SW; installed only
+  in the isolated `analysis-models/.venv`, never imported by the app or the
+  Demucs environment.
+
+### SCNet XL IHF
+
+- Paper: "SCNet: Sparse Compression Network for Music Source Separation",
+  Weinan Tong et al., ICASSP 2024.
+- Release used: `model_scnet_ep_36_sdr_10.0891.ckpt` and its config from the
+  MSST v1.0.15 GitHub release:
+  https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15
+  (checkpoint 214,063,778 bytes,
+  sha256 ac25975f0f5704f3d1a3c3c251505b7a0f417a22eafe82773440ee4f7e14b74f;
+  config 5,906 bytes,
+  sha256 54ddcb8aeeae85c8d0e148741e7d87b0fbd38bd21cffa5d59ba124fe1e672f40).
+- License: SCNet/MSST code is MIT. The weights are released through MSST without
+  a separate weight licence; treat them as private research use only and do not
+  redistribute them. The model is not bundled and is installed only on explicit
+  request.
+
+### BS-RoFormer-SW (six-stem)
+
+- Mirror used:
+  https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1
+  (`BS-Rofo-SW-Fixed.ckpt` 699,412,152 bytes,
+  sha256 24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e;
+  `BS-Rofo-SW-Fixed.yaml` 4,613 bytes,
+  sha256 f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b).
+- License: the upstream mirror/model card states no clear weight licence
+  (unknown). The six-stem weights are treated as **private use only**: they are
+  not redistributed, are not committed, and are installed only on explicit
+  request. The MSST inference code remains MIT.
+- Role: optional six-stem separation (bass, drums, other, vocals, guitar,
+  piano), CPU inference on this machine.
+
+### Demucs htdemucs_ft (unchanged)
+
+The bundled Demucs model remains the default. Demucs code is MIT; the bundled
+`htdemucs_ft` checkpoints are the official Meta AI research weights and are not
+covered by the MIT code licence. Provenance and component hashes are recorded
+above and in `analysis/checkpoints.json`.

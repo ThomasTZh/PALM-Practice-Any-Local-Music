@@ -2100,3 +2100,91 @@ exercised on guitar/piano.
   six lanes in canonical order, seven mixer channels, document 1280/1280.
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency
   or model download added.
+
+## 2026-11-03 — multi-model separation: documentation and release gate (t52)
+
+### Feature summary
+
+- Registry: `analysis/models.json` declares `htdemucs_ft` (bundled default,
+  4 labels), `scnet-xl-ihf` (optional, 4 labels) and `bs-roformer-sw`
+  (optional, 6 labels: bass, drums, other, vocals, guitar, piano), with engine,
+  engine command, 44.1 kHz, exact size, pinned HTTPS source, licence and
+  per-file size/SHA-256 pins. `src/basseparate/model_registry.py` is stdlib-only
+  and never imports torch.
+- CLI/Make: `make models-list`, `make models-verify` (offline; size + SHA-256),
+  `make models-install ID=<id>` or `make models-install <id>` (the only network
+  step; `.part` staging, verification, atomic directory swap, re-verify),
+  `make models-env` (offline `uv sync --directory analysis-models`) and
+  `make test-models-real` (opt-in).
+- Isolated inference: `analysis-models/` pins Python 3.11, torch 2.9.1 (cu128
+  index) and `msst[bs-roformer]==0.1.0` with a committed 74-package `uv.lock`
+  and `[tool.uv] cache-dir = ../storage/tmp-uv-cache`. Rebuilding the venv from
+  the preserved cache took 1.3 s; the app never imports torch/MSST.
+- Engine dispatch and cache: `POST /api/separate` accepts `model_id`; the route
+  validates the registry and installed state before queueing. Demucs launches
+  `analysis/.venv/.../separate_track.py`; MSST launches
+  `analysis-models/.venv/.../separate_msst.py`. The v2 stem cache key includes
+  model id, ordered labels and declared weight/config hashes; v1 Demucs-only
+  entries remain readable as `htdemucs_ft`. The UI selector disables missing
+  models with size + install command and renders up to six stem lanes/mixer
+  channels; old four-stem export payloads still resolve.
+
+### Installed model hashes and sizes (verified offline)
+
+| Model | Files (size, SHA-256) | Total |
+| --- | --- | ---: |
+| htdemucs_ft | bundled 4 checkpoints + preset, pinned by `analysis/checkpoints.json` | 336,565,084 B (321.0 MiB) |
+| scnet-xl-ihf | checkpoint 214,063,778 B `ac25975f0f5704f3d1a3c3c251505b7a0f417a22eafe82773440ee4f7e14b74f`; config 5,906 B `54ddcb8aeeae85c8d0e148741e7d87b0fbd38bd21cffa5d59ba124fe1e672f40` | 214,069,684 B (204.2 MiB) |
+| bs-roformer-sw | checkpoint 699,412,152 B `24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e`; yaml 4,613 B `f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b` | 699,416,765 B (667.0 MiB) |
+
+Sources: MSST v1.0.15 GitHub release for SCNet; Hugging Face
+`FractalSurfer/BS-RoFormer-SW-6stem` at commit `2b98254…` for BS-RoFormer-SW.
+Weights remain untracked under `models/`; licences are in
+[licenses/NOTICES.md](../licenses/NOTICES.md).
+
+### Measured CPU performance
+
+8.00 s stereo fixture at 44.1 kHz, CUDA unavailable:
+
+| Model | Wall | Child | Peak RSS | 60 s linear estimate |
+| --- | ---: | ---: | ---: | ---: |
+| htdemucs_ft | 19.24 s | 18.85 s | — | ~2.4 min |
+| scnet-xl-ihf | 58.20 s | 55.32 s | 3965.4 MiB | ~7.3 min |
+| bs-roformer-sw | 67.35 s | 65.97 s | 3006.4 MiB | ~8.4 min |
+
+The opt-in real-model test (`RUN_SEPARATION_MODELS=1 .venv/bin/python -m pytest
+tests/integration/test_models_real.py -q`) passed: 1 test in 142.17 s, using the
+installed local weights with no network. The default gate does not set that
+variable, so the same test is skipped there.
+
+### Final gate output (offline)
+
+```text
+gate (offline)
+  [PASS] ruff check     ruff check 3 path(s) (0.1s)
+  [PASS] ruff format    ruff format --check (0.1s)
+  [PASS] fixtures       6 fixtures match the generator byte for byte (1.1s)
+  [PASS] models         models-verify: installed models are intact (1.0s)
+  [PASS] mypy           mypy strict (0.2s)
+  [PASS] pytest         299 passed, 8 skipped, 1 warning in 81.90s (0:01:21) (82.5s)
+  [PASS] web typecheck  tsc --noEmit (3.3s)
+  [PASS] web tests      learn more: https://vitest.dev/guide/improving-performance#test-environments (69.4s)
+  [PASS] web build      vite build (1.1s)
+  [PASS] e2e            2 spec file(s) (38.9s)
+gate: ok
+```
+
+The default gate stayed offline (model verify only reads local files); the
+real-model test is skipped unless `RUN_SEPARATION_MODELS=1`. A direct serialized
+web run after the gate passed 53 files / 524 tests in 79.00 s.
+
+### Documentation
+
+README now introduces the default and optional models with sizes, stem sets,
+install/verify commands and measured CPU speeds; architecture covers the
+registry, isolated environment, engine dispatch and v2 cache; API documents
+`/api/separation/models`, `model_id`, model metadata, active model and
+model-specific stem PCM/peaks; troubleshooting covers missing/partial models,
+hash mismatch, MSST import failure, long CPU runs and cancellation; NOTICES
+records MSST MIT, the SCNet release/paper and the BS-RoFormer-SW unknown-licence
+mirror with private-use restriction.

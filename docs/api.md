@@ -129,6 +129,35 @@ The export mixer accepts either `stems` or `channels` maps (both are merged;
 `audio.frames` frames; disabled/soloed channels are honoured. The SHA-256 in
 the response is the hash of the written file.
 
+## Separation models
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| GET | `/api/separation/models` | — | `{default: "htdemucs_ft", models: [model]}`; offline registry state plus install metadata |
+
+Each model entry carries the registry fields (`id`, `name`, `engine`,
+`engine_command`, ordered `labels`/`stem_labels`, `sample_rate`, `size_bytes`
+and `size`, `source_url`, `license`, `bundled`, `install_dir`,
+`install_command`, declared `files` with size/SHA-256), the verified state
+(`status`: installed/missing/hash-mismatch, `installed`, `model_dir`, `detail`,
+`file_states`), `metrics` from the measured registry (device, fixture seconds,
+wall/child seconds, peak RSS) where known, and `default: true` for
+`htdemucs_ft`. The response is offline; it never starts a download.
+
+`POST /api/separate` accepts `model_id` (default `htdemucs_ft`). The server
+resolves it through `analysis/models.json`, requires the model to be installed
+and queues the job; unknown or missing models are `400` with the known ids or
+the exact `make models-install ID=...` command. The accepted response is a job
+payload plus `params`, `model_id` and the model metadata.
+
+The labels are model-specific: `htdemucs_ft` and `scnet-xl-ihf` expose
+`drums, bass, other, vocals`; `bs-roformer-sw` exposes
+`bass, drums, other, vocals, guitar, piano`. A project stores the active
+`stemModel`; `/projects/{id}/stems` returns `model`, `model_id` and
+`active_model` (falling back to the cache metadata for older projects). Stem
+PCM and peaks routes accept any label of the active set; an unknown label is
+`404`.
+
 ## Jobs
 
 | Method | Path | Request | Response |
@@ -159,22 +188,24 @@ Job contract:
 | --- | --- | --- |
 | `import` | `{path, name?, sample_rate?}` | project payload |
 | `analysis` | `{project_id, bpb?}`; bpb 2–16, default 4 | `{cached, bpb, bpm, key, chords, beats, bars}` where chords are `[{start_seconds, end_seconds, label}]` and beats/bars are seconds |
-| `separate` | `{project_id, device?: "auto"\|"cpu"\|"cuda", force?: false}` | stem set payload `{key, cached, sample_rate, channels, frames, device, elapsed_seconds, stems: [{label, frames, channels, sampleRate, key, url}]}` |
+| `separate` | `{project_id, model_id?: "htdemucs_ft", device?: "auto"\|"cpu"\|"cuda", force?: false}` | stem set payload `{key, cached, sample_rate, channels, frames, device, elapsed_seconds, model, model_id, labels, stems: [{label, frames, channels, sampleRate, key, model, model_id, path, url}]}` |
 
 Analysis jobs also merge `grid`, `key`, `chords` and `analysis` into the
-project document before they succeed. Separation jobs merge `stems` and
-`stemCacheKey`. Cancellation leaves the previous project revision and cache
-state untouched.
+project document before they succeed. Separation jobs merge `stems`,
+`stemCacheKey` and `stemModel`. Cancellation leaves the previous project
+revision and cache state untouched.
 
 ## Stems
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
-| GET | `/api/projects/{id}/stems` | — | `{project_id, key, stems: [...]}`; empty when no separation has run |
-| GET | `/api/projects/{id}/stems/{label}/pcm` | query `start=0`, `end=<frames>`, or HTTP `Range`; label ∈ drums, bass, other, vocals | interleaved `f32le`; `206`/`Content-Range` for ranges; headers as PCM plus `x-stem-label` |
+| GET | `/api/projects/{id}/stems` | — | `{project_id, key, model, model_id, active_model, stems: [...]}`; empty when no separation has run |
+| GET | `/api/projects/{id}/stems/{label}/pcm` | query `start=0`, `end=<frames>`, or HTTP `Range`; label is any label of the active model (`drums`, `bass`, `other`, `vocals`, and `guitar`, `piano` for BS-RoFormer) | interleaved `f32le`; `206`/`Content-Range` for ranges; headers as PCM plus `x-stem-label` |
+| GET | `/api/projects/{id}/stems/{label}/peaks` | query `buckets=1024`; valid bucket sizes as for mix peaks | BSPK peaks; `400` unsupported bucket, `404` unknown label or missing stem set |
 
 Stem PCM is always stereo at the project rate and frame count; a missing cache
-entry is `404` with a message naming the stem set. The browser falls back to the
+entry is `404` with a message naming the stem set. Export mixers accept the
+active model's channel ids; the legacy four-stem shape remains accepted. The browser falls back to the
 mix when a stem fetch fails.
 
 ## Static UI

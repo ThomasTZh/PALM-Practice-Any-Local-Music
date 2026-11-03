@@ -18,6 +18,8 @@ log is [progress.md](progress.md).
 | HTTP server | `basseparate serve` (uvicorn + FastAPI) | Projects, assets, ranged PCM/peaks, jobs, analysis, separation, autosave, exports, `/doctor` |
 | Piper children | Server, per analysis run | Three `piper-vamp-simple-server` sessions (Chordino, Key Detector, Bar and Beat Tracker) |
 | Demucs child | Server, per separation run | `analysis/.venv/bin/python analysis/separate_track.py` with `htdemucs_ft` |
+| MSST child | Server, per separation run with SCNet/BS-RoFormer | `analysis-models/.venv/bin/python analysis/separate_msst.py --model-id …` |
+| Model registry | Server/CLI, no torch | `analysis/models.json`; installed/missing/hash-mismatch states from declared sizes and SHA-256 |
 | `ffmpeg` / `ffprobe` | Server, per import/analysis | Probe metadata, decode to project-rate f32 PCM, resample for analysis |
 
 The server binds loopback only (`127.0.0.1`, `localhost` or `::1`) and refuses a
@@ -43,7 +45,7 @@ platform per-user data directory). Everything the server owns lives below it:
     pcm.f32                            interleaved float32 at the project rate
     peaks-256.bin, peaks-1024.bin, peaks-4096.bin, peaks-16384.bin
   analysis/<cache-key>/                beats.json key.json chords.json meta.json
-  stems/<cache-key>/                   drums.f32 bass.f32 other.f32 vocals.f32 stems.json
+  stems/<cache-key>/                   <label>.f32 per active model + stems.json
   exports/<project_id>/<export-id>.wav
   uploads/                             per-upload staging, removed after import
   tmp/                                 temporary server files
@@ -164,7 +166,7 @@ bounded LRU cache keyed by `(start, width, FFT)`.
 | --- | --- | --- | --- |
 | Waveform peaks | asset id + fixed bucket sizes | written during import | new import of different bytes creates a new asset |
 | Analysis | SHA-256 over source bytes + actual rate + bpb + lead-in + ordered plugin display names/parameters + `ANALYSIS_VERSION` | four JSON files written in a private dir, then one `rename` | key changes when any input changes; corrupt entries read as a miss and are replaced |
-| Stems | SHA-256 over decoded PCM, rate, channels, window/overlap/shifts and the checkpoint-manifest hash | worker writes a staging dir, validated, then renamed | same; `force` re-runs and replaces |
+| Stems | v2 SHA-256 over decoded PCM, rate, channels, window/overlap/shifts, model id, ordered labels and the declared weight/config hashes | worker writes a staging dir, validated, then renamed | same; `force` re-runs and replaces; v1 Demucs-only cache entries remain readable |
 | Browser spectrogram | start/width/FFT | LRU in the worker client | bounded cache, no persistence |
 
 Cached analysis directories also record plugin names, keys, versions, framing
@@ -187,17 +189,61 @@ children and publishes nothing.
 
 ## Separation pipeline
 
-`POST /api/separate {"project_id":..., "device":"auto"}` enqueues a `separate`
-job. `stems.py` builds a content-addressed key, starts the analysis virtualenv
-child with `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`,
-`HF_DATASETS_OFFLINE=1` and `PYTHONNOUSERSITE=1`, and streams JSONL progress.
-The child verifies the four `htdemucs_ft` checkpoints against
-`analysis/checkpoints.json` *before* importing torch, converts project PCM to
-44.1 kHz stereo, runs windowed `apply_model` (120 s windows, 8 s overlap,
-`shifts=0`, OOM ladder 7.5/5/3 s), resamples back and trims/pads every stem to
-the project frame count. Cancellation writes a cancel flag, waits a grace
-period, kills the child; no partial stem directory is published. CPU-only on
-this machine (see limitations).
+`POST /api/separate {"project_id":..., "model_id": "htdemucs_ft", "device":"auto"}`
+enqueues a `separate` job. The route resolves `model_id` through the registry
+and requires the model to be installed before queueing; a missing or unknown
+model is a 400 with an install/known-id message. `stems.py` builds a v2
+content-addressed key and dispatches by engine:
+
+- **demucs** (default): `analysis/.venv/bin/python analysis/separate_track.py`
+  verifies the four `htdemucs_ft` checkpoints against
+  `analysis/checkpoints.json` *before* importing torch, converts project PCM to
+  44.1 kHz stereo, runs windowed `apply_model` (120 s windows, 8 s overlap,
+  `shifts=0`, OOM ladder 7.5/5/3 s), resamples back and trims/pads every stem.
+- **msst** (SCNet XL IHF, BS-RoFormer-SW): `analysis-models/.venv/bin/python
+  analysis/separate_msst.py --model-id …` validates the requested instruments
+  exactly against `analysis/models.json`, loads the model through MSST, forces
+  CPU when CUDA is unavailable, then resamples and trims/pads each label. The
+  worker writes atomic float32 stems plus `meta.json` with model, labels, device,
+  elapsed time and peak RSS.
+
+Both children run with `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`,
+`HF_DATASETS_OFFLINE=1` and `PYTHONNOUSERSITE=1`, and stream JSONL stage
+progress. Cancellation writes a cancel flag/SIGTERM, waits a grace period and
+kills the child; no partial stem directory is published and the previous
+project revision is kept. A successful job publishes the cache entry and merges
+`stems` and `stemModel` into the project. CPU-only on this machine (see
+limitations).
+
+## Separation models
+
+`analysis/models.json` is the stdlib-only registry: id, display name, engine,
+engine command, ordered stem labels, sample rate, exact install size, pinned
+HTTPS source and licence, and per-file size/SHA-256 pins. `model_registry.py`
+reports `installed`, `missing` or `hash-mismatch` per file without importing
+torch; `doctor` and `/api/doctor` expose the same states.
+
+`scripts/models.py list|verify|install` backs `make models-list`,
+`models-verify` and `models-install ID=<id>` (or `make models-install <id>`).
+`list`/`verify` never touch the network. `install` downloads each pinned file to
+a `.part` staging path, checks size and SHA-256, publishes it atomically inside
+a staging model directory, swaps the whole directory into place and re-verifies;
+a failure leaves the previous directory or nothing. Model weights stay under
+the untracked `models/` tree and are never committed.
+
+The optional models inference environment is isolated in `analysis-models/`
+(Python 3.11, `torch==2.9.1` from the cu128 index, `msst[bs-roformer]==0.1.0`,
+committed `uv.lock`). `make models-env` runs `uv sync --offline --directory
+analysis-models` against the preserved `storage/tmp-uv-cache`; the application
+environment never imports torch or MSST, and a missing/broken environment is
+reported by the failed job with the worker stderr tail.
+
+Default `htdemucs_ft` is bundled. `scnet-xl-ihf` (4 labels) installs 204.2 MiB;
+`bs-roformer-sw` (6 labels: bass, drums, other, vocals, guitar, piano) installs
+667.0 MiB. Measured CPU on the 8 s stereo fixture: Demucs 19.24 s,
+SCNet 58.20 s (3.9 GiB peak RSS), BS-RoFormer 67.35 s (3.0 GiB peak RSS);
+linear 60 s estimates are about 7.3 and 8.4 minutes. Licences are recorded in
+[../licenses/NOTICES.md](../licenses/NOTICES.md).
 
 ## API surface
 
@@ -210,8 +256,9 @@ placeholder page.
 
 The local gate and acceptance runs used for this document are recorded in
 [progress.md](progress.md) and [acceptance/report.md](acceptance/report.md):
-`make gate` (lint/format/types/fixtures, 223 backend tests with 7 skipped, 47 web
-test files / 416 tests, production build, both-browser golden path) and
+`make gate` (lint/format/types/fixtures/models verify, 299 backend tests with
+8 skipped, 53 web test files / 524 tests, production build, two-browser golden
+path with two specs) and
 `make accept` (five recordings; the committed report records 5/5 analysed,
 1103.98 s of audio and the per-file wall times of that run). The e2e suite runs
 the real FastAPI server with an isolated temporary data root per run; in the

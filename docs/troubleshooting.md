@@ -121,28 +121,74 @@ job leaves the previous project revision untouched.
 
 ## Separation (stems)
 
-### `checkpoint verification failed` or the model bundle is missing
+### `model <id> is not installed` / missing model in the selector
 
-Restore the four verified `htdemucs_ft` checkpoint files and the preset under
-`models/htdemucs_ft`. The worker checks sizes and SHA-256 against
-`analysis/checkpoints.json` before it imports torch; a tampered file fails fast
-and no stems are written. `make doctor` lists the bundle contents.
+Run `make models-list` to see installed, missing and hash-mismatch states. Install
+with the exact command shown, for example:
+
+```sh
+make models-install ID=scnet-xl-ihf
+make models-install bs-roformer-sw
+make models-verify
+```
+
+`htdemucs_ft` is bundled and needs no install. The mixer selector disables a
+missing model and shows its size and install command. `POST /api/separate`
+validates the registry and installed state before queueing, so an unknown id
+returns the known ids and a missing model returns the install command; it never
+starts a download during a separation request.
+
+### `hash-mismatch` / partial model files
+
+`make models-verify` checks every declared file's size and SHA-256 against
+`analysis/models.json` without network access. A partial or corrupted install
+appears as missing/hash-mismatch; rerun `make models-install ID=<id>` (the
+installer stages `.part` files, verifies, publishes atomically and re-verifies)
+or restore the preserved `models/<id>` directory. Do not edit weights in place
+and do not commit them. The cache key includes the declared model hashes, so a
+repaired/replaced checkpoint cannot reuse stale stems.
+
+### MSST model fails to start (torch/msst import error)
+
+The optional models run in the isolated `analysis-models/.venv`, never in the
+application or Demucs environment. Rebuild it offline from the preserved uv
+cache:
+
+```sh
+make models-env
+analysis-models/.venv/bin/python -c "import torch, msst; print(torch.__version__)"
+```
+
+`make models-env` runs `uv sync --offline --directory analysis-models` against
+`storage/tmp-uv-cache`; it requires the preserved cache and `uv.lock`, and does
+not download. A failed job includes the worker stderr tail. If torch reports
+CUDA unavailable, the MSST worker falls back to CPU by design.
 
 ### Separation takes a long time
 
-Demucs runs on CPU here because the NVIDIA driver is unavailable and
-`torch.cuda.is_available()` is false (see `make doctor`). A fresh run on an 8 s
-stereo fixture at 48 kHz measured 17.93 s wall (child 17.48 s) in the t15
-verification; full songs take minutes. The worker uses a 7.5/5/3 s OOM ladder
-and 120 s windows with 8 s overlap; cancelled or failed runs leave no published
-stem set and the previous project revision is kept.
+All separation is CPU-only here: `make doctor` reports the NVIDIA driver
+unavailable and `torch.cuda.is_available()` false. Measured on the 8 s stereo
+fixture: Demucs 19.24 s, SCNet XL IHF 58.20 s (3.9 GiB peak RSS), BS-RoFormer-SW
+67.35 s (3.0 GiB peak RSS); linear 60 s estimates are about 7.3 and 8.4 minutes.
+Demucs is the fast default; the optional six-stem BS model is the slowest.
+Long jobs stream stage progress and can be cancelled.
+
+### Cancel or failed separation
+
+`POST /api/jobs/{id}/cancel` or the mixer Cancel marks the job cancelled; the
+server writes the cancel flag/SIGTERM, waits a grace period and kills the child.
+No partial stem directory is published and the previous project revision and
+existing stems remain usable. A cancellation requested before the POST returns
+cannot cancel anything because no job id exists yet.
 
 ### `project has no stem set` / `stems ... missing or incomplete`
 
-Run separation first; stems are cached under `<data-root>/stems/<key>/`. If the
-cache was deleted, re-run (a cached set is reused), or pass `force: true` to the
-`separate` job. The browser falls back to the mix with the notice
-`Stems unavailable; playing the mix.` when a stem request fails.
+Run separation first; stems are cached under `<data-root>/stems/<key>/` with
+the model-specific labels. If the cache was deleted, re-run (a cached set for
+the same model is reused), or pass `force: true` to the `separate` job. The
+browser falls back to the mix with the notice
+`Stems unavailable; playing the mix.` when a stem request fails. Old v1
+Demucs-only cache entries remain readable and are reported as `htdemucs_ft`.
 
 ## Playback and practice
 
