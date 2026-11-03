@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Literal
 
 from basseparate.config import REPO_ROOT
+from basseparate.model_registry import (
+    ModelRegistryError,
+    ModelState,
+    format_size,
+    load_registry,
+    verify_registry,
+)
 
 DoctorStatus = Literal["ok", "missing"]
 ToolProbe = Callable[[str, Sequence[str], float], tuple[int, str]]
@@ -109,6 +116,7 @@ class DoctorCheck:
 @dataclass(frozen=True)
 class DoctorReport:
     checks: tuple[DoctorCheck, ...]
+    models: tuple[ModelState, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -128,6 +136,7 @@ class DoctorReport:
             "ok": self.ok,
             "missing": list(self.missing),
             "checks": [check.to_dict() for check in self.checks],
+            "models": [model.to_dict() for model in self.models],
         }
 
 
@@ -403,6 +412,46 @@ def diagnose(
         ),
         _check_recordings(layout),
     ]
+    model_states: tuple[ModelState, ...] = ()
+    registry_path = layout.root / "analysis" / "models.json"
+    if registry_path.is_file():
+        try:
+            registry = load_registry(registry_path)
+            model_states = verify_registry(registry, layout.root)
+            checks.append(
+                _check(
+                    "model_registry",
+                    "Separation model registry",
+                    True,
+                    f"{len(model_states)} models declared",
+                    required=False,
+                    path=registry_path,
+                )
+            )
+            for state in model_states:
+                entry = state.entry
+                checks.append(
+                    _check(
+                        f"model:{entry.id}",
+                        f"Separation model {entry.name}",
+                        state.installed,
+                        f"{state.status}; {len(entry.labels)} stems; {entry.engine}; "
+                        f"{format_size(entry.size_bytes)}; {state.detail}",
+                        required=False,
+                        path=Path(state.model_dir),
+                    )
+                )
+        except ModelRegistryError as error:
+            checks.append(
+                _check(
+                    "model_registry",
+                    "Separation model registry",
+                    False,
+                    str(error),
+                    required=False,
+                    path=registry_path,
+                )
+            )
     gpu_ok, gpu_detail = gpu()
     checks.append(
         _check(
@@ -414,7 +463,7 @@ def diagnose(
             path=Path(gpu_detail) if gpu_detail and Path(gpu_detail).exists() else None,
         )
     )
-    return DoctorReport(tuple(checks))
+    return DoctorReport(tuple(checks), model_states)
 
 
 __all__ = [

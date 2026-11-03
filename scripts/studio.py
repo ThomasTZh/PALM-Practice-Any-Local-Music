@@ -450,6 +450,15 @@ def path_check(name: str, path: Path, required: bool = False) -> Check:
     return Check(name, True, f"{rel(path)} ({size} bytes{executable})", required=required)
 
 
+def model_registry_module() -> object:
+    """Import the stdlib-only registry without changing the harness imports."""
+    if str(SRC) not in sys.path:
+        sys.path.insert(0, str(SRC))
+    from basseparate import model_registry
+
+    return model_registry
+
+
 def doctor() -> int:
     report = DoctorReport()
     for name in ("make", "git", "ffmpeg", "ffprobe", "node"):
@@ -553,6 +562,27 @@ def doctor() -> int:
             required=False,
         ),
     )
+
+    try:
+        registry_module = model_registry_module()
+        registry = registry_module.load_registry(ROOT / "analysis" / "models.json")
+        for state in registry_module.verify_registry(registry, ROOT):
+            entry = state.entry
+            report.add(
+                "Separation models",
+                Check(
+                    f"{entry.id} ({entry.engine})",
+                    state.installed,
+                    f"{state.status}; {len(entry.labels)} stems; "
+                    f"{registry_module.format_size(entry.size_bytes)}; {state.detail}",
+                    required=False,
+                ),
+            )
+    except Exception as error:  # noqa: BLE001 - doctor reports instead of crashing
+        report.add(
+            "Separation models",
+            Check("registry", False, str(error), required=True),
+        )
 
     gpu_name = "unavailable"
     smi = run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], timeout=20)
@@ -944,11 +974,21 @@ def run_gate(steps: list[tuple[str, object]], title: str) -> int:
     return 0
 
 
+def gate_models() -> GateResult:
+    """Validate the registry and hash installed model files; no network."""
+    result = run([python_bin(), str(ROOT / "scripts" / "models.py"), "verify"], timeout=600)
+    if result.returncode != 0:
+        return GateResult("fail", tail(result.stdout + result.stderr))
+    summary = (result.stdout.strip().splitlines() or ["models verified"])[-1]
+    return GateResult("pass", summary)
+
+
 def gate(lite: bool = False) -> int:
     steps: list[tuple[str, object]] = [
         ("ruff check", gate_ruff),
         ("ruff format", gate_format),
         ("fixtures", gate_fixtures),
+        ("models", gate_models),
         ("mypy", gate_mypy),
         ("pytest", lambda: gate_pytest(lite)),
     ]

@@ -1,0 +1,21 @@
+[project]
+name = "basseparate-analysis-models"
+version = "0.1.0-dev"
+description = "Isolated MSST/SCNet/RoFormer inference environment for basseparate."
+requires-python = ">=3.11,<3.12"
+license = { text = "Proprietary - unpublished" }
+authors = [{ name = "basseparate" }]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+]
+# Pinned to the versions already used by the engine task. Lock generation is
+# owned by that task; this project only declares the isolated environment.
+dependencies = [
+    "torch==2.9.1",
+    "msst==0.1.0",
+]
+
+# No build-system: this is a virtual environment project, not a package. The
+# application never imports from it; the MSST worker is launched explicitly.

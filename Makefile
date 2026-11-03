@@ -9,8 +9,13 @@ PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 STUDIO := $(PY) scripts/studio.py
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor bootstrap install-tools install-model dev dev-smoke build build-web test test-backend test-web \
+.PHONY: help doctor bootstrap install-tools install-model models-list models-install models-verify \
+	htdemucs_ft scnet-xl-ihf bs-roformer-sw dev dev-smoke build build-web test test-backend test-web \
 	test-separation e2e accept gate gate-lite analysis-check fix fixtures demo
+
+# The second make goal is the model id for `make models-install <id>`.
+MODEL_GOAL := $(word 2,$(MAKECMDGOALS))
+MODEL_NAMES := htdemucs_ft scnet-xl-ihf bs-roformer-sw
 
 help: ## Show this target list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -27,6 +32,21 @@ install-tools: ## Fetch pinned Vamp/Piper tools; add ACCEPT_MODEL_TERMS=1 for we
 
 install-model: ## Fetch the htdemucs_ft weights after accepting their research terms
 	@$(PY) scripts/install_tools.py --accept-model-terms --skip-tools
+
+models-list: ## List separation models and installed/missing state (no network)
+	@$(PY) scripts/models.py list
+
+models-install: ## Install a model: ID=<id> or `make models-install <id>`
+	@$(PY) scripts/models.py install $(or $(ID),$(MODEL_GOAL))
+
+models-install-%: ## Install a model by id suffix (models-install-<id>)
+	@$(PY) scripts/models.py install $*
+
+models-verify: ## Verify installed model files by size and sha256 (no network)
+	@$(PY) scripts/models.py verify
+
+$(MODEL_NAMES):
+	@:
 
 dev: ## Run the UI dev server and the local API server
 	@$(STUDIO) dev

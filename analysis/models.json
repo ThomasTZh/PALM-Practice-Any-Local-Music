@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "htdemucs_ft",
+      "name": "Demucs htdemucs_ft (bundled)",
+      "engine": "demucs",
+      "engine_command": "analysis/.venv/bin/python analysis/separate_track.py --bundle-dir models/htdemucs_ft",
+      "labels": [
+        "drums",
+        "bass",
+        "other",
+        "vocals"
+      ],
+      "sample_rate": 44100,
+      "size_bytes": 336565084,
+      "source_url": "https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5",
+      "license": "MIT code; htdemucs_ft weights are research use (not covered by MIT)",
+      "bundled": true,
+      "install_dir": "models/htdemucs_ft",
+      "checkpoint_manifest": "analysis/checkpoints.json",
+      "config_name": "htdemucs_ft.yaml",
+      "files": []
+    },
+    {
+      "id": "scnet-xl-ihf",
+      "name": "SCNet XL IHF",
+      "engine": "msst",
+      "engine_command": "analysis-models/.venv/bin/python analysis/separate_msst.py --model scnet-xl-ihf --device {device}",
+      "labels": [
+        "drums",
+        "bass",
+        "other",
+        "vocals"
+      ],
+      "sample_rate": 44100,
+      "size_bytes": 214069684,
+      "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15",
+      "license": "MIT (SCNet and MSST code); weights released by MSST with no separate weight licence",
+      "bundled": false,
+      "install_dir": "models/scnet-xl-ihf",
+      "files": [
+        {
+          "role": "checkpoint",
+          "name": "model_scnet_ep_36_sdr_10.0891.ckpt",
+          "url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.15/model_scnet_ep_36_sdr_10.0891.ckpt",
+          "size_bytes": 214063778,
+          "sha256": "ac25975f0f5704f3d1a3c3c251505b7a0f417a22eafe82773440ee4f7e14b74f"
+        },
+        {
+          "role": "config",
+          "name": "config_musdb18_scnet_xl_more_wide_v5.yaml",
+          "url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.15/config_musdb18_scnet_xl_more_wide_v5.yaml",
+          "size_bytes": 5906,
+          "sha256": "54ddcb8aeeae85c8d0e148741e7d87b0fbd38bd21cffa5d59ba124fe1e672f40"
+        }
+      ]
+    },
+    {
+      "id": "bs-roformer-sw",
+      "name": "BS-RoFormer-SW",
+      "engine": "msst",
+      "engine_command": "analysis-models/.venv/bin/python analysis/separate_msst.py --model bs-roformer-sw --device {device}",
+      "labels": [
+        "bass",
+        "drums",
+        "other",
+        "vocals",
+        "guitar",
+        "piano"
+      ],
+      "sample_rate": 44100,
+      "size_bytes": 699416765,
+      "source_url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
+      "license": "Unknown upstream weight licence (model card); MSST inference code MIT",
+      "bundled": false,
+      "install_dir": "models/bs-roformer-sw",
+      "files": [
+        {
+          "role": "checkpoint",
+          "name": "BS-Rofo-SW-Fixed.ckpt",
+          "url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/2b98254b19bdab07ce225d884ec4aa9dd8aafce1/BS-Rofo-SW-Fixed.ckpt",
+          "size_bytes": 699412152,
+          "sha256": "24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e"
+        },
+        {
+          "role": "yaml",
+          "name": "BS-Rofo-SW-Fixed.yaml",
+          "url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/2b98254b19bdab07ce225d884ec4aa9dd8aafce1/BS-Rofo-SW-Fixed.yaml",
+          "size_bytes": 4613,
+          "sha256": "f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b"
+        }
+      ]
+    }
+  ]
+}
