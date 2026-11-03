@@ -8,6 +8,7 @@ import wave
 from pathlib import Path
 
 import numpy as np
+import pytest
 from conftest import fresh_client
 from fastapi.testclient import TestClient
 
@@ -256,3 +257,133 @@ def test_state_save_and_export_paths_are_scoped_to_the_project(
     )
     body = json.loads((settings.data_paths.projects / f"{project['id']}.json").read_text())
     assert body["document"]["state_version"] == 1
+
+
+def write_stem_cache(settings, key: str, labels, frames: int, channels: int, value: float) -> None:
+    root = settings.data_paths.root / "stems" / key
+    root.mkdir(parents=True, exist_ok=True)
+    for label in labels:
+        write_constant_pcm(root / f"{label}.f32", frames=frames, channels=channels, value=value)
+
+
+def test_export_old_stem_rows_fall_back_to_stem_cache_key(client: TestClient, settings) -> None:
+    project = import_fixture(client, TONE_48K_STEREO, "Old stems")
+    frames = project["audio"]["frames"]
+    key = "e" * 64
+    labels = ("drums", "bass", "other", "vocals")
+    write_stem_cache(settings, key, labels, frames, project["audio"]["channels"], 0.05)
+    # Pre-t50 rows had no path/asset_id, only the set key in the document.
+    old_rows = [
+        {
+            "label": label,
+            "frames": frames,
+            "channels": project["audio"]["channels"],
+            "sampleRate": 48_000,
+            "key": key,
+        }
+        for label in labels
+    ]
+    saved = client.put(
+        f"/api/projects/{project['id']}",
+        json={"document": {"stemCacheKey": key, "stems": old_rows}},
+    )
+    assert saved.status_code == 200, saved.text
+
+    export = client.post(f"/api/projects/{project['id']}/exports", json={})
+    assert export.status_code == 201, export.text
+    metadata = export.json()
+    assert metadata["layers"] == list(labels)
+    assert metadata["frames"] == frames
+    download = client.get(metadata["download_url"])
+    assert download.status_code == 200
+    with wave.open(__import__("io").BytesIO(download.content)) as wav:
+        assert wav.getnframes() == frames
+        assert wav.getframerate() == 48_000
+        samples = np.frombuffer(wav.readframes(frames), dtype="<i2")
+    # Four constant 0.05 stems sum to 0.2.
+    assert np.max(np.abs(samples.astype(np.float64) / 32767.0 - 0.2)) < 2 / 32767.0
+
+
+def test_export_six_stem_rows_with_cache_paths(client: TestClient, settings) -> None:
+    project = import_fixture(client, TONE_48K_STEREO, "Six stems")
+    frames = project["audio"]["frames"]
+    channels = project["audio"]["channels"]
+    key = "f" * 64
+    labels = ("bass", "drums", "other", "vocals", "guitar", "piano")
+    write_stem_cache(settings, key, labels, frames, channels, 0.02)
+    rows = [
+        {
+            "label": label,
+            "frames": frames,
+            "channels": channels,
+            "sampleRate": 48_000,
+            "path": f"stems/{key}/{label}.f32",
+        }
+        for label in labels
+    ]
+    client.put(
+        f"/api/projects/{project['id']}",
+        json={"document": {"stemCacheKey": key, "stems": rows}},
+    )
+    mixer = {"stems": {label: {"gain": 1.0, "muted": True} for label in labels}}
+    mixer["stems"]["bass"] = {"gain": 1.0}
+    mixer["stems"]["piano"] = {"gain": 0.5}
+    export = client.post(f"/api/projects/{project['id']}/exports", json={"mixer": mixer})
+    assert export.status_code == 201, export.text
+    metadata = export.json()
+    assert metadata["layers"] == ["bass", "piano"]
+    download = client.get(metadata["download_url"])
+    assert download.status_code == 200
+    with wave.open(__import__("io").BytesIO(download.content)) as wav:
+        samples = np.frombuffer(wav.readframes(metadata["frames"]), dtype="<i2")
+    # 0.02 + 0.02*0.5 = 0.03.
+    assert np.max(np.abs(samples.astype(np.float64) / 32767.0 - 0.03)) < 2 / 32767.0
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "/etc/passwd",
+        "../outside.f32",
+        "models/weights.ckpt",
+        "assets/some-asset/not-pcm.f32",
+        "stems/some-key/not-a-stem.wav",
+        "stems/some-key/../bass.f32",
+    ],
+)
+def test_export_rejects_paths_outside_the_two_allowed_shapes(
+    client: TestClient, settings, bad_path: str
+) -> None:
+    project = import_fixture(client, TONE_44K, "Bad stem path")
+    rows = [
+        {
+            "label": "bass",
+            "frames": project["audio"]["frames"],
+            "channels": project["audio"]["channels"],
+            "path": bad_path,
+        }
+    ]
+    client.put(
+        f"/api/projects/{project['id']}",
+        json={"document": {"stemCacheKey": "a" * 64, "stems": rows}},
+    )
+    response = client.post(f"/api/projects/{project['id']}/exports", json={})
+    assert response.status_code == 400, (bad_path, response.text)
+    assert "path" in response.json()["detail"].lower()
+
+
+def test_export_accepts_asset_id_and_explicit_asset_path(client: TestClient, settings) -> None:
+    project = import_fixture(client, TONE_44K, "Asset path")
+    asset_id = project["audio"]["asset_id"]
+    rows = [
+        {
+            "label": "bass",
+            "frames": project["audio"]["frames"],
+            "channels": project["audio"]["channels"],
+            "path": f"assets/{asset_id}/pcm.f32",
+        }
+    ]
+    client.put(f"/api/projects/{project['id']}", json={"document": {"stems": rows}})
+    export = client.post(f"/api/projects/{project['id']}/exports", json={})
+    assert export.status_code == 201, export.text
+    assert export.json()["layers"] == ["bass"]

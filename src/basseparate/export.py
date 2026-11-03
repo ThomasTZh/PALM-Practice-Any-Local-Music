@@ -28,6 +28,7 @@ from basseparate.projects import Project
 BYTES_PER_SAMPLE = 2
 CHUNK_FRAMES = 1 << 20
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 class ExportError(RuntimeError):
@@ -121,44 +122,106 @@ def _channel_mix(
     return base
 
 
+def _data_root(assets_root: Path) -> Path:
+    return Path(assets_root).parent
+
+
+def _safe_segment(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not SAFE_SEGMENT.fullmatch(value):
+        raise ExportError(f"{label} {value!r} is not a safe path segment")
+    return value
+
+
+def _resolve_data_path(candidate: Path, *, data_root: Path, stem_id: str) -> Path:
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(data_root.resolve())
+    except (OSError, ValueError) as error:
+        raise ExportError(
+            f"stem {stem_id} path {str(candidate)!r} escapes the data root"
+        ) from error
+    return resolved
+
+
+def _resolve_stem_path(value: str, *, assets_root: Path, stem_id: str) -> Path:
+    """Only ``assets/<id>/pcm.f32`` and ``stems/<key>/<label>.f32`` are valid."""
+    path = Path(value)
+    if path.is_absolute():
+        raise ExportError(f"stem {stem_id} path {value!r} must be relative to the data root")
+    parts = path.parts
+    data_root = _data_root(assets_root)
+    if len(parts) == 3 and parts[0] == "assets" and parts[2] == "pcm.f32":
+        asset_id = _safe_segment(parts[1], label=f"stem {stem_id} asset id")
+        return _resolve_data_path(
+            data_root / "assets" / asset_id / "pcm.f32",
+            data_root=data_root,
+            stem_id=stem_id,
+        )
+    if len(parts) == 3 and parts[0] == "stems" and parts[2].endswith(".f32"):
+        cache_key = _safe_segment(parts[1], label=f"stem {stem_id} cache key")
+        label = _safe_segment(parts[2][:-4], label=f"stem {stem_id} label")
+        return _resolve_data_path(
+            data_root / "stems" / cache_key / f"{label}.f32",
+            data_root=data_root,
+            stem_id=stem_id,
+        )
+    raise ExportError(
+        f"stem {stem_id} path {value!r} must be assets/<id>/pcm.f32 or stems/<key>/<label>.f32"
+    )
+
+
 def _stem_asset_id(stem: Mapping[str, Any], assets_root: Path, stem_id: str) -> str | None:
     for key in ("asset_id", "assetId", "peaksAssetId", "peaks_asset_id"):
         value = stem.get(key)
         if isinstance(value, str) and value:
             return value
-    if (assets_root / stem_id / "pcm.f32").is_file():
+    if (Path(assets_root) / stem_id / "pcm.f32").is_file():
         return stem_id
     return None
 
 
 def _stem_pcm_path(
-    stem: Mapping[str, Any], assets_root: Path, stem_id: str
+    stem: Mapping[str, Any],
+    assets_root: Path,
+    stem_id: str,
+    *,
+    cache_key: str | None = None,
 ) -> tuple[Path, str | None]:
     assets_root = Path(assets_root)
-    data_root = assets_root.parent
+    data_root = _data_root(assets_root)
+    stem_id = _safe_segment(stem_id, label="stem label")
     for key in ("pcm_path", "pcmPath", "path"):
         value = stem.get(key)
         if not isinstance(value, str) or not value:
             continue
-        candidate = Path(value)
-        if candidate.is_absolute():
-            base = data_root
-        elif candidate.parts and candidate.parts[0] == "stems":
-            # Separated stems live in the content-addressed cache under the
-            # data root, not under assets/.
-            base = data_root
-        else:
-            base = assets_root
-        candidate = candidate if candidate.is_absolute() else base / candidate
-        try:
-            candidate.resolve().relative_to(base.resolve())
-        except ValueError as error:
-            raise ExportError(f"stem {stem_id} references a PCM outside the data root") from error
-        return candidate, stem_id
+        return _resolve_stem_path(value, assets_root=assets_root, stem_id=stem_id), None
     asset_id = _stem_asset_id(stem, assets_root, stem_id)
-    if asset_id is None:
-        raise ExportError(f"stem {stem_id} has no asset id or PCM path")
-    return assets_root / asset_id / "pcm.f32", asset_id
+    if asset_id is not None:
+        safe_asset = _safe_segment(asset_id, label=f"stem {stem_id} asset id")
+        return (
+            _resolve_data_path(
+                data_root / "assets" / safe_asset / "pcm.f32",
+                data_root=data_root,
+                stem_id=stem_id,
+            ),
+            safe_asset,
+        )
+    fallback_key = cache_key
+    if fallback_key is None:
+        raw_key = stem.get("cache_key", stem.get("key"))
+        fallback_key = raw_key if isinstance(raw_key, str) else None
+    if fallback_key:
+        safe_key = _safe_segment(fallback_key, label=f"stem {stem_id} cache key")
+        _safe_segment(stem_id, label=f"stem {stem_id} label")
+        return (
+            _resolve_data_path(
+                data_root / "stems" / safe_key / f"{stem_id}.f32",
+                data_root=data_root,
+                stem_id=stem_id,
+            ),
+            None,
+        )
+    raise ExportError(f"stem {stem_id} has no path, asset id or stemCacheKey to resolve its PCM")
 
 
 def _layer_channels(stem: Mapping[str, Any], project_channels: int) -> int:
@@ -224,7 +287,12 @@ def build_mix_layers(
         return tuple(audible)
 
     source_id = "source"
-    pcm_path = assets_root / project.audio.asset_id / "pcm.f32"
+    safe_asset = _safe_segment(project.audio.asset_id, label="project asset id")
+    pcm_path = _resolve_data_path(
+        _data_root(assets_root) / "assets" / safe_asset / "pcm.f32",
+        data_root=_data_root(assets_root),
+        stem_id=source_id,
+    )
     if not pcm_path.is_file():
         raise ExportError(
             f"project {project.id} has no decoded PCM at assets/{project.audio.asset_id}/pcm.f32"
