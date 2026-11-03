@@ -49,7 +49,9 @@ export interface AudioInfo {
 export interface ProjectDocument {
   grid?: unknown;
   key?: string | null;
-  stems?: unknown[];
+  stems?: StemInfo[];
+  stemCacheKey?: string | null;
+  stemModel?: string | null;
   [key: string]: unknown;
 }
 
@@ -166,4 +168,67 @@ export interface PcmFrameHeaders {
   sampleRate: number;
   channels: number;
   totalFrames: number;
+}
+
+/** One entry from GET /api/separation/models (local registry + install state). */
+export interface SeparationModel {
+  id: string;
+  name: string;
+  engine: "demucs" | "msst" | string;
+  engine_command: string;
+  labels: string[];
+  sample_rate: number;
+  size_bytes: number;
+  source_url: string;
+  license: string;
+  bundled: boolean;
+  install_dir: string;
+  install_command: string;
+  checkpoint_manifest: string | null;
+  config_name: string | null;
+  status: "installed" | "missing" | "hash-mismatch";
+  installed: boolean;
+  model_dir: string;
+  detail: string;
+  default: boolean;
+  /** Locally measured cost on the 8 s fixture; may be empty for other models. */
+  metrics: Record<string, unknown>;
+  file_states: Array<Record<string, unknown>>;
+}
+
+export interface SeparationModelsResponse {
+  default: string;
+  models: SeparationModel[];
+}
+
+/** Request body for POST /api/separate. */
+export interface SeparateRequest {
+  project_id: string;
+  model_id?: string;
+  device?: "auto" | "cpu" | "cuda";
+  force?: boolean;
+}
+
+/** One stem descriptor persisted in project.document.stems. */
+export interface StemInfo {
+  label: string;
+  frames: number;
+  channels: number;
+  sampleRate: number;
+  sample_rate?: number;
+  key: string;
+  model?: string | null;
+  model_id?: string | null;
+  path?: string;
+  cache_key?: string;
+  url?: string;
+}
+
+export interface ProjectStemsResponse {
+  project_id: string;
+  key: string | null;
+  /** Active model id, or null for a project without a stem set. */
+  model: string | null;
+  model_id: string | null;
+  stems: StemInfo[];
 }

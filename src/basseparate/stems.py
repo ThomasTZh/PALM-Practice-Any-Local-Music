@@ -47,6 +47,15 @@ from basseparate.media import (
     read_pcm_slice,
     unsatisfiable_range_headers,
 )
+from basseparate.model_registry import (
+    ModelEntry,
+    ModelRegistryError,
+    ModelState,
+    Registry,
+    load_registry,
+    verify_model,
+    verify_registry,
+)
 from basseparate.peaks import (
     PEAK_BUCKET_SIZES,
     bucket_count,
@@ -61,11 +70,46 @@ ANALYSIS_PYTHON = REPO_ROOT / "analysis" / ".venv" / "bin" / "python"
 WORKER_SCRIPT = REPO_ROOT / "analysis" / "separate_track.py"
 CHECKPOINT_MANIFEST = REPO_ROOT / "analysis" / "checkpoints.json"
 DEFAULT_BUNDLE = REPO_ROOT / "models" / "htdemucs_ft"
+MODELS_ROOT = REPO_ROOT
+MODEL_REGISTRY_PATH = REPO_ROOT / "analysis" / "models.json"
+ANALYSIS_MODELS_PYTHON = REPO_ROOT / "analysis-models" / ".venv" / "bin" / "python"
+MSST_WORKER_SCRIPT = REPO_ROOT / "analysis" / "separate_msst.py"
 
+DEFAULT_MODEL_ID = "htdemucs_ft"
 STEM_LABELS: tuple[str, ...] = ("drums", "bass", "other", "vocals")
 STEM_CHANNELS = 2
-CACHE_VERSION = 1
+CACHE_VERSION = 2
+SUPPORTED_CACHE_VERSIONS: tuple[int, ...] = (1, 2)
 CACHE_DIR_NAME = "stems"
+
+# Measured locally in the dependency tasks (8 s fixture, CPU); kept here so the
+# model picker can show a realistic cost without importing torch or running a
+# model. These are measurements, not registry identity.
+MODEL_METRICS: dict[str, dict[str, object]] = {
+    "htdemucs_ft": {
+        "device": "cpu",
+        "fixture_seconds": 8.0,
+        "wall_seconds": 19.24,
+        "child_seconds": 18.85,
+        "source": "t8 measured run",
+    },
+    "scnet-xl-ihf": {
+        "device": "cpu",
+        "fixture_seconds": 8.0,
+        "wall_seconds": 58.20,
+        "child_seconds": 55.32,
+        "peak_rss_mib": 3965.4,
+        "source": "t49 measured run",
+    },
+    "bs-roformer-sw": {
+        "device": "cpu",
+        "fixture_seconds": 8.0,
+        "wall_seconds": 67.35,
+        "child_seconds": 65.97,
+        "peak_rss_mib": 3006.4,
+        "source": "t49 measured run",
+    },
+}
 DEFAULT_WINDOW_SECONDS = 120.0
 DEFAULT_OVERLAP_SECONDS = 8.0
 DEFAULT_SHIFTS = 0
@@ -106,6 +150,11 @@ class StemSet:
     elapsed_seconds: float
     cached: bool
     metadata: Mapping[str, Any]
+    model_id: str = DEFAULT_MODEL_ID
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(stem.label for stem in self.stems)
 
     def file(self, label: str) -> StemFile:
         for stem in self.stems:
@@ -123,6 +172,10 @@ class StemSet:
                 "sampleRate": self.sample_rate,
                 "sample_rate": self.sample_rate,
                 "key": self.key,
+                "model": self.model_id,
+                "model_id": self.model_id,
+                "path": f"{CACHE_DIR_NAME}/{self.key}/{stem.label}.f32",
+                "cache_key": self.key,
             }
             if project_id is not None:
                 entry["url"] = stem_url(project_id, stem.label)
@@ -135,6 +188,9 @@ class StemSet:
             "frames": self.frames,
             "device": self.device,
             "elapsed_seconds": self.elapsed_seconds,
+            "model": self.model_id,
+            "model_id": self.model_id,
+            "labels": list(self.labels),
             "stems": stems,
         }
 
@@ -143,6 +199,7 @@ class SeparateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: str = Field(min_length=1, max_length=64)
+    model_id: str = Field(default=DEFAULT_MODEL_ID, min_length=1, max_length=64)
     device: Literal["auto", "cpu", "cuda"] = "auto"
     force: bool = False
 
@@ -164,25 +221,57 @@ def _manifest_sha256() -> str:
     return sha256_file(CHECKPOINT_MANIFEST)
 
 
+def model_cache_hashes(entry: ModelEntry, *, root: Path = MODELS_ROOT) -> dict[str, str]:
+    """Weights/config identity for the cache key; declared hashes, no model load."""
+    if entry.bundled:
+        if entry.checkpoint_manifest is None:
+            raise StemError(f"bundled model {entry.id} has no checkpoint manifest")
+        manifest = Path(root) / entry.checkpoint_manifest
+        if not manifest.is_file():
+            raise StemError(f"checkpoint manifest is missing: {manifest}")
+        hashes = {"checkpoints_manifest": sha256_file(manifest)}
+        if entry.config_name:
+            config = Path(root) / entry.install_dir / entry.config_name
+            if config.is_file():
+                hashes["config"] = sha256_file(config)
+        return hashes
+    if not entry.files:
+        raise StemError(f"model {entry.id} declares no weights or config files")
+    return {
+        f"{item.role}:{item.name}": item.sha256
+        for item in sorted(entry.files, key=lambda item: (item.role, item.name))
+    }
+
+
 def stem_cache_key(
     pcm_sha256: str,
     *,
     sample_rate: int,
     channels: int,
+    model_id: str = DEFAULT_MODEL_ID,
+    model_hashes: Mapping[str, str] | None = None,
+    labels: tuple[str, ...] | None = None,
     window_seconds: float = DEFAULT_WINDOW_SECONDS,
     overlap_seconds: float = DEFAULT_OVERLAP_SECONDS,
     shifts: int = DEFAULT_SHIFTS,
 ) -> str:
-    """Content address for a stem set; no device or mtime is part of it."""
+    """Content address for a stem set; includes model id and weight/config hashes.
+
+    Version 1 keys were the Demucs-only shape; version 2 identity keeps old
+    entries readable by key while ensuring a different model or checkpoint set
+    can never collide with the current one.
+    """
     identity = {
         "schema": CACHE_VERSION,
         "pcm_sha256": pcm_sha256,
         "sample_rate": sample_rate,
         "channels": channels,
+        "model_id": model_id,
+        "labels": list(labels) if labels is not None else list(STEM_LABELS),
+        "model_hashes": dict(sorted((model_hashes or {}).items())),
         "window_seconds": round(window_seconds, 6),
         "overlap_seconds": round(overlap_seconds, 6),
         "shifts": shifts,
-        "checkpoints_sha256": _manifest_sha256(),
     }
     encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -227,13 +316,39 @@ def read_stem_cache(paths: DataPaths, key: str) -> StemSet | None:
     directory = cache_entry(paths, key)
     try:
         payload = _read_json(directory / "stems.json")
-        if _as_int(payload.get("version"), "cache version") != CACHE_VERSION:
+        version = _as_int(payload.get("version"), "cache version")
+        if version not in SUPPORTED_CACHE_VERSIONS:
             return None
         if payload.get("key") != key:
             return None
         sample_rate = _as_int(payload.get("sample_rate"), "sample rate")
         channels = _as_int(payload.get("channels"), "channels")
         frames = _as_int(payload.get("frames"), "frames")
+        if version == 1:
+            model_id = DEFAULT_MODEL_ID
+            expected_labels = STEM_LABELS
+        else:
+            raw_model = payload.get("model_id")
+            if not isinstance(raw_model, str) or not raw_model:
+                return None
+            model_id = raw_model
+            raw_labels = payload.get("labels")
+            if not isinstance(raw_labels, list) or not raw_labels:
+                return None
+            if any(not isinstance(label, str) or not label for label in raw_labels):
+                return None
+            if len(set(raw_labels)) != len(raw_labels):
+                return None
+            expected_labels = tuple(raw_labels)
+            reported_labels = payload.get("model_labels")
+            if reported_labels is not None and list(reported_labels) != list(raw_labels):
+                return None
+            try:
+                model_entry = load_registry(MODEL_REGISTRY_PATH).get(model_id)
+            except ModelRegistryError:
+                model_entry = None
+            if model_entry is not None and tuple(model_entry.labels) != expected_labels:
+                return None
         rows = payload.get("stems")
         if not isinstance(rows, list):
             return None
@@ -259,7 +374,7 @@ def read_stem_cache(paths: DataPaths, key: str) -> StemSet | None:
                     channels=stem_channels,
                 )
             )
-        if tuple(stem.label for stem in stems) != STEM_LABELS:
+        if tuple(stem.label for stem in stems) != expected_labels:
             return None
         if any(stem.frames != frames or stem.channels != channels for stem in stems):
             return None
@@ -276,6 +391,7 @@ def read_stem_cache(paths: DataPaths, key: str) -> StemSet | None:
             elapsed_seconds=elapsed,
             cached=True,
             metadata=payload,
+            model_id=model_id,
         )
     except (OSError, StemError, KeyError, ValueError):
         return None
@@ -290,6 +406,8 @@ def _write_cache_meta(
     channels: int,
     frames: int,
     worker_meta: Mapping[str, Any],
+    model: ModelEntry,
+    model_hashes: Mapping[str, str],
 ) -> None:
     stems = [
         {
@@ -298,11 +416,17 @@ def _write_cache_meta(
             "frames": frames,
             "channels": channels,
         }
-        for label in STEM_LABELS
+        for label in model.labels
     ]
     payload = {
         "version": CACHE_VERSION,
         "key": key,
+        "model_id": model.id,
+        "model_name": model.name,
+        "model_engine": model.engine,
+        "model_labels": list(model.labels),
+        "model_hashes": dict(sorted(model_hashes.items())),
+        "labels": list(model.labels),
         "source_pcm_sha256": pcm_sha256,
         "sample_rate": sample_rate,
         "channels": channels,
@@ -362,16 +486,26 @@ def _stderr_tail(stream: IO[bytes] | None) -> str:
     return "\nworker stderr tail:\n" + text
 
 
-def _validate_worker_output(stage: Path, *, frames: int, sample_rate: int) -> Mapping[str, Any]:
+def _validate_worker_output(
+    stage: Path,
+    *,
+    frames: int,
+    sample_rate: int,
+    labels: tuple[str, ...],
+    model_id: str,
+) -> Mapping[str, Any]:
     meta_path = stage / "meta.json"
     if not meta_path.is_file():
         raise StemError(f"separation produced no metadata ({meta_path.name})")
     meta = _read_json(meta_path)
     if meta.get("status") != "complete":
         raise StemError(f"separation did not complete: {meta.get('status')!r}")
-    if tuple(meta.get("labels", ())) != STEM_LABELS:
+    if tuple(meta.get("labels", ())) != labels:
+        raise StemError(f"separation produced labels {meta.get('labels')!r}, expected {labels}")
+    reported_model = meta.get("model_id")
+    if reported_model is not None and str(reported_model) != model_id:
         raise StemError(
-            f"separation produced labels {meta.get('labels')!r}, expected {STEM_LABELS}"
+            f"separation worker reported model {reported_model!r}, expected {model_id!r}"
         )
     if _as_int(meta.get("frames"), "worker frames") != frames:
         raise StemError(
@@ -380,7 +514,7 @@ def _validate_worker_output(stage: Path, *, frames: int, sample_rate: int) -> Ma
         )
     if _as_int(meta.get("sample_rate"), "worker sample rate") != sample_rate:
         raise StemError(f"separation wrote {meta.get('sample_rate')} Hz, expected {sample_rate} Hz")
-    for label in STEM_LABELS:
+    for label in labels:
         path = stage / f"{label}.f32"
         if not path.is_file():
             raise StemError(f"separation is missing the {label} stem")
@@ -393,47 +527,98 @@ def _validate_worker_output(stage: Path, *, frames: int, sample_rate: int) -> Ma
     return meta
 
 
-def _worker_command(
+def resolve_model(model_id: str, *, registry: Registry | None = None) -> ModelEntry:
+    """Look up a model id in the registry with a user-facing error."""
+    try:
+        active = registry if registry is not None else load_registry(MODEL_REGISTRY_PATH)
+        return active.get(model_id)
+    except ModelRegistryError as error:
+        raise StemError(str(error)) from error
+
+
+def require_model_installed(entry: ModelEntry) -> ModelState:
+    state = verify_model(entry)
+    if not state.installed:
+        raise StemError(
+            f"model {entry.id} is not installed ({state.status}: {state.detail}); "
+            f"install it with: {entry.install_command}"
+        )
+    return state
+
+
+def worker_command(
+    model: ModelEntry,
     *,
-    analysis_python: Path,
-    worker_script: Path,
     pcm_path: Path,
     stage: Path,
     sample_rate: int,
     channels: int,
-    bundle_dir: Path,
     device: str,
-    window_seconds: float,
-    overlap_seconds: float,
-    shifts: int,
     cancel_path: Path,
+    window_seconds: float = DEFAULT_WINDOW_SECONDS,
+    overlap_seconds: float = DEFAULT_OVERLAP_SECONDS,
+    shifts: int = DEFAULT_SHIFTS,
+    analysis_python: Path | None = None,
+    worker_script: Path | None = None,
+    bundle_dir: Path | None = None,
 ) -> list[str]:
-    return [
-        str(analysis_python),
-        str(worker_script),
-        "--input",
-        str(pcm_path),
-        "--out",
-        str(stage),
-        "--bundle-dir",
-        str(bundle_dir),
-        "--manifest",
-        str(CHECKPOINT_MANIFEST),
-        "--device",
-        device,
-        "--sample-rate",
-        str(sample_rate),
-        "--channels",
-        str(channels),
-        "--window-seconds",
-        str(window_seconds),
-        "--overlap-seconds",
-        str(overlap_seconds),
-        "--shifts",
-        str(shifts),
-        "--cancel",
-        str(cancel_path),
-    ]
+    """Build the engine-specific child command for the selected model."""
+    if model.engine == "demucs":
+        interpreter = Path(analysis_python) if analysis_python is not None else ANALYSIS_PYTHON
+        worker = Path(worker_script) if worker_script is not None else WORKER_SCRIPT
+        bundle = Path(bundle_dir) if bundle_dir is not None else MODELS_ROOT / model.install_dir
+        return [
+            str(interpreter),
+            str(worker),
+            "--input",
+            str(pcm_path),
+            "--out",
+            str(stage),
+            "--bundle-dir",
+            str(bundle),
+            "--manifest",
+            str(CHECKPOINT_MANIFEST),
+            "--device",
+            device,
+            "--sample-rate",
+            str(sample_rate),
+            "--channels",
+            str(channels),
+            "--window-seconds",
+            str(window_seconds),
+            "--overlap-seconds",
+            str(overlap_seconds),
+            "--shifts",
+            str(shifts),
+            "--cancel",
+            str(cancel_path),
+        ]
+    if model.engine == "msst":
+        interpreter = (
+            Path(analysis_python) if analysis_python is not None else ANALYSIS_MODELS_PYTHON
+        )
+        worker = Path(worker_script) if worker_script is not None else MSST_WORKER_SCRIPT
+        return [
+            str(interpreter),
+            str(worker),
+            "--input",
+            str(pcm_path),
+            "--out",
+            str(stage),
+            "--model-id",
+            model.id,
+            "--sample-rate",
+            str(sample_rate),
+            "--channels",
+            str(channels),
+            "--models-root",
+            str(MODELS_ROOT),
+            "--registry",
+            str(MODEL_REGISTRY_PATH),
+            "--device",
+            device,
+        ]
+    raise StemError(f"model {model.id} uses unsupported engine {model.engine!r}")
 
 
 def _read_worker_line(
@@ -470,6 +655,9 @@ def separate_asset(
     sample_rate: int,
     channels: int,
     paths: DataPaths,
+    model_id: str = DEFAULT_MODEL_ID,
+    model: ModelEntry | None = None,
+    registry: Registry | None = None,
     bundle_dir: Path | None = None,
     device: str = "auto",
     force: bool = False,
@@ -482,7 +670,12 @@ def separate_asset(
     analysis_python: Path | None = None,
     worker_script: Path | None = None,
 ) -> StemSet:
-    """Separate one prepared PCM into four cached interleaved f32 stems."""
+    """Separate one prepared PCM into the selected model's cached f32 stems."""
+    entry = model if model is not None else resolve_model(model_id, registry=registry)
+    if model is None:
+        require_model_installed(entry)
+    labels = entry.labels
+    model_hashes = model_cache_hashes(entry)
     pcm = Path(pcm_path)
     if not pcm.is_file():
         raise StemError(f"prepared PCM is missing: {pcm}")
@@ -498,35 +691,47 @@ def separate_asset(
         pcm_sha,
         sample_rate=sample_rate,
         channels=channels,
+        model_id=entry.id,
+        model_hashes=model_hashes,
+        labels=labels,
         window_seconds=window_seconds,
         overlap_seconds=overlap_seconds,
         shifts=shifts,
     )
     if not force:
         cached = read_stem_cache(paths, key)
-        if cached is not None:
+        if cached is not None and cached.model_id == entry.id and cached.labels == labels:
             if progress is not None:
                 progress(1.0, "stems already cached")
             return cached
 
-    analysis = Path(analysis_python) if analysis_python is not None else ANALYSIS_PYTHON
-    worker = Path(worker_script) if worker_script is not None else WORKER_SCRIPT
-    bundle = Path(bundle_dir) if bundle_dir is not None else DEFAULT_BUNDLE
+    analysis = (
+        Path(analysis_python)
+        if analysis_python is not None
+        else (ANALYSIS_PYTHON if entry.engine == "demucs" else ANALYSIS_MODELS_PYTHON)
+    )
+    worker = (
+        Path(worker_script)
+        if worker_script is not None
+        else (WORKER_SCRIPT if entry.engine == "demucs" else MSST_WORKER_SCRIPT)
+    )
+    bundle = Path(bundle_dir) if bundle_dir is not None else MODELS_ROOT / entry.install_dir
     if not analysis.is_file() or not os.access(analysis, os.X_OK):
         raise StemError(
-            f"analysis interpreter is missing or not executable: {analysis}. "
-            "Restore the preserved analysis/.venv."
+            f"separation interpreter is missing or not executable: {analysis}. "
+            f"Run {entry.install_command}."
         )
     if not worker.is_file():
         raise StemError(f"separation worker is missing: {worker}")
-    if not bundle.is_dir():
+    if entry.engine == "demucs" and not bundle.is_dir():
         raise StemError(f"model bundle is missing: {bundle}")
 
     root = cache_root(paths)
     root.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=root))
     cancel_path = stage / "cancel.flag"
-    command = _worker_command(
+    command = worker_command(
+        entry,
         analysis_python=analysis,
         worker_script=worker,
         pcm_path=pcm,
@@ -624,7 +829,13 @@ def separate_asset(
         if code != 0:
             detail = child_error or f"exit status {code}"
             raise StemError(f"separation failed ({detail}){tail}")
-        worker_meta = _validate_worker_output(stage, frames=frames, sample_rate=sample_rate)
+        worker_meta = _validate_worker_output(
+            stage,
+            frames=frames,
+            sample_rate=sample_rate,
+            labels=labels,
+            model_id=entry.id,
+        )
         _write_cache_meta(
             stage,
             key=key,
@@ -633,6 +844,8 @@ def separate_asset(
             channels=STEM_CHANNELS,
             frames=frames,
             worker_meta=worker_meta,
+            model=entry,
+            model_hashes=model_hashes,
         )
         existing = _publish(paths, key, stage, force=force)
         if existing is not None:
@@ -658,6 +871,9 @@ def separate_project(
     project: Project,
     *,
     paths: DataPaths,
+    model_id: str = DEFAULT_MODEL_ID,
+    model: ModelEntry | None = None,
+    registry: Registry | None = None,
     bundle_dir: Path | None = None,
     device: str = "auto",
     force: bool = False,
@@ -679,11 +895,17 @@ def separate_project(
             f"decoded PCM for project {project.id} is {pcm.stat().st_size} bytes, "
             f"expected {expected_bytes}"
         )
+    if model is not None:
+        entry = model
+    else:
+        entry = resolve_model(model_id, registry=registry)
+        require_model_installed(entry)
     return separate_asset(
         pcm,
         sample_rate=project.audio.sample_rate,
         channels=project.audio.channels,
         paths=paths,
+        model=entry,
         bundle_dir=bundle_dir,
         device=device,
         force=force,
@@ -709,6 +931,7 @@ def publish_project_stems(store: ProjectStore, project_id: str, stem_set: StemSe
         document = dict(current.document)
         document["stems"] = stem_set.payload(project_id)["stems"]
         document["stemCacheKey"] = stem_set.key
+        document["stemModel"] = stem_set.model_id
         try:
             return store.update(project_id, document=document, expected_revision=current.revision)
         except RevisionConflict:
@@ -721,11 +944,14 @@ def _runner(
 ) -> Callable[[JobContext, Mapping[str, Any]], object]:
     def run(context: JobContext, params: Mapping[str, Any]) -> object:
         request = SeparateRequest.model_validate(dict(params))
+        entry = resolve_model(request.model_id)
+        require_model_installed(entry)
         project = store.get(request.project_id)
         try:
             stem_set = separate_project(
                 project,
                 paths=paths,
+                model=entry,
                 device=request.device,
                 force=request.force,
                 progress=lambda fraction, message: context.progress(fraction, message),
@@ -808,12 +1034,33 @@ def ensure_stem_peaks(stem_set: StemSet, stem: StemFile, buckets: int) -> bytes:
 router = APIRouter(tags=["stems"])
 
 
+@router.get("/separation/models")
+def separation_models() -> dict[str, Any]:
+    registry = load_registry(MODEL_REGISTRY_PATH)
+    states = verify_registry(registry)
+    models = []
+    for state in states:
+        payload = state.to_dict()
+        payload["metrics"] = dict(MODEL_METRICS.get(state.entry.id, {}))
+        payload["default"] = state.entry.id == DEFAULT_MODEL_ID
+        payload["install_command"] = state.entry.install_command
+        payload["size"] = state.entry.size_bytes
+        payload["stem_labels"] = list(state.entry.labels)
+        models.append(payload)
+    return {"default": DEFAULT_MODEL_ID, "models": models}
+
+
 @router.post("/separate", status_code=status.HTTP_202_ACCEPTED)
 def start_separation(
     body: SeparateRequest,
     jobs: JobsDep,
     store: StoreDep,
 ) -> dict[str, Any]:
+    try:
+        entry = resolve_model(body.model_id)
+        require_model_installed(entry)
+    except StemError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     store.get(body.project_id)  # 404 before the job is queued
     try:
         job = jobs.submit("separate", body.model_dump())
@@ -822,18 +1069,32 @@ def start_separation(
             status_code=400,
             detail="the separate job is not installed; call stems.install(app) first",
         ) from error
-    return job.to_dict()
+    payload = job.to_dict()
+    payload["params"] = body.model_dump()
+    payload["model_id"] = entry.id
+    payload["model"] = entry.to_dict()
+    return payload
 
 
 @router.get("/projects/{project_id}/stems")
-def project_stems(project_id: str, store: StoreDep) -> dict[str, Any]:
+def project_stems(project_id: str, store: StoreDep, paths: PathsDep) -> dict[str, Any]:
     project = store.get(project_id)
     stems = project.document.get("stems", [])
     if not isinstance(stems, list):
         stems = []
+    model = project.document.get("stemModel")
+    if not isinstance(model, str):
+        key = project.document.get("stemCacheKey")
+        if isinstance(key, str):
+            cached = read_stem_cache(paths, key)
+            if cached is not None:
+                model = cached.model_id
     return {
         "project_id": project_id,
         "key": project.document.get("stemCacheKey"),
+        "model": model,
+        "model_id": model,
+        "active_model": model,
         "stems": stems,
     }
 
@@ -855,8 +1116,6 @@ def project_stem_peaks(
     store: StoreDep,
     buckets: int = Query(default=1024),
 ) -> Response:
-    if label not in STEM_LABELS:
-        raise HTTPException(status_code=404, detail=f"unknown stem {label!r}")
     if buckets not in PEAK_BUCKET_SIZES:
         choices = ", ".join(str(size) for size in PEAK_BUCKET_SIZES)
         raise HTTPException(
@@ -870,6 +1129,8 @@ def project_stem_peaks(
     stem_set = read_stem_cache(paths, key)
     if stem_set is None:
         raise HTTPException(status_code=404, detail=f"stem set {key} is missing or incomplete")
+    if label not in stem_set.labels:
+        raise HTTPException(status_code=404, detail=f"unknown stem {label!r}")
     stem = stem_set.file(label)
     payload = ensure_stem_peaks(stem_set, stem, buckets)
     return Response(
@@ -895,8 +1156,6 @@ def project_stem_pcm(
     start: int = Query(default=0),
     end: int | None = Query(default=None),
 ) -> Response:
-    if label not in STEM_LABELS:
-        raise HTTPException(status_code=404, detail=f"unknown stem {label!r}")
     project = store.get(project_id)
     key = project.document.get("stemCacheKey")
     if not isinstance(key, str):
@@ -904,6 +1163,8 @@ def project_stem_pcm(
     stem_set = read_stem_cache(paths, key)
     if stem_set is None:
         raise HTTPException(status_code=404, detail=f"stem set {key} is missing or incomplete")
+    if label not in stem_set.labels:
+        raise HTTPException(status_code=404, detail=f"unknown stem {label!r}")
     stem = stem_set.file(label)
     total_bytes = stem.path.stat().st_size
     try:
@@ -946,7 +1207,11 @@ def install(app: Any) -> None:
 
 
 __all__ = [
+    "CACHE_VERSION",
+    "DEFAULT_MODEL_ID",
+    "MODEL_METRICS",
     "STEM_LABELS",
+    "SUPPORTED_CACHE_VERSIONS",
     "SeparateRequest",
     "StemError",
     "StemFile",
@@ -954,14 +1219,20 @@ __all__ = [
     "StemsCancelled",
     "cache_entry",
     "cache_root",
+    "ensure_stem_peaks",
     "install",
+    "model_cache_hashes",
     "publish_project_stems",
     "read_stem_cache",
     "register_stems_job",
+    "require_model_installed",
+    "resolve_model",
     "router",
     "separate_asset",
     "separate_project",
     "sha256_file",
     "stem_cache_key",
+    "stem_peaks_path",
     "stem_url",
+    "worker_command",
 ]

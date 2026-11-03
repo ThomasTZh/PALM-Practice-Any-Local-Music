@@ -134,17 +134,26 @@ def _stem_asset_id(stem: Mapping[str, Any], assets_root: Path, stem_id: str) -> 
 def _stem_pcm_path(
     stem: Mapping[str, Any], assets_root: Path, stem_id: str
 ) -> tuple[Path, str | None]:
+    assets_root = Path(assets_root)
+    data_root = assets_root.parent
     for key in ("pcm_path", "pcmPath", "path"):
         value = stem.get(key)
         if not isinstance(value, str) or not value:
             continue
         candidate = Path(value)
-        if not candidate.is_absolute():
-            candidate = assets_root / candidate
+        if candidate.is_absolute():
+            base = data_root
+        elif candidate.parts and candidate.parts[0] == "stems":
+            # Separated stems live in the content-addressed cache under the
+            # data root, not under assets/.
+            base = data_root
+        else:
+            base = assets_root
+        candidate = candidate if candidate.is_absolute() else base / candidate
         try:
-            candidate.resolve().relative_to(assets_root.resolve())
+            candidate.resolve().relative_to(base.resolve())
         except ValueError as error:
-            raise ExportError(f"stem {stem_id} references a PCM outside the asset root") from error
+            raise ExportError(f"stem {stem_id} references a PCM outside the data root") from error
         return candidate, stem_id
     asset_id = _stem_asset_id(stem, assets_root, stem_id)
     if asset_id is None:
@@ -179,7 +188,9 @@ def build_mix_layers(
     mixed: list[tuple[MixLayer, ChannelMix]] = []
     if stems:
         for index, stem in enumerate(stems):
-            stem_id = str(stem.get("id") or stem.get("name") or f"stem-{index + 1}")
+            stem_id = str(
+                stem.get("id") or stem.get("name") or stem.get("label") or f"stem-{index + 1}"
+            )
             pcm_path, _asset_id = _stem_pcm_path(stem, assets_root, stem_id)
             if not pcm_path.is_file():
                 raise ExportError(f"stem {stem_id} has no PCM at {pcm_path}")

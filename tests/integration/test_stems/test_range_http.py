@@ -79,6 +79,12 @@ def test_stem_pcm_honors_http_range_byte_exactly(tmp_path: Path) -> None:
     frame_size = channels * 4
     start, end = 512 * frame_size, 767 * frame_size + frame_size - 1
     with client:
+        metadata = client.get(f"/api/projects/{project.id}/stems")
+        assert metadata.status_code == 200
+        # A v1 cache has no stemModel document field; the route recovers the
+        # implicit Demucs model from the cache metadata.
+        assert metadata.json()["model"] == "htdemucs_ft"
+        assert metadata.json()["active_model"] == "htdemucs_ft"
         for label in STEM_LABELS:
             response = client.get(
                 f"/api/projects/{project.id}/stems/{label}/pcm",
