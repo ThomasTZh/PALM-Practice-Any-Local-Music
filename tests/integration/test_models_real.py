@@ -113,3 +113,90 @@ def test_installed_msst_models_and_real_runs(tmp_path: Path) -> None:
             f"peak_rss={meta['peak_rss_kb'] / 1024:.1f} MiB device={meta['device']}"
         )
     print("REAL_MSST 60s estimate: scale the 8 s wall time by 7.5x")
+
+
+def test_real_demucs_cache_survives_scnet_then_is_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real htdemucs run, another model, then htdemucs must be a cache hit."""
+    from basseparate import stems
+    from basseparate.config import Settings
+    from basseparate.media import import_media
+    from basseparate.projects import ProjectStore, build_audio_info, build_project
+    from basseparate.stems import (
+        DEFAULT_MODEL_ID,
+        cache_entry,
+        model_cache_hashes,
+        read_stem_cache,
+        resolve_model,
+        separate_project,
+        sha256_file,
+        stem_cache_key,
+    )
+
+    settings = Settings(data_dir=tmp_path / "data", web_dir=tmp_path / "dist")
+    paths = settings.data_paths.ensure()
+    store = ProjectStore(paths.projects)
+    wav = tmp_path / "two-seconds.wav"
+    rate, frames = 48_000, 96_000
+    t = np.arange(frames, dtype=np.float64) / rate
+    tone = (0.25 * np.sin(2 * np.pi * 220 * t)).astype("<f2")
+    with wave.open(str(wav), "wb") as handle:
+        handle.setnchannels(2)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(np.stack([tone, tone], axis=1).tobytes())
+    asset = import_media(wav, assets_root=paths.assets)
+    audio = build_audio_info(
+        asset_id=asset.asset_id,
+        source_name=asset.source_name,
+        source_format=asset.source_format,
+        sample_rate=asset.sample_rate,
+        channels=asset.channels,
+        frames=asset.frames,
+        content_sha256=asset.content_sha256,
+        peak_counts=asset.peak_counts,
+        codec=asset.codec,
+    )
+    project = store.create(build_project(audio, name="real cache switch"))
+
+    pcm_sha = sha256_file(paths.asset_dir(asset.asset_id) / "pcm.f32")
+
+    def key_for(model_id: str) -> str:
+        entry = resolve_model(model_id)
+        return stem_cache_key(
+            pcm_sha,
+            sample_rate=audio.sample_rate,
+            channels=audio.channels,
+            model_id=entry.id,
+            model_hashes=model_cache_hashes(entry),
+            labels=entry.labels,
+            window_seconds=120.0,
+            overlap_seconds=8.0,
+            shifts=0,
+        )
+
+    key_a = key_for(DEFAULT_MODEL_ID)
+    first = separate_project(project, paths=paths, device="cpu")
+    assert first.cached is False
+    assert first.key == key_a
+    assert read_stem_cache(paths, key_a) is not None
+
+    other = separate_project(project, paths=paths, model_id="scnet-xl-ihf", device="cpu")
+    assert other.key != key_a
+    assert cache_entry(paths, key_a).is_dir()
+
+    before = read_stem_cache(paths, key_a)
+    assert before is not None and before.cached is True
+    with monkeypatch.context() as cache_patch:
+        cache_patch.setattr(
+            stems.subprocess,
+            "Popen",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("cached Demucs run must not spawn a worker")
+            ),
+        )
+        third = separate_project(project, paths=paths, device="cpu")
+    assert third.cached is True
+    assert third.key == key_a
+    assert read_stem_cache(paths, key_a) is not None

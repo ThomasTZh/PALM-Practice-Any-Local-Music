@@ -248,6 +248,27 @@ def test_six_label_fake_engine_end_to_end(tmp_path: Path, monkeypatch) -> None:
         assert by_id["htdemucs_ft"]["default"] is True
 
 
+def test_model_cache_survives_another_model_run(tmp_path: Path, monkeypatch) -> None:
+    _settings, paths, _store, project, worker, _frames = make_workspace(tmp_path)
+    model_a = fake_model("model-a", labels=("drums", "bass"), checkpoint_sha="a" * 64)
+    model_b = fake_model("model-b", labels=("bass", "guitar"), checkpoint_sha="b" * 64)
+    first = run_fake(project, paths, worker, model_a, model_a.labels, (0.1, 0.2), monkeypatch)
+    key_a = first.key
+    assert key_a
+    second = run_fake(project, paths, worker, model_b, model_b.labels, (0.3, 0.4), monkeypatch)
+    assert second.key != key_a
+    with monkeypatch.context() as cache_patch:
+        cache_patch.setattr(
+            stems.subprocess,
+            "Popen",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("model A cache must survive")),
+        )
+        third = separate_project(project, paths=paths, model=model_a)
+    assert third.cached is True
+    assert third.key == key_a
+    assert read_stem_cache(paths, key_a) is not None
+
+
 def test_mismatched_labels_are_rejected(tmp_path: Path, monkeypatch) -> None:
     _settings, paths, _store, project, worker, _frames = make_workspace(tmp_path)
     six = fake_model("bs-roformer-sw", labels=SIX_LABELS)
