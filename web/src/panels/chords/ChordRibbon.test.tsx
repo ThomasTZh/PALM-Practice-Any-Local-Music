@@ -81,6 +81,13 @@ describe("ChordRibbon", () => {
     });
   });
 
+  it("positions its playhead with the shared time calculation", () => {
+    renderRibbon(4.5);
+    expect(screen.getByTestId("chord-ribbon-playhead")).toHaveStyle({
+      left: "450px",
+    });
+  });
+
   it("seeks to the start of a clicked chord", () => {
     const { onSeek } = renderRibbon(0.5);
     fireEvent.click(screen.getByTestId("chord-block-1"));

@@ -16,7 +16,7 @@ describe("practice defaults", () => {
       loopEnabled: false,
       countInBars: 0,
       metronomeEnabled: false,
-      metronomeVolume: 0.5,
+      metronomeVolume: 1,
       accentDownbeat: true,
     });
     expect(COUNT_IN_OPTIONS).toEqual([0, 1, 2]);
@@ -37,7 +37,7 @@ describe("practice clamps", () => {
     expect(clampMetronomeVolume(0.25)).toBe(0.25);
     expect(clampMetronomeVolume(-1)).toBe(0);
     expect(clampMetronomeVolume(2)).toBe(1);
-    expect(clampMetronomeVolume(Number.NaN)).toBe(0.5);
+    expect(clampMetronomeVolume(Number.NaN)).toBe(1);
   });
 });
 

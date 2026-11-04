@@ -2188,3 +2188,54 @@ model-specific stem PCM/peaks; troubleshooting covers missing/partial models,
 hash mismatch, MSST import failure, long CPU runs and cancellation; NOTICES
 records MSST MIT, the SCNet release/paper and the BS-RoFormer-SW unknown-licence
 mirror with private-use restriction.
+
+## 2026-11-04 — dropdown model picker, metronome defaults, aligned playheads, readout swap (t57)
+
+### Model selector
+
+The mixer now uses one native select (`aria-label="Separation model"`) whose
+options are only model names. "(bundled)" is stripped from Demucs, and missing
+models are disabled options. No sizes, stems, install commands or description
+rows are rendered. A single short CPU note appears only for the selected msst
+model (for example `CPU ~8 min for this 1 min song`); Demucs shows none.
+
+### Metronome
+
+Removed the Accent button and Metronome volume slider/output from the Practice
+bar. The pure default is now metronomeVolume 1.0 and accentDownbeat true; App
+restore also forces those fixed values while keeping metronome enable and
+count-in controls. State/App tests assert the controls are absent and the
+defaults are 1/true.
+
+### Playhead alignment
+
+The chord ribbon and section lane had horizontal padding/borders inside their
+width, while the ruler and waveform SVG measured from the stage edge. Both
+containers now use zero horizontal padding/borders (vertical styling remains),
+so timeToX has the same origin in every pane. The section timeline has a new
+orange section-playhead line at the shared timeToX position.
+
+Firefox measurements at 10 s: fit x = 317.066 for ruler/chord/section/waveform;
+after two zooms x = -269.816 for ruler/chord/section and -269.799 for the SVG
+line (0.017 px difference), with further positions/zooms covered by the App
+test that compares all four calculations.
+
+### Readouts
+
+Moved TransportReadouts (position and bar/beat) into the drawer's right zone;
+TransportMeta (track/key/BPM) now sits at the top-right of the stage toolbar.
+Testids project-title/key-readout/bpm-readout/transport-position/
+transport-bar-beat are unchanged. Play remains at the drawer centre.
+
+### Verification
+
+- Mixer/App tests cover dropdown option names, disabled missing option, absence
+  of size/stems/install text, CPU note only when BS is selected, default/restore.
+- Practice/App tests cover removed accent+volume controls and fixed 1/true
+  defaults; metronome/count-in remain.
+- Chord/section/App tests cover playhead style and cross-pane alignment at three
+  positions before and after zoom.
+- Firefox mock: dropdown Demucs/SCNet(missing)/BS, BS note, no metronome volume
+  or accent controls, readouts bottom-right and metadata top-right, document
+  1280/1280.
+- `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.

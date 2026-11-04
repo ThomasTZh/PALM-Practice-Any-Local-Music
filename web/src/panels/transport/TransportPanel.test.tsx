@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { createFakePlayer } from "../../state/fakePlayer";
+import { TransportMeta } from "./TransportMeta";
 import { TransportPanel } from "./TransportPanel";
 
 describe("TransportPanel", () => {
@@ -58,11 +59,9 @@ describe("TransportPanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("decoder failed");
   });
 
-  it("shows the track, key and BPM readouts without a speed menu", () => {
-    const player = createFakePlayer({ durationSeconds: 60 });
+  it("renders the track, key and BPM metadata", () => {
     render(
-      <TransportPanel
-        player={player}
+      <TransportMeta
         projectTitle="Example Track"
         keyLabel="C major"
         bpm={120}
@@ -70,10 +69,11 @@ describe("TransportPanel", () => {
       />,
     );
 
-    expect(screen.getByTestId("project-title")).toHaveTextContent("Example Track");
+    expect(screen.getByTestId("project-title")).toHaveTextContent(
+      "Example Track",
+    );
     expect(screen.getByTestId("key-readout")).toHaveTextContent("C major");
     expect(screen.getByTestId("bpm-readout")).toHaveTextContent("120 · 4/4");
-    expect(screen.queryByLabelText("Speed")).not.toBeInTheDocument();
   });
 
   it("turns the selection into a loop when the loop is switched on", async () => {

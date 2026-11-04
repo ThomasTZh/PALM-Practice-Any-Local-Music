@@ -187,7 +187,7 @@ describe("MixerPanel stem separation", () => {
     );
   });
 
-  it("lists installed and missing models with sizes, commands and CPU notes", () => {
+  it("uses a native dropdown with only model names and a selected msst CPU note", () => {
     const scnet = {
       ...HTDEMUCS_MODEL,
       id: "scnet-xl-ihf",
@@ -224,53 +224,60 @@ describe("MixerPanel stem separation", () => {
       },
     };
     const onModelChange = vi.fn();
-    render(
+    const { view } = (() => {
+      const rendered = render(
+        <MixerPanel
+          stems={[]}
+          controller={createFakeMixer([])}
+          separation={separation({
+            models: [HTDEMUCS_MODEL, scnet, bs],
+            selectedModel: "htdemucs_ft",
+            onModelChange,
+            songSeconds: 300,
+          })}
+        />,
+      );
+      return { view: rendered };
+    })();
+
+    const select = screen.getByLabelText("Separation model");
+    expect(select).toHaveValue("htdemucs_ft");
+    const options = Array.from((select as HTMLSelectElement).options).map(
+      (option) => ({
+        label: option.textContent,
+        disabled: option.disabled,
+      }),
+    );
+    expect(options).toEqual([
+      { label: "Demucs htdemucs_ft", disabled: false },
+      { label: "SCNet XL IHF", disabled: true },
+      { label: "BS-RoFormer-SW", disabled: false },
+    ]);
+    expect(screen.queryByText(/204 MB/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/make models-install/)).not.toBeInTheDocument();
+    expect((select as HTMLSelectElement).textContent).not.toMatch(/stems/i);
+    expect(
+      screen.queryByTestId("separation-model-cpu"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: "bs-roformer-sw" } });
+    expect(onModelChange).toHaveBeenCalledWith("bs-roformer-sw");
+
+    view.rerender(
       <MixerPanel
         stems={[]}
         controller={createFakeMixer([])}
         separation={separation({
           models: [HTDEMUCS_MODEL, scnet, bs],
-          selectedModel: "htdemucs_ft",
+          selectedModel: "bs-roformer-sw",
           onModelChange,
           songSeconds: 300,
         })}
       />,
     );
-
-    expect(
-      screen.getByRole("radio", {
-        name: "Separation model Demucs htdemucs_ft",
-      }),
-    ).toBeChecked();
-    const missing = screen.getByRole("radio", {
-      name: "Separation model SCNet XL IHF",
-    });
-    expect(missing).toBeDisabled();
-    expect(
-      screen.getByTestId("separation-model-scnet-xl-ihf"),
-    ).toHaveTextContent("204 MB");
-    expect(
-      screen.getByTestId("separation-model-scnet-xl-ihf"),
-    ).toHaveTextContent("make models-install ID=scnet-xl-ihf");
-    expect(
-      screen.getByTestId("separation-model-cpu-scnet-xl-ihf"),
-    ).toHaveTextContent("35-36 min");
-    expect(
-      screen.getByTestId("separation-model-cpu-scnet-xl-ihf"),
-    ).toHaveTextContent("58.20 s / 8.0 s");
-    const bsRadio = screen.getByRole("radio", {
-      name: "Separation model BS-RoFormer-SW",
-    });
-    expect(bsRadio).toBeEnabled();
-    expect(
-      screen.getByTestId("separation-model-cpu-bs-roformer-sw"),
-    ).toHaveTextContent("41-42 min");
-    expect(
-      screen.getByTestId("separation-model-cpu-bs-roformer-sw"),
-    ).toHaveTextContent("67.35 s / 8.0 s");
-
-    fireEvent.click(bsRadio);
-    expect(onModelChange).toHaveBeenCalledWith("bs-roformer-sw");
+    expect(screen.getByTestId("separation-model-cpu")).toHaveTextContent(
+      "41-42 min",
+    );
   });
 
   it("shows the active model after separation", () => {

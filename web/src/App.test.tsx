@@ -498,23 +498,33 @@ describe("App integration", () => {
     );
   });
 
-  it("has no header and puts track, key and BPM in the bottom transport", async () => {
+  it("has no header and swaps track metadata and drawer readouts", async () => {
     setup();
     await openProject();
 
     expect(
       screen.queryByRole("heading", { name: "Bass practice studio" }),
     ).not.toBeInTheDocument();
+    const toolbar = screen
+      .getByTestId("stage-measure")
+      .parentElement?.querySelector(".stage-toolbar");
+    expect(toolbar).not.toBeNull();
+    expect(
+      within(toolbar as HTMLElement).getByTestId("project-title"),
+    ).toHaveTextContent("Demo take");
+    expect(
+      within(toolbar as HTMLElement).getByTestId("key-readout"),
+    ).toHaveTextContent("C major");
+    expect(
+      within(toolbar as HTMLElement).getByTestId("bpm-readout"),
+    ).toHaveTextContent("120 · 4/4");
     const transport = screen.getByRole("region", { name: "Transport" });
-    expect(within(transport).getByTestId("project-title")).toHaveTextContent(
-      "Demo take",
-    );
-    expect(within(transport).getByTestId("key-readout")).toHaveTextContent(
-      "C major",
-    );
-    expect(within(transport).getByTestId("bpm-readout")).toHaveTextContent(
-      "120 · 4/4",
-    );
+    expect(
+      within(transport).getByTestId("transport-position"),
+    ).toBeInTheDocument();
+    expect(
+      within(transport).getByTestId("transport-bar-beat"),
+    ).toBeInTheDocument();
     expect(transport.querySelector('select[aria-label="Speed"]')).toBeNull();
     expect(screen.getByLabelText("Practice speed")).toBeInTheDocument();
     expect(screen.getByTestId("status-line")).toBeInTheDocument();
@@ -545,6 +555,10 @@ describe("App integration", () => {
     expect(screen.getByLabelText("Beats per bar")).toBeInTheDocument();
     expect(screen.queryByLabelText("Pitch")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Snap mode")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Accent downbeat" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Metronome volume")).not.toBeInTheDocument();
 
     const transport = screen.getByRole("region", { name: "Transport" });
     expect(
@@ -561,21 +575,30 @@ describe("App integration", () => {
       "visually-hidden",
     );
     expect(
-      within(transport).queryByTestId("transport-position"),
-    ).not.toBeInTheDocument();
+      within(transport).getByTestId("transport-position"),
+    ).toBeInTheDocument();
     expect(
-      within(transport).queryByTestId("transport-bar-beat"),
+      within(transport).getByTestId("transport-bar-beat"),
+    ).toBeInTheDocument();
+    expect(
+      within(transport).queryByTestId("project-title"),
     ).not.toBeInTheDocument();
     const toolbar = screen
       .getByTestId("stage-measure")
       .parentElement?.querySelector(".stage-toolbar");
     expect(toolbar).not.toBeNull();
     expect(
-      within(toolbar as HTMLElement).getByTestId("transport-position"),
+      within(toolbar as HTMLElement).getByTestId("project-title"),
     ).toBeInTheDocument();
     expect(
-      within(toolbar as HTMLElement).getByTestId("transport-bar-beat"),
+      within(toolbar as HTMLElement).getByTestId("key-readout"),
     ).toBeInTheDocument();
+    expect(
+      within(toolbar as HTMLElement).getByTestId("bpm-readout"),
+    ).toBeInTheDocument();
+    expect(
+      within(toolbar as HTMLElement).queryByTestId("transport-position"),
+    ).not.toBeInTheDocument();
   });
 
   it("orders the stage zoom buttons minus then plus", async () => {
@@ -699,6 +722,48 @@ describe("App integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zoom to selection" }));
 
     expect(screen.getByTestId("status-detail")).toHaveTextContent("zoom 345%");
+  });
+
+  it("aligns ruler, chord, section and waveform playheads at fit and zoom", async () => {
+    setup();
+    await openProject();
+
+    function playheadXs(): number[] {
+      const ruler = parseFloat(screen.getByTestId("ruler-playhead").style.left);
+      const chord = parseFloat(
+        screen.getByTestId("chord-ribbon-playhead").style.left,
+      );
+      const section = parseFloat(
+        screen.getByTestId("section-playhead").style.left,
+      );
+      const waveform = Number(
+        screen.getByTestId("waveform-playhead-a1").getAttribute("x1"),
+      );
+      return [ruler, chord, section, waveform];
+    }
+
+    async function checkPositions(positions: number[]): Promise<number> {
+      let previous: number | null = null;
+      for (const x of positions) {
+        fireEvent.click(screen.getByTestId("time-ruler"), { clientX: x });
+        if (previous !== null) {
+          await waitFor(() =>
+            expect(playheadXs()[0]).not.toBeCloseTo(previous as number),
+          );
+        }
+        const xs = playheadXs();
+        expect(new Set(xs).size).toBe(1);
+        previous = xs[0];
+      }
+      return previous as number;
+    }
+
+    const fitX = await checkPositions([100, 470, 800]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    const zoomX = await checkPositions([100, 470, 800]);
+    expect(zoomX).not.toBe(fitX);
   });
 
   it("shows the horizontal scrollbar only when zoomed and drags the shared view", async () => {
@@ -1238,10 +1303,6 @@ describe("App stem separation", () => {
     fireEvent.change(screen.getByLabelText("Count-in"), {
       target: { value: "1" },
     });
-    fireEvent.change(screen.getByLabelText("Metronome volume"), {
-      target: { value: "30" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Accent downbeat" }));
     await userEvent.click(screen.getByRole("button", { name: "Add section" }));
 
     const pane = screen.getByTestId("waveform-a1");
@@ -1284,8 +1345,8 @@ describe("App stem separation", () => {
       speed: 0.75,
       countInBars: 1,
       metronomeEnabled: true,
-      metronomeVolume: 0.3,
-      accentDownbeat: false,
+      metronomeVolume: 1,
+      accentDownbeat: true,
     });
     expect(Object.keys(next.mixer.getState())).toEqual(
       expect.arrayContaining(["mix", "drums", "bass", "other", "vocals"]),
@@ -1380,23 +1441,22 @@ describe("App stem separation", () => {
     });
     await openProject();
 
-    const demucs = await screen.findByRole("radio", {
-      name: "Separation model Demucs htdemucs_ft",
-    });
-    expect(demucs).toBeChecked();
-    const scnet = screen.getByRole("radio", {
-      name: "Separation model SCNet XL IHF",
-    });
-    expect(scnet).toBeDisabled();
-    expect(
-      screen.getByTestId("separation-model-scnet-xl-ihf"),
-    ).toHaveTextContent("make models-install ID=scnet-xl-ihf");
-    const bs = screen.getByRole("radio", {
-      name: "Separation model BS-RoFormer-SW",
-    });
-    expect(bs).toBeEnabled();
-    fireEvent.click(bs);
-    expect(bs).toBeChecked();
+    const select = (await screen.findByLabelText(
+      "Separation model",
+    )) as HTMLSelectElement;
+    expect(select.value).toBe("htdemucs_ft");
+    const options = Array.from(select.options).map((option) => ({
+      label: option.textContent,
+      disabled: option.disabled,
+    }));
+    expect(options).toEqual([
+      { label: "Demucs htdemucs_ft", disabled: false },
+      { label: "SCNet XL IHF", disabled: true },
+      { label: "BS-RoFormer-SW", disabled: false },
+    ]);
+    expect(screen.queryByText(/make models-install/)).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "bs-roformer-sw" } });
+    expect(select.value).toBe("bs-roformer-sw");
 
     fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
 
@@ -1417,11 +1477,9 @@ describe("App stem separation", () => {
     await openProject();
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("radio", {
-          name: "Separation model BS-RoFormer-SW",
-        }),
-      ).toBeChecked(),
+      expect(screen.getByLabelText("Separation model")).toHaveValue(
+        "bs-roformer-sw",
+      ),
     );
 
     const laneHost = screen.getByTestId("stem-lanes");
@@ -1481,11 +1539,9 @@ describe("App stem separation", () => {
     setup({ project });
     await openProject();
 
-    expect(
-      await screen.findByRole("radio", {
-        name: "Separation model Demucs htdemucs_ft",
-      }),
-    ).toBeChecked();
+    expect(await screen.findByLabelText("Separation model")).toHaveValue(
+      "htdemucs_ft",
+    );
   });
 
   it("offers Re-separate with the cache note when stems exist", async () => {

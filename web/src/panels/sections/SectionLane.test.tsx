@@ -315,6 +315,13 @@ describe("SectionLane", () => {
     expect(screen.getByLabelText("Section end early")).toHaveValue(2);
   });
 
+  it("renders a shared-geometry playhead line", () => {
+    setup({ positionSeconds: 1.9 });
+    expect(screen.getByTestId("section-playhead")).toHaveStyle({
+      left: "190px",
+    });
+  });
+
   it("puts name, start, end, loop and delete in one list row", () => {
     setup({ sections: [VERSE] });
     const row = screen.getByTestId("section-editor-item-s1");

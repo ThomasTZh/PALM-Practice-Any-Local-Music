@@ -82,35 +82,6 @@ export function PracticePanel({ controller }: PracticePanelProps) {
         >
           Metronome
         </button>
-
-        <button
-          type="button"
-          aria-label="Accent downbeat"
-          aria-pressed={state.accentDownbeat}
-          onClick={() => controller.setAccentDownbeat(!state.accentDownbeat)}
-        >
-          Accent
-        </button>
-
-        <div className="practice-control practice-volume">
-          <label>
-            Metronome volume
-            <input
-              type="range"
-              aria-label="Metronome volume"
-              min={0}
-              max={100}
-              step={1}
-              value={Math.round(state.metronomeVolume * 100)}
-              onChange={(event) =>
-                controller.setMetronomeVolume(Number(event.target.value) / 100)
-              }
-            />
-          </label>
-          <output data-testid="metronome-volume-value">
-            {Math.round(state.metronomeVolume * 100)}%
-          </output>
-        </div>
       </div>
     </section>
   );

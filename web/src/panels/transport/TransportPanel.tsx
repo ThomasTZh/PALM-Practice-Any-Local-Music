@@ -1,16 +1,15 @@
 import type { ReactNode } from "react";
 
 import { type PlaybackStatus, type StudioPlayer } from "../../state/player";
+import type { Grid } from "../../state/types";
 import { usePlayerState } from "../../state/usePlayerState";
+import { TransportReadouts } from "./TransportReadouts";
 import { hasSelection, type Selection } from "../waveform/selection";
 
 export interface TransportPanelProps {
   player: StudioPlayer;
+  grid?: Grid | null;
   selection?: Selection | null;
-  projectTitle?: string | null;
-  keyLabel?: string | null;
-  bpm?: number | null;
-  bpb?: number | null;
   /** Practice controls rendered in the bottom bar's left zone. */
   practice?: ReactNode;
 }
@@ -32,18 +31,13 @@ const STATUS_LABELS: Record<PlaybackStatus, string> = {
  */
 export function TransportPanel({
   player,
+  grid = null,
   selection = null,
-  projectTitle = null,
-  keyLabel = null,
-  bpm = null,
-  bpb = null,
   practice = null,
 }: TransportPanelProps) {
   const state = usePlayerState(player);
   const playing = state.status === "playing";
   const canPlay = state.durationSeconds > 0 && state.status !== "loading";
-  const bpmText =
-    bpm === null ? "—" : `${Math.round(bpm * 10) / 10} · ${bpb ?? 4}/4`;
 
   function handleLoop(): void {
     if (state.loopEnabled) {
@@ -107,20 +101,12 @@ export function TransportPanel({
         </span>
       </div>
 
-      <dl className="transport-meta" aria-label="Track details">
-        <div>
-          <dt>Track</dt>
-          <dd data-testid="project-title">{projectTitle ?? "No project"}</dd>
-        </div>
-        <div>
-          <dt>Key</dt>
-          <dd data-testid="key-readout">{keyLabel ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>BPM</dt>
-          <dd data-testid="bpm-readout">{bpmText}</dd>
-        </div>
-      </dl>
+      <div
+        className="transport-readout-zone"
+        data-testid="transport-readout-zone"
+      >
+        <TransportReadouts player={player} grid={grid} />
+      </div>
 
       {state.error !== null && (
         <p className="transport-error" role="alert">

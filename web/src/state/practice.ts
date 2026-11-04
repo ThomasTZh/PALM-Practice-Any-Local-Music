@@ -30,7 +30,7 @@ export const DEFAULT_PRACTICE_STATE: PracticeState = {
   loopEnabled: false,
   countInBars: 0,
   metronomeEnabled: false,
-  metronomeVolume: 0.5,
+  metronomeVolume: 1,
   accentDownbeat: true,
 };
 
@@ -43,7 +43,7 @@ export function clampCountInBars(bars: number): number {
 
 export function clampMetronomeVolume(volume: number): number {
   if (!Number.isFinite(volume)) {
-    return DEFAULT_PRACTICE_STATE.metronomeVolume;
+    return 1;
   }
   return Math.min(1, Math.max(0, volume));
 }

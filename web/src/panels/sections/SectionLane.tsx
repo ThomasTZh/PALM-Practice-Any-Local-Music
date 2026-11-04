@@ -23,7 +23,7 @@ import {
   type TimeRange,
 } from "../../state/sections";
 import type { StudioPlayer } from "../../state/player";
-import type { Viewport } from "../waveform/viewport";
+import { timeToX, type Viewport } from "../waveform/viewport";
 import { BarBeatOverlay } from "./BarBeatOverlay";
 
 export interface SectionLaneProps {
@@ -591,6 +591,11 @@ export function SectionLane({
           bpb={grid?.bpb ?? 4}
           viewport={viewport}
           widthPx={widthPx}
+        />
+        <div
+          className="section-playhead"
+          data-testid="section-playhead"
+          style={{ left: timeToX(positionSeconds, viewport) }}
         />
         {sections.length === 0 ? (
           <p className="panel-empty">

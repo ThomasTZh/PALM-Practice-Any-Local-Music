@@ -15,7 +15,7 @@ function setup() {
 
 describe("PracticePanel", () => {
   it("shows the default practice state", () => {
-    setup();
+    const { controller } = setup();
 
     expect(screen.getByLabelText("Practice speed")).toHaveValue("1");
     expect(screen.queryByLabelText("Pitch")).not.toBeInTheDocument();
@@ -29,12 +29,11 @@ describe("PracticePanel", () => {
       "false",
     );
     expect(
-      screen.getByRole("button", { name: "Accent downbeat" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByLabelText("Metronome volume")).toHaveValue("50");
-    expect(screen.getByTestId("metronome-volume-value")).toHaveTextContent(
-      "50%",
-    );
+      screen.queryByRole("button", { name: "Accent downbeat" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Metronome volume")).not.toBeInTheDocument();
+    expect(controller.getState().accentDownbeat).toBe(true);
+    expect(controller.getState().metronomeVolume).toBe(1);
   });
 
   it("changes speed and loop", () => {
@@ -53,7 +52,7 @@ describe("PracticePanel", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("changes count-in, metronome volume and accent", () => {
+  it("changes count-in and metronome enable", () => {
     const { controller } = setup();
 
     fireEvent.change(screen.getByLabelText("Count-in"), {
@@ -63,17 +62,10 @@ describe("PracticePanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Metronome" }));
     expect(controller.getState().metronomeEnabled).toBe(true);
-
-    fireEvent.change(screen.getByLabelText("Metronome volume"), {
-      target: { value: "25" },
-    });
-    expect(controller.getState().metronomeVolume).toBeCloseTo(0.25);
-    expect(screen.getByTestId("metronome-volume-value")).toHaveTextContent(
-      "25%",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Accent downbeat" }));
-    expect(controller.getState().accentDownbeat).toBe(false);
+    expect(screen.queryByLabelText("Metronome volume")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Accent downbeat" }),
+    ).not.toBeInTheDocument();
   });
 
   it("has no snap control in the practice bar", () => {
@@ -101,6 +93,5 @@ describe("PracticePanel", () => {
       "true",
     );
     expect(screen.getByLabelText("Count-in")).toHaveValue("1");
-    expect(screen.getByLabelText("Metronome volume")).toHaveValue("80");
   });
 });

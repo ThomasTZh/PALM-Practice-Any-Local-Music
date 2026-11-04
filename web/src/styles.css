@@ -1948,3 +1948,64 @@ body {
     width: 76px;
   }
 }
+
+/* Shared playhead geometry: both containers drop horizontal padding/borders so
+   timeToX is measured from the same stage-relative origin as the ruler and
+   waveform SVG. */
+
+.chord-ribbon,
+.section-lane {
+  padding-left: 0;
+  padding-right: 0;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+}
+
+.section-timeline {
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+}
+
+.section-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--playhead);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Readout swap: track metadata in the stage toolbar, position/bar-beat at the
+   bottom-right of the drawer. */
+
+.stage-toolbar > .transport-meta {
+  margin-left: auto;
+  justify-self: auto;
+  flex: 0 0 auto;
+}
+
+.transport-readout-zone {
+  justify-self: end;
+  min-width: 0;
+}
+
+.transport-readout-zone .transport-readouts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.transport-readout-zone .transport-position {
+  font-size: 0.82rem;
+}
+
+.transport-readout-zone .transport-bar-beat {
+  font-size: 0.72rem;
+}

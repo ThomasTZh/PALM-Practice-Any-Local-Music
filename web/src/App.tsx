@@ -9,7 +9,7 @@ import { TimeRuler } from "./panels/ruler/TimeRuler";
 import { SectionLane } from "./panels/sections";
 import { SpectrogramPane } from "./panels/spectrogram/SpectrogramPane";
 import { TransportPanel } from "./panels/transport/TransportPanel";
-import { TransportReadouts } from "./panels/transport/TransportReadouts";
+import { TransportMeta } from "./panels/transport/TransportMeta";
 import { TimelineScrollbar } from "./panels/waveform/TimelineScrollbar";
 import { WaveformPane, type Lane } from "./panels/waveform/WaveformPane";
 import { hasSelection, type Selection } from "./panels/waveform/selection";
@@ -162,9 +162,9 @@ function applyRestoredState(
   const { state, loopRange, positionSeconds, mixer } = project.restored;
   runtime.practice.setSpeed(state.speed);
   runtime.practice.setCountInBars(state.countInBars);
-  runtime.practice.setMetronomeVolume(state.metronomeVolume);
+  runtime.practice.setMetronomeVolume(1);
   runtime.practice.setMetronomeEnabled(state.metronomeEnabled);
-  runtime.practice.setAccentDownbeat(state.accentDownbeat);
+  runtime.practice.setAccentDownbeat(true);
   if (loopRange !== null) {
     runtime.player.setLoopRange(loopRange);
     runtime.practice.setLoopEnabled(true);
@@ -936,7 +936,12 @@ export function App({
                 {transportNotice}
               </span>
             )}
-            <TransportReadouts player={player} grid={project?.grid ?? null} />
+            <TransportMeta
+              projectTitle={project?.title ?? null}
+              keyLabel={keyLabel}
+              bpm={bpm}
+              bpb={bpb}
+            />
           </div>
 
           <div className="timeline" style={{ width: stageWidth }}>
@@ -1082,11 +1087,8 @@ export function App({
         </div>
         <TransportPanel
           player={player}
+          grid={project?.grid ?? null}
           selection={selection}
-          projectTitle={project?.title ?? null}
-          keyLabel={keyLabel}
-          bpm={bpm}
-          bpb={bpb}
           practice={<PracticePanel controller={active.practice} />}
         />
       </div>
