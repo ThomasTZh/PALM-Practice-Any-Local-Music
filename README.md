@@ -64,8 +64,8 @@ and credits. Nothing third-party is committed.
   ribbon, the sections and then the spectrogram. The left rail holds Analysis,
   Mixer and Library. The pinned bottom bar has the practice controls on the left,
   the transport (return, play, loop with play centred on the drawer) in the
-  middle and the track, key and BPM readouts on the right; the position and
-  bar/beat readouts sit in the top-right of the stage toolbar, and Zoom to
+  middle, and the position plus bar/beat readouts at its bottom right; the track,
+  key and BPM readouts sit in the top-right of the stage toolbar, and Zoom to
   selection falls back to an eight-bar window around the playhead when nothing is
   selected. The spectrogram axis is labelled with every semitone from C1 to C8.
   Sections are created by dragging (four-bar default), moved by dragging their
