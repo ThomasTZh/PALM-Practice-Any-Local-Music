@@ -766,6 +766,87 @@ describe("App integration", () => {
     expect(zoomX).not.toBe(fitX);
   });
 
+  it("tracks a shared hover guide with rAF throttling and no side effects", async () => {
+    const { api, rig } = setup();
+    await openProject();
+    const stage = screen.getByRole("region", { name: "Waveform stage" });
+    const pending: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      pending.push(callback);
+      return pending.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+
+    function pointerMove(
+      element: Element,
+      clientX: number,
+      pointerType: string,
+    ): void {
+      const event = new Event("pointermove", { bubbles: true });
+      Object.defineProperties(event, {
+        clientX: { value: clientX },
+        pointerType: { value: pointerType },
+      });
+      fireEvent(element, event);
+    }
+
+    function flushFrames(): void {
+      const callbacks = pending.splice(0);
+      for (const callback of callbacks) {
+        callback(0);
+      }
+    }
+
+    const callsBefore = [...rig.player.calls];
+    const apiCallsBefore = [...api.calls];
+    const ruler = screen.getByTestId("time-ruler");
+    pointerMove(ruler, 200, "mouse");
+    pointerMove(ruler, 400, "mouse");
+    pointerMove(ruler, 470, "mouse");
+
+    expect(pending).toHaveLength(1);
+    expect(stage).not.toHaveAttribute("data-hovering");
+    flushFrames();
+    expect(stage).toHaveAttribute("data-hovering", "true");
+    expect(stage.style.getPropertyValue("--hover-x")).toBe("470px");
+    expect(stage).toHaveAttribute("data-hover-time", "4.000");
+    expect(screen.getAllByTestId("timeline-hover-guide")).toHaveLength(9);
+    for (const guide of screen.getAllByTestId("timeline-hover-guide")) {
+      expect(guide).not.toHaveAttribute("style");
+    }
+    expect(rig.player.calls).toEqual(callsBefore);
+    expect(api.calls).toEqual(apiCallsBefore);
+
+    fireEvent.pointerLeave(stage);
+    expect(stage).not.toHaveAttribute("data-hovering");
+
+    pointerMove(ruler, 250, "touch");
+    flushFrames();
+    expect(stage).not.toHaveAttribute("data-hovering");
+
+    for (const target of [
+      ruler,
+      screen.getByTestId("waveform-a1"),
+      screen.getByTestId("waveform-vocals"),
+      document.querySelector(".chord-track") as Element,
+      document.querySelector(".section-timeline") as Element,
+      document.querySelector(".spectrogram-body") as Element,
+    ]) {
+      pointerMove(target, 300, "mouse");
+      expect(pending).toHaveLength(1);
+      flushFrames();
+      expect(stage).toHaveAttribute("data-hovering", "true");
+      fireEvent.pointerLeave(stage);
+    }
+
+    pointerMove(ruler, 300, "mouse");
+    flushFrames();
+    expect(stage).toHaveAttribute("data-hovering", "true");
+    fireEvent(window, new Event("blur"));
+    expect(stage).not.toHaveAttribute("data-hovering");
+    vi.unstubAllGlobals();
+  });
+
   it("shows the horizontal scrollbar only when zoomed and drags the shared view", async () => {
     setup();
     await openProject();
