@@ -139,9 +139,7 @@ describe("MixerPanel stem separation", () => {
     expect(button).toBeVisible();
     fireEvent.click(button);
     expect(control.onSeparate).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("separation-hint")).toHaveTextContent(
-      /Cached separations are instant/,
-    );
+    expect(screen.queryByTestId("separation-hint")).toBeNull();
   });
 
   it("shows determinate progress, the stage and a cancel action", () => {
@@ -170,7 +168,7 @@ describe("MixerPanel stem separation", () => {
     expect(control.onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it("offers Re-separate and explains the cache hit when stems exist", () => {
+  it("offers Re-separate without a descriptive cache note", () => {
     render(
       <MixerPanel
         stems={STEMS}
@@ -182,9 +180,7 @@ describe("MixerPanel stem separation", () => {
     expect(
       screen.getByRole("button", { name: "Re-separate" }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("separation-hint")).toHaveTextContent(
-      "Stem separation is cached: a re-run is instant.",
-    );
+    expect(screen.queryByTestId("separation-hint")).toBeNull();
   });
 
   it("uses a native dropdown with only model names and a selected msst CPU note", () => {

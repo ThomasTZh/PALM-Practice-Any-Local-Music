@@ -172,14 +172,6 @@ export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
               >
                 {separation.hasStems ? "Re-separate" : "Separate stems"}
               </button>
-              <p
-                className="mixer-separation-hint"
-                data-testid="separation-hint"
-              >
-                {separation.hasStems
-                  ? "Stem separation is cached: a re-run is instant."
-                  : "Separate into drums, bass, other and vocals. Cached separations are instant."}
-              </p>
             </>
           )}
           {separation.error !== null && (

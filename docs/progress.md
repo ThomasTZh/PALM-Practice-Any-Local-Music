@@ -2330,3 +2330,7 @@ description. Technical identifiers stay unchanged so existing projects, cached
 stems, data directories and scripts keep working: Python package and CLI
 `basseparate`, environment variables, storage paths, and `analysis/` layout.
 
+Follow-up after the screenshot pass: the separation panel no longer renders the
+cached-run description, and the active-model line strips the internal
+`(bundled)` suffix, so the dropdown and readout show only model names.
+

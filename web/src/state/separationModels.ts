@@ -65,7 +65,8 @@ export function separationModelName(
   if (modelId === null || modelId === undefined) {
     return null;
   }
-  return models.find((model) => model.id === modelId)?.name ?? modelId;
+  const name = models.find((model) => model.id === modelId)?.name;
+  return name?.replace(/\s*\(bundled\)\s*$/i, "") ?? modelId;
 }
 
 export function formatModelSize(sizeBytes: number): string {

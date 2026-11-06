@@ -1661,7 +1661,7 @@ describe("App stem separation", () => {
     );
   });
 
-  it("offers Re-separate with the cache note when stems exist", async () => {
+  it("offers Re-separate without a descriptive cache note when stems exist", async () => {
     const server = separationServer();
     separationApp({ initial: PROJECT, client: server.client });
     await openProject();
@@ -1669,8 +1669,6 @@ describe("App stem separation", () => {
     expect(
       screen.getByRole("button", { name: "Re-separate" }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("separation-hint")).toHaveTextContent(
-      "Stem separation is cached: a re-run is instant.",
-    );
+    expect(screen.queryByTestId("separation-hint")).toBeNull();
   });
 });
