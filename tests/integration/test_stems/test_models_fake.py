@@ -239,13 +239,13 @@ def test_six_label_fake_engine_end_to_end(tmp_path: Path, monkeypatch) -> None:
     # Model listing is local-only and reports the registry fields + metrics.
     with TestClient(app) as client:
         models = client.get("/api/separation/models").json()
-        assert models["default"] == "htdemucs_ft"
+        assert "default" not in models
         by_id = {model["id"]: model for model in models["models"]}
         assert set(by_id) == {"htdemucs_ft", "scnet-xl-ihf", "bs-roformer-sw"}
         assert by_id["bs-roformer-sw"]["labels"] == list(SIX_LABELS)
         assert by_id["bs-roformer-sw"]["metrics"]["peak_rss_mib"] > 0
         assert by_id["bs-roformer-sw"]["install_command"].startswith("make models-install")
-        assert by_id["htdemucs_ft"]["default"] is True
+        assert "default" not in by_id["htdemucs_ft"]
 
 
 def test_model_cache_survives_another_model_run(tmp_path: Path, monkeypatch) -> None:
@@ -288,7 +288,9 @@ def test_separate_endpoint_records_the_model_on_the_job(tmp_path: Path) -> None:
             "separate",
             lambda _ctx, params: {"model_id": params["model_id"], "stems": []},
         )
-        created = client.post("/api/separate", json={"project_id": project.id})
+        created = client.post(
+            "/api/separate", json={"project_id": project.id, "model_id": "htdemucs_ft"}
+        )
         assert created.status_code == 202, created.text
         assert created.json()["model_id"] == "htdemucs_ft"
         job_id = created.json()["id"]
@@ -333,3 +335,45 @@ def test_separate_endpoint_rejects_unknown_and_missing_models(tmp_path: Path, mo
         assert "not installed" in missing.json()["detail"]
         assert "make models-install" in missing.json()["detail"]
         assert client.get("/api/jobs").json()["jobs"] == before
+
+
+def test_separate_requires_model_id_and_mentions_setup(tmp_path: Path, monkeypatch) -> None:
+    settings, _paths, _store, project, _worker, _frames = make_workspace(tmp_path)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        missing = client.post("/api/separate", json={"project_id": project.id})
+        assert missing.status_code == 422
+        unknown = client.post(
+            "/api/separate", json={"project_id": project.id, "model_id": "not-a-model"}
+        )
+        assert unknown.status_code == 400
+        assert "setup" in unknown.json()["detail"].lower()
+        from basseparate.model_registry import ModelState, load_registry
+
+        entry = load_registry().get("scnet-xl-ihf")
+        missing_state = ModelState(
+            entry=entry,
+            status="missing",
+            model_dir="models/scnet-xl-ihf",
+            detail="weights are absent",
+        )
+        monkeypatch.setattr(stems, "verify_model", lambda _entry: missing_state)
+        not_installed = client.post(
+            "/api/separate",
+            json={"project_id": project.id, "model_id": "scnet-xl-ihf"},
+        )
+        assert not_installed.status_code == 400
+        assert "setup" in not_installed.json()["detail"].lower()
+
+
+def test_model_listing_has_no_default(tmp_path: Path) -> None:
+    settings, _paths, _store, _project, _worker, _frames = make_workspace(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        payload = client.get("/api/separation/models").json()
+    assert "default" not in payload
+    assert all("default" not in model for model in payload["models"])
+    assert {model["id"] for model in payload["models"]} == {
+        "htdemucs_ft",
+        "scnet-xl-ihf",
+        "bs-roformer-sw",
+    }

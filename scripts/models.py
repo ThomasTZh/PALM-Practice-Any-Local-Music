@@ -17,20 +17,15 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import os
-import shutil
 import sys
-import tempfile
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from basseparate.config import RuntimePaths  # noqa: E402
 from basseparate.model_registry import (  # noqa: E402
     DEFAULT_REGISTRY_PATH,
     ModelEntry,
@@ -38,59 +33,18 @@ from basseparate.model_registry import (  # noqa: E402
     ModelState,
     format_size,
     load_registry,
-    model_directory,
-    verify_model,
     verify_registry,
 )
+from basseparate.setup.download import download_file  # noqa: E402
+from basseparate.setup.errors import SetupError  # noqa: E402
+from basseparate.setup.models import install_model as _install_model  # noqa: E402
 
 Downloader = Callable[[str, Path], None]
 CHUNK_BYTES = 1 << 20
 DOWNLOAD_TIMEOUT_SECONDS = 120
 
 
-class InstallError(RuntimeError):
-    """A model could not be downloaded, verified or published."""
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for block in iter(lambda: handle.read(CHUNK_BYTES), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def download_file(url: str, destination: Path) -> None:
-    """Stream an HTTPS URL into ``destination`` (normally a .part file)."""
-    if not url.startswith("https://"):
-        raise InstallError(f"refusing non-HTTPS download: {url}")
-    destination = Path(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "basseparate-models/1"})
-    try:
-        with (
-            urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response,
-            destination.open("wb") as handle,
-        ):
-            while True:
-                chunk = response.read(CHUNK_BYTES)
-                if not chunk:
-                    break
-                handle.write(chunk)
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
-        destination.unlink(missing_ok=True)
-        raise InstallError(f"download failed for {url}: {error}") from error
-
-
-def _verify_part(part: Path, *, expected_size: int, expected_sha256: str, name: str) -> None:
-    actual_size = part.stat().st_size
-    if actual_size != expected_size:
-        raise InstallError(f"{name}: expected {expected_size} bytes, downloaded {actual_size}")
-    actual_sha = sha256_file(part)
-    if actual_sha != expected_sha256:
-        raise InstallError(
-            f"{name}: sha256 mismatch (expected {expected_sha256}, got {actual_sha})"
-        )
+InstallError = SetupError
 
 
 def install_model(
@@ -100,66 +54,19 @@ def install_model(
     fetch: Downloader | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> ModelState:
-    """Install one downloadable model with .part files and an atomic directory swap."""
-    if entry.bundled:
-        raise InstallError(f"{entry.id} is bundled with the checkout; it cannot be downloaded")
-    verify = verify_model(entry, root)
-    if verify.installed:
+    """Compatibility wrapper around the shared setup model installer."""
+    runtime = RuntimePaths.from_environment(mode="source", app_root=root, data_root=root)
+
+    def report(fraction: float, message: str) -> None:
         if progress is not None:
-            progress(f"{entry.id}: already installed ({verify.detail})")
-        return verify
-    fetch = fetch if fetch is not None else download_file
-    models_root = Path(root) / "models"
-    models_root.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{entry.id}.install-", dir=models_root))
-    target = model_directory(entry, root)
-    backup: Path | None = None
-    published = False
-    try:
-        for model_file in entry.files:
-            if progress is not None:
-                progress(
-                    f"{entry.id}: downloading {model_file.name} "
-                    f"({format_size(model_file.size_bytes)})"
-                )
-            part = staging / f"{model_file.name}.part"
-            fetch(model_file.url, part)
-            if not part.is_file():
-                raise InstallError(f"{model_file.name}: download produced no file")
-            _verify_part(
-                part,
-                expected_size=model_file.size_bytes,
-                expected_sha256=model_file.sha256,
-                name=model_file.name,
-            )
-            part.replace(staging / model_file.name)
-        if progress is not None:
-            progress(f"{entry.id}: published files verified; swapping into place")
-        if target.exists():
-            backup = models_root / f".{entry.id}.backup-{os.getpid()}"
-            if backup.exists():
-                shutil.rmtree(backup, ignore_errors=True)
-            target.replace(backup)
-        staging.replace(target)
-        published = True
-        state = verify_model(entry, root)
-        if not state.installed:
-            raise InstallError(f"{entry.id}: post-install verification failed: {state.detail}")
-        if backup is not None:
-            shutil.rmtree(backup, ignore_errors=True)
-            backup = None
-        if progress is not None:
-            progress(f"{entry.id}: installed and verified")
-        return state
-    except BaseException:
-        if published and target.exists():
-            shutil.rmtree(target, ignore_errors=True)
-        if backup is not None and backup.exists() and not target.exists():
-            backup.replace(target)
-        raise
-    finally:
-        if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
+            progress(message)
+
+    return _install_model(
+        entry,
+        runtime=runtime,
+        fetch=fetch if fetch is not None else download_file,
+        progress=report if progress is not None else None,
+    )
 
 
 def _status(label: str, state: ModelState) -> str:

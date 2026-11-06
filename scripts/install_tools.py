@@ -480,6 +480,7 @@ def model_is_complete() -> bool:
 
 
 def install_model(*, accept_terms: bool, force: bool) -> bool:
+    """Compatibility wrapper over the equal model installer."""
     print("[model]")
     print(MODEL_TERMS)
     if model_is_complete() and not force:
@@ -494,27 +495,12 @@ def install_model(*, accept_terms: bool, force: bool) -> bool:
         if not accept_terms:
             print("[model] skipped; rerun with --accept-model-terms to download")
             return False
+    from basseparate.config import RuntimePaths
+    from basseparate.setup.models import install_models
 
-    checkpoints, _ = _model_manifest()
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    for name, record in checkpoints.items():
-        target = MODEL_DIR / name
-        expected = str(record["sha256"])
-        size = int(record["size_bytes"])
-        if target.is_file() and target.stat().st_size == size and _sha256_file(target) == expected:
-            print(f"[model] ok {name}")
-            continue
-        print(f"[model] downloading {name} ({size} bytes)")
-        _download(MODEL_BASE_URL + name, target, expected, size)
-    preset = MODEL_DIR / PRESET_NAME
-    if not (
-        preset.is_file()
-        and preset.stat().st_size == PRESET_SIZE
-        and _sha256_file(preset) == PRESET_SHA256
-    ):
-        print(f"[model] downloading {PRESET_NAME}")
-        _download(PRESET_URL, preset, PRESET_SHA256, PRESET_SIZE)
-    if not model_is_complete():
+    runtime = RuntimePaths.from_environment(mode="source", app_root=ROOT, data_root=ROOT)
+    states = install_models(["htdemucs_ft"], runtime=runtime, force=force, progress=lambda *_: None)
+    if not all(state.installed for state in states):
         raise InstallError("model verification failed after download")
     print(f"[model] installed and verified: {MODEL_DIR}")
     return True

@@ -16,13 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from basseparate import __version__, analysis_jobs, stems
+from basseparate import __version__, analysis_jobs, setup, stems
 from basseparate.api import export_routes, import_routes, job_routes, project_routes
 from basseparate.api.errors import install_error_handlers
 from basseparate.api.import_routes import register_import_job
 from basseparate.config import Settings
 from basseparate.jobs import JobManager
 from basseparate.projects import ProjectStore
+from basseparate.setup.service import SetupService
 
 LOCAL_UI_ORIGINS = ("http://127.0.0.1:5173", "http://localhost:5173")
 
@@ -53,7 +54,11 @@ def mount_ui(app: FastAPI, web_dir: Path) -> None:
         return HTMLResponse(UI_PLACEHOLDER)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    setup_service: SetupService | None = None,
+) -> FastAPI:
     settings = settings if settings is not None else Settings()
     paths = settings.data_paths.ensure()
     store = ProjectStore(paths.projects)
@@ -71,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.paths = paths
     app.state.projects = store
     app.state.jobs = jobs
+    app.state.setup = setup_service
 
     install_error_handlers(app)
     app.add_middleware(
@@ -109,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # The literal /doctor alias requested by the task and an operator-friendly
     # URL for the UI.
     app.include_router(export_routes.alias_router)
+    setup.install(app)
     stems.install(app)
     analysis_jobs.install(app)
     mount_ui(app, settings.web_dir)

@@ -58,6 +58,7 @@ def stem_workspace(tmp_path_factory: pytest.TempPathFactory) -> StemWorkspace:
     stem_set = separate_project(
         project,
         paths=paths,
+        model_id="htdemucs_ft",
         device="cpu",
         progress=lambda fraction, message: progress.append((fraction, message)),
     )

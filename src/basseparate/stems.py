@@ -189,7 +189,7 @@ class SeparateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: str = Field(min_length=1, max_length=64)
-    model_id: str = Field(default=DEFAULT_MODEL_ID, min_length=1, max_length=64)
+    model_id: str = Field(min_length=1, max_length=64)
     device: Literal["auto", "cpu", "cuda"] = "auto"
     force: bool = False
 
@@ -545,7 +545,8 @@ def require_model_installed(entry: ModelEntry) -> ModelState:
     if not state.installed:
         raise StemError(
             f"model {entry.id} is not installed ({state.status}: {state.detail}); "
-            f"install it with: {entry.install_command}"
+            f"install it from the setup screen (POST /api/setup/models) or run "
+            f"{entry.install_command}"
         )
     return state
 
@@ -662,7 +663,7 @@ def separate_asset(
     sample_rate: int,
     channels: int,
     paths: DataPaths,
-    model_id: str = DEFAULT_MODEL_ID,
+    model_id: str | None = None,
     model: ModelEntry | None = None,
     registry: Registry | None = None,
     bundle_dir: Path | None = None,
@@ -678,8 +679,12 @@ def separate_asset(
     worker_script: Path | None = None,
 ) -> StemSet:
     """Separate one prepared PCM into the selected model's cached f32 stems."""
-    entry = model if model is not None else resolve_model(model_id, registry=registry)
-    if model is None:
+    if model is not None:
+        entry = model
+    else:
+        if not model_id:
+            raise StemError("model_id is required; choose a separation model in setup")
+        entry = resolve_model(model_id, registry=registry)
         require_model_installed(entry)
     labels = entry.labels
     model_hashes = model_cache_hashes(entry)
@@ -875,7 +880,7 @@ def separate_project(
     project: Project,
     *,
     paths: DataPaths,
-    model_id: str = DEFAULT_MODEL_ID,
+    model_id: str | None = None,
     model: ModelEntry | None = None,
     registry: Registry | None = None,
     bundle_dir: Path | None = None,
@@ -902,6 +907,8 @@ def separate_project(
     if model is not None:
         entry = model
     else:
+        if not model_id:
+            raise StemError("model_id is required; choose a separation model in setup")
         entry = resolve_model(model_id, registry=registry)
         require_model_installed(entry)
     return separate_asset(
@@ -1046,12 +1053,11 @@ def separation_models() -> dict[str, Any]:
     for state in states:
         payload = state.to_dict()
         payload["metrics"] = dict(MODEL_METRICS.get(state.entry.id, {}))
-        payload["default"] = state.entry.id == DEFAULT_MODEL_ID
         payload["install_command"] = state.entry.install_command
         payload["size"] = state.entry.size_bytes
         payload["stem_labels"] = list(state.entry.labels)
         models.append(payload)
-    return {"default": DEFAULT_MODEL_ID, "models": models}
+    return {"models": models}
 
 
 @router.post("/separate", status_code=status.HTTP_202_ACCEPTED)
@@ -1064,7 +1070,10 @@ def start_separation(
         entry = resolve_model(body.model_id)
         require_model_installed(entry)
     except StemError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        raise HTTPException(
+            status_code=400,
+            detail=f"{error}; install or choose a model from the setup screen",
+        ) from error
     store.get(body.project_id)  # 404 before the job is queued
     try:
         job = jobs.submit("separate", body.model_dump())

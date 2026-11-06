@@ -71,7 +71,12 @@ def test_second_run_reuses_cache_and_starts_no_child(
         raise AssertionError("a cached stem run must not start the analysis child")
 
     monkeypatch.setattr(stems.subprocess, "Popen", exploding_spawn)
-    again = separate_project(stem_workspace.project, paths=stem_workspace.paths, device="cpu")
+    again = separate_project(
+        stem_workspace.project,
+        paths=stem_workspace.paths,
+        model_id="htdemucs_ft",
+        device="cpu",
+    )
     assert again.cached is True
     assert again.key == stem_workspace.stem_set.key
     assert again.frames == stem_workspace.stem_set.frames
@@ -103,6 +108,7 @@ def test_tampered_checkpoint_fails_before_inference_with_stderr_tail(
             sample_rate=stem_workspace.project.audio.sample_rate,
             channels=stem_workspace.project.audio.channels,
             paths=paths,
+            model_id="htdemucs_ft",
             bundle_dir=bundle,
             device="cpu",
         )
@@ -128,6 +134,7 @@ def test_real_worker_honours_the_cancel_file(stem_workspace: StemWorkspace, tmp_
             sample_rate=stem_workspace.project.audio.sample_rate,
             channels=stem_workspace.project.audio.channels,
             paths=paths,
+            model_id="htdemucs_ft",
             device="cpu",
             is_cancelled=stop.is_set,
             progress=progress,
@@ -170,6 +177,7 @@ def test_cancel_kills_the_child_and_publishes_nothing(
             sample_rate=stem_workspace.project.audio.sample_rate,
             channels=stem_workspace.project.audio.channels,
             paths=paths,
+            model_id="htdemucs_ft",
             analysis_python=Path(sys.executable),
             worker_script=fake,
             device="cpu",
@@ -204,7 +212,10 @@ def test_separate_endpoint_and_ranged_stem_pcm(stem_workspace: StemWorkspace) ->
         assert ranged.headers["x-channels"] == "2"
         assert ranged.headers["x-total-frames"] == "384000"
 
-        response = client.post("/api/separate", json={"project_id": project_id, "device": "cpu"})
+        response = client.post(
+            "/api/separate",
+            json={"project_id": project_id, "model_id": "htdemucs_ft", "device": "cpu"},
+        )
         assert response.status_code == 202, response.text
         job_id = response.json()["id"]
         deadline = time.monotonic() + 30.0

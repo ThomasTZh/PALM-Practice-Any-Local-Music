@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from basseparate.config import DataPaths
 from basseparate.model_registry import ModelEntry, ModelFile
 from basseparate.stems import (
@@ -58,9 +61,11 @@ def fake_model(
     )
 
 
-def test_separate_request_defaults_to_the_bundled_model() -> None:
-    request = SeparateRequest(project_id="p1")
-    assert request.model_id == DEFAULT_MODEL_ID == "htdemucs_ft"
+def test_separate_request_requires_an_explicit_model() -> None:
+    with pytest.raises(ValidationError):
+        SeparateRequest(project_id="p1")
+    request = SeparateRequest(project_id="p1", model_id="scnet-xl-ihf")
+    assert request.model_id == "scnet-xl-ihf"
     assert request.device == "auto"
 
 

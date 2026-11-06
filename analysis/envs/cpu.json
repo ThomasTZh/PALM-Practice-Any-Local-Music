@@ -1,0 +1,7 @@
+{
+  "variant": "cpu",
+  "project": "analysis-models",
+  "index_url": "https://download.pytorch.org/whl/cpu",
+  "python": ">=3.11,<3.12",
+  "description": "CPU inference environment; no CUDA runtime required."
+}
