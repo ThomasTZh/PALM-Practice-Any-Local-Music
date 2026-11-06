@@ -40,6 +40,21 @@ class SetupEnvironmentsRequest(BaseModel):
     variant: Literal["cpu", "cuda"] | None = None
     variants: list[Literal["cpu", "cuda"]] = Field(default_factory=list)
     accept_licenses: bool = False
+    accept_licences: bool = False
+    accept_license: bool = False
+    accept_license_terms: bool = False
+    consent: bool = False
+    offline: bool = False
+
+    @property
+    def consented(self) -> bool:
+        return (
+            self.accept_licenses
+            or self.accept_licences
+            or self.accept_license
+            or self.accept_license_terms
+            or self.consent
+        )
 
 
 class SetupModelsRequest(BaseModel):
@@ -52,6 +67,8 @@ class SetupModelsRequest(BaseModel):
     accept_license_terms: bool = False
     consent: bool = False
     force: bool = False
+    accepted_model_ids: list[str] = Field(default_factory=list)
+    model_consents: dict[str, bool] = Field(default_factory=dict)
 
     @property
     def consented(self) -> bool:
@@ -62,6 +79,11 @@ class SetupModelsRequest(BaseModel):
             or self.accept_license_terms
             or self.consent
         )
+
+    def accepted_ids(self) -> set[str]:
+        accepted = {model_id for model_id in self.accepted_model_ids if model_id}
+        accepted.update(model_id for model_id, value in self.model_consents.items() if value)
+        return accepted
 
 
 class SetupSkipRequest(BaseModel):
@@ -113,12 +135,25 @@ def install(app: Any) -> None:
 
     @router.post("/setup/environments", status_code=status.HTTP_202_ACCEPTED)
     def setup_environments(body: SetupEnvironmentsRequest) -> dict[str, Any]:
+        if not body.consented:
+            raise HTTPException(
+                status_code=400,
+                detail="licence acceptance is required before installing environments",
+            )
         variants = list(body.variants)
         if body.variant is not None:
             variants = [body.variant]
         if not variants:
             variants = list(ENV_VARIANTS)
-        return _submit(jobs, "setup_environments", {"variants": variants})
+        return _submit(
+            jobs,
+            "setup_environments",
+            {
+                "variants": variants,
+                "accept_licenses": True,
+                "offline": body.offline,
+            },
+        )
 
     @router.post("/setup/models", status_code=status.HTTP_202_ACCEPTED)
     def setup_models(body: SetupModelsRequest) -> dict[str, Any]:
@@ -136,6 +171,16 @@ def install(app: Any) -> None:
             requested = [body.model_id, *requested]
         if not requested:
             requested = [entry.id for entry in registry.models]
+        accepted = body.accepted_ids()
+        missing_consent = [model_id for model_id in requested if model_id not in accepted]
+        if missing_consent:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "licence acceptance is required for each requested model: "
+                    + ", ".join(missing_consent)
+                ),
+            )
         try:
             for model_id in requested:
                 registry.get(model_id)
@@ -149,6 +194,7 @@ def install(app: Any) -> None:
             "setup_models",
             {
                 "model_ids": requested,
+                "accepted_model_ids": sorted(accepted),
                 "accept_licenses": True,
                 "force": body.force,
             },

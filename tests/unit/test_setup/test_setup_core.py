@@ -27,6 +27,7 @@ def make_runtime(tmp_path: Path) -> RuntimePaths:
     app = tmp_path / "app"
     data = tmp_path / "data"
     (app / "analysis").mkdir(parents=True)
+    (app / "analysis-models").mkdir(parents=True)
     (app / "scripts").mkdir(parents=True)
     return RuntimePaths.from_environment(mode="packaged", app_root=app, data_root=data)
 
@@ -189,7 +190,8 @@ def test_environment_uses_uv_project_environment_under_data_root(tmp_path: Path)
     assert result["installed"] is True
     command, env, cwd = calls[0]
     assert command[0] == str(runtime.uv)
-    assert "--offline" in command
+    assert "--offline" not in command
+    assert command[command.index("--index-url") + 1] == "https://download.pytorch.org/whl/cpu"
     assert Path(env["UV_PROJECT_ENVIRONMENT"]).is_relative_to(runtime.data_root)
     assert Path(env["UV_PROJECT_ENVIRONMENT"]).name.startswith(".cpu.staging-")
     assert Path(env["UV_CACHE_DIR"]).is_relative_to(runtime.data_root)
@@ -318,3 +320,106 @@ def test_checks_report_low_disk_as_not_ready(tmp_path: Path) -> None:
     )
     assert checks["disk"]["ok"] is False
     assert checks["ffmpeg"]["ok"] is False
+
+
+def test_download_mid_transfer_cancel_preserves_part_and_reports_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from basseparate.setup import download as download_module
+
+    class Response:
+        status = 200
+        headers = {"Content-Length": "4"}
+
+        def __init__(self) -> None:
+            self.chunks = [b"ab", b"cd"]
+
+        def read(self, _size: int) -> bytes:
+            return self.chunks.pop(0) if self.chunks else b""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+    monkeypatch.setattr(download_module.urllib.request, "urlopen", lambda *a, **k: Response())
+    part = tmp_path / "artifact.part"
+    progress_calls: list[tuple[int, int]] = []
+    state = {"cancel": False}
+
+    def progress(done: int, total: int) -> None:
+        progress_calls.append((done, total))
+        state["cancel"] = True
+
+    with pytest.raises(SetupCancelled):
+        download_module.download_file(
+            "https://example.invalid/a",
+            part,
+            progress=progress,
+            cancel=lambda: state["cancel"],
+        )
+    assert progress_calls == [(2, 4)]
+    assert part.read_bytes() == b"ab"
+
+
+def test_environment_uses_real_subprocess_runner_from_empty_root(tmp_path: Path) -> None:
+    runtime = make_runtime(tmp_path)
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        'mkdir -p "$UV_PROJECT_ENVIRONMENT/bin"\n'
+        'printf python > "$UV_PROJECT_ENVIRONMENT/bin/python"\n',
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    result = create_environment("cpu", runtime=runtime, uv=fake_uv)
+    assert result["installed"] is True
+    assert (runtime.data_root / "environments/cpu/bin/python").is_file()
+
+
+def test_environment_mid_uv_cancel_terminates_subprocess(tmp_path: Path) -> None:
+    import threading
+
+    runtime = make_runtime(tmp_path)
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        'mkdir -p "$UV_PROJECT_ENVIRONMENT/bin"\n'
+        'printf python > "$UV_PROJECT_ENVIRONMENT/bin/python"\n'
+        "sleep 5\n",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    stop = threading.Event()
+    timer = threading.Timer(0.15, stop.set)
+    timer.start()
+    try:
+        with pytest.raises(SetupCancelled):
+            create_environment("cuda", runtime=runtime, uv=fake_uv, cancel=stop.is_set)
+    finally:
+        timer.cancel()
+    assert not (runtime.data_root / "environments/cuda").exists()
+    assert not list((runtime.data_root / "environments").glob(".cuda.staging-*"))
+
+
+def test_model_retry_resumes_stable_part(tmp_path: Path) -> None:
+    runtime = make_runtime(tmp_path)
+    write_registry(runtime)
+    entry = load_registry(runtime.registry_path).get("fake-model")
+    attempts: list[int] = []
+
+    def fetch(url: str, destination: Path) -> None:
+        offset = destination.stat().st_size if destination.exists() else 0
+        attempts.append(offset)
+        if len(attempts) == 1:
+            destination.write_bytes(PAYLOAD[:4])
+            raise DownloadError("network interrupted")
+        destination.write_bytes(PAYLOAD[:offset] + PAYLOAD[offset:])
+
+    with pytest.raises(DownloadError):
+        install_model(entry, runtime=runtime, fetch=fetch)
+    assert attempts == [0]
+    assert install_model(entry, runtime=runtime, fetch=fetch).installed
+    assert attempts == [0, 4]
+    assert not (runtime.models_root / "models/.fake-model.parts").exists()

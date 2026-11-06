@@ -28,8 +28,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download_file(url: str, destination: Path) -> None:
-    """Stream an HTTPS URL into destination, resuming an existing file if possible."""
+def download_file(
+    url: str,
+    destination: Path,
+    *,
+    progress: Progress | None = None,
+    cancel: Cancel | None = None,
+) -> None:
+    """Stream an HTTPS URL into destination, resuming and checking cancel per chunk."""
     if not url.startswith("https://"):
         raise DownloadError(f"refusing non-HTTPS download: {url}")
     destination = Path(destination)
@@ -45,12 +51,21 @@ def download_file(url: str, destination: Path) -> None:
             if offset and getattr(response, "status", 200) != 206:
                 # The server ignored Range; restart the part file.
                 mode = "wb"
+                offset = 0
+            total_header = response.headers.get("Content-Length")
+            total = offset + int(total_header) if total_header and total_header.isdigit() else 0
+            downloaded = offset
             with destination.open(mode) as handle:
                 while True:
+                    if cancel is not None and cancel():
+                        raise SetupCancelled("download cancelled")
                     chunk = response.read(CHUNK_BYTES)
                     if not chunk:
                         break
                     handle.write(chunk)
+                    downloaded += len(chunk)
+                    if progress is not None:
+                        progress(downloaded, total)
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise DownloadError(f"download failed for {url}: {error}") from error
 
@@ -69,12 +84,22 @@ def download_verified(
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     part = destination.with_name(destination.name + ".part")
-    fetch = fetch if fetch is not None else download_file
     try:
+        if (
+            destination.is_file()
+            and destination.stat().st_size == size_bytes
+            and _sha256(destination) == sha256
+        ):
+            if progress is not None:
+                progress(size_bytes, size_bytes)
+            return destination
         if not (part.is_file() and part.stat().st_size == size_bytes and _sha256(part) == sha256):
             if cancel is not None and cancel():
                 raise SetupCancelled("download cancelled")
-            fetch(url, part)
+            if fetch is None:
+                download_file(url, part, progress=progress, cancel=cancel)
+            else:
+                fetch(url, part)
         if cancel is not None and cancel():
             raise SetupCancelled("download cancelled")
         if not part.is_file():
@@ -89,8 +114,12 @@ def download_verified(
             progress(actual_size, size_bytes)
         part.replace(destination)
         return destination
-    except (DownloadError, SetupCancelled):
-        part.unlink(missing_ok=True)
+    except SetupCancelled:
+        # Keep the partial file so a later retry can resume with a Range request.
+        raise
+    except DownloadError:
+        if not (part.is_file() and part.stat().st_size < size_bytes):
+            part.unlink(missing_ok=True)
         raise
     except BaseException:
         part.unlink(missing_ok=True)

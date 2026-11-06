@@ -127,7 +127,11 @@ def test_setup_jobs_require_consent_and_persist_state(tmp_path: Path) -> None:
 
         accepted = client.post(
             "/api/setup/models",
-            json={"model_ids": ["fake-model"], "accept_licenses": True},
+            json={
+                "model_ids": ["fake-model"],
+                "accept_licenses": True,
+                "accepted_model_ids": ["fake-model"],
+            },
         )
         assert accepted.status_code == 202
         job = wait_job(client, accepted.json()["id"])
@@ -135,7 +139,10 @@ def test_setup_jobs_require_consent_and_persist_state(tmp_path: Path) -> None:
         assert job["result"]["models"][0]["status"] == "installed"
         assert (runtime.models_root / "models/fake-model/model.ckpt").is_file()
 
-        env = client.post("/api/setup/environments", json={"variant": "cpu"})
+        env = client.post(
+            "/api/setup/environments",
+            json={"variant": "cpu", "accept_licenses": True},
+        )
         assert env.status_code == 202
         env_job = wait_job(client, env.json()["id"])
         assert env_job["state"] == "succeeded", env_job
@@ -165,7 +172,11 @@ def test_tools_and_models_reject_unknown_or_unconsented(tmp_path: Path) -> None:
         assert client.post("/api/setup/tools", json={}).status_code == 400
         unknown = client.post(
             "/api/setup/models",
-            json={"model_ids": ["missing"], "accept_licenses": True},
+            json={
+                "model_ids": ["missing"],
+                "accept_licenses": True,
+                "accepted_model_ids": ["missing"],
+            },
         )
         assert unknown.status_code == 400
         assert "setup" in unknown.json()["detail"].lower()
@@ -225,3 +236,52 @@ def test_setup_tool_job_can_be_cancelled(tmp_path: Path) -> None:
         assert cancel.status_code == 200
         job = wait_job(client, job_id)
         assert job["state"] == "cancelled"
+
+
+def test_environment_consent_is_required_before_queueing(tmp_path: Path) -> None:
+    client, runtime, _service = make_client(tmp_path)
+    with client:
+        rejected = client.post("/api/setup/environments", json={"variant": "cpu"})
+        assert rejected.status_code == 400
+        assert "licence" in rejected.json()["detail"].lower()
+        assert not runtime.setup_state.exists()
+        assert not (runtime.data_root / "environments").exists()
+        assert client.get("/api/setup/status").json()["environments"]["cpu"]["installed"] is False
+        accepted = client.post(
+            "/api/setup/environments",
+            json={"variant": "cpu", "accept_licenses": True},
+        )
+        assert accepted.status_code == 202
+
+
+def test_each_requested_model_needs_its_own_acceptance(tmp_path: Path) -> None:
+    client, runtime, _service = make_client(tmp_path)
+    with client:
+        blanket = client.post(
+            "/api/setup/models",
+            json={"model_ids": ["fake-model"], "accept_licenses": True},
+        )
+        assert blanket.status_code == 400
+        assert "fake-model" in blanket.json()["detail"]
+        default_all = client.post("/api/setup/models", json={"accept_licenses": True})
+        assert default_all.status_code == 400
+        partial = client.post(
+            "/api/setup/models",
+            json={
+                "model_ids": ["fake-model"],
+                "accept_licenses": True,
+                "accepted_model_ids": [],
+            },
+        )
+        assert partial.status_code == 400
+        accepted = client.post(
+            "/api/setup/models",
+            json={
+                "model_ids": ["fake-model"],
+                "accept_licenses": True,
+                "accepted_model_ids": ["fake-model"],
+            },
+        )
+        assert accepted.status_code == 202
+        job = wait_job(client, accepted.json()["id"])
+        assert job["state"] == "succeeded", job

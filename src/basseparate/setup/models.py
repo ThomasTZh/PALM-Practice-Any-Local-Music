@@ -43,6 +43,8 @@ def install_model(
     target = model_directory(entry, root)
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{entry.id}.staging-", dir=target.parent))
+    parts_root = active.caches_root / "model-parts" / entry.id
+    parts_root.mkdir(parents=True, exist_ok=True)
     backup = target.parent / f".{entry.id}.backup-{os.getpid()}"
     published = False
     try:
@@ -53,7 +55,7 @@ def install_model(
                 raise SetupCancelled(f"{entry.id} installation cancelled")
             if progress is not None:
                 progress(completed / total, f"downloading {item.name}")
-            part = staging / f"{item.name}.download"
+            part = parts_root / item.name
 
             def on_progress(
                 done: int,
@@ -75,7 +77,7 @@ def install_model(
                 cancel=cancel,
                 progress=on_progress if progress is not None else None,
             )
-            part.replace(staging / item.name)
+            shutil.copy2(part, staging / item.name)
             completed += item.size_bytes
         if cancel is not None and cancel():
             raise SetupCancelled(f"{entry.id} installation cancelled")
@@ -92,6 +94,7 @@ def install_model(
             )
         if backup.exists():
             shutil.rmtree(backup, ignore_errors=True)
+        shutil.rmtree(parts_root, ignore_errors=True)
         if progress is not None:
             progress(1.0, f"{entry.id} installed and verified")
         return installed

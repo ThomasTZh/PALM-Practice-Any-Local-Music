@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -81,20 +82,57 @@ def environments_status(runtime: RuntimePaths | None = None) -> dict[str, dict[s
     return {variant: environment_status(variant, runtime) for variant in ENV_VARIANTS}
 
 
-def _default_run_uv(command: list[str], env: dict[str, str], cwd: Path) -> None:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        raise SetupInstallError(
-            f"uv sync failed ({result.returncode}): {detail[-1] if detail else 'no output'}"
+def _default_run_uv(
+    command: list[str],
+    env: dict[str, str],
+    cwd: Path,
+    *,
+    cancel: Cancel | None = None,
+    progress: Progress | None = None,
+) -> None:
+    with (
+        tempfile.TemporaryFile(mode="w+") as stdout_file,
+        tempfile.TemporaryFile(mode="w+") as stderr_file,
+    ):
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=env,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
         )
+        if progress is not None:
+            progress(0.25, "uv sync running")
+        try:
+            while process.poll() is None:
+                if cancel is not None and cancel():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                    raise SetupCancelled("environment creation cancelled")
+                try:
+                    process.wait(timeout=0.1)
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        stdout = stdout_file.read()
+        stderr = stderr_file.read()
+    if process.returncode != 0:
+        detail = (stderr or stdout or "").strip().splitlines()
+        raise SetupInstallError(
+            f"uv sync failed ({process.returncode}): {detail[-1] if detail else 'no output'}"
+        )
+    if progress is not None:
+        progress(0.7, "uv sync finished")
 
 
 def create_environment(
@@ -104,10 +142,22 @@ def create_environment(
     run_uv: RunUv | None = None,
     progress: Progress | None = None,
     cancel: Cancel | None = None,
+    offline: bool = False,
+    uv: Path | None = None,
 ) -> dict[str, object]:
     """Create one environment in staging, then atomically publish it."""
     active = runtime or runtime_paths()
     spec = environment_spec(variant, active)
+    if uv is not None:
+        spec = EnvironmentSpec(
+            variant=spec.variant,
+            project_dir=spec.project_dir,
+            target=spec.target,
+            python=spec.python,
+            uv=Path(uv),
+            cache_dir=spec.cache_dir,
+            index_url=spec.index_url,
+        )
     if (spec.target / "bin" / "python").is_file():
         if progress is not None:
             progress(1.0, f"{variant} environment already installed")
@@ -120,24 +170,35 @@ def create_environment(
     environment["UV_PYTHON"] = str(spec.python)
     environment["UV_INDEX_URL"] = spec.index_url
     environment["PALM_ENV_VARIANT"] = variant
-    command = [
-        str(spec.uv),
-        "sync",
-        "--offline",
-        "--directory",
-        str(spec.project_dir),
-        "--python",
-        str(spec.python),
-        "--index-url",
-        spec.index_url,
-    ]
-    runner = run_uv if run_uv is not None else _default_run_uv
+    command = [str(spec.uv), "sync"]
+    if offline:
+        command.append("--offline")
+    command.extend(
+        [
+            "--directory",
+            str(spec.project_dir),
+            "--python",
+            str(spec.python),
+            "--index-url",
+            spec.index_url,
+        ]
+    )
+    runner = run_uv
     try:
         if cancel is not None and cancel():
             raise SetupCancelled(f"{variant} environment creation cancelled")
         if progress is not None:
             progress(0.1, f"creating {variant} environment")
-        runner(command, environment, spec.project_dir)
+        if runner is not None:
+            runner(command, environment, spec.project_dir)
+        else:
+            _default_run_uv(
+                command,
+                environment,
+                spec.project_dir,
+                cancel=cancel,
+                progress=progress,
+            )
         if cancel is not None and cancel():
             raise SetupCancelled(f"{variant} environment creation cancelled")
         if not (staging / "bin" / "python").is_file():
