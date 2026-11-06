@@ -106,7 +106,7 @@ warning: "Early version 0.1.0-dev: limited testing and quality control. Keep bac
 warning visible: true (initial and after scrolling)
 headings include Optional GPL tools, Inference environment, Separation models
 links: 10, all https target=_blank rel="noopener noreferrer", 0 invalid
-AppImage text: false
+Secondary portable-image offer: none
 ```
 
 ### Commands
