@@ -81,6 +81,45 @@ export interface SetupGates {
   separateReason: string | null;
 }
 
+export interface LicenceLink {
+  licenceUrl: string;
+  sourceUrl: string;
+}
+
+const TOOL_LICENCE_LINKS: Record<string, LicenceLink> = {
+  sonic_visualiser: {
+    licenceUrl: "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+    sourceUrl: "https://github.com/sonic-visualiser/sonic-visualiser",
+  },
+  vamp_plugin_pack: {
+    licenceUrl: "https://www.gnu.org/licenses/agpl-3.0.html",
+    sourceUrl: "https://github.com/c4dm/qm-vamp-plugins",
+  },
+};
+
+const MODEL_LICENCE_URLS: Record<string, string> = {
+  htdemucs_ft: "https://github.com/facebookresearch/demucs/blob/main/LICENSE",
+  "scnet-xl-ihf":
+    "https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/LICENSE",
+  "bs-roformer-sw": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem",
+};
+
+export function toolLicenceLink(toolId: string): LicenceLink {
+  return (
+    TOOL_LICENCE_LINKS[toolId] ?? {
+      licenceUrl: "https://www.gnu.org/licenses/",
+      sourceUrl: "https://www.gnu.org/licenses/",
+    }
+  );
+}
+
+export function modelLicenceLink(model: SeparationModel): LicenceLink {
+  return {
+    licenceUrl: MODEL_LICENCE_URLS[model.id] ?? model.source_url,
+    sourceUrl: model.source_url || MODEL_LICENCE_URLS[model.id] || "",
+  };
+}
+
 const ENVIRONMENT_ESTIMATES: Record<"cpu" | "cuda", string> = {
   cpu: "~500 MB download",
   cuda: "~3.5 GB download",

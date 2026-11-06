@@ -60,7 +60,8 @@
         "wall_seconds": 19.24,
         "child_seconds": 18.85,
         "source": "t8 measured run"
-      }
+      },
+      "license_url": "https://github.com/facebookresearch/demucs/blob/main/LICENSE"
     },
     {
       "id": "scnet-xl-ihf",
@@ -101,7 +102,8 @@
         "child_seconds": 55.32,
         "peak_rss_mib": 3965.4,
         "source": "t49 measured run"
-      }
+      },
+      "license_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/LICENSE"
     },
     {
       "id": "bs-roformer-sw",
@@ -144,7 +146,8 @@
         "child_seconds": 65.97,
         "peak_rss_mib": 3006.4,
         "source": "t49 measured run"
-      }
+      },
+      "license_url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem"
     }
   ]
 }

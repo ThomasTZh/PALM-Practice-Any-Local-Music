@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { SeparationModel } from "../../api/types";
 import {
   environmentEstimate,
+  modelLicenceLink,
+  toolLicenceLink,
   type SetupClient,
   type SetupJobState,
   type SetupStatus,
@@ -217,7 +219,12 @@ export function SetupWizard({
   const progress = job === null ? 0 : Math.round(job.progress * 100);
 
   return (
-    <main className="setup-page" data-testid="setup-wizard">
+    <main
+      className="setup-page"
+      data-testid="setup-wizard"
+      tabIndex={0}
+      style={{ overflowY: "auto" }}
+    >
       <div className="setup-card">
         <header className="setup-header">
           <div>
@@ -331,7 +338,25 @@ export function SetupWizard({
             {Object.entries(status.tools).map(([name, tool]) => (
               <li key={name}>
                 <span>{name.replaceAll("_", " ")}</span>
-                <span className="setup-muted">{tool.license}</span>
+                <span className="setup-muted">
+                  <a
+                    data-testid={`tool-licence-${name}`}
+                    href={toolLicenceLink(name).licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {tool.license}
+                  </a>
+                  {" · "}
+                  <a
+                    data-testid={`tool-source-${name}`}
+                    href={toolLicenceLink(name).sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Source
+                  </a>
+                </span>
                 <span className="setup-status" data-ok={tool.installed}>
                   {tool.installed ? "Installed" : "Missing"}
                 </span>
@@ -452,7 +477,29 @@ export function SetupWizard({
                     {formatModelSize(model.size_bytes)}
                   </p>
                   <p className="setup-model-labels">{modelLabels(model)}</p>
-                  <p className="setup-licence">{model.license}</p>
+                  <p className="setup-licence">
+                    <a
+                      data-testid={`model-licence-${model.id}`}
+                      href={modelLicenceLink(model).licenceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {model.license}
+                    </a>
+                    {modelLicenceLink(model).sourceUrl !== "" && (
+                      <>
+                        {" · "}
+                        <a
+                          data-testid={`model-source-${model.id}`}
+                          href={modelLicenceLink(model).sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Source
+                        </a>
+                      </>
+                    )}
+                  </p>
                   {!model.installed && (
                     <div className="setup-model-actions">
                       <label>

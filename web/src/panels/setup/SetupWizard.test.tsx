@@ -91,6 +91,59 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("setup-model-install")).toBeDisabled();
   });
 
+  it("links every tool and model licence safely and can scroll by keyboard", () => {
+    renderWizard();
+    const page = screen.getByTestId("setup-wizard");
+    expect(page).toHaveClass("setup-page");
+    expect(page).toHaveAttribute("tabindex", "0");
+    expect((page as HTMLElement).style.overflowY).toBe("auto");
+
+    const expected: Array<[string, string]> = [
+      [
+        "tool-licence-sonic_visualiser",
+        "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+      ],
+      [
+        "tool-source-sonic_visualiser",
+        "https://github.com/sonic-visualiser/sonic-visualiser",
+      ],
+      [
+        "tool-licence-vamp_plugin_pack",
+        "https://www.gnu.org/licenses/agpl-3.0.html",
+      ],
+      [
+        "tool-source-vamp_plugin_pack",
+        "https://github.com/c4dm/qm-vamp-plugins",
+      ],
+      [
+        "model-licence-htdemucs_ft",
+        "https://github.com/facebookresearch/demucs/blob/main/LICENSE",
+      ],
+      [
+        "model-licence-scnet-xl-ihf",
+        "https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/LICENSE",
+      ],
+      [
+        "model-licence-bs-roformer-sw",
+        "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem",
+      ],
+    ];
+    for (const [testId, href] of expected) {
+      const link = screen.getByTestId(testId);
+      expect(link.tagName).toBe("A");
+      expect(link).toHaveAttribute("href", href);
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    // Licence text stays visible inside the anchors.
+    expect(
+      screen.getByTestId("tool-licence-sonic_visualiser"),
+    ).toHaveTextContent("GPL-2.0-or-later");
+    expect(screen.getByTestId("model-licence-scnet-xl-ihf")).toHaveTextContent(
+      /MIT/,
+    );
+  });
+
   it("skips to the library and can be reopened", async () => {
     const client = createFakeSetupClient(incompleteSetupStatus());
     const { onStatus, onClose } = renderWizard(client);

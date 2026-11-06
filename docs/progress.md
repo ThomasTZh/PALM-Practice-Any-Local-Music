@@ -2424,3 +2424,35 @@ packaging file changed.
 - No-default behaviour tests remain green.
 - make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass.
   No dependency added.
+
+## 2026-11-06 — setup page scroll container and third-party licence links (t73)
+
+### Scrolling
+
+The shell still keeps html/body/#root overflow hidden. `.setup-page` is now the
+scroll container: `height:100vh/100dvh`, `min-height:0`, `overflow-y:auto`,
+`overscroll-behavior:contain`, touch pan-y and momentum scrolling. The wizard
+main is focusable (tabIndex 0) so PageDown/End scroll it by keyboard.
+
+Firefox mock at 1280x720 and 1600x900: content scrollHeight 1216 vs client
+height 720/900; overflow-y auto; shell html/body/#root remain hidden. Wheel
+moved scrollTop 0 -> 283; keyboard End moved it to 439 (720 viewport) and 309
+(900 viewport). touch-action pan-y.
+
+### Licence links
+
+Tool rows now link licence text to authoritative licences and add Source:
+- Sonic Visualiser: GPL-2.0-or-later text ->
+  gnu.org/licenses/old-licenses/gpl-2.0.html; source github.com/sonic-visualiser.
+- Vamp pack: AGPL-3.0 text -> gnu.org/licenses/agpl-3.0.html; source
+  github.com/c4dm/qm-vamp-plugins.
+Each model's licence text links to its licence/source page (Demucs LICENSE,
+MSST LICENSE, BS-RoFormer model card) and a separate Source link uses the
+registry source URL. analysis/models.json now also records license_url for each
+model. All links use target=_blank rel="noopener noreferrer"; licence text
+remains visible.
+
+Tests assert the scroll container style/tabIndex and all tool/model hrefs,
+target and rel. make test-web, make build-web, make e2e (2 specs,
+Firefox+Chromium) pass; make models-list still accepts the registry. Existing
+consent/no-default/skip/progress tests remain green. No dependency added.
