@@ -2385,3 +2385,42 @@ Analysis, the mixer and the library show plain-language setup reasons with
   setup link. Document 1280 wide.
 - make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass.
   No dependency added.
+
+## 2026-11-06 — setup consent requests from the wizard (t71)
+
+### Environment consent
+
+Choosing CPU or CUDA now reveals an explicit licence checkbox for that flavour.
+Switching flavour clears the prior consent, and Install environment stays
+disabled until that variant is accepted. `SetupClient.startEnvironment(variant,
+consent)` posts `{variant, accept_licenses}`; the wizard only calls it with true
+after the checkbox. A 400 consent response is caught by the normal job error
+path, shows the backend detail in setup-error and offers manual Retry; there is
+no automatic retry.
+
+### Per-model consent
+
+`SetupClient.startModels(modelIds, acceptedModelIds)` posts `model_ids` plus
+`accepted_model_ids` containing exactly the selected ids the user accepted.
+The wizard derives accepted ids from selectedModels ∩ modelConsents; accepting
+an unselected model's licence is not sent. Install selected stays disabled until
+every selected model is accepted. The aggregate `accept_licenses` flag remains
+(sent as true when accepted ids exist because the server still requires the
+aggregate guard); per-id omissions are rejected by the server with the exact
+missing ids, and that 400 is surfaced in setup-error.
+
+Fake setup support was updated only to the new client signatures. No backend or
+packaging file changed.
+
+### Tests/verification
+
+- SetupWizard: environment checkbox gating, per-flavour reset, sends
+  environment:cpu:true; selected SCNet alone sends accepted=scnet even after
+  accepting unselected BS; disabled install makes no models request;
+  environment 400 error shown once with Retry and no automatic second call.
+- setupApi: environment body includes accept_licenses; model body contains
+  accepted_model_ids only for accepted selected ids; environment and model 400
+  details are thrown as SetupApiError.
+- No-default behaviour tests remain green.
+- make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass.
+  No dependency added.

@@ -344,14 +344,24 @@ export function createSetupClient(options: SetupApiOptions = {}): SetupClient {
         await post("/api/setup/tools", { accept_licenses: consent }),
       );
     },
-    async startEnvironment(variant) {
-      return parseJob(await post("/api/setup/environments", { variant }));
+    async startEnvironment(variant, consent = true) {
+      return parseJob(
+        await post("/api/setup/environments", {
+          variant,
+          accept_licenses: consent,
+        }),
+      );
     },
-    async startModels(modelIds, consent) {
+    async startModels(modelIds, acceptedModelIds) {
+      const acceptedIds = Array.isArray(acceptedModelIds)
+        ? acceptedModelIds
+        : modelIds;
+      const accepted = new Set(acceptedIds);
       return parseJob(
         await post("/api/setup/models", {
           model_ids: modelIds,
-          accept_licenses: consent,
+          accepted_model_ids: modelIds.filter((id) => accepted.has(id)),
+          accept_licenses: acceptedIds.length > 0,
         }),
       );
     },

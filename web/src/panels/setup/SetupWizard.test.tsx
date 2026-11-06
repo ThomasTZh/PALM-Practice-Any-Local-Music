@@ -201,23 +201,86 @@ describe("SetupWizard", () => {
     );
   });
 
+  it("surfaces environment consent rejection once and offers retry", async () => {
+    const client = createFakeSetupClient(incompleteSetupStatus());
+    const startEnvironment = vi.fn(async () => {
+      throw new Error(
+        "licence acceptance is required before installing environments",
+      );
+    });
+    client.startEnvironment = startEnvironment;
+    renderWizard(client);
+
+    fireEvent.click(screen.getByLabelText("CPU environment"));
+    fireEvent.click(screen.getByLabelText("Accept CPU environment licence"));
+    fireEvent.click(screen.getByTestId("setup-env-install"));
+
+    expect(await screen.findByTestId("setup-error")).toHaveTextContent(
+      "licence acceptance is required before installing environments",
+    );
+    expect(startEnvironment).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("setup-retry")).toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+    expect(startEnvironment).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a fresh consent when switching environment flavour", () => {
+    renderWizard(createFakeSetupClient(incompleteSetupStatus()));
+
+    fireEvent.click(screen.getByLabelText("CPU environment"));
+    fireEvent.click(screen.getByLabelText("Accept CPU environment licence"));
+    expect(screen.getByTestId("setup-env-install")).toBeEnabled();
+
+    fireEvent.click(screen.getByLabelText("CUDA environment"));
+    expect(
+      screen.getByLabelText("Accept CUDA environment licence"),
+    ).not.toBeChecked();
+    expect(screen.getByTestId("setup-env-install")).toBeDisabled();
+  });
+
   it("installs a chosen environment and selected consented models", async () => {
     const client = createFakeSetupClient(incompleteSetupStatus());
+    const startEnvironment = vi.fn(async () =>
+      job("queued", 0, { id: "environment-job" }),
+    );
+    const startModels = vi.fn(async () =>
+      job("queued", 0, { id: "models-job" }),
+    );
+    client.startEnvironment = startEnvironment;
+    client.startModels = startModels;
     renderWizard(client);
 
     fireEvent.click(screen.getByLabelText("CPU environment"));
     expect(screen.getByLabelText("CPU environment")).toBeChecked();
+    expect(screen.getByTestId("setup-env-install")).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Accept CPU environment licence"));
+    expect(screen.getByTestId("setup-env-install")).toBeEnabled();
     fireEvent.click(screen.getByTestId("setup-env-install"));
-    await waitFor(() => expect(client.calls).toContain("environment:cpu"));
+    await waitFor(() =>
+      expect(startEnvironment).toHaveBeenCalledWith("cpu", true),
+    );
 
     const card = screen.getByTestId("setup-model-card-scnet-xl-ihf");
     fireEvent.click(within(card).getByLabelText("Select SCNet XL IHF"));
     expect(screen.getByTestId("setup-model-install")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("setup-model-install"));
+    expect(
+      client.calls.filter((call) => call.startsWith("models:")),
+    ).toHaveLength(0);
     fireEvent.click(within(card).getByLabelText("Accept SCNet XL IHF licence"));
+    // Consent for an unselected model is not sent as an accepted id.
+    fireEvent.click(
+      within(
+        screen.getByTestId("setup-model-card-bs-roformer-sw"),
+      ).getByLabelText("Accept BS-RoFormer-SW licence"),
+    );
     expect(screen.getByTestId("setup-model-install")).toBeEnabled();
     fireEvent.click(screen.getByTestId("setup-model-install"));
     await waitFor(() =>
-      expect(client.calls).toContain("models:scnet-xl-ihf:true"),
+      expect(startModels).toHaveBeenCalledWith(
+        ["scnet-xl-ihf"],
+        ["scnet-xl-ihf"],
+      ),
     );
   });
 });

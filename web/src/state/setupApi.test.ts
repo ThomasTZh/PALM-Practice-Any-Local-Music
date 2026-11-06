@@ -129,8 +129,8 @@ describe("setup client", () => {
 
     await client.skip(true);
     await client.startTools(true);
-    await client.startEnvironment("cuda");
-    await client.startModels(["htdemucs_ft"], true);
+    await client.startEnvironment("cuda", true);
+    await client.startModels(["htdemucs_ft", "scnet-xl-ihf"], ["htdemucs_ft"]);
     await client.job("setup-1");
     await client.cancel("setup-1");
 
@@ -140,12 +140,59 @@ describe("setup client", () => {
     });
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
       variant: "cuda",
+      accept_licenses: true,
     });
     expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({
-      model_ids: ["htdemucs_ft"],
+      model_ids: ["htdemucs_ft", "scnet-xl-ihf"],
+      accepted_model_ids: ["htdemucs_ft"],
       accept_licenses: true,
     });
     expect(calls[4]?.url).toBe("/api/jobs/setup-1");
     expect(calls[5]?.url).toBe("/api/jobs/setup-1/cancel");
+  });
+
+  it("surfaces server consent rejections with the backend detail", async () => {
+    const { fetchImpl } = server({
+      "/api/setup/environments": response(
+        {
+          detail:
+            "licence acceptance is required before installing environments",
+        },
+        400,
+      ),
+    });
+    const client = createSetupClient({ fetchImpl });
+
+    await expect(client.startEnvironment("cpu", true)).rejects.toMatchObject({
+      name: "SetupApiError",
+      status: 400,
+      message: "licence acceptance is required before installing environments",
+    });
+  });
+
+  it("sends only per-model accepted ids and surfaces missing-consent errors", async () => {
+    const { fetchImpl, calls } = server({
+      "/api/setup/models": response(
+        {
+          detail:
+            "licence acceptance is required for each requested model: scnet-xl-ihf",
+        },
+        400,
+      ),
+    });
+    const client = createSetupClient({ fetchImpl });
+
+    await expect(
+      client.startModels(["htdemucs_ft", "scnet-xl-ihf"], ["htdemucs_ft"]),
+    ).rejects.toMatchObject({
+      status: 400,
+      message:
+        "licence acceptance is required for each requested model: scnet-xl-ihf",
+    });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      model_ids: ["htdemucs_ft", "scnet-xl-ihf"],
+      accepted_model_ids: ["htdemucs_ft"],
+      accept_licenses: true,
+    });
   });
 });

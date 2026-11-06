@@ -56,6 +56,9 @@ export function SetupWizard({
 }: SetupWizardProps) {
   const [toolsConsent, setToolsConsent] = useState(false);
   const [variant, setVariant] = useState<"cpu" | "cuda" | null>(null);
+  const [environmentConsent, setEnvironmentConsent] = useState<
+    "cpu" | "cuda" | null
+  >(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [modelConsents, setModelConsents] = useState<string[]>([]);
   const [job, setJob] = useState<SetupJobState | null>(null);
@@ -142,11 +145,11 @@ export function SetupWizard({
   }
 
   function installEnvironment(): void {
-    if (variant === null) return;
+    if (variant === null || environmentConsent !== variant) return;
     void runJob(
       "environment",
       "Environment installation",
-      () => client.startEnvironment(variant),
+      () => client.startEnvironment(variant, true),
       installEnvironment,
     );
   }
@@ -155,7 +158,11 @@ export function SetupWizard({
     void runJob(
       "models",
       "Model installation",
-      () => client.startModels(selectedModels, true),
+      () =>
+        client.startModels(
+          selectedModels,
+          selectedModels.filter((id) => modelConsents.includes(id)),
+        ),
       installModels,
     );
   }
@@ -364,7 +371,10 @@ export function SetupWizard({
                   name="setup-environment"
                   aria-label={`${choice.toUpperCase()} environment`}
                   checked={variant === choice}
-                  onChange={() => setVariant(choice)}
+                  onChange={() => {
+                    setVariant(choice);
+                    setEnvironmentConsent(null);
+                  }}
                 />
                 <span className="setup-environment-name">
                   {choice.toUpperCase()}
@@ -383,10 +393,29 @@ export function SetupWizard({
               </label>
             ))}
           </div>
+          {variant !== null && !environmentInstalled && (
+            <label className="setup-consent">
+              <input
+                type="checkbox"
+                aria-label={`Accept ${variant.toUpperCase()} environment licence`}
+                checked={environmentConsent === variant}
+                onChange={(event) =>
+                  setEnvironmentConsent(event.target.checked ? variant : null)
+                }
+              />
+              I accept the licence for the {variant.toUpperCase()} inference
+              environment.
+            </label>
+          )}
           <button
             type="button"
             data-testid="setup-env-install"
-            disabled={busy || variant === null || environmentInstalled}
+            disabled={
+              busy ||
+              variant === null ||
+              environmentConsent !== variant ||
+              environmentInstalled
+            }
             onClick={installEnvironment}
           >
             {environmentInstalled

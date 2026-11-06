@@ -60,8 +60,14 @@ export interface SetupClient {
   status(options?: { signal?: AbortSignal }): Promise<SetupStatus>;
   skip(skip?: boolean): Promise<SetupStatus>;
   startTools(consent: boolean): Promise<SetupJobState>;
-  startEnvironment(variant: "cpu" | "cuda"): Promise<SetupJobState>;
-  startModels(modelIds: string[], consent: boolean): Promise<SetupJobState>;
+  startEnvironment(
+    variant: "cpu" | "cuda",
+    consent?: boolean,
+  ): Promise<SetupJobState>;
+  startModels(
+    modelIds: string[],
+    acceptedModelIds: string[] | boolean,
+  ): Promise<SetupJobState>;
   job(jobId: string): Promise<SetupJobState>;
   cancel(jobId: string): Promise<SetupJobState>;
 }
