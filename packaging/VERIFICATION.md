@@ -2,7 +2,7 @@
 
 Status: **PASSED**
 
-- Date: 2026-11-06T21:02:07Z
+- Date: 2026-11-06T21:04:42Z
 - Mode: bubblewrap minimal root (Ubuntu 22.04 image unavailable offline)
 - Asset: `PALM-0.1.0-dev-linux-x86_64.tar.gz` (70034673 bytes)
 - SHA256SUMS: verified
@@ -25,10 +25,10 @@ run/launcher.lock 0
 ```sh
 make test-package
 tar -xzf /home/thomas/Documents/basseparate/dist/PALM-0.1.0-dev-linux-x86_64.tar.gz
-bwrap --ro-bind <minimal-root> / ... /palm/bin/palm --no-browser --port 48605
-curl http://127.0.0.1:48605/api/health
-curl http://127.0.0.1:48605/
-curl http://127.0.0.1:48605/api/setup/status
+bwrap --ro-bind <minimal-root> / ... /palm/bin/palm --no-browser --port 58901
+curl http://127.0.0.1:58901/api/health
+curl http://127.0.0.1:58901/
+curl http://127.0.0.1:58901/api/setup/status
 ```
 
 The full command/output transcript is retained in the build log while
