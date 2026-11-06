@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.config import RuntimePaths
-from basseparate.jobs import JobManager
+from basseparate.jobs import JobContext, JobManager
 from basseparate.model_registry import ModelRegistryError, load_registry
 from basseparate.setup.environments import ENV_VARIANTS
+from basseparate.setup.errors import SetupError
 from basseparate.setup.service import SetupService
 
 
@@ -110,6 +112,26 @@ def install(app: Any) -> None:
         app.state.setup = service
     jobs: JobManager = app.state.jobs
     service.register(jobs)
+
+    def guarded_environments(context: JobContext, params: Mapping[str, Any]) -> object:
+        if not params.get("accept_licenses"):
+            raise SetupError("licence acceptance is required before installing environments")
+        return service.install_environments_job(context, params)
+
+    def guarded_models(context: JobContext, params: Mapping[str, Any]) -> object:
+        if not params.get("accept_licenses"):
+            raise SetupError("licence acceptance is required before installing models")
+        requested = params.get("model_ids") or []
+        accepted = set(params.get("accepted_model_ids") or [])
+        unaccepted = [model_id for model_id in requested if model_id not in accepted]
+        if unaccepted:
+            raise SetupError(
+                "licence acceptance is required for each requested model: " + ", ".join(unaccepted)
+            )
+        return service.install_models_job(context, params)
+
+    jobs.register("setup_environments", guarded_environments)
+    jobs.register("setup_models", guarded_models)
     router = APIRouter(tags=["setup"])
 
     @router.get("/setup/status")

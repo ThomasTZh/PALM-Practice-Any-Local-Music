@@ -133,8 +133,6 @@ class SetupService:
         return {"tools": result}
 
     def install_environments_job(self, context: JobContext, params: Mapping[str, Any]) -> object:
-        if not params.get("accept_licenses"):
-            raise SetupError("licence acceptance is required before installing environments")
         variants = params.get("variants") or list(ENV_VARIANTS)
         results: dict[str, object] = {}
         count = len(variants)
@@ -156,7 +154,6 @@ class SetupService:
                     run_uv=self.run_uv,
                     progress=report_environment,
                     cancel=lambda: context.cancelled,
-                    offline=bool(params.get("offline", False)),
                 )
         except SetupCancelled as error:
             raise JobCancelled(context.job_id) from error
@@ -167,12 +164,6 @@ class SetupService:
         if not params.get("accept_licenses"):
             raise SetupError("licence acceptance is required before installing models")
         model_ids = params.get("model_ids") or []
-        accepted = set(params.get("accepted_model_ids") or [])
-        unaccepted = [model_id for model_id in model_ids if model_id not in accepted]
-        if unaccepted:
-            raise SetupError(
-                "licence acceptance is required for each requested model: " + ", ".join(unaccepted)
-            )
         try:
             states = install_models(
                 model_ids,
