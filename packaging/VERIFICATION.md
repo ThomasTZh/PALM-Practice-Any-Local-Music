@@ -24,7 +24,7 @@ run/launcher.lock 0
 
 ```sh
 make test-package
-tar -xzf /home/thomas/Documents/basseparate/dist/PALM-0.1.0-dev-linux-x86_64.tar.gz
+tar -xzf $PALM_WORKSPACE/dist/PALM-0.1.0-dev-linux-x86_64.tar.gz
 bwrap --ro-bind <minimal-root> / ... /palm/bin/palm --no-browser --port 48791
 curl http://127.0.0.1:48791/api/health
 curl http://127.0.0.1:48791/
