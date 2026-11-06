@@ -57,10 +57,10 @@ same project settings share one asset directory.
 
 ## Packaged mode and data locations
 
-The same application runs from the checkout or from the portable tar/AppImage.
+The same application runs from the checkout or from the portable tar.
 `RuntimePaths` is the only resolver:
 
-| | Source checkout | Packaged tar/AppImage |
+| | Source checkout | Packaged tar |
 | --- | --- | --- |
 | App resources | checkout | extracted app root (read-only) |
 | Data root | per-user `basseparate` dir, or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR` | per-user `palm` dir, or `PALM_DATA_DIR`/`--data-dir` |

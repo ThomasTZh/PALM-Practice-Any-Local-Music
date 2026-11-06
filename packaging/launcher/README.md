@@ -1,6 +1,6 @@
 # PALM launcher packaging
 
-`palm` is the entry point for the portable tar and AppImage. It sets the
+`palm` is the entry point for the portable tar. It sets the
 packaged environment (`PALM_MODE=packaged`, `PALM_APP_ROOT`, `PALM_DATA_DIR`)
 and executes the Python launcher:
 
@@ -40,5 +40,4 @@ records the URL in `run/server.json`, opens the browser (unless
 second launch prints the running URL instead of starting another server.
 
 Supported options: `--no-browser`, `--port N`, `--data-dir DIR`, `--setup`
-and `--doctor`. The AppImage should install `palm.desktop` and call the same
-wrapper; no writes are made under the read-only app root.
+and `--doctor`; no writes are made under the read-only app root.

@@ -84,9 +84,9 @@ e2e: ## Run the Playwright end-to-end suite when specs exist
 accept: ## Run the five-recording acceptance report (scripts/accept.py)
 	@$(STUDIO) accept
 
-PACKAGE_ARGS ?= --appimage
+PACKAGE_ARGS ?=
 
-package: build-web ## Build the portable tar/AppImage release assets
+package: build-web ## Build the portable tar release asset
 	@$(PY) scripts/package.py $(PACKAGE_ARGS)
 
 test-package: ## Validate the built release tar, checksums and bundled launcher

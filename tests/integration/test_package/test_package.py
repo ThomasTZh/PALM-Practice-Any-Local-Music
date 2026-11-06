@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 def test_build_manifest_pins_every_asset() -> None:
     data = tomllib.loads((ROOT / "packaging" / "build-manifest.toml").read_text())
     assert data["schema_version"] == 1
-    for key in ("python", "uv", "appimagetool"):
+    for key in ("python", "uv"):
         entry = data[key]
         assert entry["url"].startswith("https://")
         assert len(entry["sha256"]) == 64
@@ -51,6 +51,10 @@ def test_built_tar_checksum_and_contents_if_present() -> None:
     with tarfile.open(tar_path, "r:gz") as archive:
         names = archive.getnames()
     assert any(name.endswith("/bin/palm") for name in names)
+    assert any(name.endswith("/python/bin/python3.11") for name in names)
+    assert any(name.endswith("/scripts/install_tools.py") for name in names)
+    assert any(name.endswith("/analysis/envs/cpu/uv.lock") for name in names)
+    assert any(name.endswith("/analysis/envs/cuda/uv.lock") for name in names)
     assert any(name.endswith("/web/dist/index.html") for name in names)
     assert not any(name.startswith("/") or "/../" in name for name in names)
     forbidden_roots = {

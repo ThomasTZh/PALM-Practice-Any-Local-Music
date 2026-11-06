@@ -19,7 +19,6 @@ PAGE_STATUS=""
 SETUP_STATUS=""
 APP_DIFF="not checked"
 DATA_FILES="not checked"
-APPIMAGE_STATUS="not checked"
 CONTAINER_PYTHON="not checked"
 
 cleanup() {
@@ -260,23 +259,6 @@ main() {
     fi
     check_tree "$root" "$data" "$before"
 
-    local appimage
-    appimage=$(find "$DIST" -maxdepth 1 -name '*.AppImage' | head -1)
-    if [ -n "$appimage" ]; then
-        APPIMAGE_STATUS="extracted and launched via --appimage-extract"
-        local extract="$SCRATCH/appimage"
-        mkdir -p "$extract"
-        (cd "$extract" && "$appimage" --appimage-extract >/dev/null)
-        [ -x "$extract/squashfs-root/AppRun" ] || fail "AppImage extraction had no AppRun"
-        "$extract/squashfs-root/AppRun" --help >/dev/null || fail "extracted AppImage launcher --help failed"
-        log "AppImage: $APPIMAGE_STATUS"
-    else
-        [ -f "$DIST/APPIMAGE-FALLBACK.txt" ] || fail "no AppImage and no APPIMAGE-FALLBACK.txt"
-        grep -qi "not built" "$DIST/APPIMAGE-FALLBACK.txt" || fail "AppImage fallback is not documented"
-        APPIMAGE_STATUS="not shipped; documented fallback: $(tr '\n' ' ' < "$DIST/APPIMAGE-FALLBACK.txt")"
-        log "AppImage: $APPIMAGE_STATUS"
-    fi
-
     {
         echo "# Clean-room verification"
         echo
@@ -296,7 +278,6 @@ main() {
         printf '%s\n' "$DATA_FILES"
         echo '```'
         echo
-        echo "- AppImage: $APPIMAGE_STATUS"
         echo "- Python in clean container: ${CONTAINER_PYTHON:-not checked (bubblewrap fallback)}"
         echo
         echo "## Commands run"

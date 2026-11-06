@@ -47,18 +47,14 @@ and credits. Nothing third-party is committed.
 
 ## Portable release
 
-The downloadable release is two assets plus checksums and notes:
+The downloadable release is one portable asset plus checksums and notes:
 
 - `PALM-<version>-linux-x86_64.tar.gz` (extract and run `./bin/palm`)
-- optional `PALM-<version>-x86_64.AppImage` (run directly or with
-  `--appimage-extract` when FUSE is unavailable)
 - `SHA256SUMS` and `RELEASE-NOTES.md`
 
 The bundle contains only the app, built UI, analysis workers/registry,
-environment definitions, launcher, desktop icon and licences. Model weights,
-tools and Python environments are **not** bundled. The AppImage embeds the
-same `bin/palm` launcher and auto-opens the browser; mark it executable after
-download (`chmod +x PALM-*.AppImage`).
+environment definitions, launcher, desktop icon, setup code and licences.
+Model weights, tools and Python environments are **not** bundled.
 
 **First run** opens a setup wizard. It needs a network connection for the
 downloads you choose, but does not upload anything:

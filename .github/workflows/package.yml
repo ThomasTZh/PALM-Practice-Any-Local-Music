@@ -29,7 +29,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build portable release (pinned downloads)
-        run: make package PACKAGE_ARGS="--online --appimage"
+        run: make package PACKAGE_ARGS="--online"
 
       - name: Validate release structure and checksums
         run: make test-package
@@ -49,10 +49,8 @@ jobs:
           name: palm-portable-release
           path: |
             dist/PALM-*.tar.gz
-            dist/PALM-*.AppImage
             dist/SHA256SUMS
             dist/RELEASE-NOTES.md
-            dist/APPIMAGE-FALLBACK.txt
           if-no-files-found: error
 
       - name: Create draft release (never publish automatically)
@@ -66,7 +64,5 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             dist/PALM-*.tar.gz
-            dist/PALM-*.AppImage
             dist/SHA256SUMS
             dist/RELEASE-NOTES.md
-            dist/APPIMAGE-FALLBACK.txt

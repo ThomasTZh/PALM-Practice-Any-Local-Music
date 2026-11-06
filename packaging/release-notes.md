@@ -1,28 +1,27 @@
 # PALM 0.1.0-dev — portable Linux release
 
 PALM (Practice Any Local Music) is a local practice studio for recordings you
-own. This is the portable Linux x86_64 build.
+own. This is the portable Linux x86_64 tar build.
 
 **Early version, limited testing and quality control.** This 0.1.0-dev build
 has not had broad platform testing or a formal listening pass. The tar was
-smoke-tested in a minimal Linux root fallback, not across distributions; the
-AppImage was extracted and started once, but not across desktop environments.
+smoke-tested in a minimal Linux root fallback, not across distributions.
 Expect setup failures, download and environment edge cases, and model or
 licence surprises. Keep backups of projects you care about. No warranty is
 provided beyond the MIT licence.
 
-## Assets
+## Asset
 
 | Asset | Size | SHA-256 |
 | --- | ---: | --- |
-| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 69,979,096 B | `dfef052077aa50ca60289ef58fd3f4184deee9c3c45c680b33422981d0ced27d` |
-| `PALM-0.1.0-dev-x86_64.AppImage` | 64,518,648 B | `61b0ecf7b8e94cd09deb6b63aa72c6ca9a4bc1bc7640ee59def5ccdf6a249233` |
-| `SHA256SUMS` | — | contains both lines above |
+| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,034,673 B | `306430d2941a317cf99f8c10a3f5ce9b238579da61c87fe44ece7b3150046e36` |
+| `SHA256SUMS` | — | contains the line above |
 | `RELEASE-NOTES.md` | — | this file |
 
-No model weights, analysis tools, Python environments, caches, recordings,
-tests, `.git` or virtual environments are in either asset. Each asset is well
-under 2 GiB.
+The tar is 66.8 MiB, well under 2 GiB. No model weights, analysis tools,
+Python environments, caches, recordings, tests, `.git` or virtual environments
+are included. The app tree is read-only; all setup downloads and projects stay
+under the data root.
 
 ## Run it
 
@@ -32,20 +31,12 @@ cd PALM-0.1.0-dev-linux-x86_64
 ./bin/palm
 ```
 
-The launcher is `bin/palm`; it starts the server and opens the browser.
-
-or, for the AppImage (the same launcher embedded as `AppRun`):
-
-```sh
-chmod +x PALM-0.1.0-dev-x86_64.AppImage
-./PALM-0.1.0-dev-x86_64.AppImage
-# no FUSE or AppImageLauncher trouble? run without extracting to disk:
-APPIMAGE_EXTRACT_AND_RUN=1 ./PALM-0.1.0-dev-x86_64.AppImage
-```
-
-The launcher prints and opens `http://127.0.0.1:<port>/`, keeps one instance per
-data root, writes logs under the data root, and forwards SIGINT/SIGTERM.
-Options: `--no-browser`, `--port N`, `--data-dir DIR`, `--setup`, `--doctor`.
+`bin/palm` starts the existing server, prints and opens
+`http://127.0.0.1:<port>/`, keeps one instance per data root, writes
+`logs/launcher.log`/`logs/server.log`, records `run/server.json`, and forwards
+SIGINT/SIGTERM. Options: `--no-browser`, `--port N`, `--data-dir DIR`,
+`--setup`, `--doctor`. The bundle contains a standalone Python 3.11 and `bin/uv`,
+so no system Python or Node is required.
 
 ## First run: network, disk, ffmpeg, choices
 
@@ -73,7 +64,7 @@ Setup button. Separation requires an explicitly installed model.
 
 The data root defaults to `~/.local/share/palm`; override with `--data-dir` or
 `PALM_DATA_DIR`. It holds models, tools, CPU/CUDA environments, caches, logs,
-run state, setup state and projects. The app tree is read-only.
+run state, setup state and projects.
 
 ## Verification and licences
 
@@ -86,7 +77,6 @@ Licence boundaries: Demucs code is MIT but its weights are research use only;
 SCNet/MSST code is MIT and SCNet weights have no separate weight licence; the
 BS-RoFormer-SW mirror has an unknown weight licence and is private use only.
 Nothing is uploaded by the application.
-
 
 ## Known limitations in this build
 

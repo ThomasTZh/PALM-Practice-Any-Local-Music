@@ -2,8 +2,7 @@
 #
 # The local `make package` uses the preserved cached standalone Python and uv
 # when present; CI runs with --online and downloads these exact artifacts after
-# checking each SHA-256. appimagetool is optional: without it the AppImage is
-# skipped with a documented fallback, never silently mis-built.
+# checking each SHA-256.
 schema_version = 1
 release = "20260728"
 
@@ -21,14 +20,3 @@ url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknow
 sha256 = "eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9"
 size = 21373358
 dest = "bin/uv"
-
-[appimagetool]
-version = "1.9.1"
-url = "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
-sha256 = "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
-size = 15092216
-optional = true
-
-[runtime]
-lock = "packaging/app-runtime/uv.lock"
-project = "packaging/app-runtime"

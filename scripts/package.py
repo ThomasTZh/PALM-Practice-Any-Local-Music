@@ -3,7 +3,7 @@
 
 The local build is offline: it uses the preserved standalone CPython and the
 already-installed app runtime, while still recording the pinned python-build-
-standalone/uv/appimagetool manifest and exporting a hashed runtime lock. CI
+standalone Python/uv manifest and exporting a hashed runtime lock. CI
 runs `--online`, downloads only the pinned tools, and installs the runtime from
 the hashed lock into the bundled interpreter.
 
@@ -98,7 +98,7 @@ def load_manifest() -> dict[str, Any]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     if int(data.get("schema_version", 0)) != 1:
         raise PackageError(f"unsupported build manifest at {path}")
-    for key in ("python", "uv", "appimagetool"):
+    for key in ("python", "uv"):
         entry = data.get(key)
         if not isinstance(entry, dict) or not entry.get("url") or not entry.get("sha256"):
             raise PackageError(f"build manifest is missing the pinned {key} URL/sha256")
@@ -386,7 +386,7 @@ def clean_bytecode(root: Path) -> None:
             path.unlink(missing_ok=True)
 
 
-def write_release_notes(stage: Path, version_value: str, appimage: str | None) -> Path:
+def write_release_notes(stage: Path, version_value: str) -> Path:
     commit = (
         subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -404,7 +404,7 @@ Practice Any Local Music, portable Linux x86_64 build.
 
 - Commit: {commit}
 - Build date: {time.strftime("%Y-%m-%d")}
-- Launch: `bin/palm` (the tar root) or the AppImage
+- Launch: `bin/palm` (the tar root)
 - First run: choose a separation model and the CPU/CUDA environment in the
   setup wizard; model weights and analysis tools are downloaded only there,
   never bundled here.
@@ -415,7 +415,6 @@ Practice Any Local Music, portable Linux x86_64 build.
   recordings, tests, `.git`, `storage/` or any virtual environment.
 - Runtime lock: `runtime-requirements.txt` (hashes from
   `packaging/app-runtime/uv.lock`).
-- AppImage: {appimage or "not built (see APPIMAGE-FALLBACK.txt)"}.
 
 See `licenses/LICENSE` (MIT for the application) and `licenses/NOTICES.md` for
 third-party notices. Model weights keep their own terms.
@@ -442,62 +441,6 @@ def build_tar(stage: Path, output: Path) -> Path:
                 archive.addfile(info)
     if output.stat().st_size >= MAX_ASSET_BYTES:
         raise PackageError(f"asset {output.name} is at least 2 GiB")
-    print(f"package: wrote {output} ({output.stat().st_size} bytes)")
-    return output
-
-
-def build_appimage(
-    stage: Path,
-    output: Path,
-    *,
-    tool: Path | None,
-    fallback: Path,
-) -> Path | None:
-    if tool is None or not tool.is_file():
-        fallback.write_text(
-            "PALM AppImage was not built: appimagetool is not available.\n"
-            "Install the pinned appimagetool (see packaging/build-manifest.toml) "
-            'or run `make package PACKAGE_ARGS="--appimage --online"` in CI.\n'
-            "The tar.gz remains the supported portable asset.\n",
-            encoding="utf-8",
-        )
-        print(f"package: AppImage skipped (fallback in {fallback})")
-        return None
-    appdir = stage.parent / "PALM.AppDir"
-    if appdir.exists():
-        shutil.rmtree(appdir)
-    shutil.copytree(stage, appdir / "usr", symlinks=True)
-    apprun = appdir / "AppRun"
-    apprun.write_text('#!/bin/sh\nexec "$APPDIR/usr/bin/palm" "$@"\n', encoding="utf-8")
-    apprun.chmod(0o755)
-    shutil.copy2(stage / "palm.desktop", appdir / "palm.desktop")
-    shutil.copy2(stage / "palm.svg", appdir / "palm.svg")
-    (appdir / "usr" / "share" / "applications").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(stage / "palm.desktop", appdir / "usr" / "share" / "applications" / "palm.desktop")
-    (appdir / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps").mkdir(
-        parents=True, exist_ok=True
-    )
-    shutil.copy2(
-        stage / "palm.svg",
-        appdir / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "palm.svg",
-    )
-    environment = dict(os.environ)
-    environment.update({"ARCH": "x86_64", "APPIMAGE_EXTRACT_AND_RUN": "1"})
-    result = subprocess.run(
-        [str(tool), "--no-appstream", str(appdir), str(output)],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0 or not output.is_file():
-        fallback.write_text(
-            "PALM AppImage build failed; use the tar.gz instead.\n"
-            f"appimagetool exit {result.returncode}: {result.stderr[-2000:]}\n",
-            encoding="utf-8",
-        )
-        print(f"package: AppImage failed; fallback in {fallback}")
-        return None
     print(f"package: wrote {output} ({output.stat().st_size} bytes)")
     return output
 
@@ -629,9 +572,6 @@ def check_dist(dist: Path) -> int:
             raise PackageError(f"checksum mismatch for {name}")
     if not (dist / "RELEASE-NOTES.md").is_file():
         raise PackageError("RELEASE-NOTES.md is missing")
-    for asset in (tar_path, *sorted(dist.glob("*.AppImage"))):
-        if asset.stat().st_size >= MAX_ASSET_BYTES:
-            raise PackageError(f"{asset.name} is at least 2 GiB")
     print("package-check: OK")
     return 0
 
@@ -656,29 +596,10 @@ def build(args: argparse.Namespace) -> int:
             copy_installed_runtime(stage_python, stage)
         clean_runtime_tests(stage_python)
         clean_bytecode(stage)
-        fallback = dist / "APPIMAGE-FALLBACK.txt"
-        appimage: Path | None = None
-        if args.appimage:
-            tool = Path(args.appimagetool) if args.appimagetool else None
-            if tool is None and args.online:
-                tool_asset = pinned(data, "appimagetool")
-                cache = CACHE / "appimagetool-x86_64.AppImage"
-                download(tool_asset, cache)
-                cache.chmod(0o755)
-                tool = cache
-            appimage = build_appimage(
-                stage,
-                dist / f"PALM-{version_value}-x86_64.AppImage",
-                tool=tool,
-                fallback=fallback,
-            )
-        release_notes = write_release_notes(stage, version_value, "built" if appimage else None)
+        release_notes = write_release_notes(stage, version_value)
         tar_path = build_tar(stage, dist / f"PALM-{version_value}-linux-x86_64.tar.gz")
         shutil.copy2(release_notes, dist / "RELEASE-NOTES.md")
-        assets = [tar_path]
-        if appimage is not None:
-            assets.append(appimage)
-        write_checksums(dist, assets)
+        write_checksums(dist, [tar_path])
         print(f"package: release assets in {dist}")
         return 0
     except (PackageError, OSError, tarfile.TarError) as error:
@@ -692,8 +613,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--online", action="store_true", help="download pinned tools and runtime deps"
     )
-    parser.add_argument("--appimage", action="store_true", help="build the optional AppImage")
-    parser.add_argument("--appimagetool", default=None, help="path to a pinned appimagetool")
     parser.add_argument("--check", action="store_true", help="validate the built release")
     args = parser.parse_args(argv)
     if args.check:

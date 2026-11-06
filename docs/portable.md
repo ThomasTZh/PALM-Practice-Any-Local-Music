@@ -1,14 +1,14 @@
 # Portable release guide
 
-PALM ships as a self-contained Linux x86_64 tar and an optional AppImage. Both
-contain the application, the built UI, the analysis workers/registry,
-environment definitions, the launcher, the desktop entry/icon and licences.
-They do **not** contain model weights, analysis tools, Python environments,
-caches, recordings, tests, `.git` or any virtual environment. The first run
-downloads what you choose and verifies every file.
+PALM ships as a self-contained Linux x86_64 tar. It contains the application,
+the built UI, the analysis workers/registry, environment definitions, the
+launcher, the desktop entry/icon and licences. It does **not** contain model
+weights, analysis tools, Python environments, caches, recordings, tests, `.git`
+or any virtual environment. The first run downloads what you choose and
+verifies every file.
 
-- Release assets: `PALM-<version>-linux-x86_64.tar.gz`, optional
-  `PALM-<version>-x86_64.AppImage`, `SHA256SUMS`, `RELEASE-NOTES.md`
+- Release assets: `PALM-<version>-linux-x86_64.tar.gz`, `SHA256SUMS`,
+  `RELEASE-NOTES.md`
 - Source release notes: [../packaging/release-notes.md](../packaging/release-notes.md)
 - Clean-room evidence: [../packaging/VERIFICATION.md](../packaging/VERIFICATION.md)
 
@@ -37,31 +37,6 @@ Launcher options:
 
 `bin/uv` is included for the setup's environment installation; `bin/palm` uses
 the bundled `python/` tree, so no system Python or Node is required.
-
-## Run the AppImage
-
-The optional AppImage embeds the same launcher as `bin/palm` (`AppRun` calls
-`usr/bin/palm`), so it auto-opens the browser by default. A file downloaded
-from a browser usually loses the execute bit; mark it executable first:
-
-```sh
-chmod +x PALM-<version>-x86_64.AppImage
-./PALM-<version>-x86_64.AppImage
-```
-
-If double-clicking does nothing, run it from a terminal to see the error. Some
-desktops route AppImages through AppImageLauncher; if that integration fails,
-run with the embedded extractor or use the tar instead:
-
-```sh
-APPIMAGE_EXTRACT_AND_RUN=1 ./PALM-<version>-x86_64.AppImage
-# or
-./PALM-<version>-x86_64.AppImage --appimage-extract-and-run
-```
-
-When no AppImage is shipped, `dist/APPIMAGE-FALLBACK.txt` records why (for the
-offline local build, appimagetool is not installed); the tar remains the
-supported portable asset.
 
 ## First run: network, disk, ffmpeg
 
@@ -113,7 +88,7 @@ UI falls back to requiring a new choice rather than guessing Demucs.
 | Mode | App root (read-only) | Data root (writable) |
 | --- | --- | --- |
 | Source checkout | repository checkout | `~/.local/share/basseparate` (or `PALM_DATA_DIR` / `BASSEPARATE_DATA_DIR`) |
-| Packaged tar/AppImage | extracted directory | `~/.local/share/palm` (or `PALM_DATA_DIR` / `--data-dir`) |
+| Packaged tar | extracted directory | `~/.local/share/palm` (or `PALM_DATA_DIR` / `--data-dir`) |
 
 The data root contains:
 
@@ -179,8 +154,7 @@ The downloaded size/SHA-256 must match the registry pins.
 
 ## Upgrade and uninstall
 
-**Upgrade:** stop PALM, replace the extracted app directory or AppImage with the
-new release, and keep the data root. Models, tools, environments, setup state and
+**Upgrade:** stop PALM, replace the extracted app directory with the new release, and keep the data root. Models, tools, environments, setup state and
 projects stay valid; if a pinned download changed, setup reports the affected
 item and offers a verified reinstall. Do not copy the old app tree over the new
 one.
@@ -193,8 +167,8 @@ only the app leaves the data untouched for a later reinstall.
 ## Licence boundaries
 
 PALM application source is **MIT** (`licenses/LICENSE`). The bundled Python and
-uv have their own permissive licences; appimagetool is used only to build the
-AppImage. The first-run tools and model weights are **not** covered by MIT:
+uv have their own permissive licences. The first-run tools and model weights
+are **not** covered by MIT:
 
 - Sonic Visualiser/Piper: GPL-2.0-or-later; Vamp Plugin Pack: AGPL-3.0 with
   individual plugin licences.

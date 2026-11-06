@@ -158,7 +158,7 @@ a source checkout.
 
 ### Upgrade or uninstall
 
-Stop PALM first. Upgrade replaces the app directory/AppImage and keeps the data
+Stop PALM first. Upgrade replaces the app directory and keeps the data
 root (projects/models/tools/environments/setup state). Uninstall removes the app
 and, if desired, the data root; nothing is installed system-wide. Do not delete
 the data root while PALM is running.

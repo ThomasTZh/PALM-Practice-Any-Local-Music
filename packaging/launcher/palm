@@ -1,5 +1,5 @@
 #!/bin/sh
-# PALM launcher wrapper for the portable tar/AppImage layout.
+# PALM launcher wrapper for the portable tar layout.
 #
 # Layout assumed by the package:
 #   <app>/palm                 this script (or <app>/bin/palm)
