@@ -2320,3 +2320,13 @@ origin is used rather than the stage border box.
 
 make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass. No
 dependency added.
+
+## 2026-11-03 — product renamed to PALM
+
+The user-facing product name is now **PALM: Practice Any Local Music**. This is a
+display-only rename: README title and introduction, GOALS, dependency notices,
+browser tab title, package description, and the release/GitHub repository
+description. Technical identifiers stay unchanged so existing projects, cached
+stems, data directories and scripts keep working: Python package and CLI
+`basseparate`, environment variables, storage paths, and `analysis/` layout.
+

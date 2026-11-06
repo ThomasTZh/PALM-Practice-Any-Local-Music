@@ -3,7 +3,7 @@
 [project]
 name = "basseparate"
 version = "0.1.0-dev"
-description = "Local bass practice studio: stems, chords, grid, loops and slow practice"
+description = "PALM (Practice Any Local Music): local practice studio with stems, chords, grid, loops and slow practice"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = { text = "Proprietary - unpublished" }

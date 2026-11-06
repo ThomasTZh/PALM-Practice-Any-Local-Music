@@ -1,4 +1,4 @@
-# basseparate — Dependency Notices
+# PALM — Dependency Notices
 
 Generated: 2026-10-24T10:41:49.752569+00:00
 

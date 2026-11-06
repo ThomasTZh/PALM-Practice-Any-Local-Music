@@ -1,14 +1,15 @@
-# basseparate
+# PALM: Practice Any Local Music
 
-A private, local bass practice studio. Bring a recording you already own,
-separate the bass, read the chords and the grid, and practise it: loops,
-bar-snapped sections, metronome and count-in, speed and pitch — on your own
-machine, with no account, no upload and no network access.
+PALM (Practice Any Local Music) is a private, local practice studio. Bring a
+recording you already own, separate the bass, read the chords and the grid, and
+practise it: loops, bar-snapped sections, metronome and count-in, speed and
+pitch — on your own machine, with no account, no upload and no network access.
 
 The application is complete in this checkout: a FastAPI server, a React/TypeScript
 browser UI, a real AudioWorklet playback engine, the preserved Vamp analysis
-pipeline and CPU Demucs separation. The build log and all measured evidence are
-in [docs/progress.md](docs/progress.md).
+pipeline and CPU Demucs separation, plus optional SCNet XL IHF and
+BS-RoFormer-SW models. The build log and all measured evidence are in
+[docs/progress.md](docs/progress.md).
 
 - Architecture and time model: [docs/architecture.md](docs/architecture.md)
 - API reference: [docs/api.md](docs/api.md)

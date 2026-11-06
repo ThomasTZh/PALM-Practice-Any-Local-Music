@@ -1,6 +1,6 @@
-# basseparate — product goals
+# PALM — product goals
 
-basseparate is a private, local practice studio for bass players. It turns a
+PALM (Practice Any Local Music) is a private, local practice studio. It turns a
 recording the user already owns into a reliable practice room: the song, the
 bass part, the musical grid, and the practice controls all stay on the user's
 computer.
