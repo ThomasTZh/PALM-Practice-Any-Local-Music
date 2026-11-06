@@ -1,0 +1,34 @@
+[project]
+name = "basseparate-analysis-models"
+version = "0.1.0-dev"
+description = "Isolated MSST/SCNet/RoFormer inference environment for basseparate."
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+authors = [{ name = "basseparate" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+]
+# Pinned inference environment. msst 0.1.0 is installed with the bs-roformer
+# extra because its model module imports beartype/einops/rotary embeddings;
+# SCNet itself only needs the base dependencies. The lock is committed.
+dependencies = [
+    "torch==2.9.1",
+    "msst[bs-roformer]==0.1.0",
+]
+
+# No build-system: this is a virtual environment project, not a package. The
+# application never imports from it; the MSST worker is launched explicitly.
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
+cache-dir = "../../storage/tmp-uv-cache"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

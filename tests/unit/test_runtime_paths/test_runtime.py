@@ -155,3 +155,44 @@ def test_doctor_layout_uses_the_same_resolver(
     assert layout.analysis_python == data / "environments" / "demucs" / "bin" / "python"
     assert layout.exports == data / "exports"
     assert DoctorLayout.from_runtime(runtime) == layout
+
+
+def test_packaged_bundled_interpreter_and_environment_project(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+
+    from basseparate.setup.environments import environment_spec
+
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    python = app / "python" / "bin" / "python3.11"
+    python.parent.mkdir(parents=True)
+    python.write_text("python", encoding="utf-8")
+    (app / "analysis" / "envs" / "cpu").mkdir(parents=True)
+    (app / "analysis" / "envs" / "cuda").mkdir(parents=True)
+    monkeypatch.setenv("PALM_MODE", "packaged")
+    monkeypatch.setenv("PALM_APP_ROOT", str(app))
+    monkeypatch.setenv("PALM_DATA_DIR", str(data))
+
+    runtime = runtime_paths()
+    assert runtime.bundled_python == python
+    assert runtime.python == python
+    assert runtime.interpreter == python
+    spec = environment_spec("cpu", runtime)
+    assert spec.python == python
+    assert spec.project_dir == app / "analysis" / "envs" / "cpu"
+
+    delivered = app / "python" / "bin" / "python3"
+    python.unlink()
+    delivered.write_text("python", encoding="utf-8")
+    assert runtime.bundled_python == delivered
+    delivered.unlink()
+    fallback = app / "bin" / "python3.11"
+    fallback.parent.mkdir(parents=True)
+    fallback.write_text("python", encoding="utf-8")
+    assert runtime.bundled_python == fallback
+
+    monkeypatch.delenv("PALM_MODE")
+    source = runtime_paths()
+    assert source.bundled_python == Path(sys.executable)

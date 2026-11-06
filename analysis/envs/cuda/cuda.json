@@ -1,0 +1,7 @@
+{
+  "variant": "cuda",
+  "project": "analysis/envs/cuda",
+  "index_url": "https://download.pytorch.org/whl/cu128",
+  "python": ">=3.11,<3.12",
+  "description": "CUDA 12.8 inference environment; falls back to CPU when no GPU is available."
+}

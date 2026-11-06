@@ -67,3 +67,51 @@ def test_built_tar_checksum_and_contents_if_present() -> None:
     for name in names:
         parts = Path(name).parts
         assert len(parts) < 2 or parts[1] not in forbidden_roots, name
+
+
+def test_extracted_tar_has_bundled_python_envs_and_tool_installer() -> None:
+    import tempfile
+
+    from basseparate.config import RuntimePaths
+    from basseparate.setup.environments import create_environment, environment_spec
+    from basseparate.setup.tools import _load_legacy_installer
+
+    tars = sorted((ROOT / "dist").glob("PALM-*-linux-x86_64.tar.gz"))
+    if not tars:
+        pytest.skip("no dist/PALM tar; run make package first")
+    with tempfile.TemporaryDirectory(prefix="palm-layout-") as scratch:
+        with tarfile.open(tars[-1], "r:gz") as archive:
+            archive.extractall(scratch, filter="data")
+        app = next(path for path in Path(scratch).iterdir() if path.is_dir())
+        runtime = RuntimePaths.from_environment(
+            mode="packaged", app_root=app, data_root=Path(scratch) / "data"
+        )
+        bundled = app / "python" / "bin" / "python3.11"
+        assert runtime.bundled_python == bundled
+        assert bundled.is_file()
+        assert (app / "scripts" / "install_tools.py").is_file()
+        installer = _load_legacy_installer(runtime)
+        assert (
+            Path(installer.__file__).resolve() == (app / "scripts" / "install_tools.py").resolve()
+        )
+        spec = environment_spec("cpu", runtime)
+        assert spec.project_dir == app / "analysis" / "envs" / "cpu"
+        assert (spec.project_dir / "pyproject.toml").is_file()
+        assert (spec.project_dir / "uv.lock").is_file()
+        assert (spec.project_dir / "cpu.json").is_file()
+        calls: list[tuple[list[str], dict[str, str]]] = []
+
+        def run_uv(command: list[str], environment: dict[str, str], cwd: Path) -> None:
+            calls.append((command, environment))
+            target = Path(environment["UV_PROJECT_ENVIRONMENT"])
+            (target / "bin").mkdir(parents=True)
+            (target / "bin" / "python").write_text("python", encoding="utf-8")
+
+        result = create_environment("cpu", runtime=runtime, run_uv=run_uv)
+        assert result["installed"] is True
+        command, environment = calls[0]
+        python_arg = command[command.index("--python") + 1]
+        project_arg = command[command.index("--directory") + 1]
+        assert Path(python_arg) == bundled and Path(python_arg).is_file()
+        assert Path(project_arg) == spec.project_dir and Path(project_arg).is_dir()
+        assert Path(environment["UV_PROJECT_ENVIRONMENT"]).is_relative_to(runtime.data_root)

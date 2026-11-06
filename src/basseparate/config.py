@@ -120,6 +120,36 @@ class RuntimePaths:
         return self.uv
 
     @property
+    def bundled_python(self) -> Path:
+        """The interpreter shipped with a packaged app (source: this process)."""
+        if not self.packaged:
+            return Path(sys.executable)
+        candidates = (
+            self.app_root / "python" / "bin" / "python3.11",
+            self.app_root / "python" / "bin" / "python3",
+            self.app_root / "python" / "bin" / "python",
+            self.app_root / "bin" / "python3.11",
+            self.app_root / "bin" / "python3",
+            self.app_root / "bin" / "python",
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
+
+    @property
+    def python(self) -> Path:
+        return self.bundled_python
+
+    @property
+    def interpreter(self) -> Path:
+        return self.bundled_python
+
+    @property
+    def bundled_interpreter(self) -> Path:
+        return self.bundled_python
+
+    @property
     def demucs_python(self) -> Path:
         if self.packaged:
             return self.environments_root / "demucs" / "bin" / "python"

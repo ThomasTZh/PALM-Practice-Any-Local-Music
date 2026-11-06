@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import uuid
 from collections.abc import Callable
@@ -42,9 +41,9 @@ def environment_spec(variant: EnvVariant, runtime: RuntimePaths | None = None) -
     active = runtime or runtime_paths()
     if variant not in ENV_VARIANTS:
         raise SetupInstallError(f"unknown environment variant {variant!r}")
-    project = active.analysis_dir.parent / "analysis-models"
+    project = active.analysis_dir / "envs" / variant
     target = active.data_path("environments", variant)
-    python = active.app_root / "bin" / "python" if active.packaged else Path(sys.executable)
+    python = active.bundled_python
     return EnvironmentSpec(
         variant=variant,
         project_dir=project,

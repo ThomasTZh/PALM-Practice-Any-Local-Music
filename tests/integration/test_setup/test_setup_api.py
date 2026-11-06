@@ -21,6 +21,8 @@ def make_runtime(tmp_path: Path) -> RuntimePaths:
     app = tmp_path / "app"
     data = tmp_path / "data"
     (app / "analysis").mkdir(parents=True)
+    (app / "analysis" / "envs" / "cpu").mkdir(parents=True)
+    (app / "analysis" / "envs" / "cuda").mkdir(parents=True)
     (app / "scripts").mkdir(parents=True)
     return RuntimePaths.from_environment(mode="packaged", app_root=app, data_root=data)
 

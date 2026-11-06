@@ -52,7 +52,13 @@ REQUIRED_TAR_PARTS = (
     "src/basseparate/launcher.py",
     "analysis/models.json",
     "analysis/uv.lock",
-    "analysis-models/uv.lock",
+    "analysis/envs/cpu/pyproject.toml",
+    "analysis/envs/cpu/uv.lock",
+    "analysis/envs/cpu/cpu.json",
+    "analysis/envs/cuda/pyproject.toml",
+    "analysis/envs/cuda/uv.lock",
+    "analysis/envs/cuda/cuda.json",
+    "scripts/install_tools.py",
     "licenses/LICENSE",
     "palm.desktop",
     "palm.svg",
@@ -262,6 +268,8 @@ def stage_app(stage: Path, manifest: dict[str, Any]) -> None:
         source = ROOT / "analysis-models" / name
         if source.is_file():
             copy_file(source, stage / "analysis-models" / name)
+    copy_tree_filtered(ROOT / "analysis" / "envs", stage / "analysis" / "envs")
+    copy_file(ROOT / "scripts" / "install_tools.py", stage / "scripts" / "install_tools.py")
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, stage / "licenses" / name)
     copy_file(ROOT / "README.md", stage / "README.md")

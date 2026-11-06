@@ -27,6 +27,8 @@ def make_runtime(tmp_path: Path) -> RuntimePaths:
     app = tmp_path / "app"
     data = tmp_path / "data"
     (app / "analysis").mkdir(parents=True)
+    (app / "analysis" / "envs" / "cpu").mkdir(parents=True)
+    (app / "analysis" / "envs" / "cuda").mkdir(parents=True)
     (app / "analysis-models").mkdir(parents=True)
     (app / "scripts").mkdir(parents=True)
     return RuntimePaths.from_environment(mode="packaged", app_root=app, data_root=data)
@@ -195,7 +197,7 @@ def test_environment_uses_uv_project_environment_under_data_root(tmp_path: Path)
     assert Path(env["UV_PROJECT_ENVIRONMENT"]).is_relative_to(runtime.data_root)
     assert Path(env["UV_PROJECT_ENVIRONMENT"]).name.startswith(".cpu.staging-")
     assert Path(env["UV_CACHE_DIR"]).is_relative_to(runtime.data_root)
-    assert cwd == runtime.analysis_dir.parent / "analysis-models"
+    assert cwd == runtime.analysis_dir / "envs" / "cpu"
     assert not list((runtime.data_root / "environments").glob(".cpu.staging-*"))
 
 
