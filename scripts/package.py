@@ -22,7 +22,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import time
 import tomllib
 import urllib.request
 from collections.abc import Iterable
@@ -387,23 +386,11 @@ def clean_bytecode(root: Path) -> None:
 
 
 def write_release_notes(stage: Path, version_value: str) -> Path:
-    commit = (
-        subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-        or "unknown"
-    )
     notes = stage / "RELEASE-NOTES.md"
     content = f"""# PALM {version_value}
 
 Practice Any Local Music, portable Linux x86_64 build.
 
-- Commit: {commit}
-- Build date: {time.strftime("%Y-%m-%d")}
 - Launch: `bin/palm` (the tar root)
 - First run: choose a separation model and the CPU/CUDA environment in the
   setup wizard; model weights and analysis tools are downloaded only there,
@@ -570,8 +557,6 @@ def check_dist(dist: Path) -> int:
         asset = dist / name
         if not asset.is_file() or sha256(asset) != digest:
             raise PackageError(f"checksum mismatch for {name}")
-    if not (dist / "RELEASE-NOTES.md").is_file():
-        raise PackageError("RELEASE-NOTES.md is missing")
     print("package-check: OK")
     return 0
 
@@ -596,9 +581,8 @@ def build(args: argparse.Namespace) -> int:
             copy_installed_runtime(stage_python, stage)
         clean_runtime_tests(stage_python)
         clean_bytecode(stage)
-        release_notes = write_release_notes(stage, version_value)
+        write_release_notes(stage, version_value)
         tar_path = build_tar(stage, dist / f"PALM-{version_value}-linux-x86_64.tar.gz")
-        shutil.copy2(release_notes, dist / "RELEASE-NOTES.md")
         write_checksums(dist, [tar_path])
         print(f"package: release assets in {dist}")
         return 0

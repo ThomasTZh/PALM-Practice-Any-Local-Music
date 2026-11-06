@@ -1,6 +1,6 @@
 """PALM desktop launcher.
 
-The launcher is the small process the tar/AppImage starts. It owns only
+The launcher is the small process the tar starts. It owns only
 process and file concerns: resolve the app/data roots, enforce one instance,
 start the existing ``basseparate.cli serve`` command on loopback, record the
 URL, open the browser and forward shutdown signals. It does not create the

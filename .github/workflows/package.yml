@@ -50,7 +50,6 @@ jobs:
           path: |
             dist/PALM-*.tar.gz
             dist/SHA256SUMS
-            dist/RELEASE-NOTES.md
           if-no-files-found: error
 
       - name: Create draft release (never publish automatically)
@@ -65,4 +64,3 @@ jobs:
           files: |
             dist/PALM-*.tar.gz
             dist/SHA256SUMS
-            dist/RELEASE-NOTES.md
