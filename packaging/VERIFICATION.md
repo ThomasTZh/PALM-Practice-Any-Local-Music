@@ -118,3 +118,104 @@ make test-package -> exit 0, 6,488 members, required env/installer, checksums,
 make gate         -> exit 0, 369 passed/9 skipped, web 61.2 s, e2e 54.7 s
 ./packaging/verify-clean-room.sh -> exit 0, health/setup page/data-root evidence
 ```
+
+## t80 independent packaged-setup verification (2026-11-06)
+
+Status: **PASSED** for the packaged setup path; one environment-specific
+AppImageLauncher workaround is recorded below. Real network downloads were
+used.
+
+- Tar: `dist/PALM-0.1.0-dev-linux-x86_64.tar.gz`, 70,038,235 B,
+  `4580345993eae93eba9826b9d48731998e2a896233579b1d6728841fafb3e453`,
+  matching `dist/SHA256SUMS`.
+- Extracted app: `storage/t80-verification/app/palm-0.1.0-dev-linux-x86_64`.
+- Fresh data root: `storage/t80-verification/data` (tools/models/environments
+  absent at start).
+- Launch command:
+
+```sh
+APPIMAGELAUNCHER_DISABLE=1 APPIMAGELAUNCHER_FORCE_HEADLESS=1 DISPLAY= \
+PALM_MODE=packaged PALM_APP_ROOT=$PWD \
+PALM_DATA_DIR=<data> ./bin/palm --no-browser --port 0 --data-dir <data>
+```
+
+`/api/health` returned `ok`; `/` returned 200 with the setup page.
+`/api/setup/status` returned mode `packaged`, packaged roots, checks all ok,
+tools/env missing and all three models missing. No missing-script or
+missing-interpreter error.
+
+### Tools
+
+The first tools attempt stalled because this host's AppImageLauncher
+intercepts AppImage execution. Relaunching the packaged server with
+`APPIMAGELAUNCHER_DISABLE=1 APPIMAGELAUNCHER_FORCE_HEADLESS=1 DISPLAY=` made
+the pinned Sonic Visualiser AppImage extract normally. The tools job then
+succeeded:
+
+```text
+tools: running 0.05 installing Sonic Visualiser
+tools: running 0.6  installing Vamp plugin pack
+tools: succeeded 1.0 finished
+```
+
+`tools_status` paths exist and match the installed files:
+`data/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server` (executable) and
+`data/tools/vamp-plugins/qm-vamp-plugins.so`; 141 files, 119 MiB.
+
+### CPU environment
+
+`POST /api/setup/environments {"variant":"cpu","accept_licenses":true}`
+completed. The packaged interpreter is
+`app/python/bin/python3.11`; the project is `app/analysis/envs/cpu`. Import
+check:
+
+```text
+data/environments/cpu/bin/python -c "import torch, msst, pydantic"
+3.11.15 2.9.1+cpu 0.1.0 2.13.5
+imports ok
+```
+
+Environment size: 1.2 GiB.
+
+### Model and separation
+
+`POST /api/setup/models` installed `scnet-xl-ihf` (checkpoint 214,063,778 B,
+config 5,906 B; 205 MiB). The job reported progress and succeeded. Final
+status: `ready=true`, tools ready, CPU environment ready, SCNet installed.
+
+A generated 2.0 s 48 kHz stereo fixture was imported and separated:
+
+```text
+POST /api/separate {"project_id":...,"model_id":"scnet-xl-ihf","device":"cpu"}
+queued -> running 0.05 loading -> 0.2 separating -> succeeded 1.0
+result model_id=scnet-xl-ihf, cached=false
+stems drums, bass, other, vocals (four 768,000-byte f32 files)
+```
+
+Total data root after setup/separation: 2.8 GiB.
+
+### Browser at 1280x720
+
+Independent Playwright Chromium against a second fresh packaged data root:
+
+```text
+viewport 1280x720
+.setup-page clientHeight 720, scrollHeight 1266, scrollTop 0 -> 545.7 (max 546)
+headings: System checks, Optional GPL tools, Inference environment, Separation models
+early warning rect top=68.07 at load (visible); at max scroll top=-477.63 (not sticky)
+BS-RoFormer model card visible at max scroll: true
+licence/source links: 10, all https, target=_blank, rel="noopener noreferrer", bad=0
+AppImage text in page: false
+horizontal overflow: false
+```
+
+The early-version warning is visible on the initial 1280x720 setup page but
+scrolls out of view at the bottom; it is not sticky.
+
+### Commands and build verification
+
+```text
+make package      -> exit 0, tar 70,038,235 B, SHA256SUMS written
+make test-package -> exit 0, 6,488 members, bundled bin/palm --help, OK
+make gate         -> exit 0, 369 passed/9 skipped, web/e2e pass
+```
