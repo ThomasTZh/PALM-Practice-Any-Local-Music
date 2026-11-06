@@ -28,6 +28,10 @@ if [ -n "${PALM_PYTHON:-}" ]; then
     PYTHON=$PALM_PYTHON
 elif [ -x "$APP_ROOT/bin/python" ]; then
     PYTHON=$APP_ROOT/bin/python
+elif [ -x "$APP_ROOT/python/bin/python3.11" ]; then
+    PYTHON=$APP_ROOT/python/bin/python3.11
+elif [ -x "$APP_ROOT/python/bin/python3" ]; then
+    PYTHON=$APP_ROOT/python/bin/python3
 elif [ -x "$APP_ROOT/python" ]; then
     PYTHON=$APP_ROOT/python
 else
@@ -38,5 +42,6 @@ export PALM_MODE=packaged
 export PALM_APP_ROOT="$APP_ROOT"
 export PALM_DATA_DIR="$DATA_ROOT"
 export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$APP_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 exec "$PYTHON" -m basseparate.launcher "$@"

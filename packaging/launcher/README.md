@@ -5,14 +5,15 @@ packaged environment (`PALM_MODE=packaged`, `PALM_APP_ROOT`, `PALM_DATA_DIR`)
 and executes the Python launcher:
 
 ```sh
-"$APP_ROOT/bin/python" -m basseparate.launcher "$@"
+"$APP_ROOT/python/bin/python3.11" -m basseparate.launcher "$@"
 ```
 
 Expected app layout:
 
 ```
 <app_root>/palm                  this wrapper (or <app_root>/bin/palm)
-<app_root>/bin/python            packaged interpreter
+<app_root>/python/bin/python3.11  bundled standalone interpreter
+<app_root>/bin/uv                pinned uv
 <app_root>/src/basseparate/      application package
 <app_root>/analysis/             workers, models.json, checkpoints.json
 <app_root>/web/dist/             built UI

@@ -11,7 +11,7 @@ STUDIO := $(PY) scripts/studio.py
 .DEFAULT_GOAL := help
 .PHONY: help doctor bootstrap install-tools install-model models-list models-install models-verify models-env test-models-real \
 	htdemucs_ft scnet-xl-ihf bs-roformer-sw dev dev-smoke build build-web test test-backend test-web \
-	test-separation e2e accept gate gate-lite analysis-check fix fixtures demo
+	test-separation e2e accept gate gate-lite analysis-check fix fixtures demo package test-package
 
 # The second make goal is the model id for `make models-install <id>`.
 MODEL_GOAL := $(word 2,$(MAKECMDGOALS))
@@ -83,6 +83,14 @@ e2e: ## Run the Playwright end-to-end suite when specs exist
 
 accept: ## Run the five-recording acceptance report (scripts/accept.py)
 	@$(STUDIO) accept
+
+PACKAGE_ARGS ?= --appimage
+
+package: build-web ## Build the portable tar/AppImage release assets
+	@$(PY) scripts/package.py $(PACKAGE_ARGS)
+
+test-package: ## Validate the built release tar, checksums and bundled launcher
+	@$(PY) scripts/package.py --check
 
 gate: ## Full local gate: lint, format, types, fixtures, tests, build, e2e
 	@$(STUDIO) gate

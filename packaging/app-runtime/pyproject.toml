@@ -1,0 +1,14 @@
+[project]
+name = "palm-app-runtime"
+version = "0.1.0"
+description = "Pinned PALM application runtime dependencies for the portable bundle"
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi==0.142.0",
+    "uvicorn==0.54.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "platformdirs==4.12.1",
+    "numpy==2.4.6",
+]

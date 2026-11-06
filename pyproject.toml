@@ -6,10 +6,11 @@ version = "0.1.0-dev"
 description = "PALM (Practice Any Local Music): local practice studio with stems, chords, grid, loops and slow practice"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
-license = { text = "Proprietary - unpublished" }
+license = { text = "MIT" }
 authors = [{ name = "basseparate" }]
 classifiers = [
-    "Private :: Do Not Upload",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.11",
 ]

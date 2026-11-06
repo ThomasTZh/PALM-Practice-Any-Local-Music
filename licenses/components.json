@@ -2,7 +2,7 @@
   "generated": "2026-10-24T10:41:49.752569+00:00",
   "project": "basseparate",
   "milestone": "2",
-  "note": "The application environment installs no machine-learning packages. The isolated analysis environment uses the bundled model weights listed under model_weights. No public license is claimed for the application itself; it is private and unpublished.",
+  "note": "The application environment installs no machine-learning packages. The isolated analysis environment uses the bundled model weights listed under model_weights. The application source is MIT licensed (see licenses/LICENSE); model weights keep their own terms.",
   "model_weights": [
     {
       "model_id": "htdemucs_ft",

@@ -4,7 +4,8 @@ Generated: 2026-10-24T10:41:49.752569+00:00
 
 The application environment installs no machine-learning packages.
 The isolated analysis environment uses the bundled model weights
-listed below. The application itself is **private and unpublished**.
+listed below. The application source is released under the MIT license (see
+`licenses/LICENSE`); model weights and tools keep their own terms.
 
 ## Python
 
@@ -387,7 +388,7 @@ The following components have missing or ambiguous license metadata:
 
 This section supplements the model table above for the optional separation
 models added after the initial checkout. The application is private and
-unpublished; the weights are untracked local assets and are not redistributed
+released under MIT; the weights are untracked local assets and are not redistributed
 with this repository.
 
 ### MSST (Music Source Separation Training)
