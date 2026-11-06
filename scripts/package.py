@@ -281,6 +281,7 @@ def export_requirements(stage: Path, uv: Path) -> Path:
         "--locked",
         "--format",
         "requirements.txt",
+        "--no-header",
         "--output-file",
         str(target),
     ]
