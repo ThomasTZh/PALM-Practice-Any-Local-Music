@@ -108,17 +108,13 @@ def test_model_files_resolve_checkpoint_and_config(tmp_path: Path) -> None:
 def test_unknown_model_id_and_engine_are_rejected(tmp_path: Path) -> None:
     worker = load_worker()
     registry = tmp_path / "models.json"
-    registry.write_text('{"schema_version":1,"models":[]}', encoding="utf-8")
+    registry.write_text('{"schema_version":2,"models":[]}', encoding="utf-8")
     with pytest.raises(worker.MsstError):
         worker._entry("missing", registry)
     demucs = entry().to_dict()
     demucs["engine"] = "demucs"
-    demucs["files"] = []
-    demucs["bundled"] = True
-    demucs["checkpoint_manifest"] = "analysis/checkpoints.json"
-    demucs["install_dir"] = "models/fake"
     registry.write_text(
-        '{"schema_version":1,"models":[' + __import__("json").dumps(demucs) + "]}",
+        '{"schema_version":2,"models":[' + __import__("json").dumps(demucs) + "]}",
         encoding="utf-8",
     )
     with pytest.raises(worker.MsstError, match="not msst"):

@@ -1,16 +1,16 @@
 """Separation model registry: parse, verify and describe local models.
 
-The studio can run the bundled Demucs model and, after an explicit download,
-the MSST SCNet XL IHF and BS-RoFormer-SW models. This module is the single
-source of truth for their ids, engines, stems, sample rate, sizes, hashes,
-licences and pinned source URLs. It uses only the standard library and never
-imports torch or another inference package; the server can report model state
-without touching the analysis environments.
+The studio can run Demucs htdemucs_ft, MSST SCNet XL IHF and MSST
+BS-RoFormer-SW. This module is the single source of truth for their ids,
+engines, stems, sample rate, sizes, hashes, licences and pinned source URLs. It
+uses only the standard library and never imports torch or another inference
+package; the server can report model state without touching the analysis
+environments.
 
-``analysis/models.json`` is the shipped registry. Downloadable entries declare
-every file with a byte size and SHA-256. The bundled htdemucs_ft entry points at
-the existing ``analysis/checkpoints.json`` manifest and the checked-in
-``models/htdemucs_ft`` directory instead of duplicating those hashes.
+``analysis/models.json`` schema 2 gives every model the same shape: a complete
+list of file pins with byte size, SHA-256 and HTTPS URL. There is no bundled or
+default special case. A source checkout still reports htdemucs_ft as installed
+because its five files are present under ``models/htdemucs_ft``.
 
 Verification is read-only: files are stat'ed and hashed, and the result is one
 of ``installed``, ``missing`` or ``hash-mismatch``. The installer lives in
@@ -34,6 +34,7 @@ from basseparate.config import runtime_paths
 DEFAULT_REGISTRY_PATH = runtime_paths().registry_path
 MODELS_DIR_NAME = "models"
 
+SCHEMA_VERSION = 2
 ModelStatus = Literal["installed", "missing", "hash-mismatch"]
 FileStatus = Literal["ok", "missing", "size-mismatch", "hash-mismatch", "extra"]
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -68,16 +69,16 @@ class ModelEntry:
     size_bytes: int
     source_url: str
     license: str
-    bundled: bool
     install_dir: str
     files: tuple[ModelFile, ...]
+    # Compatibility aliases for callers written before schema 2. They are not
+    # parsed from JSON and never serialized: every model is file-based now.
+    bundled: bool = False
     checkpoint_manifest: str | None = None
     config_name: str | None = None
 
     @property
     def install_command(self) -> str:
-        if self.bundled:
-            return "bundled with the checkout"
         return f"make models-install ID={self.id}"
 
     def to_dict(self) -> dict[str, Any]:
@@ -91,11 +92,8 @@ class ModelEntry:
             "size_bytes": self.size_bytes,
             "source_url": self.source_url,
             "license": self.license,
-            "bundled": self.bundled,
             "install_dir": self.install_dir,
             "install_command": self.install_command,
-            "checkpoint_manifest": self.checkpoint_manifest,
-            "config_name": self.config_name,
             "files": [
                 {
                     "role": item.role,
@@ -322,40 +320,29 @@ def _parse_entry(raw: object, index: int) -> ModelEntry:
         raise ModelRegistryError(f"{label}.size_bytes must be positive")
     source_url = _https_url(_string(data, "source_url", label), f"{label}.source_url")
     license_text = _string(data, "license", label)
-    bundled_raw = data.get("bundled")
-    if not isinstance(bundled_raw, bool):
-        raise ModelRegistryError(f"{label}.bundled must be a boolean")
+    for retired in ("bundled", "default", "checkpoint_manifest", "config_name"):
+        if retired in data:
+            raise ModelRegistryError(
+                f"{label}.{retired} is retired by model registry schema {SCHEMA_VERSION}. "
+                "Every model now declares complete file pins; migrate the registry "
+                "rather than relying on a bundled/default entry."
+            )
     install_dir = _optional_string(data, "install_dir") or f"{MODELS_DIR_NAME}/{model_id}"
     parts = _relative_parts(install_dir, f"{label}.install_dir")
     if parts[0] != MODELS_DIR_NAME:
         raise ModelRegistryError(f"{label}.install_dir must live under {MODELS_DIR_NAME}/")
     files_raw = data.get("files", [])
-    if not isinstance(files_raw, list):
-        raise ModelRegistryError(f"{label}.files must be a list")
+    if not isinstance(files_raw, list) or not files_raw:
+        raise ModelRegistryError(f"{label}.files must be a non-empty list")
     files = tuple(_parse_file(item, index) for item in files_raw)
     names = [item.name for item in files]
     if len(set(names)) != len(names):
         raise ModelRegistryError(f"{label}.files contains duplicate file names")
-    manifest = _optional_string(data, "checkpoint_manifest")
-    config_name = _optional_string(data, "config_name")
-    if config_name is not None:
-        _safe_name(config_name, f"{label}.config_name")
-    if bundled_raw:
-        if files:
-            raise ModelRegistryError(f"{label}: a bundled model must not declare downloads")
-        if manifest is None:
-            raise ModelRegistryError(f"{label}: a bundled model needs checkpoint_manifest")
-        _relative_parts(manifest, f"{label}.checkpoint_manifest")
-    else:
-        if not files:
-            raise ModelRegistryError(f"{label}: a downloadable model needs files")
-        if manifest is not None or config_name is not None:
-            raise ModelRegistryError(f"{label}: only bundled models may use a checkpoint manifest")
-        if size_bytes != sum(item.size_bytes for item in files):
-            raise ModelRegistryError(
-                f"{label}.size_bytes {size_bytes} does not equal its file sizes "
-                f"{sum(item.size_bytes for item in files)}"
-            )
+    if size_bytes != sum(item.size_bytes for item in files):
+        raise ModelRegistryError(
+            f"{label}.size_bytes {size_bytes} does not equal its file sizes "
+            f"{sum(item.size_bytes for item in files)}"
+        )
     return ModelEntry(
         id=model_id,
         name=name,
@@ -366,11 +353,8 @@ def _parse_entry(raw: object, index: int) -> ModelEntry:
         size_bytes=size_bytes,
         source_url=source_url,
         license=license_text,
-        bundled=bundled_raw,
         install_dir=install_dir,
         files=files,
-        checkpoint_manifest=manifest,
-        config_name=config_name,
     )
 
 
@@ -383,8 +367,17 @@ def load_registry(path: Path | None = None) -> Registry:
         raise ModelRegistryError(f"cannot read model registry {registry_path}: {error}") from error
     data = _mapping(payload, "registry")
     version = _integer(data, "schema_version", "registry")
-    if version != 1:
-        raise ModelRegistryError(f"unsupported model registry schema_version {version}")
+    if version == 1:
+        raise ModelRegistryError(
+            "model registry schema_version 1 is retired: it assumed a bundled/default "
+            f"Demucs entry. Migrate to schema_version {SCHEMA_VERSION} where every model "
+            "declares complete file pins (checkpoints and config) and carries no "
+            "bundled/default/checkpoint_manifest fields; see analysis/models.json."
+        )
+    if version != SCHEMA_VERSION:
+        raise ModelRegistryError(
+            f"unsupported model registry schema_version {version}; expected {SCHEMA_VERSION}"
+        )
     raw_models = data.get("models")
     if not isinstance(raw_models, list) or not raw_models:
         raise ModelRegistryError("registry.models must be a non-empty list")
@@ -468,73 +461,6 @@ def _state_for_file(
     )
 
 
-def _read_checkpoint_manifest(path: Path) -> Mapping[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ModelRegistryError(f"cannot read checkpoint manifest {path}: {error}") from error
-    return _mapping(payload, "checkpoint manifest")
-
-
-def _bundled_states(
-    entry: ModelEntry, root: Path, app_root: Path
-) -> tuple[tuple[FileState, ...], tuple[str, ...], list[FileState]]:
-    if entry.checkpoint_manifest is None:
-        raise ModelRegistryError(f"bundled model {entry.id} has no checkpoint manifest")
-    manifest_path = Path(app_root) / entry.checkpoint_manifest
-    manifest = _read_checkpoint_manifest(manifest_path)
-    checkpoints = manifest.get("checkpoints")
-    if not isinstance(checkpoints, Mapping) or not checkpoints:
-        raise ModelRegistryError(f"checkpoint manifest {manifest_path} has no checkpoints")
-    model_dir = model_directory(entry, root)
-    states: list[FileState] = []
-    expected_names: list[str] = []
-    for name, raw in sorted(checkpoints.items()):
-        spec = _mapping(raw, f"checkpoint {name}")
-        size = _integer(spec, "size_bytes", f"checkpoint {name}")
-        sha = _string(spec, "sha256", f"checkpoint {name}").lower()
-        if not SHA256_PATTERN.fullmatch(sha):
-            raise ModelRegistryError(f"checkpoint {name} has an invalid sha256")
-        expected_names.append(str(name))
-        states.append(
-            _state_for_file(
-                role="checkpoint",
-                name=str(name),
-                path=model_dir / str(name),
-                size=size,
-                sha256=sha,
-            )
-        )
-    if entry.config_name is not None:
-        config = model_dir / entry.config_name
-        expected_names.append(entry.config_name)
-        states.append(
-            FileState(
-                role="config",
-                name=entry.config_name,
-                path=str(config),
-                status="ok" if config.is_file() else "missing",
-                detail="present" if config.is_file() else "file is absent",
-            )
-        )
-    extras = (
-        [
-            FileState(
-                role="extra",
-                name=child.name,
-                path=str(child),
-                status="extra",
-                detail="not declared by the checkpoint manifest",
-            )
-            for child in sorted(model_dir.glob("*.th"))
-            if child.name not in expected_names
-        ]
-        if model_dir.is_dir()
-        else []
-    )
-    return tuple(states), tuple(expected_names), extras
-
-
 def _downloadable_states(
     entry: ModelEntry, root: Path
 ) -> tuple[tuple[FileState, ...], tuple[str, ...], list[FileState]]:
@@ -575,19 +501,12 @@ def verify_model(
     """Report installed/missing/hash-mismatch for one model without network."""
     runtime = runtime_paths()
     models_root = Path(root) if root is not None else runtime.models_root
-    # An explicit root in tests/source keeps the historical manifest location;
-    # packaged mode separates the read-only manifest from writable weights.
-    effective_app_root = (
-        Path(app_root)
-        if app_root is not None
-        else (Path(root) if root is not None else runtime.app_root)
-    )
+    # ``app_root`` is kept for callers from the schema-1 era; weights now always
+    # live under models_root and every entry is verified by the same file path.
+    _ = app_root
     model_dir = model_directory(entry, models_root)
     try:
-        if entry.bundled:
-            states, expected_names, extras = _bundled_states(entry, models_root, effective_app_root)
-        else:
-            states, expected_names, extras = _downloadable_states(entry, models_root)
+        states, expected_names, extras = _downloadable_states(entry, models_root)
     except ModelRegistryError as error:
         return ModelState(
             entry=entry,

@@ -40,7 +40,6 @@ def make_registry(tmp_path: Path) -> Path:
         "size_bytes": len(MODEL_BYTES) + len(CONFIG_BYTES),
         "source_url": "https://example.invalid/model",
         "license": "test licence",
-        "bundled": False,
         "install_dir": "models/fake-model",
         "files": [
             {
@@ -60,7 +59,7 @@ def make_registry(tmp_path: Path) -> Path:
         ],
     }
     path = tmp_path / "models.json"
-    path.write_text(json.dumps({"schema_version": 1, "models": [entry]}), encoding="utf-8")
+    path.write_text(json.dumps({"schema_version": 2, "models": [entry]}), encoding="utf-8")
     return path
 
 

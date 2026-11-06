@@ -109,7 +109,6 @@ def make_root(tmp_path: Path, *, labels: list[str] | None = None) -> Path:
         "size_bytes": len(checkpoint) + len(config),
         "source_url": "https://example.invalid/model",
         "license": "test",
-        "bundled": False,
         "install_dir": "models/scnet-xl-ihf",
         "files": [
             {
@@ -129,7 +128,7 @@ def make_root(tmp_path: Path, *, labels: list[str] | None = None) -> Path:
         ],
     }
     (root / "analysis" / "models.json").write_text(
-        json.dumps({"schema_version": 1, "models": [entry]}), encoding="utf-8"
+        json.dumps({"schema_version": 2, "models": [entry]}), encoding="utf-8"
     )
     frames = 4800
     (root / "input.f32").write_bytes(b"\x00" * (frames * 2 * 4))

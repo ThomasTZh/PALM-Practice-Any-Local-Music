@@ -1,9 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "models": [
     {
       "id": "htdemucs_ft",
-      "name": "Demucs htdemucs_ft (bundled)",
+      "name": "Demucs htdemucs_ft",
       "engine": "demucs",
       "engine_command": "analysis/.venv/bin/python analysis/separate_track.py --bundle-dir models/htdemucs_ft",
       "labels": [
@@ -13,14 +13,47 @@
         "vocals"
       ],
       "sample_rate": 44100,
-      "size_bytes": 336565084,
+      "size_bytes": 336565233,
       "source_url": "https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5",
       "license": "MIT code; htdemucs_ft weights are research use (not covered by MIT)",
-      "bundled": true,
       "install_dir": "models/htdemucs_ft",
-      "checkpoint_manifest": "analysis/checkpoints.json",
-      "config_name": "htdemucs_ft.yaml",
-      "files": [],
+      "files": [
+        {
+          "role": "checkpoint",
+          "name": "04573f0d-f3cf25b2.th",
+          "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/04573f0d-f3cf25b2.th",
+          "size_bytes": 84141271,
+          "sha256": "f3cf25b222c4eed7cd49dd8b2c9597d50c18bd154090f7b919cfa5f93cf22c49"
+        },
+        {
+          "role": "checkpoint",
+          "name": "92cfc3b6-ef3bcb9c.th",
+          "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/92cfc3b6-ef3bcb9c.th",
+          "size_bytes": 84141271,
+          "sha256": "ef3bcb9c8b40d14ae5d51b6db2587339cc12c6b77c0be151ce6d69002e087bf2"
+        },
+        {
+          "role": "checkpoint",
+          "name": "d12395a8-e57c48e6.th",
+          "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/d12395a8-e57c48e6.th",
+          "size_bytes": 84141271,
+          "sha256": "e57c48e6b0e38af4f7118d7bd08c49f0a0c0edf7d09143bdd902ea0d237303e6"
+        },
+        {
+          "role": "checkpoint",
+          "name": "f7e0c4bc-ba3fe64a.th",
+          "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/f7e0c4bc-ba3fe64a.th",
+          "size_bytes": 84141271,
+          "sha256": "ba3fe64ae8ef66ac9a4857222ce48efbdc5eb3ad375cb79dd13debee5aaa4066"
+        },
+        {
+          "role": "config",
+          "name": "htdemucs_ft.yaml",
+          "url": "https://raw.githubusercontent.com/facebookresearch/demucs/b1ea86542ca11d7695cba4238909f461752283b5/demucs/remote/htdemucs_ft.yaml",
+          "size_bytes": 149,
+          "sha256": "69470b8c1bbd674437b51bc9fb491327a10ab0396b702c93389b9cf750016346"
+        }
+      ],
       "metrics": {
         "device": "cpu",
         "fixture_seconds": 8.0,
@@ -44,7 +77,6 @@
       "size_bytes": 214069684,
       "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15",
       "license": "MIT (SCNet and MSST code); weights released by MSST with no separate weight licence",
-      "bundled": false,
       "install_dir": "models/scnet-xl-ihf",
       "files": [
         {
@@ -88,7 +120,6 @@
       "size_bytes": 699416765,
       "source_url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
       "license": "Unknown upstream weight licence (model card); MSST inference code MIT",
-      "bundled": false,
       "install_dir": "models/bs-roformer-sw",
       "files": [
         {

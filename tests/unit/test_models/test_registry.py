@@ -35,7 +35,6 @@ def fake_registry(tmp_path: Path, **overrides: object) -> Path:
         "size_bytes": len(PAYLOAD),
         "source_url": "https://example.invalid/model",
         "license": "test licence",
-        "bundled": False,
         "install_dir": "models/fake-model",
         "files": [
             {
@@ -48,7 +47,7 @@ def fake_registry(tmp_path: Path, **overrides: object) -> Path:
         ],
     }
     entry.update(overrides)
-    payload = {"schema_version": 1, "models": [entry]}
+    payload = {"schema_version": 2, "models": [entry]}
     path = tmp_path / "models.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -70,10 +69,19 @@ def test_shipped_registry_declares_all_three_models() -> None:
         "bs-roformer-sw",
     ]
     demucs, scnet, roformer = registry.models
-    assert demucs.bundled is True
-    assert demucs.checkpoint_manifest == "analysis/checkpoints.json"
+    assert registry.schema_version == 2
+    assert [item.name for item in demucs.files] == [
+        "04573f0d-f3cf25b2.th",
+        "92cfc3b6-ef3bcb9c.th",
+        "d12395a8-e57c48e6.th",
+        "f7e0c4bc-ba3fe64a.th",
+        "htdemucs_ft.yaml",
+    ]
+    assert demucs.size_bytes == 336_565_233
     assert demucs.labels == ("drums", "bass", "other", "vocals")
-    assert scnet.bundled is False
+    assert "bundled" not in demucs.to_dict()
+    assert "default" not in demucs.to_dict()
+    assert demucs.install_command == "make models-install ID=htdemucs_ft"
     assert scnet.engine == "msst"
     assert scnet.labels == ("drums", "bass", "other", "vocals")
     assert scnet.sample_rate == 44100
@@ -94,7 +102,21 @@ def test_shipped_registry_declares_all_three_models() -> None:
         assert entry.install_command
 
 
-def test_bundled_demucs_verifies_against_the_checkpoint_manifest() -> None:
+def test_shipped_registry_is_equal_and_file_based() -> None:
+    raw = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    assert raw["schema_version"] == 2
+    assert len(raw["models"]) == 3
+    for entry in raw["models"]:
+        for retired in ("bundled", "default", "checkpoint_manifest", "config_name"):
+            assert retired not in entry, (entry["id"], retired)
+        assert entry["files"], entry["id"]
+        assert entry["size_bytes"] == sum(item["size_bytes"] for item in entry["files"])
+        assert all(item["url"].startswith("https://") for item in entry["files"])
+        assert all(len(item["sha256"]) == 64 for item in entry["files"])
+    assert {entry["engine"] for entry in raw["models"]} == {"demucs", "msst"}
+
+
+def test_source_checkout_demucs_bundle_is_installed() -> None:
     clear_digest_cache()
     registry = load_registry(REGISTRY)
     state = verify_model(registry.get("htdemucs_ft"), ROOT)
@@ -135,20 +157,16 @@ def test_extra_file_is_not_installed(tmp_path: Path) -> None:
     assert any(file.role == "extra" for file in state.files)
 
 
-def test_bundled_extra_checkpoint_is_reported(tmp_path: Path) -> None:
+def test_source_checkout_extra_checkpoint_is_reported(tmp_path: Path) -> None:
     root = tmp_path / "root"
     model_dir = root / "models" / "htdemucs_ft"
     model_dir.mkdir(parents=True)
-    manifest = {
-        "checkpoints": {"a.th": {"size_bytes": 1, "sha256": hashlib.sha256(b"a").hexdigest()}}
-    }
-    (root / "analysis").mkdir()
-    (root / "analysis" / "checkpoints.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (model_dir / "a.th").write_bytes(b"a")
-    (model_dir / "htdemucs_ft.yaml").write_text("preset", encoding="utf-8")
-    (model_dir / "b.th").write_bytes(b"b")
+    checkpoint = b"a"
+    preset = b"preset"
+    (model_dir / "a.th").write_bytes(checkpoint)
+    (model_dir / "htdemucs_ft.yaml").write_bytes(preset)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "models": [
             {
                 "id": "htdemucs_ft",
@@ -157,20 +175,34 @@ def test_bundled_extra_checkpoint_is_reported(tmp_path: Path) -> None:
                 "engine_command": "separate_track.py",
                 "labels": ["drums", "bass", "other", "vocals"],
                 "sample_rate": 44100,
-                "size_bytes": 1,
+                "size_bytes": len(checkpoint) + len(preset),
                 "source_url": "https://example.invalid/demucs",
                 "license": "test",
-                "bundled": True,
                 "install_dir": "models/htdemucs_ft",
-                "checkpoint_manifest": "analysis/checkpoints.json",
-                "config_name": "htdemucs_ft.yaml",
-                "files": [],
+                "files": [
+                    {
+                        "role": "checkpoint",
+                        "name": "a.th",
+                        "url": "https://example.invalid/a.th",
+                        "size_bytes": len(checkpoint),
+                        "sha256": hashlib.sha256(checkpoint).hexdigest(),
+                    },
+                    {
+                        "role": "config",
+                        "name": "htdemucs_ft.yaml",
+                        "url": "https://example.invalid/preset.yaml",
+                        "size_bytes": len(preset),
+                        "sha256": hashlib.sha256(preset).hexdigest(),
+                    },
+                ],
             }
         ],
     }
     registry_path = tmp_path / "models.json"
     registry_path.write_text(json.dumps(payload), encoding="utf-8")
     entry = load_registry(registry_path).get("htdemucs_ft")
+    assert verify_model(entry, root).status == "installed"
+    (model_dir / "b.th").write_bytes(b"extra")
     state = verify_model(entry, root)
     assert state.status == "hash-mismatch"
     assert any(file.role == "extra" and file.name == "b.th" for file in state.files)
@@ -187,13 +219,61 @@ def test_bundled_extra_checkpoint_is_reported(tmp_path: Path) -> None:
         {"size_bytes": 4},
         {"source_url": "http://example.invalid/x"},
         {"license": ""},
-        {"bundled": True},
         {"files": []},
     ],
 )
 def test_invalid_entries_are_rejected(tmp_path: Path, override: dict[str, object]) -> None:
     with pytest.raises(ModelRegistryError):
         load_registry(fake_registry(tmp_path, **override))
+
+
+def test_schema_one_migration_is_explicit(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "models": [
+                    {
+                        "id": "htdemucs_ft",
+                        "name": "Demucs",
+                        "engine": "demucs",
+                        "labels": ["drums"],
+                        "sample_rate": 44100,
+                        "size_bytes": 1,
+                        "source_url": "https://example.invalid",
+                        "license": "test",
+                        "bundled": True,
+                        "install_dir": "models/htdemucs_ft",
+                        "checkpoint_manifest": "analysis/checkpoints.json",
+                        "files": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ModelRegistryError, match="schema_version 1 is retired"):
+        load_registry(legacy)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("bundled", True),
+        ("bundled", False),
+        ("default", True),
+        ("checkpoint_manifest", "analysis/checkpoints.json"),
+        ("config_name", "htdemucs_ft.yaml"),
+    ],
+)
+def test_schema_two_rejects_legacy_fields(tmp_path: Path, field: str, value: object) -> None:
+    path = fake_registry(tmp_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["models"][0][field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ModelRegistryError, match=f"{field} is retired"):
+        load_registry(path)
 
 
 def test_registry_shape_errors(tmp_path: Path) -> None:
@@ -204,7 +284,7 @@ def test_registry_shape_errors(tmp_path: Path) -> None:
     path.write_text(json.dumps({"schema_version": 2, "models": []}), encoding="utf-8")
     with pytest.raises(ModelRegistryError):
         load_registry(path)
-    path.write_text(json.dumps({"schema_version": 1, "models": []}), encoding="utf-8")
+    path.write_text(json.dumps({"schema_version": 2, "models": []}), encoding="utf-8")
     with pytest.raises(ModelRegistryError):
         load_registry(path)
 
@@ -246,7 +326,7 @@ def test_runtime_resolver_drives_default_registry_and_model_root(
     data = tmp_path / "data"
     (app / "analysis").mkdir(parents=True)
     (app / "analysis" / "models.json").write_text(
-        json.dumps({"schema_version": 1, "models": []}), encoding="utf-8"
+        json.dumps({"schema_version": 2, "models": []}), encoding="utf-8"
     )
     # Empty registries are invalid, so install a minimal valid entry.
     entry = {
@@ -259,7 +339,6 @@ def test_runtime_resolver_drives_default_registry_and_model_root(
         "size_bytes": len(PAYLOAD),
         "source_url": "https://example.invalid/model",
         "license": "test",
-        "bundled": False,
         "install_dir": "models/runtime-model",
         "files": [
             {
@@ -272,7 +351,7 @@ def test_runtime_resolver_drives_default_registry_and_model_root(
         ],
     }
     (app / "analysis" / "models.json").write_text(
-        json.dumps({"schema_version": 1, "models": [entry]}), encoding="utf-8"
+        json.dumps({"schema_version": 2, "models": [entry]}), encoding="utf-8"
     )
     model_dir = data / "models" / "runtime-model"
     model_dir.mkdir(parents=True)
