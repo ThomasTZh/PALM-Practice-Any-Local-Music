@@ -119,6 +119,50 @@ recordings, 1103.98 s of audio, 213.32 s wall in that run). Long jobs can be
 cancelled; the child is killed and no partial cache is published. A cancelled
 job leaves the previous project revision untouched.
 
+## Portable release and first run
+
+The release is a read-only app tree plus a writable data root. [portable.md](portable.md)
+covers the launcher, assets, setup API, upgrade/uninstall and licences in full.
+
+### First run: ffmpeg, disk, network or setup gating
+
+`ffmpeg` and `ffprobe` are prerequisites and are not bundled. Setup also checks
+for at least 5 GiB free under the data root and for glibc. If a feature is
+gated, `GET /api/setup/status` lists the exact check/tool/environment/model that
+is missing; use the Setup button or `Skip setup` (skip never hides the reason,
+it returns to the library and leaves the Open setup links visible).
+
+### Tool/model download fails or resumes from .part
+
+Retry the same card. Model downloads verify the pinned size and SHA-256 and
+resume from `<data-root>/cache/model-parts/<id>/`; a checksum mismatch is
+reported and never installed. Tools are independent of models. Check the data
+root is writable and the network reaches the pinned HTTPS sources. Cancelling
+stops the child and removes staging; retry resumes.
+
+### Environment install fails (uv/torch/network)
+
+Choose CPU as the safe fallback (about 500 MB) when CUDA is unavailable or the
+about-3.5 GB download is too large. The error includes the captured `uv` output.
+Environment creation writes only under `<data-root>/environments/` and cleans
+staging after failure/cancel. In packaged mode the bundled `bin/uv` and
+`bin/python` are used; a missing/corrupt app tree is a reinstall, not a data-root
+repair.
+
+### Missing model or consent rejection
+
+Separation requires an explicitly installed model; there is no default. Missing
+per-model consent returns `400`, and an uninstalled model returns `400` with the
+install hint. Install the model in Setup or run `make models-install ID=<id>` in
+a source checkout.
+
+### Upgrade or uninstall
+
+Stop PALM first. Upgrade replaces the app directory/AppImage and keeps the data
+root (projects/models/tools/environments/setup state). Uninstall removes the app
+and, if desired, the data root; nothing is installed system-wide. Do not delete
+the data root while PALM is running.
+
 ## Separation (stems)
 
 ### `model <id> is not installed` / missing model in the selector

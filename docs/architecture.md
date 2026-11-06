@@ -55,6 +55,27 @@ An asset id is `sha256(source)[:16]-<project-rate>-<channels>`; a project id is
 a UUID hex string matching `^[A-Za-z0-9_-]{1,64}$`. Identical source bytes at the
 same project settings share one asset directory.
 
+## Packaged mode and data locations
+
+The same application runs from the checkout or from the portable tar/AppImage.
+`RuntimePaths` is the only resolver:
+
+| | Source checkout | Packaged tar/AppImage |
+| --- | --- | --- |
+| App resources | checkout | extracted app root (read-only) |
+| Data root | per-user `basseparate` dir, or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR` | per-user `palm` dir, or `PALM_DATA_DIR`/`--data-dir` |
+| Models/tools/environments | preserved checkout assets | below the data root |
+| Web/analysis/workers | `web/dist`, `analysis/` | `web/dist`, `analysis/` in the app root |
+
+`PALM_MODE`, `PALM_APP_ROOT` and `PALM_DATA_DIR` select the packaged layout;
+`RuntimePaths.data_path`/`ensure_data_path` reject writes outside the data root.
+The data root holds projects/assets/uploads, models, tools, CPU/CUDA
+environments, caches, logs, run state and `setup.json`. The launcher owns the
+URL/lock/log files; the server writes projects and media. Upgrade keeps the data
+root and replaces only the app; uninstall deletes the app directory and,
+optionally, the data root. The full user-facing procedure is in
+[portable.md](portable.md).
+
 ## Project document (the API and autosave model)
 
 `projects/<id>.json` stores media facts plus the practice document. The media

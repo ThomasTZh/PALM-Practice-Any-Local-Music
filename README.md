@@ -15,6 +15,9 @@ BS-RoFormer-SW models. The build log and all measured evidence are in
 - API reference: [docs/api.md](docs/api.md)
 - Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
 - Acceptance report: [docs/acceptance/report.md](docs/acceptance/report.md)
+- Portable release guide: [docs/portable.md](docs/portable.md)
+- Release notes: [packaging/release-notes.md](packaging/release-notes.md)
+- Clean-room evidence: [packaging/VERIFICATION.md](packaging/VERIFICATION.md)
 - Product intent: [GOALS.md](GOALS.md)
 
 ## Quick start
@@ -42,15 +45,48 @@ weights only after the explicit `--accept-model-terms` flag or an `accept` answe
 [THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md) for URLs, hashes, licences
 and credits. Nothing third-party is committed.
 
+## Portable release
+
+The downloadable release is two assets plus checksums and notes:
+
+- `PALM-<version>-linux-x86_64.tar.gz` (extract and run `./bin/palm`)
+- optional `PALM-<version>-x86_64.AppImage` (run directly or with
+  `--appimage-extract` when FUSE is unavailable)
+- `SHA256SUMS` and `RELEASE-NOTES.md`
+
+The bundle contains only the app, built UI, analysis workers/registry,
+environment definitions, launcher, desktop icon and licences. Model weights,
+tools and Python environments are **not** bundled.
+
+**First run** opens a setup wizard. It needs a network connection for the
+downloads you choose, but does not upload anything:
+
+- **ffmpeg and ffprobe must already be installed**; they are not bundled.
+- At least **5 GiB free** under the data root; the wizard checks this first.
+- One environment: **CPU (~500 MB)** or **CUDA (~3.5 GB)**, for an NVIDIA GPU.
+- At least one model card, all equal with **no default**: `htdemucs_ft`
+  (321.0 MiB, four stems), `scnet-xl-ihf` (204.2 MiB, four stems), or
+  `bs-roformer-sw` (667.0 MiB, six stems including guitar/piano).
+- Optional analysis tools (Sonic Visualiser/Piper and Vamp plugins).
+
+Choose a model, accept its licence and install. `Skip setup` returns to the
+library; Import/Analyse/Separate explain what is still missing and offer
+`Open setup`. The data root defaults to `~/.local/share/palm` (override with
+`--data-dir` or `PALM_DATA_DIR`) and holds models, tools, environments, logs,
+run state, setup state and projects. See [docs/portable.md](docs/portable.md)
+for launcher options, data layout, setup API, upgrade/uninstall, first-run
+troubleshooting and licence boundaries.
+
 ## What it does
 
 - **Import** a local audio/video file (path, upload or job), with ffprobe
   metadata, one canonical PCM decode at the project rate, waveform peaks and an
   atomic, versioned project document.
-- **Separate stems** with a selectable model: the bundled `htdemucs_ft` is the
-  default (four stems: vocals, drums, bass, other); optional `scnet-xl-ihf`
-  (same four stems) and `bs-roformer-sw` (six stems, adding guitar and piano)
-  can be installed on demand. Jobs are content-cached per model, show a
+- **Separate stems** with a selectable model: `htdemucs_ft` (four stems:
+  vocals, drums, bass, other), `scnet-xl-ihf` (same four stems) and
+  `bs-roformer-sw` (six stems, adding guitar and piano) are equal choices with
+  no default; the chosen one is installed during first-run setup or with
+  `make models-install ID=...`. Jobs are content-cached per model, show a
   determinate progress bar with the stage, cancel cleanly and expose stem PCM
   and waveform peaks. The mixer's model selector marks missing models disabled
   with their exact install command; a success activates the model's stem lanes
@@ -86,20 +122,22 @@ and credits. Nothing third-party is committed.
 
 ## Separation models
 
-Demucs remains the default and is bundled with the checkout. The two optional
-models run through the isolated MSST environment and are not downloaded by
-`make bootstrap` or the default gate.
+All three separation models are equal cards with no default. The first-run
+wizard or `make models-install ID=...` installs the ones you choose; nothing is
+bundled with the portable tar. The model selector requires an explicit choice
+before Separate is enabled.
 
-| Model id | Default | Stems | Installed size | 8 s CPU fixture (measured) | 5 min song estimate (linear) |
-| --- | --- | --- | ---: | --- | --- |
-| `htdemucs_ft` | yes, bundled | vocals, drums, bass, other | 321.0 MiB | 19.24 s wall (18.85 s child) | ~2.4x realtime, about 12 min |
-| `scnet-xl-ihf` | optional | vocals, drums, bass, other | 204.2 MiB | 58.20 s wall (55.32 s child), 3.9 GiB peak RSS | ~7.3x realtime, about 36 min |
-| `bs-roformer-sw` | optional | bass, drums, other, vocals, guitar, piano | 667.0 MiB | 67.35 s wall (65.97 s child), 3.0 GiB peak RSS | ~8.4x realtime, about 41 min |
+| Model id | Stems | Installed size | 8 s CPU fixture (measured) | 5 min song estimate (linear) |
+| --- | --- | ---: | --- | --- |
+| `htdemucs_ft` | vocals, drums, bass, other | 321.0 MiB | 19.24 s wall (18.85 s child) | ~2.4x realtime, about 12 min |
+| `scnet-xl-ihf` | vocals, drums, bass, other | 204.2 MiB | 58.20 s wall (55.32 s child), 3.9 GiB peak RSS | ~7.3x realtime, about 36 min |
+| `bs-roformer-sw` | bass, drums, other, vocals, guitar, piano | 667.0 MiB | 67.35 s wall (65.97 s child), 3.0 GiB peak RSS | ~8.4x realtime, about 41 min |
 
-All timings are CPU-only on this machine (CUDA is unavailable); the full-song
-values are linear estimates from the measured 8 s runs, not measured on a whole
-song. Peak memory is model-dominated and scnet-xl-ihf is the heavier of the two.
-The UI states the same figures before you start a run.
+All timings are CPU-only on this machine (CUDA is unavailable for the measured
+runs); the full-song values are linear estimates from the measured 8 s runs,
+not measured on a whole song. Peak memory is model-dominated and scnet-xl-ihf
+is the heavier of the two. The setup cards show each model's size and licence
+before installation.
 
 ```sh
 make models-list                         # offline status: installed/missing/hash-mismatch
@@ -110,12 +148,14 @@ make models-env                          # offline sync of analysis-models/.venv
 make test-models-real                    # opt-in real 8 s SCNet/BS-RoFormer runs
 ```
 
-The installer writes a `.part` staging file, checks the declared size and
-SHA-256, publishes atomically and re-verifies the whole model directory. A
-failure leaves the previous directory or nothing, never a partial model. The
-weights stay under the untracked `models/` directory; they are not committed.
-`make gate` and `make test-web/test-backend` stay offline and skip the real
-model tests.
+The packaged app installs the same models through the setup wizard, with
+per-model licence consent. The source-checkout installer writes a `.part`
+staging file, checks the declared size and SHA-256, publishes atomically and
+re-verifies the whole model directory; a failure leaves the previous directory
+or nothing. With no model selected, Separate stays disabled with a plain reason.
+The weights stay under the untracked `models/` directory (or the packaged data
+root); they are not committed. `make gate` and `make test-web/test-backend` stay
+offline and skip the real model tests.
 
 Licences and provenance: Demucs code is MIT and its bundled weights are research
 use only; SCNet/MSST code is MIT with weights released through MSST without a

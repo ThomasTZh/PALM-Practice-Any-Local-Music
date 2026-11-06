@@ -129,6 +129,34 @@ The export mixer accepts either `stems` or `channels` maps (both are merged;
 `audio.frames` frames; disabled/soloed channels are honoured. The SHA-256 in
 the response is the hash of the written file.
 
+## First-run setup
+
+The setup routes manage the downloads required by the packaged app. They are
+described in plain language in [portable.md](portable.md); the HTTP contract is:
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| GET | `/api/setup/status` | — | `{mode, ready, skipped, skip, requires_model_choice, roots, checks, tools, environments, models, registry_error, readiness, setup_complete, state}` |
+| POST | `/api/setup/tools` | `{accept_licenses: true, force?}` | `202` setup job; `400` without consent |
+| POST | `/api/setup/environments` | `{variant?: "cpu"\|"cuda", variants?: [...], accept_licenses: true, offline?}` | `202` setup job; `400` without consent |
+| POST | `/api/setup/models` | `{model_id? / model_ids?, accepted_model_ids: [...], accept_licenses: true, force?}` | `202` setup job; `400` for missing per-model consent or unknown id |
+| POST | `/api/setup/skip` | `{skip: true}` | updated setup status |
+
+`status.checks` contains `glibc`, `disk` (free/required bytes; 5 GiB required)
+and `ffmpeg`; `tools` contains Sonic Visualiser/Piper and Vamp pack states with
+licences; `environments` contains `cpu` and `cuda` paths; `models` contains the
+same equal model states as `/api/separation/models`; `readiness` exposes the
+individual booleans and `requires_model_choice`. The setup downloads are
+ordinary jobs (`setup_tools`, `setup_environments`, `setup_models`) visible at
+`/api/jobs/{id}` and streamed at `/api/jobs/{id}/events`.
+
+The setup routes never start a download without explicit consent. Model
+downloads use `.part` files under `<data-root>/cache/model-parts/<id>/`, verify
+the pinned size and SHA-256, and publish atomically; cancellation removes
+staging and keeps resumable parts for retry. Environment creation runs the
+bundled `uv` with `UV_PROJECT_ENVIRONMENT` below the data root and cleans its
+staging directory on failure/cancel.
+
 ## Separation models
 
 | Method | Path | Request | Response |
@@ -188,7 +216,10 @@ Job contract:
 | --- | --- | --- |
 | `import` | `{path, name?, sample_rate?}` | project payload |
 | `analysis` | `{project_id, bpb?}`; bpb 2–16, default 4 | `{cached, bpb, bpm, key, chords, beats, bars}` where chords are `[{start_seconds, end_seconds, label}]` and beats/bars are seconds |
-| `separate` | `{project_id, model_id?: "htdemucs_ft", device?: "auto"\|"cpu"\|"cuda", force?: false}` | stem set payload `{key, cached, sample_rate, channels, frames, device, elapsed_seconds, model, model_id, labels, stems: [{label, frames, channels, sampleRate, key, model, model_id, path, url}]}` |
+| `setup_tools` | `{accept_licenses: true, force?}` | tool status map |
+| `setup_environments` | `{variants: ["cpu"\|"cuda"], accept_licenses: true, offline?}` | environment status map |
+| `setup_models` | `{model_ids: [...], accepted_model_ids: [...], accept_licenses: true, force?}` | installed model states |
+| `separate` | `{project_id, model_id, device?: "auto"\|"cpu"\|"cuda", force?: false}` | stem set payload `{key, cached, sample_rate, channels, frames, device, elapsed_seconds, model, model_id, labels, stems: [{label, frames, channels, sampleRate, key, model, model_id, path, url}]}` |
 
 Analysis jobs also merge `grid`, `key`, `chords` and `analysis` into the
 project document before they succeed. Separation jobs merge `stems`,
