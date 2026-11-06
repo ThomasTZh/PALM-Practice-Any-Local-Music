@@ -13,6 +13,7 @@ from basseparate.model_registry import (
     clear_digest_cache,
     format_size,
     load_registry,
+    model_directory,
     verify_model,
     verify_registry,
 )
@@ -236,3 +237,51 @@ def test_verify_registry_returns_all_states() -> None:
 def test_format_size() -> None:
     assert format_size(512) == "512 B"
     assert format_size(214_069_684).endswith("MiB")
+
+
+def test_runtime_resolver_drives_default_registry_and_model_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    (app / "analysis").mkdir(parents=True)
+    (app / "analysis" / "models.json").write_text(
+        json.dumps({"schema_version": 1, "models": []}), encoding="utf-8"
+    )
+    # Empty registries are invalid, so install a minimal valid entry.
+    entry = {
+        "id": "runtime-model",
+        "name": "Runtime model",
+        "engine": "msst",
+        "engine_command": "echo",
+        "labels": ["bass"],
+        "sample_rate": 44100,
+        "size_bytes": len(PAYLOAD),
+        "source_url": "https://example.invalid/model",
+        "license": "test",
+        "bundled": False,
+        "install_dir": "models/runtime-model",
+        "files": [
+            {
+                "role": "checkpoint",
+                "name": "model.ckpt",
+                "url": "https://example.invalid/model.ckpt",
+                "size_bytes": len(PAYLOAD),
+                "sha256": PAYLOAD_SHA,
+            }
+        ],
+    }
+    (app / "analysis" / "models.json").write_text(
+        json.dumps({"schema_version": 1, "models": [entry]}), encoding="utf-8"
+    )
+    model_dir = data / "models" / "runtime-model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "model.ckpt").write_bytes(PAYLOAD)
+    monkeypatch.setenv("PALM_MODE", "packaged")
+    monkeypatch.setenv("PALM_APP_ROOT", str(app))
+    monkeypatch.setenv("PALM_DATA_DIR", str(data))
+
+    registry = load_registry()
+    assert [model.id for model in registry.models] == ["runtime-model"]
+    assert model_directory(registry.models[0]) == model_dir
+    assert verify_model(registry.models[0]).status == "installed"

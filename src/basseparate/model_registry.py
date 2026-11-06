@@ -27,8 +27,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_REGISTRY_PATH = REPO_ROOT / "analysis" / "models.json"
+from basseparate.config import runtime_paths
+
+# Kept for the maintainer CLI, which defaults to the source checkout. Runtime
+# code resolves the registry and model roots through ``runtime_paths``.
+DEFAULT_REGISTRY_PATH = runtime_paths().registry_path
 MODELS_DIR_NAME = "models"
 
 ModelStatus = Literal["installed", "missing", "hash-mismatch"]
@@ -373,7 +376,7 @@ def _parse_entry(raw: object, index: int) -> ModelEntry:
 
 def load_registry(path: Path | None = None) -> Registry:
     """Parse and validate the registry; no files are hashed and no network is used."""
-    registry_path = Path(path) if path is not None else DEFAULT_REGISTRY_PATH
+    registry_path = Path(path) if path is not None else runtime_paths().registry_path
     try:
         payload = json.loads(registry_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -396,8 +399,8 @@ def load_registry(path: Path | None = None) -> Registry:
 # verification
 
 
-def model_directory(entry: ModelEntry, root: Path = REPO_ROOT) -> Path:
-    return Path(root) / entry.install_dir
+def model_directory(entry: ModelEntry, root: Path | None = None) -> Path:
+    return (Path(root) if root is not None else runtime_paths().models_root) / entry.install_dir
 
 
 def _state_for_file(
@@ -474,11 +477,11 @@ def _read_checkpoint_manifest(path: Path) -> Mapping[str, Any]:
 
 
 def _bundled_states(
-    entry: ModelEntry, root: Path
+    entry: ModelEntry, root: Path, app_root: Path
 ) -> tuple[tuple[FileState, ...], tuple[str, ...], list[FileState]]:
     if entry.checkpoint_manifest is None:
         raise ModelRegistryError(f"bundled model {entry.id} has no checkpoint manifest")
-    manifest_path = Path(root) / entry.checkpoint_manifest
+    manifest_path = Path(app_root) / entry.checkpoint_manifest
     manifest = _read_checkpoint_manifest(manifest_path)
     checkpoints = manifest.get("checkpoints")
     if not isinstance(checkpoints, Mapping) or not checkpoints:
@@ -563,14 +566,28 @@ def _downloadable_states(
     return states, tuple(sorted(expected)), extras
 
 
-def verify_model(entry: ModelEntry, root: Path = REPO_ROOT) -> ModelState:
+def verify_model(
+    entry: ModelEntry,
+    root: Path | None = None,
+    *,
+    app_root: Path | None = None,
+) -> ModelState:
     """Report installed/missing/hash-mismatch for one model without network."""
-    model_dir = model_directory(entry, root)
+    runtime = runtime_paths()
+    models_root = Path(root) if root is not None else runtime.models_root
+    # An explicit root in tests/source keeps the historical manifest location;
+    # packaged mode separates the read-only manifest from writable weights.
+    effective_app_root = (
+        Path(app_root)
+        if app_root is not None
+        else (Path(root) if root is not None else runtime.app_root)
+    )
+    model_dir = model_directory(entry, models_root)
     try:
         if entry.bundled:
-            states, expected_names, extras = _bundled_states(entry, root)
+            states, expected_names, extras = _bundled_states(entry, models_root, effective_app_root)
         else:
-            states, expected_names, extras = _downloadable_states(entry, root)
+            states, expected_names, extras = _downloadable_states(entry, models_root)
     except ModelRegistryError as error:
         return ModelState(
             entry=entry,
@@ -605,8 +622,13 @@ def verify_model(entry: ModelEntry, root: Path = REPO_ROOT) -> ModelState:
     )
 
 
-def verify_registry(registry: Registry, root: Path = REPO_ROOT) -> tuple[ModelState, ...]:
-    return tuple(verify_model(entry, root) for entry in registry.models)
+def verify_registry(
+    registry: Registry,
+    root: Path | None = None,
+    *,
+    app_root: Path | None = None,
+) -> tuple[ModelState, ...]:
+    return tuple(verify_model(entry, root, app_root=app_root) for entry in registry.models)
 
 
 def model_install_command(entry: ModelEntry) -> str:

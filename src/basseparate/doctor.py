@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from basseparate.config import REPO_ROOT
+from basseparate.config import RuntimePaths, runtime_paths
 from basseparate.model_registry import (
     ModelRegistryError,
     ModelState,
@@ -34,59 +34,83 @@ GpuProbe = Callable[[], tuple[bool, str]]
 
 @dataclass(frozen=True)
 class DoctorLayout:
-    """Where each dependency is expected to live."""
+    """Where each dependency is expected to live.
+
+    ``runtime`` is set for the server's resolved layout, where app resources and
+    writable data can be on different roots. Explicit ``root``/``data_root``
+    construction remains supported by the doctor tests and tools.
+    """
 
     root: Path
     data_root: Path
+    runtime: RuntimePaths | None = None
 
     @classmethod
-    def default(cls, data_root: Path) -> DoctorLayout:
-        return cls(root=REPO_ROOT, data_root=Path(data_root))
+    def default(cls, data_root: Path | None = None) -> DoctorLayout:
+        runtime = runtime_paths()
+        if data_root is not None:
+            runtime = runtime.with_data_root(data_root)
+        return cls(root=runtime.app_root, data_root=runtime.data_root, runtime=runtime)
+
+    @classmethod
+    def from_runtime(cls, runtime: RuntimePaths) -> DoctorLayout:
+        return cls(root=runtime.app_root, data_root=runtime.data_root, runtime=runtime)
 
     @property
-    def model_dir(self) -> Path:
-        return self.root / "models" / "htdemucs_ft"
+    def app_root(self) -> Path:
+        return self.runtime.app_root if self.runtime is not None else self.root
 
     @property
-    def emsdk(self) -> Path:
-        return self.root / "third_party" / "emsdk"
+    def models_root(self) -> Path:
+        return self.runtime.models_root if self.runtime is not None else self.root
 
     @property
-    def signalsmith(self) -> Path:
-        return self.root / "third_party" / "signalsmith-stretch"
-
-    @property
-    def vamp_sdk(self) -> Path:
-        return self.root / "storage" / "tools" / "vamp-sdk"
-
-    @property
-    def vamp_plugins(self) -> Path:
-        return self.root / "storage" / "tools" / "vamp-plugins"
-
-    @property
-    def native_host(self) -> Path:
-        return self.root / "storage" / "tools" / "vamp-host"
-
-    @property
-    def piper(self) -> Path:
+    def tools_root(self) -> Path:
         return (
-            self.root
-            / "storage"
-            / "tools"
-            / "sv"
-            / "squashfs-root"
-            / "usr"
-            / "bin"
-            / "piper-vamp-simple-server"
+            self.runtime.tools_root if self.runtime is not None else self.root / "storage" / "tools"
         )
 
     @property
+    def analysis_dir(self) -> Path:
+        return self.runtime.analysis_dir if self.runtime is not None else self.root / "analysis"
+
+    @property
+    def model_dir(self) -> Path:
+        return self.models_root / "models" / "htdemucs_ft"
+
+    @property
+    def emsdk(self) -> Path:
+        return self.app_root / "third_party" / "emsdk"
+
+    @property
+    def signalsmith(self) -> Path:
+        return self.app_root / "third_party" / "signalsmith-stretch"
+
+    @property
+    def vamp_sdk(self) -> Path:
+        return self.tools_root / "vamp-sdk"
+
+    @property
+    def vamp_plugins(self) -> Path:
+        return self.tools_root / "vamp-plugins"
+
+    @property
+    def native_host(self) -> Path:
+        return self.tools_root / "vamp-host"
+
+    @property
+    def piper(self) -> Path:
+        return self.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
+
+    @property
     def analysis_python(self) -> Path:
+        if self.runtime is not None:
+            return self.runtime.demucs_python
         return self.root / "analysis" / ".venv" / "bin" / "python"
 
     @property
     def recordings(self) -> Path:
-        return self.root / "audio2test"
+        return self.app_root / "audio2test"
 
     @property
     def exports(self) -> Path:
@@ -368,7 +392,7 @@ def diagnose(
 ) -> DoctorReport:
     """Build a read-only report; no writes, spawns are version probes only."""
     if layout is None:
-        layout = DoctorLayout.default(data_root if data_root is not None else REPO_ROOT)
+        layout = DoctorLayout.default(data_root)
     probe = tool_probe if tool_probe is not None else default_tool_probe
     gpu = gpu_probe if gpu_probe is not None else default_gpu_probe
     checks: list[DoctorCheck] = [
@@ -413,11 +437,15 @@ def diagnose(
         _check_recordings(layout),
     ]
     model_states: tuple[ModelState, ...] = ()
-    registry_path = layout.root / "analysis" / "models.json"
+    registry_path = layout.analysis_dir / "models.json"
     if registry_path.is_file():
         try:
             registry = load_registry(registry_path)
-            model_states = verify_registry(registry, layout.root)
+            model_states = verify_registry(
+                registry,
+                layout.models_root,
+                app_root=layout.app_root,
+            )
             checks.append(
                 _check(
                     "model_registry",

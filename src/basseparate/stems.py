@@ -38,7 +38,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.api.deps import JobsDep, PathsDep, StoreDep
-from basseparate.config import DataPaths
+from basseparate.config import DataPaths, RuntimePaths, runtime_paths
 from basseparate.jobs import JobCancelled, JobContext, JobManager
 from basseparate.media import (
     RangeError,
@@ -64,16 +64,6 @@ from basseparate.peaks import (
     encode_peaks,
 )
 from basseparate.projects import Project, ProjectStore, RevisionConflict
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-ANALYSIS_PYTHON = REPO_ROOT / "analysis" / ".venv" / "bin" / "python"
-WORKER_SCRIPT = REPO_ROOT / "analysis" / "separate_track.py"
-CHECKPOINT_MANIFEST = REPO_ROOT / "analysis" / "checkpoints.json"
-DEFAULT_BUNDLE = REPO_ROOT / "models" / "htdemucs_ft"
-MODELS_ROOT = REPO_ROOT
-MODEL_REGISTRY_PATH = REPO_ROOT / "analysis" / "models.json"
-ANALYSIS_MODELS_PYTHON = REPO_ROOT / "analysis-models" / ".venv" / "bin" / "python"
-MSST_WORKER_SCRIPT = REPO_ROOT / "analysis" / "separate_msst.py"
 
 DEFAULT_MODEL_ID = "htdemucs_ft"
 STEM_LABELS: tuple[str, ...] = ("drums", "bass", "other", "vocals")
@@ -212,26 +202,40 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _manifest_sha256() -> str:
-    if not CHECKPOINT_MANIFEST.is_file():
+def _manifest_sha256(runtime: RuntimePaths | None = None) -> str:
+    manifest = (runtime or runtime_paths()).checkpoint_manifest
+    if not manifest.is_file():
         raise StemError(
-            f"checkpoint manifest is missing: {CHECKPOINT_MANIFEST}. Restore the preserved "
+            f"checkpoint manifest is missing: {manifest}. Restore the preserved "
             "analysis/checkpoints.json before separating."
         )
-    return sha256_file(CHECKPOINT_MANIFEST)
+    return sha256_file(manifest)
 
 
-def model_cache_hashes(entry: ModelEntry, *, root: Path = MODELS_ROOT) -> dict[str, str]:
+def model_cache_hashes(
+    entry: ModelEntry,
+    *,
+    root: Path | None = None,
+    app_root: Path | None = None,
+    runtime: RuntimePaths | None = None,
+) -> dict[str, str]:
     """Weights/config identity for the cache key; declared hashes, no model load."""
+    active = runtime or runtime_paths()
+    models_root = Path(root) if root is not None else active.models_root
+    effective_app_root = (
+        Path(app_root)
+        if app_root is not None
+        else (Path(root) if root is not None else active.app_root)
+    )
     if entry.bundled:
         if entry.checkpoint_manifest is None:
             raise StemError(f"bundled model {entry.id} has no checkpoint manifest")
-        manifest = Path(root) / entry.checkpoint_manifest
+        manifest = effective_app_root / entry.checkpoint_manifest
         if not manifest.is_file():
             raise StemError(f"checkpoint manifest is missing: {manifest}")
         hashes = {"checkpoints_manifest": sha256_file(manifest)}
         if entry.config_name:
-            config = Path(root) / entry.install_dir / entry.config_name
+            config = models_root / entry.install_dir / entry.config_name
             if config.is_file():
                 hashes["config"] = sha256_file(config)
         return hashes
@@ -344,7 +348,7 @@ def read_stem_cache(paths: DataPaths, key: str) -> StemSet | None:
             if reported_labels is not None and list(reported_labels) != list(raw_labels):
                 return None
             try:
-                model_entry = load_registry(MODEL_REGISTRY_PATH).get(model_id)
+                model_entry = load_registry(runtime_paths().registry_path).get(model_id)
             except ModelRegistryError:
                 model_entry = None
             if model_entry is not None and tuple(model_entry.labels) != expected_labels:
@@ -530,7 +534,7 @@ def _validate_worker_output(
 def resolve_model(model_id: str, *, registry: Registry | None = None) -> ModelEntry:
     """Look up a model id in the registry with a user-facing error."""
     try:
-        active = registry if registry is not None else load_registry(MODEL_REGISTRY_PATH)
+        active = registry if registry is not None else load_registry(runtime_paths().registry_path)
         return active.get(model_id)
     except ModelRegistryError as error:
         raise StemError(str(error)) from error
@@ -563,10 +567,15 @@ def worker_command(
     bundle_dir: Path | None = None,
 ) -> list[str]:
     """Build the engine-specific child command for the selected model."""
+    runtime = runtime_paths()
     if model.engine == "demucs":
-        interpreter = Path(analysis_python) if analysis_python is not None else ANALYSIS_PYTHON
-        worker = Path(worker_script) if worker_script is not None else WORKER_SCRIPT
-        bundle = Path(bundle_dir) if bundle_dir is not None else MODELS_ROOT / model.install_dir
+        interpreter = (
+            Path(analysis_python) if analysis_python is not None else runtime.demucs_python
+        )
+        worker = Path(worker_script) if worker_script is not None else runtime.demucs_worker
+        bundle = (
+            Path(bundle_dir) if bundle_dir is not None else runtime.models_root / model.install_dir
+        )
         return [
             str(interpreter),
             str(worker),
@@ -577,7 +586,7 @@ def worker_command(
             "--bundle-dir",
             str(bundle),
             "--manifest",
-            str(CHECKPOINT_MANIFEST),
+            str(runtime.checkpoint_manifest),
             "--device",
             device,
             "--sample-rate",
@@ -594,10 +603,8 @@ def worker_command(
             str(cancel_path),
         ]
     if model.engine == "msst":
-        interpreter = (
-            Path(analysis_python) if analysis_python is not None else ANALYSIS_MODELS_PYTHON
-        )
-        worker = Path(worker_script) if worker_script is not None else MSST_WORKER_SCRIPT
+        interpreter = Path(analysis_python) if analysis_python is not None else runtime.msst_python
+        worker = Path(worker_script) if worker_script is not None else runtime.msst_worker
         return [
             str(interpreter),
             str(worker),
@@ -612,9 +619,9 @@ def worker_command(
             "--channels",
             str(channels),
             "--models-root",
-            str(MODELS_ROOT),
+            str(runtime.models_root),
             "--registry",
-            str(MODEL_REGISTRY_PATH),
+            str(runtime.registry_path),
             "--device",
             device,
         ]
@@ -705,17 +712,14 @@ def separate_asset(
                 progress(1.0, "stems already cached")
             return cached
 
+    runtime = runtime_paths()
     analysis = (
         Path(analysis_python)
         if analysis_python is not None
-        else (ANALYSIS_PYTHON if entry.engine == "demucs" else ANALYSIS_MODELS_PYTHON)
+        else runtime.environment_python(entry.engine)
     )
-    worker = (
-        Path(worker_script)
-        if worker_script is not None
-        else (WORKER_SCRIPT if entry.engine == "demucs" else MSST_WORKER_SCRIPT)
-    )
-    bundle = Path(bundle_dir) if bundle_dir is not None else MODELS_ROOT / entry.install_dir
+    worker = Path(worker_script) if worker_script is not None else runtime.worker(entry.engine)
+    bundle = Path(bundle_dir) if bundle_dir is not None else runtime.models_root / entry.install_dir
     if not analysis.is_file() or not os.access(analysis, os.X_OK):
         raise StemError(
             f"separation interpreter is missing or not executable: {analysis}. "
@@ -1036,7 +1040,7 @@ router = APIRouter(tags=["stems"])
 
 @router.get("/separation/models")
 def separation_models() -> dict[str, Any]:
-    registry = load_registry(MODEL_REGISTRY_PATH)
+    registry = load_registry(runtime_paths().registry_path)
     states = verify_registry(registry)
     models = []
     for state in states:

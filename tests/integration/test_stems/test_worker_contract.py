@@ -10,9 +10,12 @@ from types import ModuleType
 
 import pytest
 
+from basseparate.config import runtime_paths
+
 ROOT = Path(__file__).resolve().parents[3]
-WORKER = ROOT / "analysis" / "separate_track.py"
-BUNDLE = ROOT / "models" / "htdemucs_ft"
+RUNTIME = runtime_paths()
+WORKER = RUNTIME.demucs_worker
+BUNDLE = RUNTIME.models_root / "models" / "htdemucs_ft"
 
 
 def load_worker() -> ModuleType:
