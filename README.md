@@ -72,10 +72,13 @@ and credits. Nothing third-party is committed.
   body (length preserved, overlaps allowed), resized by their edges, and added
   ending at the playhead; the single-row editor lists them sorted by start and
   can chain-loop several selected sections with the gaps included. A green
-  timeline scrollbar and playhead-follow paging make zoomed views navigable;
-  speed 0.25–2×, accented metronome and a count-in that clicks even when the
-  metronome is off. Pitch shifting was removed on request. The engine starts
-  silent and renders only after an explicit play.
+  timeline scrollbar and playhead-follow paging make zoomed views navigable.
+  A 1 px orange playhead and a dashed light-gray hover guide align across every
+  timeline pane (ruler, waveforms, chord ribbon, sections, spectrogram); the
+  guide follows the pointer without seeking. Speed 0.25–2×, fixed accent and
+  100 % metronome volume, and a count-in that clicks even when the metronome is
+  off. Pitch shifting was removed on request. The engine starts silent and
+  renders only after an explicit play.
 - **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
   position and mixer; reopen restores the project; mixdown export writes a
   16-bit WAV at the project rate with exactly the project frame count.
@@ -155,7 +158,7 @@ Final gate (run for this documentation, exit 0):
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / models verify / mypy strict
 [PASS] pytest 299 passed, 8 skipped (real-model tests opt-in and skipped)
-[PASS] web typecheck, web tests (53 files / 527 tests, serialized), web build
+[PASS] web typecheck, web tests (53 files / 530 tests, serialized), web build
 [PASS] e2e golden path + layout spec (2 specs): Firefox and Chromium, isolated data root
 gate: ok
 ```
