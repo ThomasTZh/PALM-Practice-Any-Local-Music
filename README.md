@@ -158,7 +158,7 @@ Final gate (run for this documentation, exit 0):
 ```text
 [PASS] ruff check / ruff format / fixtures (6) / models verify / mypy strict
 [PASS] pytest 299 passed, 8 skipped (real-model tests opt-in and skipped)
-[PASS] web typecheck, web tests (53 files / 530 tests, serialized), web build
+[PASS] web typecheck, web tests (53 files / 531 tests, serialized), web build
 [PASS] e2e golden path + layout spec (2 specs): Firefox and Chromium, isolated data root
 gate: ok
 ```
