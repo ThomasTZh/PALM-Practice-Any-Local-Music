@@ -597,6 +597,10 @@ export function SectionLane({
           data-testid="section-playhead"
           style={{ left: timeToX(positionSeconds, viewport) }}
         />
+        <div
+          className="timeline-hover-guide"
+          data-testid="timeline-hover-guide"
+        />
         {sections.length === 0 ? (
           <p className="panel-empty">
             No sections yet. Add one to loop a passage.

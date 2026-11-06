@@ -17,6 +17,8 @@ import {
   clampViewport,
   defaultZoomRange,
   fitViewport,
+  pointerTimeSeconds,
+  timeToX,
   zoomToSelection as zoomViewportToSelection,
   zoomViewport,
   type Viewport,
@@ -114,6 +116,9 @@ function isAbort(error: unknown): boolean {
 function titleCase(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }
+
+const HOVER_TIMELINE_SELECTOR =
+  ".ruler, .waveform-pane, .chord-track, .section-timeline, .spectrogram-body";
 
 const STEM_LANE_ORDER = [
   "vocals",
@@ -222,13 +227,20 @@ export function App({
   const [sections, setSections] = useState<Section[]>([]);
   const [snapMode, setSnapMode] = useState<SnapMode>("bar");
   const [stageWidth, setStageWidth] = useState(initialStageWidth);
+  const stageRef = useRef<HTMLElement | null>(null);
   const stageMeasureRef = useRef<HTMLDivElement | null>(null);
   const previousStageWidthRef = useRef(stageWidth);
+  const hoverFrameRef = useRef<number | null>(null);
+  const hoverClientXRef = useRef(0);
+  const viewportRef = useRef<Viewport | null>(null);
+  const stageWidthRef = useRef(stageWidth);
   const [viewport, setViewport] = useState<Viewport>(() =>
     fitViewport(0, stageWidth),
   );
   const [selection, setSelection] = useState<Selection | null>(null);
   const [follow, setFollow] = useState(true);
+  viewportRef.current = viewport;
+  stageWidthRef.current = stageWidth;
   const [message, setMessage] = useState(
     "Choose a recording from the library.",
   );
@@ -851,6 +863,67 @@ export function App({
   const player: StudioPlayer = active.player;
   const transportNotice = notice ?? playerState.error;
 
+  const clearHoverGuide = useCallback(() => {
+    if (hoverFrameRef.current !== null) {
+      cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    const stage = stageRef.current;
+    if (stage !== null) {
+      stage.removeAttribute("data-hovering");
+      stage.removeAttribute("data-hover-time");
+      stage.style.removeProperty("--hover-x");
+    }
+  }, []);
+
+  const handleStagePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      const target = event.target as Element | null;
+      if (
+        event.pointerType === "touch" ||
+        target === null ||
+        target.closest(HOVER_TIMELINE_SELECTOR) === null
+      ) {
+        clearHoverGuide();
+        return;
+      }
+      hoverClientXRef.current = event.clientX;
+      if (hoverFrameRef.current !== null) {
+        return;
+      }
+      hoverFrameRef.current = requestAnimationFrame(() => {
+        hoverFrameRef.current = null;
+        const stage = stageRef.current;
+        const activeViewport = viewportRef.current;
+        if (stage === null || activeViewport === null) {
+          return;
+        }
+        const rect = stage.getBoundingClientRect();
+        const time = pointerTimeSeconds(
+          hoverClientXRef.current,
+          rect.left,
+          activeViewport,
+          stageWidthRef.current,
+        );
+        stage.style.setProperty(
+          "--hover-x",
+          `${timeToX(time, activeViewport)}px`,
+        );
+        stage.dataset.hovering = "true";
+        stage.dataset.hoverTime = time.toFixed(3);
+      });
+    },
+    [clearHoverGuide],
+  );
+
+  useEffect(() => {
+    window.addEventListener("blur", clearHoverGuide);
+    return () => {
+      window.removeEventListener("blur", clearHoverGuide);
+      clearHoverGuide();
+    };
+  }, [clearHoverGuide]);
+
   return (
     <div className="studio">
       <main className="studio-main">
@@ -895,7 +968,13 @@ export function App({
           />
         </aside>
 
-        <section className="stage" aria-label="Waveform stage">
+        <section
+          ref={stageRef}
+          className="stage"
+          aria-label="Waveform stage"
+          onPointerMove={handleStagePointerMove}
+          onPointerLeave={clearHoverGuide}
+        >
           <div
             className="stage-measure"
             data-testid="stage-measure"

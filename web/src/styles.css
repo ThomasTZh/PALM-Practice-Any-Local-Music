@@ -2009,3 +2009,40 @@ body {
 .transport-readout-zone .transport-bar-beat {
   font-size: 0.72rem;
 }
+
+/* Shared timeline hover guide and one-pixel playheads. */
+
+.ruler-playhead,
+.chord-ribbon-playhead,
+.section-playhead,
+.spectrogram-playhead {
+  width: 1px;
+  margin-left: -0.5px;
+}
+
+.waveform-playhead {
+  stroke-width: 1;
+}
+
+.timeline-hover-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--hover-x, 0px);
+  width: 1px;
+  border-left: 1px dashed rgba(214, 222, 232, 0.7);
+  pointer-events: none;
+  z-index: 6;
+  display: none;
+}
+
+.stage[data-hovering="true"] .timeline-hover-guide {
+  display: block;
+}
+
+.ruler-playhead,
+.chord-ribbon-playhead,
+.section-playhead,
+.spectrogram-playhead {
+  z-index: 7;
+}

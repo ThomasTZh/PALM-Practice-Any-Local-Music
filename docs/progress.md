@@ -2239,3 +2239,46 @@ transport-bar-beat are unchanged. Play remains at the drawer centre.
   or accent controls, readouts bottom-right and metadata top-right, document
   1280/1280.
 - `make test-web`, `make build-web`, `make e2e` (2 specs) pass. No dependency.
+
+## 2026-11-06 — shared rAF hover guide and one-pixel playheads (t58)
+
+### Hover guide
+
+App tracks pointer movement once on the stage. A move whose target is inside
+`.ruler`, `.waveform-pane`, `.chord-track`, `.section-timeline` or
+`.spectrogram-body` stores the latest clientX and schedules one
+requestAnimationFrame; the frame converts clientX to shared time with
+pointerTimeSeconds (clamped to the stage width), then sets `--hover-x` and
+`data-hovering`/`data-hover-time` directly on the stage DOM node. There is no
+React state update, so pointer moves do not re-render the transport or trigger
+API work.
+
+Each timeline pane renders one `.timeline-hover-guide` with
+`left: var(--hover-x)`, a 1 px light-gray dashed border, and pointer-events
+none. The stage data attribute controls visibility. Pointer leave, pointer
+targets outside timeline panes, and window blur clear the frame/attribute;
+pointerType touch clears and never shows the guide.
+
+### Playheads
+
+Ruler, chord, section and spectrogram playheads are 1 px wide
+(margin-left -0.5 px); the waveform SVG stroke is 1 px. Playheads sit above the
+guide so the orange line stays visible.
+
+### Measurements
+
+Firefox mock, 60 s project with four stems, chords, a section and expanded
+spectrogram:
+- Fit hover: all nine guide instances (ruler, mix, 4 stems, chord, section,
+  spectrogram) x=657.8167, width 1, display block; second hover moved all to
+  x=845.95. Position stayed 0:00.0 and API request count during hover/second
+  move was 0.
+- Zoom hover: all guides x=892.9833. Playheads at fit x=317.5667/width 1 for
+  ruler/chord/section/waveform/spectrogram; zoom ruler/chord/section
+  x=-269.3167 vs waveform -269.3000 (0.0167 px), stroke 1 px.
+- Pointer left the stage: data-hovering removed. Document 1280/1280.
+
+Unit/App tests cover the pointer-time mapping/clamping, one pending rAF for
+three moves, latest-x update, nine guides, touch suppression, pointer leave,
+window blur, unchanged player calls and unchanged API calls. make test-web,
+make build-web and make e2e (2 specs) pass. No dependency added.

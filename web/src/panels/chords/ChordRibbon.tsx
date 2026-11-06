@@ -63,6 +63,10 @@ export function ChordRibbon({
             data-testid="chord-ribbon-playhead"
             style={{ left: timeToX(positionSeconds, viewport) }}
           />
+          <div
+            className="timeline-hover-guide"
+            data-testid="timeline-hover-guide"
+          />
         </div>
       )}
     </section>

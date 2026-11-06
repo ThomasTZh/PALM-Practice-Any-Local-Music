@@ -313,6 +313,10 @@ export function WaveformPane({
           y2={heightPx}
         />
       </svg>
+      <div
+        className="timeline-hover-guide waveform-hover-guide"
+        data-testid="timeline-hover-guide"
+      />
     </div>
   );
 }

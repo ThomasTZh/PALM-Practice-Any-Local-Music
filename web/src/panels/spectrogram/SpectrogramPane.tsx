@@ -352,6 +352,10 @@ export function SpectrogramPane({
               style={{ left: playheadX }}
             />
           )}
+          <div
+            className="timeline-hover-guide"
+            data-testid="timeline-hover-guide"
+          />
           {error !== null && (
             <p className="spectrogram-error" role="alert">
               {error}

@@ -138,6 +138,18 @@ const FALLBACK_BPM = 120;
 const FALLBACK_BPB = 4;
 const DEFAULT_ZOOM_BARS = 8;
 
+/** Clamped time under a pointer relative to the shared stage origin. */
+export function pointerTimeSeconds(
+  clientX: number,
+  originLeft: number,
+  viewport: Viewport,
+  widthPx: number,
+): number {
+  const width = safeWidth(widthPx);
+  const x = clamp(clientX - originLeft, 0, width);
+  return xToTime(x, viewport);
+}
+
 /**
  * Eight bars around the playhead (four either side), clamped to the track.
  * Uses the detected bpm/bpb when valid, else 120 BPM in 4/4.

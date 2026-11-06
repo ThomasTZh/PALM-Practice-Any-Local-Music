@@ -98,6 +98,10 @@ export function TimeRuler({
         data-testid="ruler-playhead"
         style={{ left: timeToX(positionSeconds, viewport) }}
       />
+      <div
+        className="timeline-hover-guide"
+        data-testid="timeline-hover-guide"
+      />
     </div>
   );
 }

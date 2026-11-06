@@ -5,6 +5,7 @@ import {
   defaultZoomRange,
   fitViewport,
   followViewport,
+  pointerTimeSeconds,
   scrollViewport,
   timeToX,
   visibleEndSeconds,
@@ -158,6 +159,18 @@ describe("defaultZoomRange", () => {
       WIDTH,
     );
     expect(selected.secondsPerPixel).toBeCloseTo((10 * 1.16) / WIDTH);
+  });
+});
+
+describe("pointerTimeSeconds", () => {
+  it("maps a stage-relative pointer x to the shared time axis", () => {
+    expect(pointerTimeSeconds(470, 0, FIT, WIDTH)).toBeCloseTo(29.375);
+    expect(pointerTimeSeconds(517, 47, FIT, WIDTH)).toBeCloseTo(29.375);
+  });
+
+  it("clamps outside the stage to the visible range", () => {
+    expect(pointerTimeSeconds(-20, 0, FIT, WIDTH)).toBe(0);
+    expect(pointerTimeSeconds(WIDTH + 50, 0, FIT, WIDTH)).toBeCloseTo(DURATION);
   });
 });
 
