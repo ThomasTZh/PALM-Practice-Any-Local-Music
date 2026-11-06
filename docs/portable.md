@@ -12,6 +12,12 @@ verifies every file.
 - Source release notes: [../packaging/release-notes.md](../packaging/release-notes.md)
 - Clean-room evidence: [../packaging/VERIFICATION.md](../packaging/VERIFICATION.md)
 
+> Packaged setup QA note: the 0.1.0-dev tar has known first-run blockers in a
+> fresh data root (tools directory creation, CPU environment lock/index and the
+> packaged separation interpreter path). See
+> [../packaging/VERIFICATION.md](../packaging/VERIFICATION.md) before relying on
+> setup from this release.
+
 ## Run the tar
 
 ```sh
