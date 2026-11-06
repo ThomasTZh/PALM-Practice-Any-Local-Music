@@ -2282,3 +2282,41 @@ Unit/App tests cover the pointer-time mapping/clamping, one pending rAF for
 three moves, latest-x update, nine guides, touch suppression, pointer leave,
 window blur, unchanged player calls and unchanged API calls. make test-web,
 make build-web and make e2e (2 specs) pass. No dependency added.
+
+## 2026-11-06 — hover guide aligned to pointer centre (t59)
+
+### Before
+
+Real-browser measurement at 1280 px recorded guide-centre minus pointer-clientX
+of +12.05 to +12.58 px in every pane (ruler, mix, chord, section, spectrogram).
+The stage computed the guide x from the stage border-box left, then positioned
+the guide inside the pane: `.stage` adds 11.25 px padding + ~0.57 px border, so
+that inset was counted twice (plus the 1 px guide centre).
+
+### Fix
+
+The rAF uses the hovered pane's own `getBoundingClientRect().left` as the
+pointer-to-time origin; no numeric nudge was added. The guide keeps the shared
+stage `--hover-x` but is centred with `margin-left: -0.5px` for its 1 px width.
+
+### After
+
+All panes at 1280, fit and after two zooms:
+- 15 fit samples (5 panes x 3 x positions): guide-centre offset 0.100 to
+  0.267 px, cross-pane spread 0.000 px.
+- Same 15 samples zoomed: offset 0.100 to 0.267 px, spread 0.000 px.
+- Playhead cross-pane spread 0.000 px at fit, 0.033 px zoomed; waveform SVG
+  stroke remains 1 px.
+- Hover still changes neither transport position nor API calls.
+
+Playwright regression added to the real golden path after analysis/reopen:
+it expands the spectrogram, hovers ruler, mix, chord track, section timeline
+and spectrogram body at 30/55/80% in fit and zoomed views, reads every visible
+guide's bounding centre, and asserts max pointer offset and cross-pane spread
+<=1 px. It also asserts playhead spread <=1 and that the position is unchanged
+after the hovers. A diagnostic failure dump includes pane centre/offset,
+elementFromPoint target and stage hover attributes. Unit tests assert the pane
+origin is used rather than the stage border box.
+
+make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass. No
+dependency added.

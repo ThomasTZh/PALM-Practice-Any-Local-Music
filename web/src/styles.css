@@ -2030,6 +2030,7 @@ body {
   bottom: 0;
   left: var(--hover-x, 0px);
   width: 1px;
+  margin-left: -0.5px;
   border-left: 1px dashed rgba(214, 222, 232, 0.7);
   pointer-events: none;
   z-index: 6;

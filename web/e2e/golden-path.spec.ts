@@ -116,6 +116,101 @@ async function waitForSavedSection(
   );
 }
 
+async function assertGuideAt(
+  page: Page,
+  locator: ReturnType<Page["locator"]>,
+  fraction: number,
+  label: string,
+): Promise<number> {
+  await locator.scrollIntoViewIfNeeded();
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error("timeline pane has no bounding box");
+  const expectedX = box.x + box.width * fraction;
+  const viewport = page.viewportSize();
+  if (viewport === null) throw new Error("viewport is not set");
+  const visibleTop = Math.max(box.y, 0);
+  const visibleBottom = Math.min(box.y + box.height, viewport.height);
+  if (visibleBottom <= visibleTop) {
+    throw new Error("timeline pane has no visible vertical slice");
+  }
+  const y = visibleTop + Math.min(10, (visibleBottom - visibleTop) / 2);
+  await page.mouse.move(expectedX, y);
+  let last: Record<string, unknown> = {};
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    last = await page.evaluate(
+      ({ clientX, pointerY }) => {
+        const all = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-testid="timeline-hover-guide"]',
+          ),
+        );
+        const visible = all.filter(
+          (element) => getComputedStyle(element).display !== "none",
+        );
+        const centers = visible.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.x + rect.width / 2;
+        });
+        const stage = document.querySelector<HTMLElement>(".stage");
+        const target = document.elementFromPoint(clientX, pointerY);
+        return {
+          count: centers.length,
+          centers,
+          offset:
+            centers.length === 0
+              ? null
+              : Math.max(
+                  ...centers.map((center) => Math.abs(center - clientX)),
+                ),
+          spread:
+            centers.length === 0
+              ? null
+              : Math.max(...centers) - Math.min(...centers),
+          hovering: stage?.getAttribute("data-hovering") ?? null,
+          hoverTime: stage?.getAttribute("data-hover-time") ?? null,
+          hoverVar: stage?.style.getPropertyValue("--hover-x") ?? null,
+          target:
+            target === null
+              ? null
+              : `${target.tagName}.${String(target.className)}`,
+        };
+      },
+      { clientX: expectedX, pointerY: y },
+    );
+    if (
+      typeof last.offset === "number" &&
+      last.offset <= 1 &&
+      typeof last.spread === "number" &&
+      last.spread <= 1
+    ) {
+      return last.offset;
+    }
+    await page.waitForTimeout(100);
+  }
+  throw new Error(
+    `hover guide did not align for ${label} at ${fraction}: ` +
+      JSON.stringify({ expectedX, y, ...last }),
+  );
+}
+
+async function playheadSpread(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const centers = [
+      '[data-testid="ruler-playhead"]',
+      '[data-testid="chord-ribbon-playhead"]',
+      '[data-testid="section-playhead"]',
+      ".waveform-pane .waveform-playhead",
+    ].map((selector) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (element === null) throw new Error(`missing ${selector}`);
+      const rect = element.getBoundingClientRect();
+      return rect.x + rect.width / 2;
+    });
+    return Math.max(...centers) - Math.min(...centers);
+  });
+}
+
 async function ensurePlaying(page: Page, timeoutMs = 30_000): Promise<void> {
   const status = page.getByTestId("transport-status");
   const deadline = Date.now() + timeoutMs;
@@ -281,6 +376,57 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   await page.getByRole("button", { name: `Open ${title}` }).click();
   await expect(page.getByTestId("key-readout")).toHaveText("C major");
   await expect(page.getByTestId("chord-ribbon")).toContainText("C");
+
+  // 3b. Shared hover guide follows the pointer in every timeline pane. The
+  // guide is pane-local; using the stage border box previously shifted it by
+  // the stage padding+border (~12.4 px at 1280). Zooming changes only the
+  // viewport, not the pane origin, so the same assertion must hold again.
+  const beforeHoverPosition = await position(page);
+  await page.getByRole("button", { name: "Show spectrogram" }).click();
+  await expect(page.getByTestId("spectrogram-body")).toBeVisible();
+  const timelinePanes = [
+    page.getByTestId("time-ruler"),
+    page.locator(".waveform-pane").first(),
+    page.locator(".chord-track"),
+    page.locator(".section-timeline"),
+    page.locator(".spectrogram-body"),
+  ];
+  const measuredOffsets: number[] = [];
+  for (const fraction of [0.3, 0.55, 0.8]) {
+    for (const [index, pane] of timelinePanes.entries()) {
+      measuredOffsets.push(
+        await assertGuideAt(page, pane, fraction, `fit-${index}`),
+      );
+    }
+  }
+  const fitPlayheadSpread = await playheadSpread(page);
+  expect(fitPlayheadSpread).toBeLessThanOrEqual(1);
+
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const zoomOffsets: number[] = [];
+  for (const fraction of [0.3, 0.55, 0.8]) {
+    for (const [index, pane] of timelinePanes.entries()) {
+      zoomOffsets.push(
+        await assertGuideAt(page, pane, fraction, `zoom-${index}`),
+      );
+    }
+  }
+  const zoomPlayheadSpread = await playheadSpread(page);
+  expect(zoomPlayheadSpread).toBeLessThanOrEqual(1);
+  await page.getByRole("button", { name: "Fit", exact: true }).click();
+  await page.getByRole("button", { name: "Hide spectrogram" }).click();
+  await expect.poll(() => position(page)).toBeCloseTo(beforeHoverPosition, 2);
+  testInfo.annotations.push({
+    type: "hover-guide",
+    description: JSON.stringify({
+      beforeFixOffset: "~12.4 px (stage padding 11.25 + border 1)",
+      maxFitOffset: Math.max(...measuredOffsets),
+      maxZoomOffset: Math.max(...zoomOffsets),
+      fitPlayheadSpread,
+      zoomPlayheadSpread,
+    }),
+  });
 
   // 4. Practise: metronome and count-in controls are visible and usable.
   await page.getByLabel("Metronome", { exact: true }).click();

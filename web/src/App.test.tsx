@@ -766,6 +766,42 @@ describe("App integration", () => {
     expect(zoomX).not.toBe(fitX);
   });
 
+  it("computes guide x from the pane origin, not the stage border box", async () => {
+    setup();
+    await openProject();
+    const stage = screen.getByRole("region", { name: "Waveform stage" });
+    const ruler = screen.getByTestId("time-ruler");
+    vi.spyOn(ruler, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 0,
+      left: 100,
+      top: 0,
+      right: 1040,
+      bottom: 58,
+      width: 940,
+      height: 58,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const pending: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      pending.push(callback);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+
+    const event = new Event("pointermove", { bubbles: true });
+    Object.defineProperties(event, {
+      clientX: { value: 200 },
+      pointerType: { value: "mouse" },
+    });
+    fireEvent(ruler, event);
+    pending[0](0);
+
+    expect(stage.style.getPropertyValue("--hover-x")).toBe("100px");
+    expect(stage).toHaveAttribute("data-hover-time", "0.851");
+    vi.unstubAllGlobals();
+  });
+
   it("tracks a shared hover guide with rAF throttling and no side effects", async () => {
     const { api, rig } = setup();
     await openProject();

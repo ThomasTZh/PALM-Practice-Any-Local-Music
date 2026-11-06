@@ -232,6 +232,7 @@ export function App({
   const previousStageWidthRef = useRef(stageWidth);
   const hoverFrameRef = useRef<number | null>(null);
   const hoverClientXRef = useRef(0);
+  const hoverOriginRef = useRef(0);
   const viewportRef = useRef<Viewport | null>(null);
   const stageWidthRef = useRef(stageWidth);
   const [viewport, setViewport] = useState<Viewport>(() =>
@@ -879,15 +880,18 @@ export function App({
   const handleStagePointerMove = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
       const target = event.target as Element | null;
-      if (
-        event.pointerType === "touch" ||
-        target === null ||
-        target.closest(HOVER_TIMELINE_SELECTOR) === null
-      ) {
+      const pane =
+        event.pointerType === "touch" || target === null
+          ? null
+          : target.closest(HOVER_TIMELINE_SELECTOR);
+      if (pane === null) {
         clearHoverGuide();
         return;
       }
       hoverClientXRef.current = event.clientX;
+      // Guides are positioned inside the pane, so their x origin is the pane
+      // itself, not the stage border box (which adds its border and padding).
+      hoverOriginRef.current = pane.getBoundingClientRect().left;
       if (hoverFrameRef.current !== null) {
         return;
       }
@@ -898,10 +902,9 @@ export function App({
         if (stage === null || activeViewport === null) {
           return;
         }
-        const rect = stage.getBoundingClientRect();
         const time = pointerTimeSeconds(
           hoverClientXRef.current,
-          rect.left,
+          hoverOriginRef.current,
           activeViewport,
           stageWidthRef.current,
         );
