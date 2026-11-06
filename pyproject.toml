@@ -13,6 +13,9 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.11",
 ]
+
+[project.scripts]
+palm = "basseparate.launcher:main"
 # Pinned to the versions already present in the preserved .venv. No new
 # dependency may be added without an offline/licence/measured-benefit review.
 dependencies = [

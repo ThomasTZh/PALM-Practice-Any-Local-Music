@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PALM
+GenericName=Local Music Practice
+Comment=Practice Any Local Music: stems, chords, grid, loops and slow practice
+Exec=palm
+Icon=palm
+Terminal=false
+Categories=Audio;Music;AudioVideo;Player;
+Keywords=practice;bass;stems;music;

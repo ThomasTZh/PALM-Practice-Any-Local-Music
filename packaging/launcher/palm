@@ -1,0 +1,42 @@
+#!/bin/sh
+# PALM launcher wrapper for the portable tar/AppImage layout.
+#
+# Layout assumed by the package:
+#   <app>/palm                 this script (or <app>/bin/palm)
+#   <app>/bin/python           packaged interpreter
+#   <app>/web/dist/            built UI
+#   <app>/src/basseparate/     application package
+#   <app>/analysis/            workers, registry and checkpoint manifest
+#
+# Writable state never goes into <app>; PALM_DATA_DIR defaults to the XDG data
+# directory and can be overridden by the environment.
+set -eu
+
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -d "$SELF_DIR/../web/dist" ]; then
+    APP_ROOT=$(CDPATH= cd -- "$SELF_DIR/.." && pwd)
+elif [ -d "$SELF_DIR/web/dist" ]; then
+    APP_ROOT=$SELF_DIR
+else
+    echo "palm: cannot locate the packaged app root from $SELF_DIR" >&2
+    exit 1
+fi
+
+DATA_ROOT=${PALM_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/palm}
+
+if [ -n "${PALM_PYTHON:-}" ]; then
+    PYTHON=$PALM_PYTHON
+elif [ -x "$APP_ROOT/bin/python" ]; then
+    PYTHON=$APP_ROOT/bin/python
+elif [ -x "$APP_ROOT/python" ]; then
+    PYTHON=$APP_ROOT/python
+else
+    PYTHON=python3
+fi
+
+export PALM_MODE=packaged
+export PALM_APP_ROOT="$APP_ROOT"
+export PALM_DATA_DIR="$DATA_ROOT"
+export PYTHONDONTWRITEBYTECODE=1
+
+exec "$PYTHON" -m basseparate.launcher "$@"
