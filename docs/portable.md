@@ -38,13 +38,25 @@ Launcher options:
 `bin/uv` is included for the setup's environment installation; `bin/palm` uses
 the bundled `python/` tree, so no system Python or Node is required.
 
-The optional AppImage is built in CI. Run it directly, or extract it without
-FUSE:
+## Run the AppImage
+
+The optional AppImage embeds the same launcher as `bin/palm` (`AppRun` calls
+`usr/bin/palm`), so it auto-opens the browser by default. A file downloaded
+from a browser usually loses the execute bit; mark it executable first:
 
 ```sh
+chmod +x PALM-<version>-x86_64.AppImage
 ./PALM-<version>-x86_64.AppImage
-./PALM-<version>-x86_64.AppImage --appimage-extract
-./squashfs-root/AppRun
+```
+
+If double-clicking does nothing, run it from a terminal to see the error. Some
+desktops route AppImages through AppImageLauncher; if that integration fails,
+run with the embedded extractor or use the tar instead:
+
+```sh
+APPIMAGE_EXTRACT_AND_RUN=1 ./PALM-<version>-x86_64.AppImage
+# or
+./PALM-<version>-x86_64.AppImage --appimage-extract-and-run
 ```
 
 When no AppImage is shipped, `dist/APPIMAGE-FALLBACK.txt` records why (for the

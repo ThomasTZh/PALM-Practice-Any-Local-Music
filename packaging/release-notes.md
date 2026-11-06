@@ -1,8 +1,15 @@
-# PALM 0.1.0-dev — portable Linux release (draft)
+# PALM 0.1.0-dev — portable Linux release
 
 PALM (Practice Any Local Music) is a local practice studio for recordings you
-own. This is the portable Linux x86_64 build; it is a draft until explicitly
-approved for publication.
+own. This is the portable Linux x86_64 build.
+
+**Early version, limited testing and quality control.** This 0.1.0-dev build
+has not had broad platform testing or a formal listening pass. The tar was
+smoke-tested in a minimal Linux root fallback, not across distributions; the
+AppImage was extracted and started once, but not across desktop environments.
+Expect setup failures, download and environment edge cases, and model or
+licence surprises. Keep backups of projects you care about. No warranty is
+provided beyond the MIT licence.
 
 ## Assets
 
@@ -25,13 +32,15 @@ cd PALM-0.1.0-dev-linux-x86_64
 ./bin/palm
 ```
 
-or, for the AppImage:
+The launcher is `bin/palm`; it starts the server and opens the browser.
+
+or, for the AppImage (the same launcher embedded as `AppRun`):
 
 ```sh
+chmod +x PALM-0.1.0-dev-x86_64.AppImage
 ./PALM-0.1.0-dev-x86_64.AppImage
-# no FUSE? extract instead:
-./PALM-0.1.0-dev-x86_64.AppImage --appimage-extract
-./squashfs-root/AppRun
+# no FUSE or AppImageLauncher trouble? run without extracting to disk:
+APPIMAGE_EXTRACT_AND_RUN=1 ./PALM-0.1.0-dev-x86_64.AppImage
 ```
 
 The launcher prints and opens `http://127.0.0.1:<port>/`, keeps one instance per
@@ -68,7 +77,7 @@ run state, setup state and projects. The app tree is read-only.
 
 ## Verification and licences
 
-- Clean-room and asset evidence: [../packaging/VERIFICATION.md](VERIFICATION.md)
+- Clean-room and asset evidence: [VERIFICATION.md](VERIFICATION.md)
 - Full guide: [../docs/portable.md](../docs/portable.md)
 - Application source is MIT: [../licenses/LICENSE](../licenses/LICENSE)
 - Third-party notices: [../licenses/NOTICES.md](../licenses/NOTICES.md)
@@ -77,3 +86,19 @@ Licence boundaries: Demucs code is MIT but its weights are research use only;
 SCNet/MSST code is MIT and SCNet weights have no separate weight licence; the
 BS-RoFormer-SW mirror has an unknown weight licence and is private use only.
 Nothing is uploaded by the application.
+
+
+## Known limitations in this build
+
+- The clean-room check used the bubblewrap minimal-root fallback because no
+  Ubuntu 22.04 image was available locally; the literal container path is
+  CI-only and not evidenced here.
+- The setup environment installer currently accepts an `offline` option but
+  runs `uv` online; do not rely on offline environment creation.
+- Multi-model installation is not transactional: if a later model fails, an
+  earlier one may remain installed without setup state being recorded.
+- Replacing an existing analysis environment can lose the old target if the
+  publish step is interrupted.
+- Setup readiness does not yet include tool readiness in every combination.
+- GPU separation, playback on all desktop audio stacks, and a final listening
+  pass were not tested for this build.
