@@ -312,10 +312,8 @@ function parseSeparationModels(value: unknown): SeparationModelsResponse {
     );
   }
   const models = raw.models.map(parseSeparationModel);
-  const fallback =
-    models.find((model) => model.default)?.id ?? models[0]?.id ?? "htdemucs_ft";
   return {
-    default: firstString(raw, ["default"]) ?? fallback,
+    default: firstString(raw, ["default"]),
     models,
   };
 }

@@ -19,6 +19,11 @@ import type {
 import { createFakeMixer } from "./state/fakeMixer";
 import { createFakePlayer } from "./state/fakePlayer";
 import { createFakePractice } from "./state/fakePractice";
+import {
+  createFakeSetupClient,
+  incompleteSetupStatus,
+} from "./state/fakeSetup";
+import type { SetupClient } from "./state/setup";
 import { makePeaksBuffer } from "./panels/waveform/peaksFixture";
 import {
   defaultSeparationModels,
@@ -301,6 +306,7 @@ function setup(
     failOpen?: boolean;
     notice?: string | null;
     autosaveDelayMs?: number;
+    setupClient?: SetupClient;
   } = {},
 ) {
   const project = options.project ?? PROJECT;
@@ -317,6 +323,7 @@ function setup(
       api={api}
       transport={transport}
       analysisClient={client}
+      setupClient={options.setupClient ?? createFakeSetupClient()}
       createPcmLoader={() => async (startFrame: number, endFrame: number) => ({
         samples: new Float32Array(2048),
         sampleRate: 44100,
@@ -375,6 +382,12 @@ async function openProject() {
       "Loaded Demo take",
     ),
   );
+}
+
+function chooseModel(modelId = "htdemucs_ft"): void {
+  fireEvent.change(screen.getByLabelText("Separation model"), {
+    target: { value: modelId },
+  });
 }
 
 function separationJob(
@@ -457,6 +470,7 @@ function separationApp(options: {
       transport={transport}
       analysisClient={analysis}
       separationClient={options.client}
+      setupClient={createFakeSetupClient()}
       separationPollIntervalMs={1}
       createPcmLoader={() => async (startFrame: number, endFrame: number) => ({
         samples: new Float32Array(2048),
@@ -472,6 +486,73 @@ function separationApp(options: {
 }
 
 describe("App integration", () => {
+  it("shows the setup wizard before the library, skips and reopens it", async () => {
+    const setupFake = createFakeSetupClient(incompleteSetupStatus());
+    setup({ setupClient: setupFake });
+
+    expect(await screen.findByTestId("setup-wizard")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open Demo take" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("setup-checks")).toHaveTextContent("ffmpeg");
+    expect(setupFake.calls).toContain("status");
+
+    fireEvent.click(screen.getByTestId("setup-skip"));
+    expect(
+      await screen.findByRole("button", { name: "Open Demo take" }),
+    ).toBeInTheDocument();
+    expect(setupFake.calls).toContain("skip:true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Setup" }));
+    expect(await screen.findByTestId("setup-wizard")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("setup-close"));
+    expect(
+      await screen.findByRole("button", { name: "Open Demo take" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gates analysis, separation and import when setup is incomplete", async () => {
+    const skipped = incompleteSetupStatus();
+    skipped.skipped = true;
+    const setupFake = createFakeSetupClient(skipped);
+    setup({ setupClient: setupFake, project: PROJECT_WITHOUT_STEMS });
+    await openProject();
+
+    expect(screen.getByLabelText("Run analysis")).toBeDisabled();
+    expect(screen.getByLabelText("Import recording")).toBeDisabled();
+    expect(screen.getByLabelText("Separation model")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Separate stems" }),
+    ).toBeDisabled();
+    expect(screen.getByTestId("analysis-setup")).toHaveTextContent(
+      /system checks/,
+    );
+    expect(screen.getByTestId("library-setup")).toHaveTextContent(
+      /system checks/,
+    );
+    expect(screen.getByTestId("separation-setup")).toHaveTextContent(
+      /Open setup/,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open setup from analysis" }),
+    );
+    expect(await screen.findByTestId("setup-wizard")).toBeInTheDocument();
+  });
+
+  it("never selects a separation model implicitly for a fresh project", async () => {
+    setup({ project: PROJECT_WITHOUT_STEMS });
+    await openProject();
+
+    expect(screen.getByLabelText("Separation model")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Separate stems" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Choose a model before separating."),
+    ).toBeInTheDocument();
+  });
+
   it("mounts the chord ribbon, sections, mixer, practice, analysis and spectrogram", async () => {
     setup();
     await openProject();
@@ -1346,6 +1427,7 @@ describe("App stem separation", () => {
       client: server.client,
     });
     await openProject();
+    chooseModel();
 
     fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
     await waitFor(() =>
@@ -1438,6 +1520,7 @@ describe("App stem separation", () => {
     await waitFor(() =>
       expect(rigs[0].player.getState().status).toBe("playing"),
     );
+    chooseModel();
 
     fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
     await waitFor(
@@ -1496,6 +1579,7 @@ describe("App stem separation", () => {
     });
     await openProject();
     expect(rigs[0].player.getState().status).toBe("paused");
+    chooseModel();
 
     fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
     await waitFor(
@@ -1528,6 +1612,7 @@ describe("App stem separation", () => {
       client: server.client,
     });
     await openProject();
+    chooseModel();
 
     fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
     expect(await screen.findByTestId("separation-error")).toHaveTextContent(
@@ -1561,12 +1646,13 @@ describe("App stem separation", () => {
     const select = (await screen.findByLabelText(
       "Separation model",
     )) as HTMLSelectElement;
-    expect(select.value).toBe("htdemucs_ft");
+    expect(select.value).toBe("");
     const options = Array.from(select.options).map((option) => ({
       label: option.textContent,
       disabled: option.disabled,
     }));
     expect(options).toEqual([
+      { label: "Choose a model", disabled: true },
       { label: "Demucs htdemucs_ft", disabled: false },
       { label: "SCNet XL IHF", disabled: true },
       { label: "BS-RoFormer-SW", disabled: false },
@@ -1651,14 +1737,12 @@ describe("App stem separation", () => {
     }
   });
 
-  it("falls back to Demucs when the stored model is unavailable", async () => {
+  it("leaves the model unselected when the stored model is unavailable", async () => {
     const project = sixStemProject("retired-model");
     setup({ project });
     await openProject();
 
-    expect(await screen.findByLabelText("Separation model")).toHaveValue(
-      "htdemucs_ft",
-    );
+    expect(await screen.findByLabelText("Separation model")).toHaveValue("");
   });
 
   it("offers Re-separate without a descriptive cache note when stems exist", async () => {

@@ -5,6 +5,7 @@ import { ChordRibbon } from "./panels/chords";
 import { LibraryPanel } from "./panels/library/LibraryPanel";
 import { MixerPanel } from "./panels/mixer";
 import { PracticePanel } from "./panels/practice";
+import { SetupWizard } from "./panels/setup/SetupWizard";
 import { TimeRuler } from "./panels/ruler/TimeRuler";
 import { SectionLane } from "./panels/sections";
 import { SpectrogramPane } from "./panels/spectrogram/SpectrogramPane";
@@ -33,10 +34,9 @@ import {
   type SeparationJobState,
 } from "./state/separation";
 import { createSeparationJobClient } from "./state/separationApi";
-import {
-  DEFAULT_SEPARATION_MODEL_ID,
-  resolveSeparationModelId,
-} from "./state/separationModels";
+import { resolveSeparationModelId } from "./state/separationModels";
+import { setupGates, type SetupClient, type SetupStatus } from "./state/setup";
+import { createSetupClient } from "./state/setupApi";
 import { formatPosition } from "./state/format";
 import { createLocalStudioRuntime } from "./state/localStudio";
 import { clampLoopRangeToDuration, type StudioPlayer } from "./state/player";
@@ -95,6 +95,7 @@ export interface AppProps {
   transport?: ShellTransport;
   analysisClient?: AnalysisJobClient;
   separationClient?: SeparationJobClient;
+  setupClient?: SetupClient;
   createPcmLoader?: (projectId: string) => PcmLoader;
   autosaveDelayMs?: number;
   separationPollIntervalMs?: number;
@@ -198,6 +199,7 @@ export function App({
   transport: transportProp,
   analysisClient: clientProp,
   separationClient: separationClientProp,
+  setupClient: setupClientProp,
   createPcmLoader: pcmFactoryProp,
   autosaveDelayMs = 900,
   separationPollIntervalMs = 400,
@@ -213,6 +215,9 @@ export function App({
   );
   const [separationClient] = useState<SeparationJobClient>(
     () => separationClientProp ?? createSeparationJobClient(),
+  );
+  const [setupClient] = useState<SetupClient>(
+    () => setupClientProp ?? createSetupClient(),
   );
   const [placeholderRuntime] = useState(() => createLocalStudioRuntime());
   const [runtime, setRuntime] = useState<StudioRuntime | null>(null);
@@ -257,16 +262,14 @@ export function App({
     error: string | null;
   }>({ running: false, progress: 0, stage: "", error: null });
   const [separationModels, setSeparationModels] =
-    useState<SeparationModelsResponse>({
-      default: DEFAULT_SEPARATION_MODEL_ID,
-      models: [],
-    });
+    useState<SeparationModelsResponse>({ default: null, models: [] });
   const [separationModelsError, setSeparationModelsError] = useState<
     string | null
   >(null);
-  const [selectedModel, setSelectedModel] = useState(
-    DEFAULT_SEPARATION_MODEL_ID,
-  );
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupLoadError, setSetupLoadError] = useState<string | null>(null);
   const revisionRef = useRef(1);
   const hydratedRef = useRef(false);
   const openTokenRef = useRef(0);
@@ -275,7 +278,7 @@ export function App({
   const runtimeRef = useRef<StudioRuntime | null>(null);
   const separationAbortRef = useRef<AbortController | null>(null);
   const separationJobRef = useRef<SeparationJobState | null>(null);
-  const selectedModelRef = useRef(selectedModel);
+  const selectedModelRef = useRef<string | null>(selectedModel);
   const separationModelsRef = useRef(separationModels);
   sectionsRef.current = sections;
   projectRef.current = project;
@@ -291,6 +294,31 @@ export function App({
     [pcmFactoryProp],
   );
 
+  const refreshSetup = useCallback(async () => {
+    const next = await setupClient.status();
+    setSetupStatus(next);
+    setSetupLoadError(null);
+    return next;
+  }, [setupClient]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void setupClient
+      .status()
+      .then((next) => {
+        if (cancelled) return;
+        setSetupStatus(next);
+        setSetupLoadError(null);
+        setSetupOpen(!next.ready && !next.skipped);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setSetupLoadError(errorMessage(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setupClient]);
+
   useEffect(() => {
     let cancelled = false;
     void api
@@ -301,10 +329,10 @@ export function App({
         }
         setSeparationModels(response);
         setSeparationModelsError(null);
-        setSelectedModel((current) =>
+        setSelectedModel(
           resolveSeparationModelId(
             response.models,
-            projectRef.current?.stemModel ?? current,
+            projectRef.current?.stemModel ?? null,
           ),
         );
       })
@@ -322,10 +350,10 @@ export function App({
     if (separationModels.models.length === 0) {
       return;
     }
-    setSelectedModel((current) =>
+    setSelectedModel(
       resolveSeparationModelId(
         separationModels.models,
-        project?.stemModel ?? current,
+        project?.stemModel ?? null,
       ),
     );
   }, [project?.id, project?.stemModel, separationModels]);
@@ -368,7 +396,7 @@ export function App({
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, []);
+  }, [setupOpen, setupStatus]);
 
   useEffect(() => {
     const previousWidth = previousStageWidthRef.current;
@@ -583,6 +611,13 @@ export function App({
 
   const handleSeparate = useCallback(async () => {
     if (project === null || separation.running) {
+      return;
+    }
+    if (selectedModelRef.current === null) {
+      setSeparation((current) => ({
+        ...current,
+        error: "Choose a model before separating.",
+      }));
       return;
     }
     const separationProjectId = project.id;
@@ -927,6 +962,51 @@ export function App({
     };
   }, [clearHoverGuide]);
 
+  const gates = setupGates(setupStatus);
+  const openSetup = useCallback(() => setSetupOpen(true), []);
+
+  if (setupStatus === null) {
+    return (
+      <main className="setup-page" data-testid="setup-loading">
+        <div className="setup-card">
+          <h1>Checking studio setup</h1>
+          {setupLoadError === null ? (
+            <p className="setup-note">Reading the local setup status…</p>
+          ) : (
+            <div className="setup-error" role="alert">
+              <span>{setupLoadError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSetupLoadError(null);
+                  void refreshSetup().catch((error: unknown) =>
+                    setSetupLoadError(errorMessage(error)),
+                  );
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  if (setupOpen) {
+    return (
+      <SetupWizard
+        client={setupClient}
+        status={setupStatus}
+        onStatus={(next) => {
+          setSetupStatus(next);
+          if (next.ready) setSetupOpen(false);
+        }}
+        onClose={() => setSetupOpen(false)}
+      />
+    );
+  }
+
   return (
     <div className="studio">
       <main className="studio-main">
@@ -937,6 +1017,9 @@ export function App({
               analysis={project.analysis}
               client={analysisClient}
               onAnalyzed={handleAnalyzed}
+              disabled={!gates.canAnalyze}
+              setupHint={gates.analyzeReason}
+              onSetup={openSetup}
             />
           )}
           {project !== null && (
@@ -959,6 +1042,9 @@ export function App({
                 activeModel: project.stemModel,
                 songSeconds: project.durationSeconds,
                 modelsError: separationModelsError,
+                disabled: !gates.canSeparate,
+                setupHint: gates.separateReason,
+                onSetup: openSetup,
               }}
             />
           )}
@@ -968,6 +1054,9 @@ export function App({
               void openProject(projectId);
             }}
             activeProjectId={project?.id ?? null}
+            canImport={gates.canImport}
+            importHint={gates.importReason}
+            onSetup={openSetup}
           />
         </aside>
 

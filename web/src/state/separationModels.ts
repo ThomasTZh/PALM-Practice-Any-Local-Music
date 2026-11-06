@@ -17,14 +17,14 @@ export const HTDEMUCS_MODEL: SeparationModel = {
   license: "MIT code; htdemucs_ft weights are research use",
   bundled: true,
   install_dir: "models/htdemucs_ft",
-  install_command: "bundled with the checkout",
-  checkpoint_manifest: "analysis/checkpoints.json",
-  config_name: "htdemucs_ft.yaml",
+  install_command: "make models-install ID=htdemucs_ft",
+  checkpoint_manifest: null,
+  config_name: null,
   status: "installed",
   installed: true,
   model_dir: "models/htdemucs_ft",
   detail: "",
-  default: true,
+  default: false,
   metrics: {
     device: "cpu",
     fixture_seconds: 8,
@@ -36,26 +36,24 @@ export const HTDEMUCS_MODEL: SeparationModel = {
 };
 
 export function defaultSeparationModels(): SeparationModelsResponse {
-  return { default: DEFAULT_SEPARATION_MODEL_ID, models: [HTDEMUCS_MODEL] };
+  return { default: null, models: [HTDEMUCS_MODEL] };
 }
 
-/** Pick the preferred installed model, else the server default, else Demucs. */
+/**
+ * Only the project's recorded model may be preselected, and only while it is
+ * installed. A fresh project never gets an implicit model.
+ */
 export function resolveSeparationModelId(
   models: readonly SeparationModel[],
   preferred: string | null | undefined,
-): string {
-  const installed = models.filter((model) => model.installed);
-  if (preferred !== null && preferred !== undefined) {
-    const match = installed.find((model) => model.id === preferred);
-    if (match !== undefined) {
-      return match.id;
-    }
+): string | null {
+  if (preferred === null || preferred === undefined) {
+    return null;
   }
-  const fallback =
-    installed.find((model) => model.id === DEFAULT_SEPARATION_MODEL_ID) ??
-    installed.find((model) => model.default) ??
-    installed[0];
-  return fallback?.id ?? DEFAULT_SEPARATION_MODEL_ID;
+  return (
+    models.find((model) => model.id === preferred && model.installed)?.id ??
+    null
+  );
 }
 
 export function separationModelName(

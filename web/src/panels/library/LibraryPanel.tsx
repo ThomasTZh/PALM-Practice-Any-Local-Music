@@ -8,6 +8,9 @@ export interface LibraryPanelProps {
   api: StudioApi;
   onOpen: (projectId: string) => void;
   activeProjectId?: string | null;
+  canImport?: boolean;
+  importHint?: string | null;
+  onSetup?: () => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -19,6 +22,9 @@ export function LibraryPanel({
   api,
   onOpen,
   activeProjectId = null,
+  canImport = true,
+  importHint = null,
+  onSetup,
 }: LibraryPanelProps) {
   const [entries, setEntries] = useState<LibraryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,13 +67,18 @@ export function LibraryPanel({
     <aside className="library" aria-label="Library">
       <div className="library-header">
         <h2>Library</h2>
+        {onSetup !== undefined && (
+          <button type="button" className="library-setup" onClick={onSetup}>
+            Setup
+          </button>
+        )}
         <label className="library-import">
           <span>{importing ? "Importing…" : "Import"}</span>
           <input
             type="file"
             accept="audio/*,video/*"
             aria-label="Import recording"
-            disabled={importing}
+            disabled={importing || !canImport}
             onChange={handleImport}
           />
         </label>
@@ -76,6 +87,21 @@ export function LibraryPanel({
       {error !== null && (
         <p className="library-error" role="alert">
           {error}
+        </p>
+      )}
+      {!canImport && (
+        <p className="library-error" data-testid="library-setup">
+          {importHint ??
+            "Importing needs studio setup. Open Setup to finish installing the studio."}{" "}
+          {onSetup !== undefined && (
+            <button
+              type="button"
+              aria-label="Open setup from library"
+              onClick={onSetup}
+            >
+              Open setup
+            </button>
+          )}
         </p>
       )}
       {entries === null && error === null && (

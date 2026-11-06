@@ -1,7 +1,6 @@
 import type { SeparationModel } from "../../api/types";
 import {
   modelCpuEstimate,
-  resolveSeparationModelId,
   separationModelName,
 } from "../../state/separationModels";
 import {
@@ -34,11 +33,14 @@ export interface MixerSeparation {
   onCancel: () => void;
   /** Model registry rows; omitted by older callers/tests. */
   models?: SeparationModel[];
-  selectedModel?: string;
+  selectedModel?: string | null;
   onModelChange?: (modelId: string) => void;
   activeModel?: string | null;
   songSeconds?: number;
   modelsError?: string | null;
+  disabled?: boolean;
+  setupHint?: string | null;
+  onSetup?: () => void;
 }
 
 export interface MixerPanelProps {
@@ -86,15 +88,15 @@ export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
                 Model
                 <select
                   aria-label="Separation model"
-                  value={
-                    separation.selectedModel ??
-                    resolveSeparationModelId(separation.models, null)
-                  }
+                  value={separation.selectedModel ?? ""}
                   disabled={separation.running}
                   onChange={(event) =>
                     separation.onModelChange?.(event.target.value)
                   }
                 >
+                  <option value="" disabled>
+                    Choose a model
+                  </option>
                   {separation.models.map((model) => (
                     <option
                       key={model.id}
@@ -108,10 +110,7 @@ export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
               </label>
               {(() => {
                 const selected = separation.models?.find(
-                  (model) =>
-                    model.id ===
-                    (separation.selectedModel ??
-                      resolveSeparationModelId(separation.models ?? [], null)),
+                  (model) => model.id === separation.selectedModel,
                 );
                 const estimate =
                   selected === undefined
@@ -168,10 +167,39 @@ export function MixerPanel({ stems, controller, separation }: MixerPanelProps) {
               <button
                 type="button"
                 className="mixer-separation-button"
+                disabled={
+                  separation.disabled === true ||
+                  separation.selectedModel === null ||
+                  separation.selectedModel === undefined
+                }
                 onClick={separation.onSeparate}
               >
                 {separation.hasStems ? "Re-separate" : "Separate stems"}
               </button>
+              {(separation.selectedModel === null ||
+                separation.selectedModel === undefined) && (
+                <p className="mixer-separation-hint">
+                  Choose a model before separating.
+                </p>
+              )}
+              {separation.disabled === true && (
+                <p
+                  className="mixer-separation-hint"
+                  data-testid="separation-setup"
+                >
+                  {separation.setupHint ??
+                    "Studio setup is incomplete. Finish setup before separating."}{" "}
+                  {separation.onSetup !== undefined && (
+                    <button
+                      type="button"
+                      aria-label="Open setup from separation"
+                      onClick={separation.onSetup}
+                    >
+                      Open setup
+                    </button>
+                  )}
+                </p>
+              )}
             </>
           )}
           {separation.error !== null && (

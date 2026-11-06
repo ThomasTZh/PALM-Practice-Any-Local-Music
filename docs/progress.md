@@ -2334,3 +2334,54 @@ Follow-up after the screenshot pass: the separation panel no longer renders the
 cached-run description, and the active-model line strips the internal
 `(bundled)` suffix, so the dropdown and readout show only model names.
 
+
+## 2026-11-06 — first-run setup wizard, equal model choice and readiness gating (t63)
+
+### Setup wizard
+
+App now fetches `/api/setup/status` on boot. Until that response arrives it
+shows a full-page checking state; an incomplete, non-skipped install renders the
+full-page wizard before the library. The wizard has:
+- system checks (glibc, disk, ffmpeg) with statuses/details;
+- optional GPL/AGPL tools with a consent checkbox and install action;
+- CPU/CUDA environment choice with ~500 MB / ~3.5 GB estimates;
+- three equal model cards, each with engine, size, labels, licence warning and
+  separate select/consent checkboxes.
+
+Setup jobs poll the shared job endpoint, show a determinate progress bar and
+stage, support cancel, and keep an actionable error plus Retry after failure.
+Each successful job refetches setup status through `onStatus`. Skip persists
+via `/api/setup/skip`, returns to the library, and the library's Setup button
+reopens the wizard.
+
+### Equal model choice and readiness
+
+There is no implicit Demucs/default model anymore: the separation response's
+default is nullable, `resolveSeparationModelId` only accepts an installed
+recorded model, and a fresh project's select shows a disabled "Choose a model"
+placeholder. Separate/Re-separate stay disabled until a model is chosen;
+reopening preselects only `project.stemModel` when it is installed.
+
+Readiness gates are operation-specific:
+- import needs passing system checks;
+- analysis needs checks + tools + an inference environment;
+- separation additionally needs an installed model.
+
+Analysis, the mixer and the library show plain-language setup reasons with
+"Open setup" links when gated. Optional tools do not block importing.
+
+### Tests/verification
+
+- SetupWizard tests cover all four sections, equal cards/licences, skip,
+  determinate progress, cancel, retry/actionable error, environment choice,
+  selected-model consent and status refetch.
+- App tests cover wizard-before-library, skip/reopen, incomplete-setup gating
+  for analysis/separation/import, no implicit model, and stored-model restore.
+- setupApi tests cover status parsing and skip/tools/environments/models/job/
+  cancel payloads; separationModels tests cover no-default and installed-only
+  restore.
+- Firefox mock: incomplete status rendered the wizard with no library; skip
+  returned to the library, Setup reopened it, and import was disabled with a
+  setup link. Document 1280 wide.
+- make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass.
+  No dependency added.

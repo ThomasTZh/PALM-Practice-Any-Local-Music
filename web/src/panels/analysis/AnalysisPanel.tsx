@@ -15,6 +15,9 @@ export interface AnalysisPanelProps {
   defaultBpb?: number;
   pollIntervalMs?: number;
   onAnalyzed?: (snapshot: AnalysisSnapshot) => void;
+  disabled?: boolean;
+  setupHint?: string | null;
+  onSetup?: () => void;
 }
 
 const BPB_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 12];
@@ -45,6 +48,9 @@ export function AnalysisPanel({
   defaultBpb = DEFAULT_BPB,
   pollIntervalMs = 250,
   onAnalyzed,
+  disabled = false,
+  setupHint = null,
+  onSetup,
 }: AnalysisPanelProps) {
   const [bpb, setBpb] = useState(() => analysis?.bpb ?? defaultBpb);
   const [job, setJob] = useState<AnalysisJobState | null>(null);
@@ -142,7 +148,7 @@ export function AnalysisPanel({
           <button
             type="button"
             aria-label="Run analysis"
-            disabled={running}
+            disabled={running || disabled}
             onClick={() => {
               void run();
             }}
@@ -152,6 +158,21 @@ export function AnalysisPanel({
         </div>
       </header>
 
+      {disabled && (
+        <p className="analysis-setup" data-testid="analysis-setup">
+          {setupHint ??
+            "Studio setup is incomplete. Finish setup before analysing."}{" "}
+          {onSetup !== undefined && (
+            <button
+              type="button"
+              aria-label="Open setup from analysis"
+              onClick={onSetup}
+            >
+              Open setup
+            </button>
+          )}
+        </p>
+      )}
       {job !== null && (
         <div
           className="analysis-progress"

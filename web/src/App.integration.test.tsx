@@ -24,6 +24,7 @@ import {
 } from "./state/project";
 import { createShellTransport } from "./state/studioRuntime";
 import { defaultSeparationModels } from "./state/separationModels";
+import { createFakeSetupClient } from "./state/fakeSetup";
 import { App } from "./App";
 
 // The shell falls back to measuring the window in jsdom; 1300 px leaves
@@ -289,6 +290,7 @@ async function renderRealStudio(
       api={shellApi(project)}
       transport={transport}
       analysisClient={client}
+      setupClient={createFakeSetupClient()}
       createPcmLoader={() => async (startFrame, endFrame) => ({
         samples: new Float32Array(2048),
         sampleRate: RATE,

@@ -119,6 +119,7 @@ describe("MixerPanel stem separation", () => {
       progress: 0,
       stage: "",
       error: null,
+      selectedModel: "htdemucs_ft",
       onSeparate: vi.fn(),
       onCancel: vi.fn(),
       ...overrides,
@@ -245,6 +246,7 @@ describe("MixerPanel stem separation", () => {
       }),
     );
     expect(options).toEqual([
+      { label: "Choose a model", disabled: true },
       { label: "Demucs htdemucs_ft", disabled: false },
       { label: "SCNet XL IHF", disabled: true },
       { label: "BS-RoFormer-SW", disabled: false },

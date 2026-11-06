@@ -2047,3 +2047,31 @@ body {
 .spectrogram-playhead {
   z-index: 7;
 }
+
+/* Setup links and inline readiness hints */
+.library-setup,
+.library-error button,
+.analysis-setup button,
+.mixer-separation-hint button {
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.analysis-setup,
+.mixer-separation-hint {
+  margin: 0.45rem 0;
+  color: var(--danger);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.analysis-setup button,
+.mixer-separation-hint button {
+  margin-left: 0.25rem;
+}

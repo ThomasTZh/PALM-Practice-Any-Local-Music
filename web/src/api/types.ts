@@ -202,7 +202,8 @@ export interface SeparationModel {
 }
 
 export interface SeparationModelsResponse {
-  default: string;
+  /** Server-declared default, if any. The equal-model UI never assumes one. */
+  default: string | null;
   models: SeparationModel[];
 }
 
