@@ -1,312 +1,282 @@
 # PALM: Practice Any Local Music
 
-PALM (Practice Any Local Music) is a private, local practice studio. Bring a
-recording you already own, separate the bass, read the chords and the grid, and
-practise it: loops, bar-snapped sections, metronome and count-in, speed and
-pitch — on your own machine, with no account, no upload and no network access.
+## Abstract
 
-The application is complete in this checkout: a FastAPI server, a React/TypeScript
-browser UI, a real AudioWorklet playback engine, the preserved Vamp analysis
-pipeline and CPU Demucs separation, plus optional SCNet XL IHF and
-BS-RoFormer-SW models. The build log and all measured evidence are in
-[docs/progress.md](docs/progress.md).
+PALM is a free practice room that runs on your own computer, for music you
+already own. It can split a recording into singing, drums, bass and everything
+else, show the chords and the beat, slow the music down without making it sound
+higher or lower, and loop the sections you want to practise. Everything stays on
+your computer: no account, no upload and no internet connection.
 
-- Architecture and time model: [docs/architecture.md](docs/architecture.md)
-- API reference: [docs/api.md](docs/api.md)
-- Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
-- Acceptance report: [docs/acceptance/report.md](docs/acceptance/report.md)
-- Portable release guide: [docs/portable.md](docs/portable.md)
-- Release notes: [packaging/release-notes.md](packaging/release-notes.md)
-- Clean-room evidence: [packaging/VERIFICATION.md](packaging/VERIFICATION.md)
-- Product intent: [GOALS.md](GOALS.md)
+**Early version.** This is a 0.1.0-dev build with limited testing and quality
+control. Expect setup failures, incomplete platform coverage and model or
+licence edge cases. Keep your own backup of any project you care about.
 
-## Quick start
+## Portable Linux release
 
-```sh
-make doctor       # toolchain, assets, Vamp pack, Piper, model bundle, GPU
-make bootstrap    # idempotent offline setup; skips completed work
-make build-web    # typecheck + production UI build
-.venv/bin/basseparate serve --no-browser --port 0
-# open the printed `bootstrap: http://127.0.0.1:<port>/` URL
-```
+The repository publishes a portable Linux x86_64 tar with `SHA256SUMS` and
+release notes. It bundles the app, web UI, analysis workers, setup code,
+launcher and a pinned Python/uv runtime. It does **not** bundle model weights,
+Sonic Visualiser/Piper, Vamp plugins, PyTorch environments or ffmpeg.
 
-`make dev` starts the Vite dev server and an API instance; production use is the
-CLI above serving `web/dist`. By default the server keeps its data in the
-per-user application directory; pass `--data-root DIR` to use a different one
-(the e2e suite uses an isolated temporary root per run).
+The launcher is `bin/palm`; it starts the server and auto-opens the browser.
 
-This workspace preserves the Python environment, web dependencies, Vamp
-plugins, Piper host, model bundle and test recordings, so `make bootstrap` needs
-no network and links the web dependencies from the preserved pnpm store. On a
-fresh checkout without those assets, `make install-tools` checks the OS and
-toolchain, downloads the pinned Sonic Visualiser and Vamp Plugin Pack releases
-from their official pages, verifies every SHA-256, and downloads the Demucs
-weights only after the explicit `--accept-model-terms` flag or an `accept` answer. See
-[THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md) for URLs, hashes, licences
-and credits. Nothing third-party is committed.
+The first launch opens a setup wizard. It checks the machine, offers optional
+Sonic Visualiser and Vamp downloads with their licences, creates a CPU or CUDA
+environment, and lists the three separation models as equal choices with no
+default. Setup needs network access for the pieces you choose, and `ffmpeg` and
+`ffprobe` must already be installed. Setup can be skipped; playback, importing,
+chords, sections and the spectrogram then work without the optional pieces. See
+[docs/portable.md](docs/portable.md) and the clean-room record in
+[packaging/VERIFICATION.md](packaging/VERIFICATION.md).
 
-## Portable release
+## Purpose and gaps
 
-The downloadable release is one portable asset plus checksums and notes:
+The project exists to practise a song against its own harmony, tempo and form
+without uploading audio to a service. Practice tools usually split the job:
+cloud services such as Moises [1] produce stems and practice aids, visualisers
+such as Sonic Visualiser [2] expose analysis, and separation GUIs such as UVR
+[3] produce stems without a practice transport. This project keeps the steps
+local and attaches the analysis to the same bar grid that drives practice.
 
-- `PALM-<version>-linux-x86_64.tar.gz` (extract and run `./bin/palm`)
-- `SHA256SUMS` and `RELEASE-NOTES.md`
+## Features
 
-The bundle contains only the app, built UI, analysis workers/registry,
-environment definitions, launcher, desktop icon, setup code and licences.
-Model weights, tools and Python environments are **not** bundled.
+- **Import and project store.** `basseparate serve` probes a local audio or
+  video file with ffprobe, decodes one PCM copy at the project rate, writes
+  waveform peaks and stores a versioned project document.
+- **Model-selectable separation.** The setup wizard and mixer offer three
+  equal, hash-verified choices: `htdemucs_ft` (four stems), SCNet XL IHF (four
+  stems) or BS-RoFormer-SW (six stems, adding guitar and piano). None is
+  preselected or installed by default. Every model has its own
+  content-addressed cache, progress, cancellation and per-stem waveform peaks
+  [4][14][15][16].
+- **Chord, key and beat analysis.** The **Analyse** control runs Chordino, the
+  QM Key Detector and the QM Bar and Beat Tracker through the Piper host, then
+  persists chords, key and the bar/beat grid [5][6][7][8].
+- **Practice transport.** Play, pause, seek, 0.25-2x speed with preserved
+  pitch, metronome and a count-in that is audible even with the metronome off.
+- **Sections and loops.** Bar-snapped sections, draggable ranges, overlap
+  handling and a chain loop from the first selected section to the last.
+- **Waveforms and spectrogram.** A mix waveform, synced stem lanes, a chord
+  ribbon and a spectrogram labelled at every semitone from C1 to C8.
+- **Pinned installer.** `make install-tools` checks the toolchain, downloads
+  Sonic Visualiser and the Vamp Plugin Pack from their official releases with
+  SHA-256 verification, and fetches the Demucs weights only after consent.
+- **Offline verification.** `make gate` runs lint, typing, fixtures, Python and
+  web tests, the production build and two browser specs.
 
-**First run** opens a setup wizard. It needs a network connection for the
-downloads you choose, but does not upload anything:
+## Not for / limitations
 
-- **ffmpeg and ffprobe must already be installed**; they are not bundled.
-- At least **5 GiB free** under the data root; the wizard checks this first.
-- One environment: **CPU (~500 MB)** or **CUDA (~3.5 GB)**, for an NVIDIA GPU.
-- At least one model card, all equal with **no default**: `htdemucs_ft`
-  (321.0 MiB, four stems), `scnet-xl-ihf` (204.2 MiB, four stems), or
-  `bs-roformer-sw` (667.0 MiB, six stems including guitar/piano).
-- Optional analysis tools (Sonic Visualiser/Piper and Vamp plugins).
+- **Limited testing and quality control.** This is an early 0.1.0-dev build.
+  The portable asset was smoke-tested in a minimal Linux container fallback,
+  not across distributions; the Ubuntu 22.04 container path is CI-only and not
+  independently evidenced here.
+- Linux x86_64 is the tested platform; Windows and macOS are not packaged.
+- The server is loopback-only. There are no accounts, cloud processing or
+  multi-user features.
+- Pitch shifting is not exposed; speed changes preserve pitch.
+- The release does not contain the Demucs weights, the Vamp plugin pack or the
+  Sonic Visualiser/Piper binaries. The setup wizard needs one network session
+  for whichever pieces you install. The Demucs weights have no separate licence
+  and are used for research.
+- Chord and key results depend on the plugins. Relative major/minor ambiguity
+  and the beatless-material tempo estimate are documented plugin behaviour.
+- GPU inference is supported, but no GPU separation timing or final listening
+  pass is part of this release's evidence.
+- No model is bundled or preferred. Demucs is 321 MiB, SCNet XL IHF 204 MiB
+  and BS-RoFormer-SW 667 MiB; each needs an explicit choice and consent in the
+  setup wizard. The BS-RoFormer-SW mirror has no declared upstream licence, so
+  it is used privately and is not redistributed.
+- On CPU, the models differ widely in speed: on the 8 s fixture, Demucs took
+  19.2 s, SCNet 58.2 s and BS-RoFormer-SW 67.4 s, about 2.4x, 7.3x and 8.4x
+  realtime (roughly 12, 36 and 41 minutes for a five-minute song). Choose
+  according to the trade-off; nothing is selected for you.
 
-Choose a model, accept its licence and install. `Skip setup` returns to the
-library; Import/Analyse/Separate explain what is still missing and offer
-`Open setup`. The data root defaults to `~/.local/share/palm` (override with
-`--data-dir` or `PALM_DATA_DIR`) and holds models, tools, environments, logs,
-run state, setup state and projects. See [docs/portable.md](docs/portable.md)
-for launcher options, data layout, setup API, upgrade/uninstall, first-run
-troubleshooting and licence boundaries.
+## Screenshot
 
-## What it does
+![Practice view after importing, analysing and separating the CC0 track Eat](assets/screenshot.png)
 
-- **Import** a local audio/video file (path, upload or job), with ffprobe
-  metadata, one canonical PCM decode at the project rate, waveform peaks and an
-  atomic, versioned project document.
-- **Separate stems** with a selectable model: `htdemucs_ft` (four stems:
-  vocals, drums, bass, other), `scnet-xl-ihf` (same four stems) and
-  `bs-roformer-sw` (six stems, adding guitar and piano) are equal choices with
-  no default; the chosen one is installed during first-run setup or with
-  `make models-install ID=...`. Jobs are content-cached per model, show a
-  determinate progress bar with the stage, cancel cleanly and expose stem PCM
-  and waveform peaks. The mixer's model selector marks missing models disabled
-  with their exact install command; a success activates the model's stem lanes
-  and mixer channels, and a partial stem set falls back to the mix with a
-  visible notice.
-- **Analyse** with the preserved Vamp plugins through the local Piper host:
-  Chordino chords, Key Detector key, and QM Bar and Beat Tracker beats/bars with
-  a beats-per-bar hint. Results are content-addressed and cached; the analysed
-  grid, key and chords are persisted in the project.
-- **Practise** in a full-width browser layout with one shared timeline: mix
-  waveform, synced waveform lanes for vocals, drums, bass and other, the chord
-  ribbon, the sections and then the spectrogram. The left rail holds Analysis,
-  Mixer and Library. The pinned bottom bar has the practice controls on the left,
-  the transport (return, play, loop with play centred on the drawer) in the
-  middle, and the position plus bar/beat readouts at its bottom right; the track,
-  key and BPM readouts sit in the top-right of the stage toolbar, and Zoom to
-  selection falls back to an eight-bar window around the playhead when nothing is
-  selected. The spectrogram axis is labelled with every semitone from C1 to C8.
-  Sections are created by dragging (four-bar default), moved by dragging their
-  body (length preserved, overlaps allowed), resized by their edges, and added
-  ending at the playhead; the single-row editor lists them sorted by start and
-  can chain-loop several selected sections with the gaps included. A green
-  timeline scrollbar and playhead-follow paging make zoomed views navigable.
-  A 1 px orange playhead and a dashed light-gray hover guide align across every
-  timeline pane (ruler, waveforms, chord ribbon, sections, spectrogram); the
-  guide follows the pointer without seeking. Speed 0.25–2×, fixed accent and
-  100 % metronome volume, and a count-in that clicks even when the metronome is
-  off. Pitch shifting was removed on request. The engine starts silent and
-  renders only after an explicit play.
-- **Save, reopen, export**: debounced atomic autosave of sections, loop, speed,
-  position and mixer; reopen restores the project; mixdown export writes a
-  16-bit WAV at the project rate with exactly the project frame count.
+Practice view after analysis and separation of “Eat” by HoliznaCC0, a CC0
+recording from the OpenGameArt Funk Collection [13]. The screenshot shows the
+current PALM layout with the model dropdown and four Demucs stems; installing
+BS-RoFormer-SW adds guitar and piano lanes. The spectrogram is collapsed in the
+capture. No audio file is included in this repository.
 
-## Separation models
+## Reproduction environment
 
-All three separation models are equal cards with no default. The first-run
-wizard or `make models-install ID=...` installs the ones you choose; nothing is
-bundled with the portable tar. The model selector requires an explicit choice
-before Separate is enabled.
+| Item | Value |
+| --- | --- |
+| Operating system | Linux x86_64, tested on Nobara with the Fedora 44 kernel |
+| Python | 3.11.15, managed by uv 0.12.0 |
+| Node.js / pnpm | 22.22.2 / 12.15.0 |
+| FFmpeg / FFprobe | 8.1.3 |
+| Browser | Firefox (primary) and Chromium, driven by Playwright 1.63.0 |
+| Python packages | FastAPI 0.142.0, uvicorn 0.54.0, pydantic 2.13.5, numpy 2.4.6 |
+| Web packages | React 19.3.0, Vite 8.3.1, TypeScript 5.9.3, Vitest 5.0.2 |
+| Separation environment | demucs 4.1.0, torch 2.9.1 |
+| Optional model environment | Python 3.11.15, msst 0.1.0, torch 2.9.1 (`analysis-models/uv.lock`) |
+| GPU present during development | NVIDIA RTX 4080 with CUDA; the stem timing below is CPU |
+| Input data | Synthetic fixtures generated by `make fixtures`; no third-party audio |
 
-| Model id | Stems | Installed size | 8 s CPU fixture (measured) | 5 min song estimate (linear) |
-| --- | --- | ---: | --- | --- |
-| `htdemucs_ft` | vocals, drums, bass, other | 321.0 MiB | 19.24 s wall (18.85 s child) | ~2.4x realtime, about 12 min |
-| `scnet-xl-ihf` | vocals, drums, bass, other | 204.2 MiB | 58.20 s wall (55.32 s child), 3.9 GiB peak RSS | ~7.3x realtime, about 36 min |
-| `bs-roformer-sw` | bass, drums, other, vocals, guitar, piano | 667.0 MiB | 67.35 s wall (65.97 s child), 3.0 GiB peak RSS | ~8.4x realtime, about 41 min |
+## Install and run
 
-All timings are CPU-only on this machine (CUDA is unavailable for the measured
-runs); the full-song values are linear estimates from the measured 8 s runs,
-not measured on a whole song. Peak memory is model-dominated and scnet-xl-ihf
-is the heavier of the two. The setup cards show each model's size and licence
-before installation.
+The commands assume a fresh clone of this repository. The Python package and
+CLI keep the historical name `basseparate`; PALM is the product name, and the
+unchanged identifiers keep existing projects and data directories working.
 
-```sh
-make models-list                         # offline status: installed/missing/hash-mismatch
-make models-install ID=scnet-xl-ihf      # network only for this step
-make models-install bs-roformer-sw       # same as ID=...
-make models-verify                       # offline size + SHA-256 check of installed files
-make models-env                          # offline sync of analysis-models/.venv from the uv cache
-make test-models-real                    # opt-in real 8 s SCNet/BS-RoFormer runs
-```
+1. Install the prerequisites: Python 3.11, Node.js 22, pnpm, uv and FFmpeg.
+   `make install-tools` prints distribution package commands for anything
+   missing.
+2. Create the environments:
 
-The packaged app installs the same models through the setup wizard, with
-per-model licence consent. The source-checkout installer writes a `.part`
-staging file, checks the declared size and SHA-256, publishes atomically and
-re-verifies the whole model directory; a failure leaves the previous directory
-or nothing. With no model selected, Separate stays disabled with a plain reason.
-The weights stay under the untracked `models/` directory (or the packaged data
-root); they are not committed. `make gate` and `make test-web/test-backend` stay
-offline and skip the real model tests.
+   ```sh
+   uv sync
+   pnpm install
+   (cd analysis && uv sync)
+   (cd analysis-models && uv sync)   # only for SCNet / BS-RoFormer-SW
+   ```
 
-Licences and provenance: Demucs code is MIT and its bundled weights are research
-use only; SCNet/MSST code is MIT with weights released through MSST without a
-separate weight licence; the BS-RoFormer-SW mirror has an unknown upstream
-weight licence and is treated as private use only. Details, source URLs and
-hashes are in [licenses/NOTICES.md](licenses/NOTICES.md) and
-`analysis/models.json`.
+3. Prepare fixtures and the external tools:
 
-## Make targets
+   ```sh
+   make bootstrap
+   make install-tools
+   # or, after reading the weights notice:
+   make install-tools ACCEPT_MODEL_TERMS=1
+   make build-web
+   ```
 
-| Target | What it does |
-|---|---|
-| `doctor` | toolchain, assets, Vamp plugin pack, Piper, model bundle, GPU |
-| `bootstrap` | offline, idempotent setup; skips completed work |
-| `install-tools` | checks the machine and fetches pinned Vamp/Piper tools |
-| `install-model` | legacy helper: fetches the htdemucs_ft weights after accepting their terms |
-| `models-list` / `models-verify` | offline list / size+SHA-256 verification of separation models |
-| `models-install` | install an optional model: `ID=scnet-xl-ihf` (or `make models-install scnet-xl-ihf`) |
-| `models-env` | offline sync of the isolated `analysis-models` environment from the uv cache |
-| `test-models-real` | opt-in real 8 s SCNet/BS-RoFormer runs (weights installed; slow) |
-| `fixtures` | writes the six deterministic WAV fixtures |
-| `dev` / `dev-smoke` | dev servers / start the real server, fetch health and root, stop |
-| `build` / `build-web` | compile Python + build UI / typecheck + build UI only |
-| `test` | Python and web suites |
-| `test-backend` / `test-web` | scoped backend pytest / Vitest only |
-| `test-separation` | real Demucs stem tests (slow, opt-in) |
-| `e2e` | Playwright golden path on the real server (Firefox + Chromium) |
-| `accept` | five-recording analysis report → `docs/acceptance/` |
-| `gate` / `gate-lite` | full local gate / fast subset |
-| `analysis-check` | Vamp SDK, plugin pack, Piper, native host and model bundle |
-| `fix` | ruff + prettier fixes |
-| `fixtures`, `demo` | regenerate fixture WAVs, list them |
+   `make install-tools` checks the OS, Python, Node, uv, pnpm and FFmpeg,
+   downloads Sonic Visualiser 5.2.1 and the Vamp Plugin Pack 2.0 from their
+   official release pages, verifies every SHA-256, and runs `make doctor`. The
+   four `htdemucs_ft` checkpoints and preset are fetched only after the explicit
+   consent flag or an `accept` answer. Nothing third-party is written into git.
+   The optional separation models are installed separately and only on request:
 
-`make gate` runs lint, format, strict typing, fixture determinism, Python and web
-tests, the production build, and the two-browser golden path. It is offline.
+   ```sh
+   make models-list
+   make models-install ID=scnet-xl-ihf     # 204 MiB
+   make models-install ID=bs-roformer-sw   # 667 MiB, six stems
+   ```
 
-## Acceptance evidence
+   The URLs, sizes, SHA-256 values and licences are in
+   `THIRD_PARTY_DOWNLOADS.md`; `make models-verify` checks them offline.
 
-Final gate (run for this documentation, exit 0):
+4. Start the server:
 
-```text
-[PASS] ruff check / ruff format / fixtures (6) / models verify / mypy strict
-[PASS] pytest 299 passed, 8 skipped (real-model tests opt-in and skipped)
-[PASS] web typecheck, web tests (53 files / 531 tests, serialized), web build
-[PASS] e2e golden path + layout spec (2 specs): Firefox and Chromium, isolated data root
-gate: ok
-```
+   ```sh
+   .venv/bin/basseparate serve --no-browser --port 0
+   ```
 
-`make accept` exit 0 analysed all five `audio2test` recordings: 1103.98 s of
-audio in 213.32 s of cold wall time, with BPM, key, bar/beat counts, chord
-sequences and per-file timings in [docs/acceptance/report.md](docs/acceptance/report.md)
-and `report.json`. Missing recordings are reported as `missing` with null
-values, never fabricated.
+   Expected output includes the loopback URL:
 
-The golden path imports the deterministic `progression_120` fixture, analyses it
-(C major, 120.2 BPM, 8 bars, C/Am/F/G), reopens the project, asserts transport
-state and position movement, a 0.5× speed change, a four-bar section loop whose
-range is read back from the saved project state, the metronome UI, autosave,
-reopen and WAV export. In the final run both Firefox and Chromium advanced the
-transport, changed speed and wrapped the real section range; headless runs
-explicitly do not claim audible verification.
+   ```text
+   bootstrap: http://127.0.0.1:<port>/
+   ```
 
-The manual listening checklist is in [docs/progress.md](docs/progress.md). Two
-field sessions are recorded there (Carousel on Firefox): playback, speed, pitch,
-chords, key, BPM and metronome pass by ear; stems, saving and section dragging
-were fixed after the first session and confirmed working in the second. The
-second session also found the engine rendering audio before any play press, whose
-root cause is fixed and covered by real-WASM silence tests. After the second
-session the shell was reworked (header removed, pinned compact transport with
-track/key/BPM, ordered left rail, layout and scrollbar containment, sections
-timeline-first with sorted list, body drag, end-at-playhead Add and chain loop,
-pitch removed, count-in independent of the metronome), then a fourth round moved
-the practice controls into the bottom-left zone, centred the transport, restored
-single-row section entries and labelled the spectrogram axis with every semitone
-from C1 to C8. A fifth round put the play button at the drawer centre, moved the
-position and bar/beat readouts to the stage toolbar, moved the spectrogram below
-the sections and clamped its PCM window, and defaulted Zoom to selection to eight
-bars around the playhead. Those changes need one final listening and visual pass;
-the checklist is not claimed as fully passed.
+   `curl http://127.0.0.1:<port>/api/health` returns a JSON object with
+   `"status": "ok"`, the package version, the data root and whether the built UI
+   is present. `make doctor` ends with
+   `doctor: required toolchain and environment present; no network access was used`.
 
-## Known limitations
+## Layout
 
-- **Tempo on beatless material:** sustained pads without onsets make QM Bar and
-  Beat Tracker report 135.999 BPM/5 bars (the preserved native host reports the
-  same). `click_120` and `progression_120` prove 120 BPM; the pad result is
-  plugin behaviour, not a feed bug. No fixture-specific correction is applied.
-- **Analysis cache and plugin versions:** the key includes source bytes, rate,
-  bpb, lead-in and plugin names/parameters, but not plugin versions. The offline
-  pack is frozen; bump `ANALYSIS_VERSION` if it ever changes.
-- **Key tonic encoding:** `qm-keydetector` reports a 1-based tonic (C=1, A=10)
-  in this pack; use the human key label, not the raw tonic.
-- **CPU separation only here:** the NVIDIA driver is unavailable and torch
-  reports no CUDA, so Demucs and MSST run on CPU. Measured on the 8 s stereo
-  fixture: htdemucs_ft 19.24 s, scnet-xl-ihf 58.20 s (3.9 GiB peak RSS),
-  bs-roformer-sw 67.35 s (3.0 GiB peak RSS); 60 s estimates are about 7.3 and
-  8.4 min for the two MSST models. Full songs take minutes, Demucs is the fast
-  default, and cancelling a job stops the child without publishing a stem set.
-- **Chord/key accuracy varies:** Chordino spelling depends on voicing/rate
-  (`C` vs `C6`, slash chords) and Key Detector can change on ambiguous material.
-- **Pitch shifting removed:** the UI and player API no longer expose it at the
-  user's request; the internal worklet transpose remains only for audio tests.
-- **Chain loop includes gaps:** looping several selected sections runs from the
-  earliest start to the latest end, so unselected material between them is
-  included by design.
-  Raw labels are preserved; the UI normalises for display.
-- **Automated audio cannot be heard:** tests assert engine/transport state with
-  the real WASM and AudioWorklet, but no headless run claims audible quality.
-- **Single platform, local only:** Linux, loopback, Python 3.11 and preserved
-  assets; no macOS/Windows/mobile, no accounts or cloud.
-- **Practical boundaries:** sections are bar ranges, loops are project frames;
-  autosave pauses while playing (flushes on pause/stop); spectrogram PCM loads
-  on expand; `make dev`'s API uses an ephemeral port while the Vite proxy
-  targets 8765 (run the API on 8765 for proxied development).
+| Name | Path | Contents | Class |
+| --- | --- | --- | --- |
+| Service and API | `src/basseparate/` | FastAPI app, project store, media, jobs, stem and analysis endpoints | Original |
+| Demucs worker | `analysis/separate_track.py` | Hash-verified windowed inference, caching contract and cancellation | Original |
+| Optional model workers | `analysis/separate_msst.py`, `analysis-models/` | SCNet/BS-RoFormer inference in an isolated MSST environment | Original wrapper; MSST code and weights third-party [14][15][16] |
+| Model registry | `analysis/models.json`, `src/basseparate/model_registry.py` | Pinned ids, labels, sizes, hashes and install commands | Original |
+| Interface | `web/src/panels/`, `web/src/state/` | React panels, sections, mixer, library and analysis state | Original |
+| Player and transport | `web/src/player/` | AudioWorklet engine, PCM transport, count-in and speed control | Original |
+| Stretch wrapper and artifacts | `web/src/player/stretch/` | Original C++ wrapper plus compiled scalar/SIMD WASM from Signalsmith Stretch and Linear (MIT) | Original wrapper; third-party compiled artifacts [9] |
+| Installer | `scripts/install_tools.py` | Pinned, consent-gated downloads and verification | Original |
+| Build and test harness | `Makefile`, `scripts/studio.py` | Doctor, fixtures, test, e2e and gate orchestration | Original |
+| Launcher | `src/basseparate/launcher.py`, `bin/palm` wrapper | Single instance, browser, data-root lock and logs | Original |
+| First-run setup | `src/basseparate/setup/` | Checks, verified downloads, environments and equal model installs | Original |
+| Portable packaging | `packaging/` | Pinned Python/uv manifest, tar build, clean-room record | Original |
+| Tests | `tests/`, `web/src/**/*.test.*`, `web/e2e/` | Python, Vitest and Playwright suites | Original |
+| Fixtures | `tests/fixtures/audio/` | Six synthetic WAV files and their manifest | Original, generated |
+| Documentation | `docs/` | Architecture, API and troubleshooting references | Original |
+| Screenshot | `assets/` | Practice view and its CC0 provenance note | Original documentation |
+| Third-party records | `THIRD_PARTY.md`, `THIRD_PARTY_DOWNLOADS.md`, `licenses/` | Upstream revisions, download pins, licences and notices | Third-party records |
 
-## Offline assets
+The model weights, Vamp plugin pack and Sonic Visualiser/Piper are not in the
+tree; `make install-tools` places them below the ignored `models/` and
+`storage/` directories.
 
-Nothing here downloads packages, models or media. These untracked directories
-must stay where they are:
+## Results
 
-| Asset | Location | Used for |
-|---|---|---|
-| Python environment | `.venv` | server, tests, lint, types |
-| Web dependencies | `node_modules/.pnpm` (linked into `web/node_modules`) | UI build/tests |
-| Demucs model bundle | `models/htdemucs_ft` | default 4-stem separation |
-| Optional model weights | `models/scnet-xl-ihf`, `models/bs-roformer-sw` | SCNet 4-stem / BS-RoFormer 6-stem separation (untracked; `make models-verify`) |
-| Analysis environment | `analysis/.venv`, `analysis/checkpoints.json` | Demucs inference + hash pins |
-| MSST environment | `analysis-models/.venv`, `analysis-models/uv.lock` | SCNet/BS-RoFormer inference (offline uv sync) |
-| uv cache | `storage/tmp-uv-cache` | offline rebuild of `analysis-models/.venv` |
-| Vamp plugin pack and hosts | `storage/tools` | chords, key, bars/beats |
-| Sonic Visualiser / Piper host | `storage/tools/sv` | Piper JSON host |
-| Emscripten and Signalsmith sources | `third_party` | pitch/time WASM builds |
-| Test recordings | `audio2test` | acceptance material |
+| Check | Command | Result | Conditions |
+| --- | --- | --- | --- |
+| Python suite | `make test-backend` | 369 passed, 9 skipped | Linux, Python 3.11.15 |
+| Web suite | `make test-web` | Passed, serialized | Vitest 5.0.2 |
+| Typecheck and build | `make build-web` | Passed | TypeScript 5.9.3, Vite 8.3.1 |
+| Browser e2e | `make e2e` | 2 specs passed | Firefox and Chromium, isolated data root |
+| Spectrogram view change | `(cd web && ./node_modules/.bin/vitest run src/spectrogram/performance.test.ts)` | Best wall 55-65 ms | 1280 px, five-minute project, shared host |
+| Acceptance analysis | `make accept` | 5 of 5 recordings analysed, 1103.98 s of audio | Private recordings, not included |
+| Stem separation (Demucs) | `analysis/separate_track.py` worker on 8.00 s stereo, `--device cpu` | 17.9-19.2 s wall, about 2.4x realtime | CPU, `htdemucs_ft`; development measurement, not re-run for this tree |
+| Stem separation (optional) | `analysis/separate_msst.py`, 8.00 s stereo, `--device cpu` | SCNet XL IHF 58.2 s (7.3x); BS-RoFormer-SW 67.4 s (8.4x) | CPU, installed weights; linear five-minute estimates 36 and 41 minutes |
+| Vamp analysis | `make accept` | 294.46 s recording analysed in 22.9-25.4 s cold | CPU; private recording, not included |
 
-Package manifests pin only installed versions; adding a dependency requires a
-licence/size/offline/measured-benefit review.
+Not run for this release: GPU separation timing, a final formal listening pass,
+non-Linux operating systems, and browsers other than Firefox and Chromium. The
+gate results above were measured in the development workspace. The portable
+tar was built from that tree, checked with `make test-package`, and
+independently exercised end to end from an extracted copy: setup health, real
+tools, a real CPU environment import, a model download and a short separation.
+The literal Ubuntu 22.04 container path is implemented in CI but was not
+evidenced locally.
 
-## Recovering the pre-reset application
+## Acknowledgements
 
-The legacy application is preserved as the tag `legacy-studio` and branch
-`legacy`, both at `394a369`:
+Demucs and the `htdemucs_ft` weights: Simon Rouard, Francisco Massa and
+Alexandre Defossez, Meta AI Research [4]. SCNet: Weinan Tong, Jiaxu Zhu,
+Jun Chen, Shiyin Kang, Tao Jiang, Yang Li, Zhiyong Wu and Helen Meng [14]; the
+XL IHF checkpoint is distributed through MSST [15]. BS-RoFormer: Wei-Tsung Lu,
+Ju-Chiang Wang, Qiuqiang Kong and Yun-Ning Hung [16]; the six-stem SW
+checkpoint was produced by jarredou and is mirrored by FractalSurfer. Chordino and NNLS-Chroma: Matthias
+Mauch [6]. QM Key Detector: Katy Noland and Christian Landone; QM Bar and Beat
+Tracker: Matthew Davies, Christian Landone and Chris Cannam, Queen Mary
+University of London [7]. BeatRoot: Simon Dixon [8]. Sonic Visualiser, Piper and
+the Vamp plugin SDK: Chris Cannam and Queen Mary University of London [2][5].
+Signalsmith Stretch and Linear: Geraint Luff [9]. Emscripten: the Emscripten
+authors [10]. FastAPI, React, Vite, Vitest and Playwright: their respective
+maintainers [11][12]. HoliznaCC0 for the CC0 recording used in the screenshot,
+and OpenGameArt for hosting the collection [13].
 
-```sh
-git worktree add ../basseparate-legacy legacy
-cd ../basseparate-legacy
-PYTHONPATH=src ../basseparate/.venv/bin/python -m pytest tests/unit -q
-```
+## References
 
-The worktree is a checkout of the old tree; its runtime assets are the preserved
-ones in this checkout. The in-workspace verification of that recovery path is
-recorded in `docs/progress.md` (the execution sandbox cannot write the literal
-sibling path).
+1. Moises. https://moises.ai/
+2. Sonic Visualiser. https://www.sonicvisualiser.org/
+3. Ultimate Vocal Remover. https://github.com/Anjok07/ultimatevocalremovergui
+4. Rouard, S., Massa, F., Defossez, A. Hybrid Transformers for Music Source Separation. ICASSP 2023. https://arxiv.org/abs/2111.03600; code and weights: https://github.com/facebookresearch/demucs (MIT for the code).
+5. Vamp plugin SDK. https://github.com/c4dm/vamp-plugin-sdk (MIT-style permissive).
+6. NNLS-Chroma and Chordino. https://github.com/c4dm/nnls-chroma (GPL-2.0-or-later).
+7. Queen Mary Vamp plugins. https://github.com/c4dm/qm-vamp-plugins (GPL-2.0-or-later).
+8. BeatRoot. https://github.com/c4dm/beatroot-vamp (GPL-2.0-or-later).
+9. Signalsmith Stretch. https://github.com/Signalsmith-Audio/signalsmith-stretch (MIT); Signalsmith Linear. https://github.com/Signalsmith-Audio/linear (MIT).
+10. Emscripten. https://emscripten.org/ (MIT and NCSA).
+11. FastAPI. https://fastapi.tiangolo.com/ (MIT).
+12. React. https://react.dev/ (MIT).
+13. OpenGameArt Funk Collection by HoliznaCC0 (Holizna), CC0 1.0. https://opengameart.org/content/funk-collection
+14. Tong, W. et al. SCNet: Sparse Compression Network for Music Source Separation. ICASSP 2024. https://arxiv.org/abs/2401.13276
+15. Music-Source-Separation-Training (MSST), MIT code. https://github.com/ZFTurbo/Music-Source-Separation-Training; SCNet XL IHF weights from release v1.0.15, no separate weight licence.
+16. Lu, W.-T., Wang, J.-C., Kong, Q., Hung, Y.-N. Music Source Separation with Band-Split RoPE Transformer. ICASSP 2024. https://arxiv.org/abs/2309.02612; implementation https://github.com/lucidrains/BS-RoFormer; six-stem SW weights by jarredou, mirrored at https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem with an unknown upstream licence (private use only).
 
-## Platform
+## Licenses
 
-Linux first. Firefox and Chromium are supported for the browser UI; the local
-server binds loopback only and is not exposed to the network.
+The original files in this repository are MIT-licensed; `LICENSE` covers only
+those files. Third-party components, revisions and notices are recorded in
+`THIRD_PARTY.md`, the download pins and licences in
+`THIRD_PARTY_DOWNLOADS.md`, and the toolchain texts in `licenses/`.
+
+Sonic Visualiser, Piper and the Vamp plugin pack are GPL-family software and
+are not distributed here. The Demucs weights are separate from the MIT-licensed
+Demucs code, have no separate weight licence, and are used for research; the
+installer downloads them only after explicit consent. The screenshot uses
+“Eat” by HoliznaCC0 from the OpenGameArt Funk Collection, dedicated to the
+public domain under CC0 1.0 [13]; the audio is not distributed. No third-party
+source tree, model weights, Vamp tool or plugin binary is bundled here. The
+only third-party artifacts in the tree are the small compiled stretch modules
+noted in the layout, with their MIT notice.

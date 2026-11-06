@@ -24,6 +24,24 @@ Each checkpoint is 84,141,271 bytes. The model directory must contain exactly
 these four checkpoints and the preset; `analysis/separate_track.py` verifies
 size and SHA-256 before loading and refuses anything else.
 
+### Optional model downloads
+
+`make models-install ID=<id>` fetches these into the ignored
+`models/<id>/` directory, verifies size and SHA-256 against
+`analysis/models.json`, and publishes atomically. `make models-verify` checks
+them offline. They are not downloaded by `make bootstrap` or the default gate.
+
+| Component | Version | Upstream URL | SHA-256 | Licence | Install path |
+| --- | --- | --- | --- | --- | --- |
+| SCNet XL IHF checkpoint | MSST v1.0.15 | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.15/model_scnet_ep_36_sdr_10.0891.ckpt | `ac25975f0f5704f3d1a3c3c251505b7a0f417a22eafe82773440ee4f7e14b74f` | no separate weight licence; research use | `models/scnet-xl-ihf/` |
+| SCNet XL IHF config | MSST v1.0.15 | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.15/config_musdb18_scnet_xl_more_wide_v5.yaml | `54ddcb8aeeae85c8d0e148741e7d87b0fbd38bd21cffa5d59ba124fe1e672f40` | MIT (MSST config) | `models/scnet-xl-ihf/` |
+| BS-RoFormer-SW checkpoint | mirror commit `2b98254` | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/main/BS-Rofo-SW-Fixed.ckpt | `24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e` | unknown upstream licence; private use only | `models/bs-roformer-sw/` |
+| BS-RoFormer-SW yaml | mirror commit `2b98254` | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/main/BS-Rofo-SW-Fixed.yaml | `f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b` | unknown upstream licence; private use only | `models/bs-roformer-sw/` |
+| MSST package | 0.1.0 | PyPI `msst[bs-roformer]` | pinned by `analysis-models/uv.lock` | MIT (code) | `analysis-models/.venv` |
+
+Sizes: SCNet checkpoint 214,063,778 B and config 5,906 B; BS-RoFormer-SW
+checkpoint 699,412,152 B and yaml 4,613 B.
+
 ### Demucs weights notice
 
 The Demucs code is MIT. The pretrained weights are a separate artifact; the
@@ -49,6 +67,29 @@ carved set under `storage/tools/plugins`:
 The full set of 23 carved libraries and their hashes is pinned in
 `scripts/install_tools.py`. Redistributing the pack or the libraries is
 governed by their own licences; this repository does not do so.
+
+## Screenshot input
+
+| Asset | Source | Licence | Distribution |
+| --- | --- | --- | --- |
+| “Eat” by HoliznaCC0, track 01 of the Funk Collection | https://opengameart.org/content/funk-collection | CC0 1.0 | Not distributed; only the UI screenshot is committed |
+
+The screenshot in `assets/screenshot.png` depicts this CC0 recording. No audio
+file is stored in the repository; the credit is kept in `assets/README.md` for
+provenance.
+
+## Bundled portable runtime
+
+The portable assets include a pinned Python runtime and `uv`. They are
+downloaded during the build with SHA-256 verification; they are not model or
+tool downloads.
+
+| Component | Version | Upstream URL | SHA-256 | Licence | Install path |
+| --- | --- | --- | --- | --- | --- |
+| CPython standalone | 3.11.15+20260728 | https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-x86_64-unknown-linux-gnu-install_only.tar.gz | `2db18c7bb3a47e32ff41727abd1bb5f158a17d8681931770abf0ba911f5b6580` | PSF-2.0 | `python/` |
+| uv | 0.12.0 | https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz | `eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9` | Apache-2.0 or MIT | `bin/uv` |
+
+The pinned list is authoritative in `packaging/build-manifest.toml`.
 
 ## Toolchain prerequisites
 
@@ -86,6 +127,8 @@ download or redistribute any of them.
 - Emscripten: MIT/NCSA, https://emscripten.org/.
 - FastAPI, Starlette, Pydantic, NumPy, React, Vite and TypeScript: see their
   upstream projects and the dependency manifests.
+- “Eat” by HoliznaCC0, used for the screenshot: CC0 1.0,
+  https://opengameart.org/content/funk-collection.
 
 ## Verify a download
 
