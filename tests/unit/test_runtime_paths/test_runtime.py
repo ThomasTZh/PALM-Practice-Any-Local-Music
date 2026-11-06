@@ -75,7 +75,13 @@ def test_packaged_mode_puts_writable_assets_under_data_root(
     assert runtime.environments_root == data / "environments"
     assert runtime.uv == app / "bin" / "uv"
     assert runtime.demucs_python == data / "environments/demucs/bin/python"
-    assert runtime.msst_python == data / "environments/msst/bin/python"
+    assert runtime.msst_python == data / "environments/cpu/bin/python"
+    (data / "environments/cpu/bin").mkdir(parents=True)
+    (data / "environments/cpu/bin/python").write_text("cpu")
+    assert runtime.msst_python == data / "environments/cpu/bin/python"
+    (data / "environments/cuda/bin").mkdir(parents=True)
+    (data / "environments/cuda/bin/python").write_text("cuda")
+    assert runtime.msst_python == data / "environments/cuda/bin/python"
     assert runtime.worker("demucs") == app / "analysis/separate_track.py"
     assert runtime.worker("msst") == app / "analysis/separate_msst.py"
     assert runtime.registry_path == app / "analysis/models.json"

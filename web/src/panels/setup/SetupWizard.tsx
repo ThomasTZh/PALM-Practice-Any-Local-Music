@@ -226,6 +226,10 @@ export function SetupWizard({
       style={{ overflowY: "auto" }}
     >
       <div className="setup-card">
+        <p className="setup-early-warning" data-testid="setup-early-warning" role="note">
+          Early version 0.1.0-dev: limited testing and quality control. Keep
+          backups of projects you care about.
+        </p>
         <header className="setup-header">
           <div>
             <p className="setup-eyebrow">First-run setup</p>

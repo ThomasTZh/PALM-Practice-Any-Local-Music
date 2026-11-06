@@ -158,7 +158,13 @@ class RuntimePaths:
     @property
     def msst_python(self) -> Path:
         if self.packaged:
-            return self.environments_root / "msst" / "bin" / "python"
+            # Setup creates environments/<variant>; use whichever variant is
+            # actually installed, preferring CUDA when both exist.
+            for variant in ("cuda", "cpu"):
+                candidate = self.environments_root / variant / "bin" / "python"
+                if candidate.is_file():
+                    return candidate
+            return self.environments_root / "cpu" / "bin" / "python"
         return self.app_root / "analysis-models" / ".venv" / "bin" / "python"
 
     @property

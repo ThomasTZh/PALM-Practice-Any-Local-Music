@@ -30,6 +30,17 @@
   border-radius: 14px;
 }
 
+.setup-early-warning {
+  margin: 0 0 1rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #b9822e;
+  border-left-width: 4px;
+  border-radius: 7px;
+  background: rgba(185, 130, 46, 0.12);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
 .setup-header {
   display: flex;
   justify-content: space-between;

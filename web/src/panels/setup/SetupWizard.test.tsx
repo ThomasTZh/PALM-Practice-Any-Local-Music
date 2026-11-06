@@ -58,6 +58,9 @@ describe("SetupWizard", () => {
     renderWizard();
 
     expect(screen.getByTestId("setup-wizard")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-early-warning")).toHaveTextContent(
+      "Early version 0.1.0-dev",
+    );
     const checks = screen.getByTestId("setup-checks");
     expect(checks).toHaveTextContent("glibc");
     expect(checks).toHaveTextContent("ffmpeg is not on PATH");

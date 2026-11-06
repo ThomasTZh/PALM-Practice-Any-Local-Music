@@ -17,6 +17,9 @@ classifiers = [
 dependencies = [
     "torch==2.9.1",
     "msst[bs-roformer]==0.1.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "platformdirs==4.12.1",
 ]
 
 # No build-system: this is a virtual environment project, not a package. The

@@ -91,6 +91,7 @@ def install_tools(
 ) -> dict[str, dict[str, object]]:
     """Install the optional GPL tools below the writable tools root."""
     active = runtime or runtime_paths()
+    active.ensure_data_path(active.tools_root)
     if installer is not None:
         if cancel is not None and cancel():
             raise SetupCancelled("tool installation cancelled")

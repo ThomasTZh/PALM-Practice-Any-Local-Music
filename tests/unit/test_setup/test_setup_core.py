@@ -193,7 +193,8 @@ def test_environment_uses_uv_project_environment_under_data_root(tmp_path: Path)
     command, env, cwd = calls[0]
     assert command[0] == str(runtime.uv)
     assert "--offline" not in command
-    assert command[command.index("--index-url") + 1] == "https://download.pytorch.org/whl/cpu"
+    assert "--index-url" not in command
+    assert "UV_INDEX_URL" not in env
     assert Path(env["UV_PROJECT_ENVIRONMENT"]).is_relative_to(runtime.data_root)
     assert Path(env["UV_PROJECT_ENVIRONMENT"]).name.startswith(".cpu.staging-")
     assert Path(env["UV_CACHE_DIR"]).is_relative_to(runtime.data_root)
@@ -216,6 +217,21 @@ def test_environment_failure_and_cancel_remove_staging(tmp_path: Path) -> None:
     with pytest.raises(SetupCancelled):
         create_environment("cpu", runtime=runtime, run_uv=fail_uv, cancel=lambda: True)
     assert not list((runtime.data_root / "environments").glob(".cpu.staging-*"))
+
+
+def test_tools_create_the_tools_root_on_a_fresh_data_root(tmp_path: Path) -> None:
+    runtime = make_runtime(tmp_path)
+    assert not runtime.tools_root.exists()
+
+    def installer(active: RuntimePaths, progress, cancel) -> None:
+        assert active.tools_root.is_dir()
+        (active.tools_root / "sv/squashfs-root/usr/bin").mkdir(parents=True)
+        (active.tools_root / "sv/squashfs-root/usr/bin/piper-vamp-simple-server").write_text("p")
+        (active.tools_root / "vamp-plugins").mkdir(parents=True)
+        (active.tools_root / "vamp-plugins/qm-vamp-plugins.so").write_text("p")
+
+    result = install_tools(runtime, installer=installer)
+    assert all(item["installed"] for item in result.values())
 
 
 def test_tools_accept_an_injected_installer_and_status_is_local(tmp_path: Path) -> None:

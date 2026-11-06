@@ -167,7 +167,6 @@ def create_environment(
     environment["UV_PROJECT_ENVIRONMENT"] = str(staging)
     environment["UV_CACHE_DIR"] = str(spec.cache_dir)
     environment["UV_PYTHON"] = str(spec.python)
-    environment["UV_INDEX_URL"] = spec.index_url
     environment["PALM_ENV_VARIANT"] = variant
     command = [str(spec.uv), "sync"]
     if offline:
@@ -178,8 +177,6 @@ def create_environment(
             str(spec.project_dir),
             "--python",
             str(spec.python),
-            "--index-url",
-            spec.index_url,
         ]
     )
     runner = run_uv
