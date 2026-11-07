@@ -231,3 +231,23 @@ are **not** covered by MIT:
 
 Full notices, hashes and source pins: [licenses/NOTICES.md](../licenses/NOTICES.md)
 and [../licenses/LICENSE](../licenses/LICENSE).
+
+
+## Build repeatability
+
+Earlier portable archives were not byte-identical even when built from the same
+source, because the compressed archive recorded the build time in its header.
+The builder now fixes the archive timestamp, omits the build-time filename and
+normalises ownership and modification times. Two clean builds from the same
+source and locked dependencies produce the same SHA-256. The published
+`SHA256SUMS` identifies the exact file that was tested; a different hash means
+the source or dependency set changed.
+
+## AppImageLauncher
+
+PALM no longer ships an AppImage. The setup installer downloads the upstream
+Sonic Visualiser AppImage and extracts it into the data root itself; a desktop
+AppImage integration tool such as AppImageLauncher is not required. If an old
+AppImageLauncher intercepts the download during setup on a particular desktop,
+disable that integration for the setup run or install the tools manually under
+`<data>/tools`.

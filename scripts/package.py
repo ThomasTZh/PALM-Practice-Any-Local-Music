@@ -20,6 +20,7 @@ import os
 import shutil
 import subprocess
 import sys
+import gzip
 import tarfile
 import tempfile
 import tomllib
@@ -58,6 +59,8 @@ REQUIRED_TAR_PARTS = (
     "analysis/envs/cuda/uv.lock",
     "analysis/envs/cuda/cuda.json",
     "scripts/install_tools.py",
+    "docs/portable.md",
+    "README.md",
     "licenses/LICENSE",
     "palm.desktop",
     "palm.svg",
@@ -271,7 +274,8 @@ def stage_app(stage: Path, manifest: dict[str, Any]) -> None:
     copy_file(ROOT / "scripts" / "install_tools.py", stage / "scripts" / "install_tools.py")
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, stage / "licenses" / name)
-    copy_file(ROOT / "README.md", stage / "README.md")
+    copy_file(ROOT / "packaging" / "README.release.md", stage / "README.md")
+    copy_file(ROOT / "docs" / "portable.md", stage / "docs" / "portable.md")
     copy_file(ROOT / "packaging" / "launcher" / "palm", stage / "bin" / "palm", executable=True)
     copy_file(ROOT / "packaging" / "launcher" / "palm.desktop", stage / "palm.desktop")
     copy_file(ROOT / "packaging" / "palm.svg", stage / "palm.svg")
@@ -391,15 +395,23 @@ def write_release_notes(stage: Path, version_value: str) -> Path:
 
 Practice Any Local Music, portable Linux x86_64 build.
 
-- Launch: `bin/palm` (the tar root)
-- First run: choose a separation model and the CPU/CUDA environment in the
-  setup wizard; model weights and analysis tools are downloaded only there,
-  never bundled here.
-- Contents: application source, built UI, analysis code/registry/workers and
-  environment definitions, launcher, desktop entry, icon, licences and the
-  hashed runtime requirements.
-- Not included: model weights, model/tool caches, analysis environments,
-  recordings, tests, `.git`, `storage/` or any virtual environment.
+**Early version.** Limited testing and quality control; keep backups.
+
+- Launch: `bin/palm` in the tar root. It opens a terminal, starts the server
+  and opens the browser.
+- Stop: Ctrl+C in that terminal, or `./bin/palm --stop` if the terminal was
+  closed. `./bin/palm --status` prints the running address and process IDs.
+- First run: setup offers optional analysis tools, a CPU or CUDA runtime, and
+  three equal separation models with no default. Downloads happen only after
+  you choose them and accept their licences; nothing is bundled here.
+- Contents: application source, built UI, analysis workers/registry and
+  environment definitions, launcher, desktop entry, icon, licences, a bundled
+  Python runtime and `bin/uv`.
+- Not included: model weights, tools, analysis environments, caches,
+  recordings, tests, `.git` or virtual environments.
+- Build repeatability: the archive uses fixed timestamps and no build-time
+  filename, so the same source and locked dependencies produce the same
+  SHA-256. The published SHA256SUMS identifies the tested file.
 - Runtime lock: `runtime-requirements.txt` (hashes from
   `packaging/app-runtime/uv.lock`).
 
@@ -412,20 +424,27 @@ third-party notices. Model weights keep their own terms.
 
 def build_tar(stage: Path, output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(output, "w:gz", compresslevel=6) as archive:
-        for path in sorted(stage.rglob("*")):
-            relative = path.relative_to(stage)
-            info = archive.gettarinfo(str(path), arcname=f"{stage.name}/{relative.as_posix()}")
-            info.uid = 0
-            info.gid = 0
-            info.uname = ""
-            info.gname = ""
-            info.mtime = 0
-            if path.is_file():
-                with path.open("rb") as handle:
-                    archive.addfile(info, handle)
-            else:
-                archive.addfile(info)
+    # gzip stores a timestamp in its header by default, which makes two
+    # byte-identical tar streams hash differently. Pin it to the epoch and
+    # omit the original filename so the archive is reproducible.
+    with output.open("wb") as raw:
+        with gzip.GzipFile(filename=output.name, mode="wb", compresslevel=6, mtime=0, fileobj=raw) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w") as archive:
+                for path in sorted(stage.rglob("*")):
+                    relative = path.relative_to(stage)
+                    info = archive.gettarinfo(
+                        str(path), arcname=f"{stage.name}/{relative.as_posix()}"
+                    )
+                    info.uid = 0
+                    info.gid = 0
+                    info.uname = ""
+                    info.gname = ""
+                    info.mtime = 0
+                    if path.is_file():
+                        with path.open("rb") as handle:
+                            archive.addfile(info, handle)
+                    else:
+                        archive.addfile(info)
     if output.stat().st_size >= MAX_ASSET_BYTES:
         raise PackageError(f"asset {output.name} is at least 2 GiB")
     print(f"package: wrote {output} ({output.stat().st_size} bytes)")
