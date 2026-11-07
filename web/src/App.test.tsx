@@ -22,6 +22,7 @@ import { createFakePractice } from "./state/fakePractice";
 import {
   createFakeSetupClient,
   incompleteSetupStatus,
+  readySetupStatus,
 } from "./state/fakeSetup";
 import type { SetupClient } from "./state/setup";
 import { makePeaksBuffer } from "./panels/waveform/peaksFixture";
@@ -307,6 +308,7 @@ function setup(
     notice?: string | null;
     autosaveDelayMs?: number;
     setupClient?: SetupClient;
+    separationClient?: SeparationJobClient;
   } = {},
 ) {
   const project = options.project ?? PROJECT;
@@ -323,6 +325,7 @@ function setup(
       api={api}
       transport={transport}
       analysisClient={client}
+      separationClient={options.separationClient}
       setupClient={options.setupClient ?? createFakeSetupClient()}
       createPcmLoader={() => async (startFrame: number, endFrame: number) => ({
         samples: new Float32Array(2048),
@@ -551,6 +554,159 @@ describe("App integration", () => {
     expect(
       screen.getByText("Choose a model before separating."),
     ).toBeInTheDocument();
+  });
+
+  it("refreshes models after setup install and enables Separate with the id", async () => {
+    let installed = false;
+    let phase: "setup" | "ready" = "setup";
+    const setupFake = createFakeSetupClient(incompleteSetupStatus());
+    setupFake.status = vi.fn(async () =>
+      phase === "ready" ? readySetupStatus() : incompleteSetupStatus(),
+    );
+    setupFake.startModels = vi.fn(async () => {
+      installed = true;
+      phase = "ready";
+      return separationJob("queued", 0, { id: "setup-models" });
+    });
+    setupFake.job = vi.fn(async () =>
+      separationJob("succeeded", 1, { id: "setup-models" }),
+    );
+    const api = makeApi(PROJECT_WITHOUT_STEMS);
+    let modelFetches = 0;
+    api.fetchSeparationModels = async () => {
+      modelFetches += 1;
+      return {
+        default: null,
+        models: [
+          {
+            ...HTDEMUCS_MODEL,
+            installed,
+            status: installed ? ("installed" as const) : ("missing" as const),
+          },
+        ],
+      };
+    };
+    const separation: SeparationJobClient & {
+      start: ReturnType<typeof vi.fn>;
+    } = {
+      start: vi.fn(async () =>
+        separationJob("failed", 0, {
+          id: "sep-failed",
+          error: "stop",
+        }),
+      ),
+      status: vi.fn(async () => separationJob("failed", 0)),
+      cancel: vi.fn(async () => separationJob("cancelled", 0)),
+    };
+    setup({
+      api,
+      project: PROJECT_WITHOUT_STEMS,
+      setupClient: setupFake,
+      separationClient: separation,
+    });
+
+    await screen.findByTestId("setup-wizard");
+    expect(modelFetches).toBe(1);
+    const card = screen.getByTestId("setup-model-card-htdemucs_ft");
+    fireEvent.click(within(card).getByLabelText("Select Demucs htdemucs_ft"));
+    fireEvent.click(
+      within(card).getByLabelText("Accept Demucs htdemucs_ft licence"),
+    );
+    fireEvent.click(screen.getByTestId("setup-model-install"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("setup-wizard")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(modelFetches).toBeGreaterThanOrEqual(2));
+    await openProject();
+    const select = (await screen.findByLabelText(
+      "Separation model",
+    )) as HTMLSelectElement;
+    expect(
+      Array.from(select.options).find(
+        (option) => option.value === "htdemucs_ft",
+      )?.disabled,
+    ).toBe(false);
+    fireEvent.change(select, { target: { value: "htdemucs_ft" } });
+    expect(
+      screen.getByRole("button", { name: "Separate stems" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Separate stems" }));
+    await waitFor(() =>
+      expect(separation.start).toHaveBeenCalledWith("p1", "htdemucs_ft"),
+    );
+  });
+
+  it("refreshes models when setup is skipped, keeping the placeholder only without models", async () => {
+    let installed = false;
+    const setupFake = createFakeSetupClient(incompleteSetupStatus());
+    const api = makeApi(PROJECT_WITHOUT_STEMS);
+    let modelFetches = 0;
+    api.fetchSeparationModels = async () => {
+      modelFetches += 1;
+      return {
+        default: null,
+        models: [
+          {
+            ...HTDEMUCS_MODEL,
+            installed,
+            status: installed ? ("installed" as const) : ("missing" as const),
+          },
+        ],
+      };
+    };
+    setup({
+      api,
+      project: PROJECT_WITHOUT_STEMS,
+      setupClient: setupFake,
+    });
+
+    await screen.findByTestId("setup-wizard");
+    expect(modelFetches).toBe(1);
+    installed = true;
+    fireEvent.click(screen.getByTestId("setup-skip"));
+    expect(
+      await screen.findByRole("button", { name: "Open Demo take" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(modelFetches).toBeGreaterThanOrEqual(2));
+    await openProject();
+    const select = screen.getByLabelText(
+      "Separation model",
+    ) as HTMLSelectElement;
+    expect(
+      Array.from(select.options).find(
+        (option) => option.value === "htdemucs_ft",
+      )?.disabled,
+    ).toBe(false);
+  });
+
+  it("keeps the Choose a model placeholder when setup installed nothing", async () => {
+    const api = makeApi(PROJECT_WITHOUT_STEMS);
+    api.fetchSeparationModels = async () => ({
+      default: null,
+      models: [
+        {
+          ...HTDEMUCS_MODEL,
+          installed: false,
+          status: "missing" as const,
+        },
+      ],
+    });
+    setup({ api, project: PROJECT_WITHOUT_STEMS });
+    await openProject();
+
+    const select = screen.getByLabelText(
+      "Separation model",
+    ) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(
+      Array.from(select.options).find(
+        (option) => option.value === "htdemucs_ft",
+      )?.disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Separate stems" }),
+    ).toBeDisabled();
   });
 
   it("mounts the chord ribbon, sections, mixer, practice, analysis and spectrogram", async () => {

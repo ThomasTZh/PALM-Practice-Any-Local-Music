@@ -319,32 +319,27 @@ export function App({
     };
   }, [setupClient]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .fetchSeparationModels()
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setSeparationModels(response);
-        setSeparationModelsError(null);
-        setSelectedModel(
-          resolveSeparationModelId(
-            response.models,
-            projectRef.current?.stemModel ?? null,
-          ),
-        );
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setSeparationModelsError(errorMessage(error));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+  const refreshSeparationModels = useCallback(async () => {
+    try {
+      const response = await api.fetchSeparationModels();
+      setSeparationModels(response);
+      setSeparationModelsError(null);
+      setSelectedModel((current) =>
+        resolveSeparationModelId(
+          response.models,
+          projectRef.current?.stemModel ?? current,
+        ),
+      );
+      return response;
+    } catch (error) {
+      setSeparationModelsError(errorMessage(error));
+      throw error;
+    }
   }, [api]);
+
+  useEffect(() => {
+    void refreshSeparationModels().catch(() => undefined);
+  }, [refreshSeparationModels]);
 
   useEffect(() => {
     if (separationModels.models.length === 0) {
@@ -1000,9 +995,13 @@ export function App({
         status={setupStatus}
         onStatus={(next) => {
           setSetupStatus(next);
+          void refreshSeparationModels().catch(() => undefined);
           if (next.ready) setSetupOpen(false);
         }}
-        onClose={() => setSetupOpen(false)}
+        onClose={() => {
+          setSetupOpen(false);
+          void refreshSeparationModels().catch(() => undefined);
+        }}
       />
     );
   }

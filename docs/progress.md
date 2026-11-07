@@ -2456,3 +2456,31 @@ Tests assert the scroll container style/tabIndex and all tool/model hrefs,
 target and rel. make test-web, make build-web, make e2e (2 specs,
 Firefox+Chromium) pass; make models-list still accepts the registry. Existing
 consent/no-default/skip/progress tests remain green. No dependency added.
+
+## 2026-11-06 — refresh separation models after setup (t83)
+
+App now owns a `refreshSeparationModels` callback instead of a one-shot mount
+effect. It updates the model list/error, and re-resolves the selection from the
+project's recorded stemModel or the current selection (so closing setup does not
+discard a user choice, while a fresh project still has no default).
+
+The callback runs:
+- once on boot;
+- from SetupWizard `onStatus` after every setup job (including model install);
+- from SetupWizard `onClose` for Back to studio and skip.
+
+Once a setup install completes, its ready status closes the wizard and the
+refetched `/api/separation/models` row becomes selectable without reloading.
+Selecting it enables Separate/Re-separate; the start request carries that
+`model_id`.
+
+Tests added:
+- install-during-setup then ready close: initial model missing, install fake
+  succeeds, models refetched (1 -> >=2), installed option enabled, Separate
+  enabled, start called with ('p1','htdemucs_ft');
+- skip path refetches models and exposes a newly installed option;
+- no models installed keeps the "Choose a model" placeholder, disabled option
+  and disabled Separate.
+
+make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass. No
+dependency added.
