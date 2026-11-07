@@ -27,6 +27,8 @@ from basseparate.launcher import (
     read_run_state,
     run_doctor,
     run_setup,
+    run_status,
+    run_stop,
     terminal_active,
     terminal_command,
     wait_for_run_state,
@@ -394,11 +396,143 @@ def test_setup_and_doctor_do_not_write_app_root(
     assert sorted(str(path) for path in runtime.app_root.rglob("*")) == before
 
 
+def _write_health_state(paths: LauncherPaths, data_root: Path) -> RunState:
+    state = make_state()
+    state = RunState(
+        url=state.url,
+        port=state.port,
+        pid=111,
+        launcher_pid=222,
+        started_at=state.started_at,
+        mode="packaged",
+        app_root=str(data_root.parent / "app"),
+        data_root=str(data_root),
+    )
+    write_run_state(paths.state_file, state)
+    return state
+
+
+def test_status_reports_url_roots_and_pids_without_starting(
+    runtime: RuntimePaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    _write_health_state(paths, runtime.data_root)
+    monkeypatch.setattr(launcher, "process_is_alive", lambda pid: pid in {111, 222})
+    monkeypatch.setattr(
+        launcher,
+        "process_command",
+        lambda pid: (
+            "python -m basseparate.cli serve --data-root /data"
+            if pid == 111
+            else "python -m basseparate.launcher"
+        ),
+    )
+    output = io.StringIO()
+    assert run_status(paths, stream=output) == 0
+    text = output.getvalue()
+    assert "palm: URL http://127.0.0.1:4123/" in text
+    assert f"palm: data root {runtime.data_root}" in text
+    assert "palm: server pid 111, launcher pid 222" in text
+
+
+def test_status_reports_stale_state(runtime: RuntimePaths, monkeypatch: pytest.MonkeyPatch) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    _write_health_state(paths, runtime.data_root)
+    monkeypatch.setattr(launcher, "process_is_alive", lambda _pid: False)
+    output = io.StringIO()
+    assert run_status(paths, stream=output) == 1
+    assert "stale run state" in output.getvalue()
+    assert paths.state_file.exists()
+
+
+def test_stop_validates_and_terminates_launcher_and_server(
+    runtime: RuntimePaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    _write_health_state(paths, runtime.data_root)
+    alive = {111, 222}
+    signals: list[tuple[int, int]] = []
+
+    def kill(pid: int, signum: int) -> bool:
+        signals.append((pid, signum))
+        alive.discard(pid)
+        return True
+
+    monkeypatch.setattr(launcher, "process_is_alive", lambda pid: pid in alive)
+    monkeypatch.setattr(
+        launcher,
+        "process_command",
+        lambda pid: (
+            "python -m basseparate.cli serve --data-root /data"
+            if pid == 111
+            else "python -m basseparate.launcher"
+        ),
+    )
+    monkeypatch.setattr(launcher, "signal_process", kill)
+    monkeypatch.setattr(launcher.time, "sleep", lambda _seconds: None)
+    output = io.StringIO()
+    assert run_stop(paths, stream=output, timeout=1) == 0
+    assert signals == [(222, signal.SIGTERM), (111, signal.SIGTERM)]
+    assert "stopped launcher pid 222" in output.getvalue()
+    assert "server pid 111" in output.getvalue()
+    assert not paths.state_file.exists()
+
+
+def test_stop_cleans_stale_state_and_refuses_unrelated_pids(
+    runtime: RuntimePaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    _write_health_state(paths, runtime.data_root)
+    monkeypatch.setattr(launcher, "process_is_alive", lambda _pid: False)
+    monkeypatch.setattr(launcher, "signal_process", lambda _pid, _signum: False)
+    output = io.StringIO()
+    assert run_stop(paths, stream=output, sleep=lambda _seconds: None) == 0
+    assert "stale launcher, server process record removed" in output.getvalue()
+    assert not paths.state_file.exists()
+
+    _write_health_state(paths, runtime.data_root)
+    monkeypatch.setattr(launcher, "process_is_alive", lambda _pid: True)
+    monkeypatch.setattr(launcher, "process_command", lambda _pid: "some other program")
+    output = io.StringIO()
+    assert run_stop(paths, stream=output, sleep=lambda _seconds: None) == 0
+    assert "command does not match PALM" in output.getvalue()
+    assert not paths.state_file.exists()
+
+
+def test_stop_refuses_another_data_root(
+    runtime: RuntimePaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    state = _write_health_state(paths, runtime.data_root)
+    state = RunState(
+        url=state.url,
+        port=state.port,
+        pid=state.pid,
+        launcher_pid=state.launcher_pid,
+        started_at=state.started_at,
+        mode=state.mode,
+        app_root=state.app_root,
+        data_root="/some/other/root",
+    )
+    write_run_state(paths.state_file, state)
+    monkeypatch.setattr(launcher, "process_is_alive", lambda _pid: True)
+    monkeypatch.setattr(launcher, "process_command", lambda _pid: "basseparate.launcher")
+    assert run_stop(paths, stream=io.StringIO(), sleep=lambda _seconds: None) == 2
+    assert paths.state_file.exists()
+
+
 def test_parser_defaults_and_flags() -> None:
     args = build_parser().parse_args([])
     assert args.port == 0
     assert args.no_browser is False
     assert args.no_terminal is False
+    assert args.stop is False
+    assert args.status is False
     assert args.setup is False
     assert args.doctor is False
     assert args.data_dir is None
@@ -414,6 +548,8 @@ def test_parser_defaults_and_flags() -> None:
     assert build_parser().parse_args(["--detach"]).no_terminal is True
     assert build_parser().parse_args(["--no-terminal"]).no_terminal is True
     assert main(["--port", "70000"]) == 2
+    assert build_parser().parse_args(["--stop"]).stop is True
+    assert build_parser().parse_args(["--status"]).status is True
 
 
 def test_desktop_entry_is_terminal_first() -> None:
