@@ -222,7 +222,7 @@ make gate         -> exit 0, 369 passed/9 skipped, web/e2e pass
 
 ## t81 packaged Piper/analysis verification (2026-11-07)
 
-Status: **PASSED (local build; publication deferred to t85)**
+Status: **PASSED (intermediate local build; superseded by t85)**
 
 The 70,038,314 B / a4f088... tar below is a local test build only. The
 published v0.1.0-dev assets and tag remain unchanged until the combined t85
