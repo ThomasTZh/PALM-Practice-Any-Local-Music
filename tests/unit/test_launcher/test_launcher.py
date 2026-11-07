@@ -22,10 +22,13 @@ from basseparate.launcher import (
     build_server_command,
     launcher_environment,
     main,
+    open_terminal,
     parse_bootstrap_url,
     read_run_state,
     run_doctor,
     run_setup,
+    terminal_active,
+    terminal_command,
     wait_for_run_state,
     write_run_state,
 )
@@ -240,6 +243,74 @@ def test_launcher_starts_existing_cli_and_records_url(
     assert "http://127.0.0.1:4321/" in out
 
 
+def test_pump_streams_live_lines_and_keeps_server_log(runtime: RuntimePaths) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    output = io.StringIO()
+    instance = Launcher(paths, open_browser=False, stream=output)
+    instance._server_log = paths.server_log.open("a", encoding="utf-8")
+    try:
+        instance._pump(
+            io.StringIO(
+                "basseparate studio: http://127.0.0.1:4321/\nbootstrap: http://127.0.0.1:4321/\n"
+            )
+        )
+    finally:
+        if instance._server_log is not None:
+            instance._server_log.close()
+    assert "bootstrap: http://127.0.0.1:4321/" in output.getvalue()
+    assert "bootstrap: http://127.0.0.1:4321/" in paths.server_log.read_text()
+    assert instance._url == "http://127.0.0.1:4321/"
+
+
+def test_terminal_command_selects_the_first_available_emulator() -> None:
+    seen: list[str] = []
+
+    def which(name: str) -> str | None:
+        seen.append(name)
+        return "/usr/bin/xterm" if name == "xterm" else None
+
+    command = terminal_command(["python", "-m", "basseparate.launcher"], which=which)
+    assert command == ["/usr/bin/xterm", "-e", "python", "-m", "basseparate.launcher"]
+    assert seen == ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"]
+
+
+def test_open_terminal_attaches_a_guarded_child_and_falls_back() -> None:
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def popen(command: list[str], **kwargs: Any) -> object:
+        calls.append((command, kwargs))
+        return object()
+
+    def which(name: str) -> str | None:
+        return "/usr/bin/x-terminal-emulator" if name == "x-terminal-emulator" else None
+
+    assert open_terminal(
+        ["--no-browser", "--data-dir", "/tmp/palm-data"],
+        which=which,
+        popen=popen,
+        environment={"DISPLAY": ":0"},
+    )
+    command, kwargs = calls[0]
+    assert command[:2] == ["/usr/bin/x-terminal-emulator", "-e"]
+    assert "--no-terminal" in command
+    assert command[-3:] == ["--no-browser", "--data-dir", "/tmp/palm-data"]
+    assert kwargs["env"][launcher.TERMINAL_MARKER] == "1"
+    assert kwargs["start_new_session"] is True
+
+    before = len(calls)
+    assert not open_terminal(
+        [],
+        which=which,
+        popen=popen,
+        environment={launcher.TERMINAL_MARKER: "1"},
+    )
+    assert len(calls) == before
+    assert not open_terminal([], which=lambda _name: None, popen=popen)
+    assert terminal_active({launcher.TERMINAL_MARKER: "1"}) is True
+    assert terminal_active({}) is False
+
+
 def test_forward_signal_reaches_child() -> None:
     class FakeProcess:
         def __init__(self) -> None:
@@ -327,6 +398,7 @@ def test_parser_defaults_and_flags() -> None:
     args = build_parser().parse_args([])
     assert args.port == 0
     assert args.no_browser is False
+    assert args.no_terminal is False
     assert args.setup is False
     assert args.doctor is False
     assert args.data_dir is None
@@ -339,4 +411,15 @@ def test_parser_defaults_and_flags() -> None:
     assert args.setup is True
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--setup", "--doctor"])
+    assert build_parser().parse_args(["--detach"]).no_terminal is True
+    assert build_parser().parse_args(["--no-terminal"]).no_terminal is True
     assert main(["--port", "70000"]) == 2
+
+
+def test_desktop_entry_is_terminal_first() -> None:
+    entry = (Path(__file__).resolve().parents[3] / "packaging/launcher/palm.desktop").read_text()
+    assert "Terminal=true" in entry
+    assert "Exec=palm" in entry
+    readme = (Path(__file__).resolve().parents[3] / "packaging/launcher/README.md").read_text()
+    assert "ln -sf" in readme
+    assert ".local/share/applications" in readme

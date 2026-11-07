@@ -6,6 +6,6 @@ GenericName=Local Music Practice
 Comment=Practice Any Local Music: stems, chords, grid, loops and slow practice
 Exec=palm
 Icon=palm
-Terminal=false
+Terminal=true
 Categories=Audio;Music;AudioVideo;Player;
 Keywords=practice;bass;stems;music;

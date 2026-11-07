@@ -148,7 +148,7 @@ def test_missing_plugin_pack_is_actionable(tmp_path: Path, project_paths: PiperP
     with pytest.raises(PiperUnavailable) as error:
         paths.validate()
     assert "Vamp plugin pack not found" in str(error.value)
-    assert "storage/tools/plugins" in str(error.value)
+    assert str(paths.plugin_path) in str(error.value)
 
 
 def test_missing_plugin_in_the_pack_is_actionable(

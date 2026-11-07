@@ -151,6 +151,41 @@ def test_missing_server_names_the_asset_and_bootstrap(tmp_path: Path) -> None:
     assert "make bootstrap" in message
 
 
+def test_packaged_paths_use_data_root_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    app.mkdir()
+    data.mkdir()
+    monkeypatch.setenv("PALM_MODE", "packaged")
+    monkeypatch.setenv("PALM_APP_ROOT", str(app))
+    monkeypatch.setenv("PALM_DATA_DIR", str(data))
+    paths = PiperPaths.for_project()
+    assert paths.server == data / "tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server"
+    assert paths.plugin_path == data / "tools/plugins"
+    assert paths.library_path == data / "tools/sv/squashfs-root/usr/lib"
+
+
+def test_path_overrides_win_in_packaged_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    app.mkdir()
+    data.mkdir()
+    monkeypatch.setenv("PALM_MODE", "packaged")
+    monkeypatch.setenv("PALM_APP_ROOT", str(app))
+    monkeypatch.setenv("PALM_DATA_DIR", str(data))
+    monkeypatch.setenv("BASSEPARATE_PIPER", str(tmp_path / "piper"))
+    monkeypatch.setenv("BASSEPARATE_VAMP_PLUGINS", str(tmp_path / "plugins"))
+    monkeypatch.setenv("BASSEPARATE_PIPER_LIBS", str(tmp_path / "libs"))
+    paths = PiperPaths.for_project()
+    assert paths.server == tmp_path / "piper"
+    assert paths.plugin_path == tmp_path / "plugins"
+    assert paths.library_path == tmp_path / "libs"
+
+
 def test_missing_plugin_pack_names_the_preserved_pack(fake_paths: PiperPaths) -> None:
     missing = PiperPaths(
         server=fake_paths.server,
@@ -161,7 +196,7 @@ def test_missing_plugin_pack_names_the_preserved_pack(fake_paths: PiperPaths) ->
         missing.validate()
     message = str(error.value)
     assert "Vamp plugin pack not found" in message
-    assert "storage/tools/plugins" in message
+    assert str(missing.plugin_path) in message
 
 
 def test_empty_plugin_pack_is_rejected(tmp_path: Path, fake_paths: PiperPaths) -> None:
@@ -299,3 +334,20 @@ def test_cancellation_during_feed_kills_the_child(fake_paths: PiperPaths) -> Non
     assert session_ref[0].pid is None
     with pytest.raises(ProcessLookupError):
         os.kill(pid_holder[0], 0)
+
+
+def test_packaged_missing_assets_name_data_root_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    app.mkdir()
+    data.mkdir()
+    monkeypatch.setenv("PALM_MODE", "packaged")
+    monkeypatch.setenv("PALM_APP_ROOT", str(app))
+    monkeypatch.setenv("PALM_DATA_DIR", str(data))
+    paths = PiperPaths.for_project()
+    with pytest.raises(PiperUnavailable) as error:
+        paths.validate()
+    message = str(error.value)
+    assert str(data / "tools/sv/squashfs-root") in message

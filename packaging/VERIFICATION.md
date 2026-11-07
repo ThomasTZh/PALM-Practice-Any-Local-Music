@@ -24,7 +24,7 @@ run/launcher.lock 0
 
 ```sh
 make test-package
-tar -xzf $PALM_WORKSPACE/dist/PALM-0.1.0-dev-linux-x86_64.tar.gz
+tar -xzf <workspace>/dist/PALM-0.1.0-dev-linux-x86_64.tar.gz
 bwrap --ro-bind <minimal-root> / ... /palm/bin/palm --no-browser --port 48791
 curl http://127.0.0.1:48791/api/health
 curl http://127.0.0.1:48791/
@@ -218,4 +218,111 @@ scrolls out of view at the bottom; it is not sticky.
 make package      -> exit 0, tar 70,038,235 B, SHA256SUMS written
 make test-package -> exit 0, 6,488 members, bundled bin/palm --help, OK
 make gate         -> exit 0, 369 passed/9 skipped, web/e2e pass
+```
+
+## t81 packaged Piper/analysis verification (2026-11-07)
+
+Status: **PASSED (local build; publication deferred to t85)**
+
+The 70,038,314 B / a4f088... tar below is a local test build only. The
+published v0.1.0-dev assets and tag remain unchanged until the combined t85
+rebuild.
+
+- Tar: 70,038,314 B, sha256
+  `a4f088622a69d90e9d43bcdbaccc9b2c568cf7d0c0f99b7003458e5f365c6326`.
+- Reused the t80 data root with tools installed by the setup job; extracted the
+  new app over it and launched packaged mode.
+- `PiperPaths.for_project()` resolved:
+  - server `data/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server`
+  - plugins `data/tools/plugins`
+  - libraries `data/tools/sv/squashfs-root/usr/lib`
+- Real packaged analysis of `tests/fixtures/audio/chords_c_am_f_g.wav`:
+  job succeeded, key `C major`, 135.999 BPM, bpb 4, 5 chord entries,
+  18 beats and 5 bars. No `PiperUnavailable`.
+- Packaged missing-asset validation names the data-root
+  `tools/sv/squashfs-root` path; source-checkout and BASSEPARATE_* override
+  tests remain green.
+- Scoped `make test-backend TESTS="tests/unit/test_piper
+  tests/integration/test_analysis"` -> 38 passed.
+
+Local verification for t81:
+
+```text
+make test-backend TESTS="tests/unit/test_piper tests/integration/test_analysis"
+  -> 39 passed
+make package      -> exit 0, tar 70,038,314 B, sha256 a4f08862...
+make test-package -> exit 0, 6,488 members, bundled bin/palm --help
+make gate         -> exit 0, 372 passed/9 skipped, web/e2e pass
+```
+
+The published release/tag were intentionally not modified.
+
+## t85 final tar integration QA (2026-11-07)
+
+Status: **PASSED** on the rebuilt final tree.
+
+- Tar: `PALM-0.1.0-dev-linux-x86_64.tar.gz`, 70,039,107 B,
+  `93840590ba9ac75181e008f407877d7ad31c04cf57f0f98bbd6ac931d61522b0`
+- Fresh extraction and data root; launched `bin/palm --no-browser --no-terminal
+  --port 0`; `/api/health` ok, `/api/setup/status` packaged and initially
+  ready=false.
+
+### Tools and real analysis
+
+Tools installed from the package (141 files, 119 MiB); `tools_status` paths
+match `data/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server` and
+`data/tools/vamp-plugins/qm-vamp-plugins.so`.
+
+The 8 s `chords_c_am_f_g.wav` fixture was imported and analysed through the
+packaged server. The analysis job succeeded with no `PiperUnavailable`:
+
+```text
+bpm 135.999
+key C major
+chords 5
+beats 18
+bars 5
+```
+
+### CPU environment and model install
+
+CPU environment creation succeeded; imports:
+
+```text
+torch 2.9.1+cpu
+msst ok
+pydantic ok
+```
+
+`scnet-xl-ihf` installed (205 MiB). Setup status: ready=true, tools ready,
+CPU installed, scnet installed.
+
+### Model picker without reload
+
+Browser setup was opened on a data root with tools/CPU installed and the model
+missing. The model card was selected and its licence accepted; the model install
+button was clicked. Without navigating or reloading, the setup wizard detached
+at the same URL and the library model select showed:
+
+```text
+Choose a model (disabled)
+Demucs htdemucs_ft (disabled)
+SCNet XL IHF (enabled, selected)
+BS-RoFormer-SW (disabled)
+```
+
+### Launcher
+
+PTY smoke of the packaged `bin/palm`: bootstrap lines appeared in the terminal
+stream and `logs/server.log`, Ctrl+C exited 0 and removed `run/server.json`.
+No-TTY launch without a graphical session printed `running in the background`
+with the `server.log` path and still served the app; the terminal spawn path is
+covered by unit tests.
+
+### Commands
+
+```text
+make package      -> exit 0, tar 70,039,107 B, SHA256SUMS
+make test-package -> exit 0, 6,488 members, checksums, bin/palm --help
+make gate         -> exit 0, 376 passed/9 skipped, web/e2e pass
 ```
