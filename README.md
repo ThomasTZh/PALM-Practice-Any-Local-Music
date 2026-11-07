@@ -21,6 +21,12 @@ Sonic Visualiser/Piper, Vamp plugins, PyTorch environments or ffmpeg.
 
 The launcher is `bin/palm`; it starts the server and auto-opens the browser.
 
+```sh
+tar -xzf PALM-0.1.0-dev-linux-x86_64.tar.gz
+cd PALM-0.1.0-dev-linux-x86_64
+./bin/palm
+```
+
 The first launch opens a setup wizard. It checks the machine, offers optional
 Sonic Visualiser and Vamp downloads with their licences, creates a CPU or CUDA
 environment, and lists the three separation models as equal choices with no
@@ -205,6 +211,25 @@ unchanged identifiers keep existing projects and data directories working.
    is present. `make doctor` ends with
    `doctor: required toolchain and environment present; no network access was used`.
 
+## Uninstall
+
+The portable build does not install system packages. To remove it:
+
+1. Stop the running server:
+   ```sh
+   ./bin/palm --stop
+   ```
+2. Delete the extracted application directory.
+3. If you also want to remove all downloaded models, tools, environments and
+   projects, delete the data root, typically `~/.local/share/palm`. This
+   deletes your projects; back up `projects/` and `assets/` first if needed.
+4. If you installed the desktop entry, remove
+   `~/.local/share/applications/palm.desktop` and the `~/.local/bin/palm`
+   symlink.
+
+A source checkout has no system install; removing its `.venv`, `node_modules`,
+and data directory is a manual cleanup.
+
 ## Layout
 
 | Name | Path | Contents | Class |
@@ -235,7 +260,7 @@ tree; `make install-tools` places them below the ignored `models/` and
 
 | Check | Command | Result | Conditions |
 | --- | --- | --- | --- |
-| Python suite | `make test-backend` | 369 passed, 9 skipped | Linux, Python 3.11.15 |
+| Python suite | `make test-backend` | 381 passed, 9 skipped | Linux, Python 3.11.15 |
 | Web suite | `make test-web` | Passed, serialized | Vitest 5.0.2 |
 | Typecheck and build | `make build-web` | Passed | TypeScript 5.9.3, Vite 8.3.1 |
 | Browser e2e | `make e2e` | 2 specs passed | Firefox and Chromium, isolated data root |
