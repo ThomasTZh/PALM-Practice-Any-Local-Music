@@ -32,6 +32,7 @@ environments/{cpu,cuda}/
 models/
 tools/
 projects/ assets/ uploads/ cache/
+stems/
 ```
 
 The launcher starts the existing `basseparate.cli serve` command on loopback,
@@ -40,8 +41,14 @@ records the URL in `run/server.json`, opens the browser (unless
 second launch prints the running URL instead of starting another server.
 
 Supported options: `--no-browser`, `--no-terminal` (also `--detach`),
-`--port N`, `--data-dir DIR`, `--setup` and `--doctor`; no writes are made
-under the read-only app root.
+`--port N`, `--data-dir DIR`, `--setup`, `--doctor`, `--status` and `--stop`;
+no writes are made under the read-only app root.
+
+`palm --status` prints the URL, data root and server/launcher pids without
+starting anything. `palm --stop` reads `run/server.json`, checks that the pids
+still match the launcher/server commands, sends SIGTERM, waits and removes the
+state. Stale pids or a state file from another data root are reported and never
+used to kill an unrelated process. Use `--data-dir` for a non-default root.
 
 ## Terminal-first launch
 
@@ -71,3 +78,17 @@ The entry's `Exec=palm` resolves through that symlink. If you keep the tar
 somewhere else, use an absolute symlink or update `Exec` to the launcher path.
 On a desktop whose file manager ignores `Terminal=true`, run `bin/palm` from a
 terminal or add a desktop launcher whose command is `bin/palm`.
+
+### Data roots and cleanup
+
+The packaged default is `${XDG_DATA_HOME:-$HOME/.local/share}/palm`; a source
+checkout defaults to `${XDG_DATA_HOME:-$HOME/.local/share}/basseparate`.
+Using both can download the same models/tools/environments twice. Choose one
+root with `--data-dir` or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR`.
+
+Stop PALM before cleanup. `<data>/cache/` is safe to delete (downloads/uv cache
+is rebuilt); `<data>/models/`, `<data>/tools/` and `<data>/environments/`
+require setup again; `projects/`, `assets/` and `uploads/` are user data and
+must be backed up. Uninstall by stopping PALM, removing the app directory and,
+only if you accept losing practice data, the data root. Never delete a data
+root while PALM is running.

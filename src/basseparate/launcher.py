@@ -171,6 +171,237 @@ class RunState:
         )
 
 
+def process_is_alive(pid: int) -> bool:
+    """Whether a process id currently exists (without changing it)."""
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return True
+    fields = stat.rsplit(")", 1)
+    return not (len(fields) == 2 and fields[1].split()[:1] == ["Z"])
+
+
+def process_command(pid: int) -> str | None:
+    """Read a Linux process command line, or None when it cannot be inspected."""
+    if pid <= 1:
+        return None
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return None
+    return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+
+
+def signal_process(pid: int, signum: int) -> bool:
+    """Send a signal to a validated pid, returning whether it was delivered."""
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, signum)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+@dataclass(frozen=True)
+class RunStateHealth:
+    """Validated view of the processes named by run/server.json."""
+
+    state: RunState
+    server_alive: bool
+    server_valid: bool
+    launcher_alive: bool
+    launcher_valid: bool
+    server_command: str | None
+    launcher_command: str | None
+
+    @property
+    def running(self) -> bool:
+        return self.server_alive or self.launcher_alive
+
+
+def inspect_run_state(
+    state: RunState,
+    *,
+    alive: Callable[[int], bool] | None = None,
+    command: Callable[[int], str | None] | None = None,
+) -> RunStateHealth:
+    """Validate recorded pids against their command lines.
+
+    The server must still be the CLI server for this data root; the launcher
+    must still be the PALM launcher. A pid that cannot be inspected (for
+    example outside Linux /proc) is treated as valid when it is alive rather
+    than killing an unrelated process.
+    """
+    alive = process_is_alive if alive is None else alive
+    command = process_command if command is None else command
+    server_alive = alive(state.pid)
+    launcher_alive = alive(state.launcher_pid)
+    server_command = command(state.pid) if server_alive else None
+    launcher_command = command(state.launcher_pid) if launcher_alive else None
+    server_valid = bool(
+        server_alive
+        and server_command is not None
+        and "basseparate.cli" in server_command
+        and "serve" in server_command
+    )
+    launcher_valid = bool(
+        launcher_alive
+        and launcher_command is not None
+        and (
+            "basseparate.launcher" in launcher_command
+            or "basseparate/launcher.py" in launcher_command
+            or "/bin/palm" in launcher_command
+        )
+    )
+    return RunStateHealth(
+        state=state,
+        server_alive=server_alive,
+        server_valid=server_valid,
+        launcher_alive=launcher_alive,
+        launcher_valid=launcher_valid,
+        server_command=server_command,
+        launcher_command=launcher_command,
+    )
+
+
+def _wait_for_exit(pid: int, *, timeout: float, sleep: Callable[[float], None]) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not process_is_alive(pid):
+            return True
+        sleep(0.05)
+    return not process_is_alive(pid)
+
+
+def _terminate(
+    pid: int,
+    label: str,
+    *,
+    timeout: float,
+    sleep: Callable[[float], None],
+) -> tuple[bool, bool]:
+    """Terminate one validated pid; return (signalled, forced)."""
+    if not process_is_alive(pid):
+        return False, False
+    if not signal_process(pid, signal.SIGTERM):
+        return False, False
+    if _wait_for_exit(pid, timeout=timeout, sleep=sleep):
+        return True, False
+    signal_process(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+    _wait_for_exit(pid, timeout=2.0, sleep=sleep)
+    return True, True
+
+
+def run_status(paths: LauncherPaths, *, stream: IO[str] | None = None) -> int:
+    """Print the live launcher state without starting or changing anything."""
+    output = sys.stdout if stream is None else stream
+    state = read_run_state(paths.state_file)
+    if state is None:
+        if paths.state_file.exists():
+            print(f"palm: invalid run state at {paths.state_file}", file=output)
+            print("palm: use palm --stop to remove it", file=output)
+        else:
+            print(f"palm: not running (no {paths.state_file})", file=output)
+        return 1
+    health = inspect_run_state(state)
+    print(f"palm: URL {state.url}", file=output)
+    print(f"palm: data root {state.data_root}", file=output)
+    print(f"palm: server pid {state.pid}, launcher pid {state.launcher_pid}", file=output)
+    if health.server_alive and not health.server_valid:
+        print(
+            "palm: warning: the recorded server pid no longer matches the server command",
+            file=output,
+        )
+    if health.launcher_alive and not health.launcher_valid:
+        print(
+            "palm: warning: the recorded launcher pid no longer matches the launcher command",
+            file=output,
+        )
+    if not health.running:
+        print("palm: stale run state; both recorded processes are absent", file=output)
+        print("palm: use palm --stop to clean it", file=output)
+        return 1
+    print(
+        "palm: running"
+        if health.server_valid or health.launcher_valid
+        else "palm: recorded pids are present but not validated",
+        file=output,
+    )
+    return 0 if health.server_valid or health.launcher_valid else 1
+
+
+def run_stop(
+    paths: LauncherPaths,
+    *,
+    stream: IO[str] | None = None,
+    timeout: float = SHUTDOWN_GRACE_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Stop the processes named by run/server.json and remove its state."""
+    output = sys.stdout if stream is None else stream
+    state = read_run_state(paths.state_file)
+    if state is None:
+        if paths.state_file.exists():
+            paths.state_file.unlink(missing_ok=True)
+            print(f"palm: removed invalid run state {paths.state_file}", file=output)
+        else:
+            print("palm: nothing to stop (not running)", file=output)
+        return 0
+    if state.data_root != str(paths.runtime.data_root):
+        print(
+            f"palm: refusing to stop state for another data root: {state.data_root}",
+            file=sys.stderr if stream is None else output,
+        )
+        return 2
+    health = inspect_run_state(state)
+    stopped: list[str] = []
+    stale: list[str] = []
+    for pid, alive, valid, label, command in (
+        (
+            state.launcher_pid,
+            health.launcher_alive,
+            health.launcher_valid,
+            "launcher",
+            health.launcher_command,
+        ),
+        (state.pid, health.server_alive, health.server_valid, "server", health.server_command),
+    ):
+        if not alive:
+            stale.append(label)
+            continue
+        if not valid:
+            stale.append(label)
+            print(
+                f"palm: not stopping {label} pid {pid}: command does not match "
+                f"PALM ({command or 'unknown'})",
+                file=output,
+            )
+            continue
+        signalled, forced = _terminate(pid, label, timeout=timeout, sleep=sleep)
+        if signalled:
+            stopped.append(f"{label} pid {pid}" + (" (forced)" if forced else ""))
+    paths.state_file.unlink(missing_ok=True)
+    if stopped:
+        print("palm: stopped " + ", ".join(stopped), file=output)
+    if stale:
+        print("palm: stale " + ", ".join(stale) + " process record removed", file=output)
+    if not stopped:
+        print("palm: nothing was running; cleaned up run state", file=output)
+    print(f"palm: removed run state {paths.state_file}", file=output)
+    return 0
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -592,12 +823,14 @@ class Launcher:
         while process.poll() is None:
             if self._stop.wait(0.1):
                 break
-        if self._stop.is_set() and process.poll() is None:
-            try:
-                process.wait(timeout=SHUTDOWN_GRACE_SECONDS)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+        if self._stop.is_set():
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=SHUTDOWN_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            return 0
         return process.returncode if process.returncode is not None else 0
 
     def _cleanup(self) -> None:
@@ -701,6 +934,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the read-only dependency report, then exit",
     )
+    actions.add_argument(
+        "--status",
+        action="store_true",
+        help="print the recorded URL, data root and pids, then exit",
+    )
+    actions.add_argument(
+        "--stop",
+        action="store_true",
+        help="stop the recorded server/launcher and remove the run state",
+    )
     return parser
 
 
@@ -721,6 +964,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.setup:
         return run_setup(runtime)
     paths = LauncherPaths.from_runtime(runtime)
+    if args.status:
+        return run_status(paths)
+    if args.stop:
+        return run_stop(paths)
     if not args.no_terminal and not terminal_active() and not sys.stdin.isatty():
         if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
             if open_terminal(raw_argv):

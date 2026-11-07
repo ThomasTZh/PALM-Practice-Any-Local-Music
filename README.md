@@ -30,6 +30,32 @@ chords, sections and the spectrogram then work without the optional pieces. See
 [docs/portable.md](docs/portable.md) and the clean-room record in
 [packaging/VERIFICATION.md](packaging/VERIFICATION.md).
 
+## Launcher lifecycle and cleanup
+
+From an interactive terminal, `bin/palm` streams server logs and Ctrl+C stops
+the server cleanly. A file-manager double-click opens an attached terminal that
+stays open for logs and Ctrl+C; closing only the browser does not stop the
+server. If no terminal emulator is available, PALM prints the log path and runs
+headless.
+
+Use `palm --status` to print the running URL, data root and pids without
+starting anything, and `palm --stop` to stop a server left by a closed terminal
+or old build. `--stop` validates the recorded pids against their commands,
+terminates the launcher/server gracefully and removes `run/server.json`; stale
+or unrelated records are reported and never kill an arbitrary process.
+
+The packaged data root defaults to `~/.local/share/palm`; a source checkout uses
+`~/.local/share/basseparate`, so using both can duplicate model/tool downloads.
+Pick one root with `--data-dir` or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR`. Stop
+PALM before cleanup: deleting `cache/` is safe (it is re-downloaded), while
+`models/`, `tools/` and `environments/` require setup again and
+`projects/`/`assets/`/`uploads/` are your data. Uninstall by stopping PALM,
+removing the app directory, and optionally deleting the data root after
+backing up projects. The desktop entry uses `Terminal=true`; install a `palm`
+symlink and the entry as documented in
+[packaging/launcher/README.md](packaging/launcher/README.md). Full exact paths
+and safety warnings are in [docs/portable.md](docs/portable.md).
+
 ## Purpose and gaps
 
 The project exists to practise a song against its own harmony, tempo and form

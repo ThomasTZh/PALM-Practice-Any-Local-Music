@@ -34,9 +34,32 @@ Launcher options:
 | `--data-dir DIR` | writable data root (default below) |
 | `--setup` | create the data layout and record setup state, then exit |
 | `--doctor` | print the read-only dependency report, then exit |
+| `--status` | print the URL, data root and recorded pids without starting anything |
+| `--stop` | stop the recorded launcher/server, remove run state and report |
 
 `bin/uv` is included for the setup's environment installation; `bin/palm` uses
 the bundled `python/` tree, so no system Python or Node is required.
+
+## Stop, status and terminal lifecycle
+
+`palm --status` is read-only. It prints the URL recorded in
+`<data>/run/server.json`, the data root and the server/launcher pids, and exits
+1 for missing, stale or invalid state. It never starts a server.
+
+`palm --stop` validates the recorded pids against their command lines, sends
+SIGTERM to the launcher (which forwards it to the server), waits, and removes
+`run/server.json`. If a pid is gone, the command no longer matches, or the
+recorded data root is different, it reports the stale record and does not kill
+an unrelated process. Use `--data-dir` if the instance is not on the default
+root.
+
+Closing only the browser does **not** stop the server. The terminal stays open
+with live logs and Ctrl+C, or `palm --stop` stops it later. A file-manager
+double-click on `bin/palm` opens an attached terminal and leaves it open for the
+same reason; if no terminal emulator exists, it prints the log path and runs
+headless. Install the desktop entry and a `palm` symlink as described in
+[packaging/launcher/README.md](../packaging/launcher/README.md) so a desktop
+launch uses `Terminal=true` without typing commands.
 
 ## First run: network, disk, ffmpeg
 
@@ -97,6 +120,7 @@ The data root contains:
 
 ```
 projects/ assets/ uploads/ tmp/ .locks/    library and decoded audio
+stems/                                   separated stem PCM, keyed by model/cache
 models/                                  verified model weights (chosen models)
 tools/                                   Sonic Visualiser/Piper and Vamp plugins
 environments/cpu/ environments/cuda/     inference environments
@@ -109,6 +133,27 @@ setup.json                               setup choices/skip state
 In packaged mode the app tree is read-only by contract; setup writes only below
 the data root. In source mode the checkout and data root are separate too, but
 `make models-*`/`make bootstrap` retain the preserved developer assets.
+
+**Two roots can duplicate downloads.** The packaged app defaults to
+`~/.local/share/palm`; a source checkout defaults to
+`~/.local/share/basseparate`. Models, tools and environments live under
+whichever root is active. If both modes are used, the same model can be
+downloaded twice. Pick one root and pass `--data-dir "$HOME/.local/share/palm"`
+to source commands, or set `PALM_DATA_DIR` (packaged) and
+`BASSEPARATE_DATA_DIR` (source) to the same path. `palm --status` shows which
+root the running launcher uses. Do not run two servers against one data root;
+the launcher lock prevents it.
+
+### Safe cleanup
+
+Stop PALM first (`palm --stop`, Ctrl+C, or close the terminal). Then:
+
+- Safe to delete: `<data>/cache/` (downloads, uv cache; rebuilt or re-downloaded
+  on demand), `<data>/logs/` (diagnostics), stale `<data>/run/server.json`.
+- Keep unless you accept a download/setup: `<data>/models/`, `<data>/tools/`,
+  `<data>/environments/`. Deleting them requires reinstalling through setup.
+- Keep your work: `<data>/projects/`, `assets/` and `uploads/`. Back these up
+  before any cleanup. Never delete `<data>` while PALM is running.
 
 ## First-run setup API
 
@@ -157,15 +202,18 @@ The downloaded size/SHA-256 must match the registry pins.
 
 ## Upgrade and uninstall
 
-**Upgrade:** stop PALM, replace the extracted app directory with the new release, and keep the data root. Models, tools, environments, setup state and
-projects stay valid; if a pinned download changed, setup reports the affected
-item and offers a verified reinstall. Do not copy the old app tree over the new
-one.
+**Upgrade:** stop PALM with `palm --stop`, replace the extracted app directory
+with the new release, and keep the data root. Models, tools, environments, setup
+state and projects stay valid; if a pinned download changed, setup reports the
+affected item and offers a verified reinstall. Do not copy the old app tree over
+the new one.
 
-**Uninstall:** stop PALM (SIGTERM/flock release), then remove the app directory
-and, if you want to delete your practice data, the data root
-(`~/.local/share/palm` by default). Nothing is installed system-wide. Removing
-only the app leaves the data untouched for a later reinstall.
+**Uninstall:** stop PALM first (`palm --stop` or Ctrl+C), then remove the app
+directory. To remove practice data as well, delete the data root
+(`~/.local/share/palm` for the packaged build,
+`~/.local/share/basseparate` for source). Back up `projects/`/`assets/` first;
+deletion is permanent. Nothing is installed system-wide. Removing only the app
+leaves the data untouched for a later reinstall.
 
 ## Licence boundaries
 
