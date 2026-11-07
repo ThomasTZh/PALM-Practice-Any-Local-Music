@@ -98,10 +98,10 @@ The data-root removal deletes projects, so back them up first.
 
 ## Verification
 
-- Clean-room and asset evidence: [packaging/VERIFICATION.md](../packaging/VERIFICATION.md)
-- Full guide: [docs/portable.md](../docs/portable.md)
-- Application licence: [licenses/LICENSE](../licenses/LICENSE)
-- Third-party notices: [licenses/NOTICES.md](../licenses/NOTICES.md)
+- Clean-room and asset evidence: [packaging/VERIFICATION.md](packaging/VERIFICATION.md)
+- Full guide: [docs/portable.md](docs/portable.md)
+- Application licence: [licenses/LICENSE](licenses/LICENSE)
+- Third-party notices: [licenses/NOTICES.md](licenses/NOTICES.md)
 
 Measured and verified for this build: packaged launcher health and setup page;
 real network install of the analysis tools; real CPU environment import
