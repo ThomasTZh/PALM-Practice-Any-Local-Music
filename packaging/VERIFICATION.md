@@ -256,3 +256,73 @@ make gate         -> exit 0, 372 passed/9 skipped, web/e2e pass
 ```
 
 The published release/tag were intentionally not modified.
+
+## t85 final tar integration QA (2026-11-07)
+
+Status: **PASSED** on the rebuilt final tree.
+
+- Tar: `PALM-0.1.0-dev-linux-x86_64.tar.gz`, 70,039,107 B,
+  `93840590ba9ac75181e008f407877d7ad31c04cf57f0f98bbd6ac931d61522b0`
+- Fresh extraction and data root; launched `bin/palm --no-browser --no-terminal
+  --port 0`; `/api/health` ok, `/api/setup/status` packaged and initially
+  ready=false.
+
+### Tools and real analysis
+
+Tools installed from the package (141 files, 119 MiB); `tools_status` paths
+match `data/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server` and
+`data/tools/vamp-plugins/qm-vamp-plugins.so`.
+
+The 8 s `chords_c_am_f_g.wav` fixture was imported and analysed through the
+packaged server. The analysis job succeeded with no `PiperUnavailable`:
+
+```text
+bpm 135.999
+key C major
+chords 5
+beats 18
+bars 5
+```
+
+### CPU environment and model install
+
+CPU environment creation succeeded; imports:
+
+```text
+torch 2.9.1+cpu
+msst ok
+pydantic ok
+```
+
+`scnet-xl-ihf` installed (205 MiB). Setup status: ready=true, tools ready,
+CPU installed, scnet installed.
+
+### Model picker without reload
+
+Browser setup was opened on a data root with tools/CPU installed and the model
+missing. The model card was selected and its licence accepted; the model install
+button was clicked. Without navigating or reloading, the setup wizard detached
+at the same URL and the library model select showed:
+
+```text
+Choose a model (disabled)
+Demucs htdemucs_ft (disabled)
+SCNet XL IHF (enabled, selected)
+BS-RoFormer-SW (disabled)
+```
+
+### Launcher
+
+PTY smoke of the packaged `bin/palm`: bootstrap lines appeared in the terminal
+stream and `logs/server.log`, Ctrl+C exited 0 and removed `run/server.json`.
+No-TTY launch without a graphical session printed `running in the background`
+with the `server.log` path and still served the app; the terminal spawn path is
+covered by unit tests.
+
+### Commands
+
+```text
+make package      -> exit 0, tar 70,039,107 B, SHA256SUMS
+make test-package -> exit 0, 6,488 members, checksums, bin/palm --help
+make gate         -> exit 0, 376 passed/9 skipped, web/e2e pass
+```
