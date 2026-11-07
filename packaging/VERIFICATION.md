@@ -367,3 +367,11 @@ make package      -> exit 0, tar 70,041,725 B
 make test-package -> exit 0, 6,488 members, checksums, bin/palm --help
 make gate         -> exit 0
 ```
+
+
+Note on AppImageLauncher: the t80/t85 tools runs used a host workaround
+(`APPIMAGELAUNCHER_DISABLE=1 APPIMAGELAUNCHER_FORCE_HEADLESS=1 DISPLAY=`) because
+that host still had AppImageLauncher registered. The tool installer extracts
+the upstream Sonic Visualiser AppImage itself, so AppImageLauncher is not a
+PALM requirement. The host integration was later removed; users should not
+need these variables.

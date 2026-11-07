@@ -12,6 +12,25 @@ your computer: no account, no upload and no internet connection.
 control. Expect setup failures, incomplete platform coverage and model or
 licence edge cases. Keep your own backup of any project you care about.
 
+## Start here
+
+1. Download the tar and `SHA256SUMS` from the release page.
+2. Extract the tar.
+3. Double-click `bin/palm`, or run `./bin/palm` in a terminal.
+4. A terminal opens with the server log, and the setup page opens in your
+   browser.
+5. When you are finished, press Ctrl+C in that terminal. Closing only the
+   browser leaves PALM running.
+
+If the terminal was closed, stop the server with `./bin/palm --stop`. Check a
+running instance with `./bin/palm --status`. No commands are needed for normal
+use beyond the first launch.
+
+The first run asks which optional pieces to install. It can skip them: playback,
+importing, sections and the spectrogram work without the analysis tools or a
+separation model. The setup page explains what each piece adds and shows its
+licence before downloading.
+
 ## Portable Linux release
 
 The repository publishes a portable Linux x86_64 tar with `SHA256SUMS` and
@@ -103,6 +122,12 @@ local and attaches the analysis to the same bar grid that drives practice.
   The portable asset was smoke-tested in a minimal Linux container fallback,
   not across distributions; the Ubuntu 22.04 container path is CI-only and not
   independently evidenced here.
+- **Build repeatability, now fixed.** Earlier downloads were not byte-identical
+  even from the same source because the compressed archive recorded the build
+  time. The builder now fixes the timestamp and omits the build-time filename,
+  so two clean builds from the same source and locked dependencies produce the
+  same SHA-256. If a rebuild differs, something in the source or dependencies
+  changed. The published `SHA256SUMS` always identifies the tested file.
 - Linux x86_64 is the tested platform; Windows and macOS are not packaged.
 - The server is loopback-only. There are no accounts, cloud processing or
   multi-user features.
