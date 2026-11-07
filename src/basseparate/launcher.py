@@ -17,6 +17,7 @@ import contextlib
 import fcntl
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -48,6 +49,16 @@ SERVER_LOG = "server.log"
 STATE_VERSION = 1
 LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
 BOOTSTRAP_PREFIX = "bootstrap:"
+TERMINAL_MARKER = "PALM_TERMINAL_ACTIVE"
+TERMINAL_CANDIDATES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("x-terminal-emulator", ("-e",)),
+    ("gnome-terminal", ("--wait", "--")),
+    ("konsole", ("-e",)),
+    ("xfce4-terminal", ("-e",)),
+    ("xterm", ("-e",)),
+    ("kitty", ()),
+    ("alacritty", ("-e",)),
+)
 
 
 class LauncherError(RuntimeError):
@@ -387,6 +398,61 @@ def run_doctor(runtime: RuntimePaths, *, stream: IO[str] | None = None) -> int:
     return 0 if report.ok else 1
 
 
+def terminal_command(
+    child: Sequence[str], *, which: Callable[[str], str | None] = shutil.which
+) -> list[str] | None:
+    """Return the first available terminal emulator command for ``child``."""
+    for name, arguments in TERMINAL_CANDIDATES:
+        executable = which(name)
+        if executable:
+            return [executable, *arguments, *child]
+    return None
+
+
+def terminal_child_command(argv: Sequence[str]) -> list[str]:
+    """The launcher command a terminal should run for this same invocation."""
+    return [sys.executable, "-m", "basseparate.launcher", "--no-terminal", *argv]
+
+
+def terminal_active(environment: Mapping[str, str] | None = None) -> bool:
+    """True when this process is already the terminal-attached child."""
+    source = os.environ if environment is None else environment
+    return source.get(TERMINAL_MARKER) == "1"
+
+
+def open_terminal(
+    argv: Sequence[str],
+    *,
+    which: Callable[[str], str | None] = shutil.which,
+    popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
+    environment: Mapping[str, str] | None = None,
+) -> bool:
+    """Open a terminal attached to a no-TTY launcher, if possible.
+
+    The child carries ``PALM_TERMINAL_ACTIVE=1`` and ``--no-terminal`` so a
+    terminal emulator that itself starts the launcher cannot recurse.
+    """
+    base = dict(os.environ if environment is None else environment)
+    if base.get(TERMINAL_MARKER) == "1":
+        return False
+    command = terminal_command(terminal_child_command(argv), which=which)
+    if command is None:
+        return False
+    base[TERMINAL_MARKER] = "1"
+    try:
+        popen(
+            command,
+            env=base,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
 class Launcher:
     """Start and supervise the existing local server."""
 
@@ -401,6 +467,7 @@ class Launcher:
         browser_open: Callable[[str], bool] | None = None,
         popen_factory: Callable[..., subprocess.Popen[str]] | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        stream: IO[str] | None = None,
     ) -> None:
         self.paths = paths
         self.port = port
@@ -410,6 +477,7 @@ class Launcher:
         self._browser_open = browser_open if browser_open is not None else webbrowser.open
         self._popen_factory = popen_factory if popen_factory is not None else subprocess.Popen
         self._sleep = sleep
+        self._stream = stream
         self._lock = InstanceLock(paths)
         self._server: subprocess.Popen[str] | None = None
         self._server_log: IO[str] | None = None
@@ -432,6 +500,12 @@ class Launcher:
         try:
             for line in stream:
                 self._write_log(line)
+                if self._stream is not None:
+                    try:
+                        self._stream.write(line)
+                        self._stream.flush()
+                    except (BrokenPipeError, OSError, ValueError):
+                        self._stream = None
                 url = parse_bootstrap_url(line)
                 if url is not None and not self._url_event.is_set():
                     self._url = url
@@ -598,6 +672,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not open the studio URL in the browser",
     )
     parser.add_argument(
+        "--no-terminal",
+        "--detach",
+        action="store_true",
+        dest="no_terminal",
+        help="do not open a terminal emulator when launched without a tty",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=DEFAULT_PORT,
@@ -624,8 +705,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
     if not 0 <= args.port <= 65_535:
         print(f"palm: invalid port {args.port}", file=sys.stderr)
         return 2
@@ -638,10 +720,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_doctor(runtime)
     if args.setup:
         return run_setup(runtime)
+    paths = LauncherPaths.from_runtime(runtime)
+    if not args.no_terminal and not terminal_active() and not sys.stdin.isatty():
+        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            if open_terminal(raw_argv):
+                return 0
+            print(
+                "palm: no terminal emulator found; running in the background. "
+                f"Logs: {paths.server_log}. Use --no-terminal to skip this check.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "palm: no interactive terminal or graphical session; running in "
+                f"the background. Logs: {paths.server_log}.",
+                file=sys.stderr,
+            )
     launcher = Launcher(
-        LauncherPaths.from_runtime(runtime),
+        paths,
         port=args.port,
         open_browser=not args.no_browser,
+        stream=sys.stdout if sys.stdout.isatty() else None,
     )
     return launcher.run()
 
