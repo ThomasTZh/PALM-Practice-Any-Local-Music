@@ -39,7 +39,7 @@ from typing import IO, Any
 import numpy as np
 from numpy.typing import NDArray
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+from basseparate.config import runtime_paths
 
 # The JSON protocol accepts these adapter names verbatim. AdaptInputDomain is
 # required for frequency-domain plugins such as Chordino: without it the
@@ -90,9 +90,17 @@ class PiperPaths:
 
     @classmethod
     def for_project(cls, root: Path | None = None) -> PiperPaths:
-        """Resolve the project's preserved assets, honouring explicit overrides."""
-        base = (Path(root) if root is not None else PROJECT_ROOT).resolve()
-        sv = base / "storage" / "tools" / "sv" / "squashfs-root"
+        """Resolve tools from the runtime layout, honouring explicit overrides.
+
+        An explicit ``root`` keeps the historical source-checkout layout
+        (``<root>/storage/tools``). Without one, the runtime resolver selects
+        source ``storage/tools`` or packaged ``data_root/tools``.
+        """
+        if root is not None:
+            tools_root = Path(root).resolve() / "storage" / "tools"
+        else:
+            tools_root = runtime_paths().tools_root
+        sv = tools_root / "sv" / "squashfs-root"
         return cls(
             server=Path(
                 os.environ.get(
@@ -100,9 +108,7 @@ class PiperPaths:
                 )
             ),
             plugin_path=Path(
-                os.environ.get(
-                    "BASSEPARATE_VAMP_PLUGINS", str(base / "storage" / "tools" / "plugins")
-                )
+                os.environ.get("BASSEPARATE_VAMP_PLUGINS", str(tools_root / "plugins"))
             ),
             library_path=Path(os.environ.get("BASSEPARATE_PIPER_LIBS", str(sv / "usr" / "lib"))),
         )
@@ -112,29 +118,29 @@ class PiperPaths:
         if not self.server.is_file():
             raise PiperUnavailable(
                 f"Piper server not found at {self.server}. Restore the preserved offline "
-                "asset under storage/tools/sv (or set BASSEPARATE_PIPER); `make bootstrap` "
-                "checks the local toolchain and never downloads."
+                "asset under the runtime tools root (or set BASSEPARATE_PIPER); "
+                "`make bootstrap` checks the local toolchain and never downloads."
             )
         if not os.access(self.server, os.X_OK):
             raise PiperUnavailable(
                 f"Piper server is not executable: {self.server}. Restore the execute bit "
-                "on the preserved storage/tools/sv asset."
+                "on the preserved runtime tools asset."
             )
         if not self.plugin_path.is_dir():
             raise PiperUnavailable(
                 f"Vamp plugin pack not found at {self.plugin_path}. Restore the preserved "
-                "offline pack under storage/tools/plugins (or set BASSEPARATE_VAMP_PLUGINS) "
-                "and run `make analysis-check`."
+                "offline pack under the runtime tools root (or set "
+                "BASSEPARATE_VAMP_PLUGINS) and run `make analysis-check`."
             )
         if not self.library_path.is_dir():
             raise PiperUnavailable(
                 f"Piper runtime libraries not found at {self.library_path}. Restore the "
-                "preserved storage/tools/sv/squashfs-root/usr/lib directory."
+                "preserved sv/squashfs-root/usr/lib directory."
             )
         if next(self.plugin_path.glob("*.so"), None) is None:
             raise PiperUnavailable(
                 f"Vamp plugin pack at {self.plugin_path} contains no *.so plugin libraries. "
-                "Restore the preserved pack from storage/tools/plugins."
+                "Restore the preserved plugin pack under the runtime tools root."
             )
 
 

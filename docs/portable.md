@@ -43,6 +43,9 @@ the bundled `python/` tree, so no system Python or Node is required.
 The first-run wizard installs three independent pieces. Nothing is downloaded
 until you press Install and accept the relevant licence.
 
+Installed tools live under `<data>/tools`; in packaged mode Piper and the Vamp
+plugin pack are resolved there, not from the read-only app tree.
+
 1. **Analysis tools** (optional for practice, required for analysis): Sonic
    Visualiser/Piper (GPL-2.0-or-later) and the Vamp Plugin Pack (AGPL-3.0;
    individual plugins GPL/AGPL). These are downloaded from their pinned

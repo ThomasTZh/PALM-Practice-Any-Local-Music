@@ -219,3 +219,40 @@ make package      -> exit 0, tar 70,038,235 B, SHA256SUMS written
 make test-package -> exit 0, 6,488 members, bundled bin/palm --help, OK
 make gate         -> exit 0, 369 passed/9 skipped, web/e2e pass
 ```
+
+## t81 packaged Piper/analysis verification (2026-11-07)
+
+Status: **PASSED (local build; publication deferred to t85)**
+
+The 70,038,314 B / a4f088... tar below is a local test build only. The
+published v0.1.0-dev assets and tag remain unchanged until the combined t85
+rebuild.
+
+- Tar: 70,038,314 B, sha256
+  `a4f088622a69d90e9d43bcdbaccc9b2c568cf7d0c0f99b7003458e5f365c6326`.
+- Reused the t80 data root with tools installed by the setup job; extracted the
+  new app over it and launched packaged mode.
+- `PiperPaths.for_project()` resolved:
+  - server `data/tools/sv/squashfs-root/usr/bin/piper-vamp-simple-server`
+  - plugins `data/tools/plugins`
+  - libraries `data/tools/sv/squashfs-root/usr/lib`
+- Real packaged analysis of `tests/fixtures/audio/chords_c_am_f_g.wav`:
+  job succeeded, key `C major`, 135.999 BPM, bpb 4, 5 chord entries,
+  18 beats and 5 bars. No `PiperUnavailable`.
+- Packaged missing-asset validation names the data-root
+  `tools/sv/squashfs-root` path; source-checkout and BASSEPARATE_* override
+  tests remain green.
+- Scoped `make test-backend TESTS="tests/unit/test_piper
+  tests/integration/test_analysis"` -> 38 passed.
+
+Local verification for t81:
+
+```text
+make test-backend TESTS="tests/unit/test_piper tests/integration/test_analysis"
+  -> 39 passed
+make package      -> exit 0, tar 70,038,314 B, sha256 a4f08862...
+make test-package -> exit 0, 6,488 members, bundled bin/palm --help
+make gate         -> exit 0, 372 passed/9 skipped, web/e2e pass
+```
+
+The published release/tag were intentionally not modified.
