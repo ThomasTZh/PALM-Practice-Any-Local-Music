@@ -823,12 +823,14 @@ class Launcher:
         while process.poll() is None:
             if self._stop.wait(0.1):
                 break
-        if self._stop.is_set() and process.poll() is None:
-            try:
-                process.wait(timeout=SHUTDOWN_GRACE_SECONDS)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+        if self._stop.is_set():
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=SHUTDOWN_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            return 0
         return process.returncode if process.returncode is not None else 0
 
     def _cleanup(self) -> None:

@@ -32,6 +32,7 @@ environments/{cpu,cuda}/
 models/
 tools/
 projects/ assets/ uploads/ cache/
+stems/
 ```
 
 The launcher starts the existing `basseparate.cli serve` command on loopback,

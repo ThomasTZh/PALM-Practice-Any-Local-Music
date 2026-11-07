@@ -326,3 +326,44 @@ make package      -> exit 0, tar 70,039,107 B, SHA256SUMS
 make test-package -> exit 0, 6,488 members, checksums, bin/palm --help
 make gate         -> exit 0, 376 passed/9 skipped, web/e2e pass
 ```
+
+
+## t87 lifecycle integration QA (2026-11-07)
+
+Status: **PASSED** on the rebuilt tar.
+
+- Tar: `PALM-0.1.0-dev-linux-x86_64.tar.gz`, 70,041,725 B,
+  `9d6a9617aa98be68353e68212a044000a33225a0647687579740571f7250f1b4`
+- Fresh extraction and data roots. `bin/palm` was tested with an explicit
+  `--data-dir` and with the default XDG data root (`XDG_DATA_HOME`).
+
+### PTY and single instance
+
+PTY launch streamed bootstrap/log lines to the terminal; a second launch with
+`--no-terminal` printed `palm: already running at <url>` and exited 0 without
+changing the recorded server pid or starting another server. Ctrl+C exited 0,
+retained `logs/server.log`, and removed `run/server.json`.
+
+### Status, stop and roots
+
+`palm --status --data-dir <explicit>` and `palm --status` with XDG printed URL,
+data root and pids and exited 0. `palm --stop` stopped the launcher and removed
+state in both cases. Two live roots reported distinct URLs; stopping one left
+the other running. A hand-written stale state with dead pids returned 1 from
+`--status` with a stale message; `--stop` removed it (exit 0) and a fresh launch
+then started normally.
+
+### Docs
+
+The data layout documents `<data>/{projects,assets,uploads,tmp,stems,models,
+tools,environments,cache,logs,run,setup.json}`, the packaged palm vs old
+basseparate root duplication, safe cache cleanup, setup-required directories,
+project backup warnings and complete uninstall steps.
+
+### Commands
+
+```text
+make package      -> exit 0, tar 70,041,725 B
+make test-package -> exit 0, 6,488 members, checksums, bin/palm --help
+make gate         -> exit 0
+```

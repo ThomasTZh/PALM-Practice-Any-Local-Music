@@ -120,6 +120,7 @@ The data root contains:
 
 ```
 projects/ assets/ uploads/ tmp/ .locks/    library and decoded audio
+stems/                                   separated stem PCM, keyed by model/cache
 models/                                  verified model weights (chosen models)
 tools/                                   Sonic Visualiser/Piper and Vamp plugins
 environments/cpu/ environments/cuda/     inference environments

@@ -14,7 +14,7 @@ provided beyond the MIT licence.
 
 | Asset | Size | SHA-256 |
 | --- | ---: | --- |
-| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,039,107 B | `93840590ba9ac75181e008f407877d7ad31c04cf57f0f98bbd6ac931d61522b0` |
+| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,041,725 B | `9d6a9617aa98be68353e68212a044000a33225a0647687579740571f7250f1b4` |
 | `SHA256SUMS` | — | contains the line above |
 
 The tar is 66.8 MiB, well under 2 GiB. No model weights, analysis tools,
