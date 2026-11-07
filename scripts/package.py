@@ -14,13 +14,13 @@ No model weights, analysis environments, tools, caches, tests, recordings or
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import importlib.metadata
 import os
 import shutil
 import subprocess
 import sys
-import gzip
 import tarfile
 import tempfile
 import tomllib
@@ -427,24 +427,26 @@ def build_tar(stage: Path, output: Path) -> Path:
     # gzip stores a timestamp in its header by default, which makes two
     # byte-identical tar streams hash differently. Pin it to the epoch and
     # omit the original filename so the archive is reproducible.
-    with output.open("wb") as raw:
-        with gzip.GzipFile(filename=output.name, mode="wb", compresslevel=6, mtime=0, fileobj=raw) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w") as archive:
-                for path in sorted(stage.rglob("*")):
-                    relative = path.relative_to(stage)
-                    info = archive.gettarinfo(
-                        str(path), arcname=f"{stage.name}/{relative.as_posix()}"
-                    )
-                    info.uid = 0
-                    info.gid = 0
-                    info.uname = ""
-                    info.gname = ""
-                    info.mtime = 0
-                    if path.is_file():
-                        with path.open("rb") as handle:
-                            archive.addfile(info, handle)
-                    else:
-                        archive.addfile(info)
+    with (
+        output.open("wb") as raw,
+        gzip.GzipFile(
+            filename=output.name, mode="wb", compresslevel=6, mtime=0, fileobj=raw
+        ) as compressed,
+        tarfile.open(fileobj=compressed, mode="w") as archive,
+    ):
+        for path in sorted(stage.rglob("*")):
+            relative = path.relative_to(stage)
+            info = archive.gettarinfo(str(path), arcname=f"{stage.name}/{relative.as_posix()}")
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            info.mtime = 0
+            if path.is_file():
+                with path.open("rb") as handle:
+                    archive.addfile(info, handle)
+            else:
+                archive.addfile(info)
     if output.stat().st_size >= MAX_ASSET_BYTES:
         raise PackageError(f"asset {output.name} is at least 2 GiB")
     print(f"package: wrote {output} ({output.stat().st_size} bytes)")
