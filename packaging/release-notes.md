@@ -16,7 +16,7 @@ beyond the MIT licence.
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
-| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,044,838 B | `7cdcdcae70f498f29a4ec5b74a2b954c6b725b047f97ff295611d263cfec36d4` |
+| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,044,949 B | `c1a6edfc75b90ad9540f015395bcc1c68189f43d578bef743f08fea4ae8be408` |
 | `SHA256SUMS` | 101 B | contains the line above |
 
 The archive is under 2 GiB. It contains no model weights, analysis tools,
