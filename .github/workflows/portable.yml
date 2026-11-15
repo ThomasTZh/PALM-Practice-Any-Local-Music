@@ -160,7 +160,7 @@ jobs:
 
   macos-arm64:
     name: macOS arm64 package and smoke
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -224,7 +224,7 @@ jobs:
   macos-intel-optional:
     name: macOS Intel experimental (manual, unsupported)
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_macos_intel }}
-    runs-on: macos-13
+    runs-on: macos-15-intel
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
