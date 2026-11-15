@@ -137,6 +137,25 @@ def test_zip_writer_records_unix_executable_modes(tmp_path: Path) -> None:
         assert (plain_info.external_attr >> 16) & 0o777 == 0o644
 
 
+def test_checksum_file_uses_flat_basenames(tmp_path: Path) -> None:
+    module = load_script()
+    files = [
+        tmp_path / "PALM-0.1.0-dev-macos-arm64.zip",
+        tmp_path / "PALM-0.1.0-dev-macos-arm64.dmg",
+    ]
+    for path in files:
+        path.write_bytes(path.name.encode())
+    checksums = module.write_checksums(tmp_path, "0.1.0-dev")
+    lines = checksums.read_text().splitlines()
+    assert len(lines) == 2
+    for line in lines:
+        digest, name = line.split("  ", 1)
+        assert len(digest) == 64
+        assert name in {path.name for path in files}
+        assert "dist/" not in name
+        assert digest == module.sha256(tmp_path / name)
+
+
 def test_built_macos_zip_when_present() -> None:
     zips = sorted((ROOT / "dist").glob("PALM-*-macos-arm64.zip"))
     if not zips:
