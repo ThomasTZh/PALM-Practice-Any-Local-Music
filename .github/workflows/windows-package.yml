@@ -1,0 +1,66 @@
+name: windows-package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Enable pnpm
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build uv
+        shell: pwsh
+        run: python -m pip install uv==0.12.0
+      - name: Build Windows ZIP
+        shell: pwsh
+        run: python scripts/package_windows.py --online
+      - name: Validate Windows ZIP
+        shell: pwsh
+        run: python scripts/package_windows.py --check
+      - name: Unit and adapter tests
+        shell: pwsh
+        run: python -m pytest -q tests/unit/test_platform_support tests/integration/test_package_windows
+      - name: No-admin ZIP smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $root = Join-Path $env:RUNNER_TEMP "palm-win-smoke"
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip.FullName -DestinationPath $root
+          $app = Get-ChildItem $root -Directory | Select-Object -First 1
+          $palm = Join-Path $app.FullName "palm.cmd"
+          $data = Join-Path $env:RUNNER_TEMP "palm-win-data"
+          Remove-Item $data -Recurse -Force -ErrorAction SilentlyContinue
+          & $palm --help
+          if ($LASTEXITCODE -ne 0) { throw "palm.cmd --help failed" }
+          $proc = Start-Process -FilePath $palm -ArgumentList @("--no-browser", "--no-terminal", "--port", "0", "--data-dir", $data) -PassThru
+          try {
+            $state = Join-Path $data "run\server.json"
+            $deadline = (Get-Date).AddSeconds(60)
+            while (-not (Test-Path $state) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+            if (-not (Test-Path $state)) { throw "server state was not written" }
+            $url = (Get-Content $state -Raw | ConvertFrom-Json).url
+            $health = Invoke-RestMethod -Uri ($url.TrimEnd('/') + "/api/health") -TimeoutSec 30
+            if ($health.status -ne "ok") { throw "health was not ok" }
+            & $palm --stop --data-dir $data
+            if ($LASTEXITCODE -ne 0) { throw "palm.cmd --stop failed" }
+          } finally {
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          }
