@@ -30,6 +30,8 @@ export interface PlayerState {
   speed: number;
   loopEnabled: boolean;
   loopRange: LoopRange | null;
+  /** Stable play/pause intent while the engine is seeking or buffering. */
+  intendedPlaying?: boolean;
   error: string | null;
 }
 

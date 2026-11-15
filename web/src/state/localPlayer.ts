@@ -71,6 +71,7 @@ export function createLocalPlayer(
         ...state,
         positionSeconds: state.durationSeconds,
         status: "ended",
+        intendedPlaying: false,
       });
       return;
     }
@@ -119,6 +120,7 @@ export function createLocalPlayer(
     const atEnd = state.positionSeconds >= state.durationSeconds;
     update({
       status: "playing",
+      intendedPlaying: true,
       positionSeconds: atEnd ? 0 : state.positionSeconds,
       error: null,
     });
@@ -130,7 +132,7 @@ export function createLocalPlayer(
       return;
     }
     stopClock();
-    update({ status: "paused" });
+    update({ status: "paused", intendedPlaying: false });
   }
 
   function toggle(): void {

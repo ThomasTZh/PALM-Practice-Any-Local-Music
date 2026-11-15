@@ -41,6 +41,20 @@ describe("TransportPanel", () => {
     expect(player.calls).toEqual(["play", "pause"]);
   });
 
+  it("keeps Pause usable while a playing seek reports loading", async () => {
+    const player = createFakePlayer({
+      status: "loading",
+      intendedPlaying: true,
+      durationSeconds: 60,
+    });
+    render(<TransportPanel player={player} />);
+
+    const pause = screen.getByRole("button", { name: "Pause" });
+    expect(pause).toBeEnabled();
+    await userEvent.click(pause);
+    expect(player.calls).toEqual(["toggle"]);
+  });
+
   it("disables play while loading and reports errors", () => {
     const loading = createFakePlayer({
       status: "loading",

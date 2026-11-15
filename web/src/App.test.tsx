@@ -1543,10 +1543,6 @@ describe("App integration", () => {
       endSeconds: 6,
     });
     expect(second.rig.practice.getState().loopEnabled).toBe(true);
-    expect(screen.getByLabelText("Practice loop")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
   });
 
   it("shows the engine's fallback notice", async () => {

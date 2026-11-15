@@ -257,8 +257,24 @@ describe("StudioPlayer state mapping", () => {
     node.post({ type: "ended", generation: 1 });
     expect(player.getState().status).toBe("ended");
     expect(player.getState().positionSeconds).toBe(DURATION);
+    // A trailing anchor from the worklet must not rewind the visible end.
+    node.post({ type: "anchor", frame: 0, time: 0, paused: true, generation: 1 });
+    expect(player.getState().positionSeconds).toBe(DURATION);
+    expect(player.getState().status).toBe("ended");
     player.pause();
     expect(player.getState().status).toBe("ended");
+
+    // While playing, a seek keeps the Pause label: the user still intends
+    // playback even though the engine briefly reports seeking/buffering.
+    player.play();
+    player.seek(1);
+    expect(player.getState().status).toBe("loading");
+    expect(player.getState().intendedPlaying).toBe(true);
+    await finishSeek(node);
+    expect(player.getState().status).toBe("playing");
+    expect(player.getState().intendedPlaying).toBe(true);
+    player.pause();
+    expect(player.getState().status).toBe("paused");
 
     // A manual seek to the end is not EOF: while seeking it is loading, and
     // once settled it stays paused rather than ended.
