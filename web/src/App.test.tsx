@@ -1305,6 +1305,22 @@ describe("App integration", () => {
     expect(follow).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("toggles playback with Space outside text entry", async () => {
+    const { rig } = setup();
+    await openProject();
+
+    const before = rig.player.calls.filter((call) => call === "toggle").length;
+    fireEvent.keyDown(document.body, { key: " " });
+    expect(
+      rig.player.calls.filter((call) => call === "toggle").length,
+    ).toBe(before + 1);
+
+    fireEvent.keyDown(screen.getByLabelText("Practice speed"), { key: " " });
+    expect(
+      rig.player.calls.filter((call) => call === "toggle").length,
+    ).toBe(before + 1);
+  });
+
   it("adds a bar-snapped section and loops it through the player", async () => {
     const { rig } = setup();
     await openProject();

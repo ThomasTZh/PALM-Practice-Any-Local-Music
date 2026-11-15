@@ -22,6 +22,8 @@ licence edge cases. Keep your own backup of any project you care about.
 5. When you are finished, press Ctrl+C in that terminal. Closing only the
    browser leaves PALM running.
 
+Press Space anywhere outside a text field to start or pause playback.
+
 If the terminal was closed, stop the server with `./bin/palm --stop`. Check a
 running instance with `./bin/palm --status`. No commands are needed for normal
 use beyond the first launch.

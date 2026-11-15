@@ -90,6 +90,13 @@ function initialStageWidth(): number {
   );
 }
 
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return (
+    target.closest("input, textarea, select, [contenteditable='true']") !== null
+  );
+}
+
 export interface AppProps {
   api?: ShellApi;
   transport?: ShellTransport;
@@ -811,6 +818,28 @@ export function App({
     api,
     autosaveDelayMs,
   ]);
+
+  useEffect(() => {
+    if (setupOpen || setupStatus === null) return;
+    function handleSpace(event: KeyboardEvent): void {
+      if (
+        (event.key !== " " && event.code !== "Space") ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.defaultPrevented ||
+        isTextEntryTarget(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      active.player.toggle();
+    }
+    window.addEventListener("keydown", handleSpace);
+    return () => window.removeEventListener("keydown", handleSpace);
+  }, [active.player, setupOpen, setupStatus]);
 
   const handleSeek = useCallback(
     (seconds: number) => {
