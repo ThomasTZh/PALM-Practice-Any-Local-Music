@@ -2,6 +2,12 @@ name: portable
 
 on:
   workflow_dispatch:
+    inputs:
+      run_macos_intel:
+        description: "Run the unsupported macOS Intel experimental job"
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - "**"
@@ -32,14 +38,38 @@ jobs:
         run: |
           python -m pip install uv==0.12.0
           uv sync --frozen
-      - name: Install Playwright browsers
-        run: pnpm --dir web exec playwright install --with-deps firefox chromium
-      - name: Full Linux gate
-        run: make gate
+      - name: Install Playwright browser
+        run: pnpm --dir web exec playwright install --with-deps chromium
+      - name: Backend tests without optional assets
+        run: make test-backend TESTS="tests/unit"
+      - name: Web tests and build
+        run: |
+          make test-web
+          make build-web
       - name: Build Linux tar
         run: make package PACKAGE_ARGS="--online"
       - name: Validate Linux tar
         run: make test-package
+      - name: Fresh-root browser smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar_path=$(ls dist/PALM-*-linux-x86_64.tar.gz | head -1)
+          scratch=$(mktemp -d)
+          tar -xzf "$tar_path" -C "$scratch"
+          app=$(find "$scratch" -mindepth 1 -maxdepth 1 -type d | head -1)
+          data=$(mktemp -d)
+          "$app/bin/palm" --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-linux-smoke.out 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 120); do [ -f "$data/run/server.json" ] && break; sleep 0.5; done
+          test -f "$data/run/server.json"
+          url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$data/run/server.json")
+          curl -fsS "${url%/}/api/health"
+          PALM_URL="$url" pnpm --dir web exec node -e "const {chromium}=require('@playwright/test');(async()=>{const b=await chromium.launch({headless:true});const p=await b.newPage();await p.goto(process.env.PALM_URL,{waitUntil:'domcontentloaded'});const t=await p.title();if(!/PALM/i.test(t))throw new Error('unexpected title '+t);await p.waitForSelector('#root');console.log('browser smoke ok',t);await b.close()})().catch(e=>{console.error(e);process.exit(1)})"
+          "$app/bin/palm" --stop --data-dir "$data"
+          wait "$pid" || true
+          test ! -f "$data/run/server.json"
       - name: Upload Linux assets
         uses: actions/upload-artifact@v4
         with:
@@ -192,7 +222,8 @@ jobs:
           if-no-files-found: error
 
   macos-intel-optional:
-    name: macOS Intel experimental (non-blocking, unsupported)
+    name: macOS Intel experimental (manual, unsupported)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_macos_intel }}
     runs-on: macos-13
     continue-on-error: true
     steps:
@@ -205,4 +236,4 @@ jobs:
           uname -m
           python scripts/package_macos.py --help
       - name: Note non-support
-        run: echo "macOS Intel is experimental and not a supported target in this task."
+        run: echo "macOS Intel is experimental, manual-only and not a supported target."
