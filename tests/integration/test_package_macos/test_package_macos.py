@@ -12,6 +12,12 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+EXECUTABLES = (
+    "PALM.app/Contents/MacOS/palm",
+    "PALM.app/Contents/Resources/app/bin/palm",
+    "PALM.app/Contents/Resources/app/bin/uv",
+    "PALM.app/Contents/Resources/app/python/bin/python3.11",
+)
 
 
 def load_script():  # type: ignore[no-untyped-def]
@@ -108,6 +114,29 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         module.check_zip(archive)
 
 
+def test_zip_writer_records_unix_executable_modes(tmp_path: Path) -> None:
+    module = load_script()
+    for name in EXECUTABLES:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\n")
+        path.chmod(0o755)
+    plain = tmp_path / "PALM.app/Contents/Resources/app/README.md"
+    plain.write_text("readme")
+    plain.chmod(0o600)
+    archive = tmp_path / "PALM-test-macos-arm64.zip"
+    module.build_zip(tmp_path, archive)
+    with zipfile.ZipFile(archive) as bundle:
+        for name in EXECUTABLES:
+            info = bundle.getinfo(name)
+            assert info.create_system == 3
+            mode = (info.external_attr >> 16) & 0o777
+            assert mode & 0o111, (name, oct(mode))
+        plain_info = bundle.getinfo("PALM.app/Contents/Resources/app/README.md")
+        assert plain_info.create_system == 3
+        assert (plain_info.external_attr >> 16) & 0o777 == 0o644
+
+
 def test_built_macos_zip_when_present() -> None:
     zips = sorted((ROOT / "dist").glob("PALM-*-macos-arm64.zip"))
     if not zips:
@@ -116,6 +145,10 @@ def test_built_macos_zip_when_present() -> None:
     assert module.check_zip(zips[-1]) == 0
     with zipfile.ZipFile(zips[-1]) as archive:
         names = archive.namelist()
+        for name in EXECUTABLES:
+            info = archive.getinfo(name)
+            assert info.create_system == 3, name
+            assert (info.external_attr >> 16) & 0o111, name
     lower = [name.lower() for name in names]
     assert any(name.endswith("palm.app/contents/macos/palm") for name in lower)
     assert any(name.endswith("resources/app/python/bin/python3.11") for name in lower)

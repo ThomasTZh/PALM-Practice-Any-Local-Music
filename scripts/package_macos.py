@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -318,6 +319,15 @@ def build_zip(bundle_parent: Path, output: Path) -> Path:
                 info = zipfile.ZipInfo(relative)
                 info.date_time = (1980, 1, 1, 0, 0, 0)
                 info.compress_type = zipfile.ZIP_DEFLATED
+                # ZipInfo defaults lose Unix modes. Record the file mode in the
+                # high 16 bits and mark the entry as Unix (create_system=3) so
+                # Contents/MacOS/palm, bin/palm, bin/uv and the embedded Python
+                # stay executable after extraction.
+                mode = stat.S_IMODE(path.stat().st_mode)
+                if not mode & 0o111:
+                    mode = 0o644
+                info.create_system = 3
+                info.external_attr = (stat.S_IFREG | mode) << 16
                 archive.writestr(info, path.read_bytes())
     print(f"package-macos: wrote {output} ({output.stat().st_size} bytes)")
     return output
