@@ -333,6 +333,22 @@ def build_zip(bundle_parent: Path, output: Path) -> Path:
     return output
 
 
+def write_checksums(output_dir: Path, version_value: str) -> Path:
+    """Write a flat SHA256SUMS file with basenames for ZIP/DMG artifacts."""
+    files = sorted(
+        path
+        for path in output_dir.glob(f"PALM-{version_value}-macos-arm64.*")
+        if path.suffix in {".zip", ".dmg"}
+    )
+    if not files:
+        raise PackageError(f"no macOS artifacts found in {output_dir}")
+    lines = [f"{sha256(path)}  {path.name}" for path in files]
+    checksums = output_dir / "SHA256SUMS"
+    checksums.write_text("\n".join(lines) + "\n", encoding="ascii")
+    print(f"package-macos: wrote {checksums} ({len(files)} basename entries)")
+    return checksums
+
+
 def build_dmg(bundle: Path, output: Path) -> Path | None:
     if sys.platform != "darwin":
         print("package-macos: DMG skipped (hdiutil is macOS-only)")
@@ -375,6 +391,7 @@ def build(args: argparse.Namespace) -> int:
         check_zip(zip_path)
         if args.dmg:
             build_dmg(bundle, output_dir / f"PALM-{version_value}-macos-arm64.dmg")
+        write_checksums(output_dir, version_value)
         return 0
     except (PackageError, OSError, tarfile.TarError, zipfile.BadZipFile) as error:
         print(f"package-macos: {error}", file=sys.stderr)

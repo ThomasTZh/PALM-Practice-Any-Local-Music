@@ -209,8 +209,6 @@ jobs:
           "$app/Contents/MacOS/palm" --stop --data-dir "$data"
           wait "$pid" || true
           test ! -f "$data/run/server.json"
-          shasum -a 256 dist/PALM-*-macos-arm64.zip > dist/SHA256SUMS
-          if ls dist/PALM-*-macos-arm64.dmg >/dev/null 2>&1; then shasum -a 256 dist/PALM-*-macos-arm64.dmg >> dist/SHA256SUMS; fi
       - name: Upload macOS assets
         uses: actions/upload-artifact@v4
         with:
@@ -220,6 +218,35 @@ jobs:
             dist/PALM-*-macos-arm64.dmg
             dist/SHA256SUMS
           if-no-files-found: error
+      - name: Download uploaded macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: palm-macos-arm64
+          path: artifact
+      - name: Verify flat artifact checksums and modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifact
+          echo "SHA256SUMS contents:"
+          cat SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+          zip=$(ls PALM-*-macos-arm64.zip | head -1)
+          python - "$zip" <<'PY'
+          import sys, zipfile
+          executable = (
+              "PALM.app/Contents/MacOS/palm",
+              "PALM.app/Contents/Resources/app/bin/palm",
+              "PALM.app/Contents/Resources/app/bin/uv",
+              "PALM.app/Contents/Resources/app/python/bin/python3.11",
+          )
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              for name in executable:
+                  info = archive.getinfo(name)
+                  assert info.create_system == 3, name
+                  assert (info.external_attr >> 16) & 0o111, name
+          print("artifact executable modes ok")
+          PY
 
   macos-intel-optional:
     name: macOS Intel experimental (manual, unsupported)
