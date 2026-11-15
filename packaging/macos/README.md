@@ -1,18 +1,43 @@
-# macOS app wrapper
+# macOS Apple Silicon experimental app
 
-`PALM.app` is a Finder launcher for the portable tar. It expects the extracted
-tar at `PALM.app/Contents/Resources/app`:
+`scripts/package_macos.py` builds the unsigned `PALM.app` from pinned standalone
+CPython 3.11.15 arm64 and uv 0.12.0 archives. Build on macOS for a native app,
+or on POSIX for cross-installed arm64 wheels:
 
 ```sh
-cp -R PALM-<version>-linux-x86_64 /Applications/PALM.app/Contents/Resources/app
+pnpm install
+pnpm build
+python -m pip install uv==0.12.0
+python scripts/package_macos.py --online
+python scripts/package_macos.py --check
+python scripts/package_macos.py --online --dmg   # macOS only: hdiutil
+```
+
+The ZIP contains `PALM.app` with `Contents/MacOS/palm`, `Info.plist`,
+`Contents/Resources/app` (embedded Python, `bin/palm`, `bin/uv`, web UI,
+analysis workers/registry, `cpu-macos`/`msst-macos` definitions, scripts and
+licences), and the hashed runtime requirements. It contains no FFmpeg, Sonic
+Annotator, Vamp plugins, models, inference environments or test/audio sources.
+No signing, notarization or native installer is part of this build.
+
+## First launch
+
+The app is unsigned. Right-click `PALM.app` and choose **Open**, then confirm
+**Open** in the dialog. If macOS blocks it, remove the quarantine attribute
+from the app bundle you extracted:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/PALM.app
 open /Applications/PALM.app
 ```
 
-The `Contents/MacOS/palm` wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`,
-`PYTHONPATH` and executes `Contents/Resources/app/bin/palm` with the same
-arguments. Finder starts it without a tty, so the Python launcher opens
-Terminal.app through `osascript` (logs stay visible and Ctrl+C works) and then
-opens the browser. `--status`, `--stop`, `--no-browser`, `--no-terminal` and
-`--data-dir` pass through the wrapper. Spaces and non-ASCII paths are quoted by
-the wrapper and the launcher's Terminal command. No native `.app` package is
-built by `make package`; this is a launcher wrapper only.
+Do not claim the app is signed or notarized. The wrapper sets
+`PALM_DATA_DIR="$HOME/Library/Application Support/palm"` unless it is already
+set, so data stays in the native macOS root rather than the XDG
+`~/.local/share/palm` path. Finder starts the app without a tty; the launcher
+opens Terminal.app through `osascript` for logs and Ctrl+C, then opens the
+browser. `--status` and `--stop` pass through the wrapper.
+
+No FFmpeg, Sonic Annotator, Vamp plugin pack, model weights, inference
+environments or test audio are bundled. The setup wizard downloads what the
+user selects later.

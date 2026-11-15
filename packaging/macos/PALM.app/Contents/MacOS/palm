@@ -10,6 +10,10 @@ if [ ! -x "$APP_ROOT/bin/palm" ]; then
 fi
 export PALM_MODE=packaged
 export PALM_APP_ROOT="$APP_ROOT"
+if [ -z "${PALM_DATA_DIR:-}" ]; then
+    PALM_DATA_DIR="$HOME/Library/Application Support/palm"
+    export PALM_DATA_DIR
+fi
 export PYTHONPATH="$APP_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
 exec "$APP_ROOT/bin/palm" "$@"
