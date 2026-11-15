@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from basseparate import features
+from basseparate import analysis_backend
 from basseparate.app import create_app
 from basseparate.config import Settings
 
@@ -69,7 +69,7 @@ def test_second_run_is_cached_and_starts_no_piper(
         def __init__(self, *args: object, **kwargs: object) -> None:
             raise AssertionError("cached analysis must not start Piper")
 
-    monkeypatch.setattr(features, "PiperSession", ExplodingSession)
+    monkeypatch.setattr(analysis_backend, "PiperSession", ExplodingSession)
     second = wait_job(client, start_analysis(client, project["id"], 4)["id"])
     assert second["state"] == "succeeded", second.get("error")
     assert second["result"]["cached"] is True

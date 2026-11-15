@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basseparate import features
+from basseparate import analysis_backend, features
 from basseparate.features import analyze_file
 from basseparate.piper import (
     AnalysisCancelled,
@@ -101,7 +101,7 @@ def test_second_run_reuses_cache_and_starts_no_server(
     def exploding_decode(*args: object, **kwargs: object) -> object:
         raise AssertionError("the cached run must not decode the recording again")
 
-    monkeypatch.setattr(features, "PiperSession", ExplodingSession)
+    monkeypatch.setattr(analysis_backend, "PiperSession", ExplodingSession)
     monkeypatch.setattr(features, "load_audio_mono", exploding_decode)
     second = analyze_file(CHORDS, cache_dir=cache, piper_paths=project_paths)
     assert second.cached is True
