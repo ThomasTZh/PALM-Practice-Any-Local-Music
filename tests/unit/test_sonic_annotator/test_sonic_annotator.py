@@ -44,8 +44,15 @@ if "--list" in args:
         sys.exit(0)
     sys.exit(0)
 
+if "-s" in args:
+    print("vamp:plugin_version " + chr(34) * 3 + "5" + chr(34) * 3)
+    sys.exit(0)
 output = args[args.index("--csv-one-file") + 1]
-transform = args[args.index("-d") + 1]
+if "-t" in args:
+    ttl = __import__("pathlib").Path(args[args.index("-t") + 1]).read_text(encoding="utf-8")
+    transform = "custom:simplechord" if "chordino" in ttl else "custom"
+else:
+    transform = args[args.index("-d") + 1]
 audio = args[-1]
 with open(audio, "rb") as handle:
     header = handle.read(44)
