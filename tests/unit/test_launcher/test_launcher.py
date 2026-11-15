@@ -277,6 +277,87 @@ def test_terminal_command_selects_the_first_available_emulator() -> None:
     assert seen == ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"]
 
 
+def test_macos_terminal_command_quotes_paths_and_passes_environment() -> None:
+    command = terminal_command(
+        [
+            "/path with spaces/PALM/python/bin/python3.11",
+            "-m",
+            "basseparate.launcher",
+            "--no-terminal",
+        ],
+        which=lambda name: "/usr/bin/osascript" if name == "osascript" else None,
+        platform="darwin",
+        environment={
+            "PALM_MODE": "packaged",
+            "PALM_DATA_DIR": "/tmp/PALM data/ü",
+            "PYTHONPATH": "/tmp/PALM data/ü/src",
+        },
+    )
+    assert command is not None
+    assert command[:2] == ["/usr/bin/osascript", "-e"]
+    script = command[2]
+    assert 'tell application "Terminal" to do script' in script
+    assert "PALM data/ü" in script
+    assert "PALM_DATA_DIR=" in script
+    assert "--no-terminal" in script
+    assert terminal_command(["python"], platform="win32") is None
+
+
+def test_macos_open_terminal_keeps_args_and_recursion_guard() -> None:
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def popen(command: list[str], **kwargs: Any) -> object:
+        calls.append((command, kwargs))
+        return object()
+
+    def which(name: str) -> str | None:
+        return "/usr/bin/osascript" if name == "osascript" else None
+
+    assert open_terminal(
+        ["--data-dir", "/tmp/PALM Å root"],
+        which=which,
+        popen=popen,
+        environment={"PALM_MODE": "packaged", "PALM_DATA_DIR": "/tmp/PALM Å root"},
+        platform="darwin",
+    )
+    command, kwargs = calls[0]
+    assert command[:2] == ["/usr/bin/osascript", "-e"]
+    assert "/tmp/PALM Å root" in command[2]
+    assert kwargs["env"][launcher.TERMINAL_MARKER] == "1"
+    assert kwargs["start_new_session"] is True
+    assert not open_terminal(
+        [], which=which, popen=popen, environment={launcher.TERMINAL_MARKER: "1"}
+    )
+
+
+def test_windows_cmd_sets_embedded_runtime_and_utf8() -> None:
+    command = (Path(__file__).resolve().parents[3] / "palm.cmd").read_bytes().decode()
+    assert "%~dp0python\\python.exe" in command
+    assert "%~dp0python\\Scripts\\python.exe" in command
+    assert "PALM_MODE=packaged" in command
+    assert "PALM_APP_ROOT=%~dp0" in command
+    assert "PALM_DATA_DIR=%LOCALAPPDATA%\\palm" in command
+    assert "PYTHONPATH=%~dp0src" in command
+    assert "PYTHONUTF8=1" in command
+    assert "PYTHONIOENCODING=utf-8" in command
+    assert "%*" in command
+    assert "py " not in command.lower()
+    assert "start " not in command.lower()
+
+
+def test_macos_app_wrapper_and_info_plist() -> None:
+    root = Path(__file__).resolve().parents[3] / "packaging/macos/PALM.app/Contents"
+    wrapper = root / "MacOS/palm"
+    assert wrapper.is_file() and wrapper.stat().st_mode & 0o111
+    text = wrapper.read_text()
+    assert "Contents/Resources/app" in text
+    assert "PALM_MODE=packaged" in text
+    assert 'exec "$APP_ROOT/bin/palm" "$@"' in text
+    plist = (root / "Info.plist").read_text()
+    assert "<key>CFBundleExecutable</key><string>palm</string>" in plist
+    assert "<key>CFBundleIdentifier</key>" in plist
+
+
 def test_open_terminal_attaches_a_guarded_child_and_falls_back() -> None:
     calls: list[tuple[list[str], dict[str, Any]]] = []
 

@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -594,9 +595,43 @@ def run_doctor(runtime: RuntimePaths, *, stream: IO[str] | None = None) -> int:
 
 
 def terminal_command(
-    child: Sequence[str], *, which: Callable[[str], str | None] = shutil.which
+    child: Sequence[str],
+    *,
+    which: Callable[[str], str | None] = shutil.which,
+    platform: str | None = None,
+    environment: Mapping[str, str] | None = None,
 ) -> list[str] | None:
-    """Return the first available terminal emulator command for ``child``."""
+    """Return an available terminal command for ``child`` on this platform.
+
+    Linux uses the desktop emulator candidates. macOS uses Terminal.app through
+    osascript; Windows relies on the console opened by ``palm.cmd``.
+    """
+    current = sys.platform if platform is None else platform
+    if current == "darwin":
+        osascript = which("osascript")
+        if not osascript:
+            return None
+        child_command = " ".join(shlex.quote(str(item)) for item in child)
+        prefix = ""
+        if environment is not None:
+            exported = [
+                f"{name}={shlex.quote(str(environment[name]))}"
+                for name in (
+                    "PALM_MODE",
+                    "PALM_APP_ROOT",
+                    "PALM_DATA_DIR",
+                    "PYTHONPATH",
+                    "PYTHONDONTWRITEBYTECODE",
+                )
+                if name in environment
+            ]
+            if exported:
+                prefix = "env " + " ".join(exported) + " "
+        script = f"cd {shlex.quote(str(Path.cwd()))} && exec {prefix}{child_command}"
+        escaped = script.replace("\\", "\\\\").replace('"', '\\"')
+        return [osascript, "-e", f'tell application "Terminal" to do script "{escaped}"']
+    if current.startswith("win"):
+        return None
     for name, arguments in TERMINAL_CANDIDATES:
         executable = which(name)
         if executable:
@@ -621,6 +656,7 @@ def open_terminal(
     which: Callable[[str], str | None] = shutil.which,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
     environment: Mapping[str, str] | None = None,
+    platform: str | None = None,
 ) -> bool:
     """Open a terminal attached to a no-TTY launcher, if possible.
 
@@ -630,7 +666,9 @@ def open_terminal(
     base = dict(os.environ if environment is None else environment)
     if base.get(TERMINAL_MARKER) == "1":
         return False
-    command = terminal_command(terminal_child_command(argv), which=which)
+    command = terminal_command(
+        terminal_child_command(argv), which=which, environment=base, platform=platform
+    )
     if command is None:
         return False
     base[TERMINAL_MARKER] = "1"
@@ -935,7 +973,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.stop:
         return run_stop(paths)
     if not args.no_terminal and not terminal_active() and not sys.stdin.isatty():
-        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        if (
+            os.environ.get("DISPLAY")
+            or os.environ.get("WAYLAND_DISPLAY")
+            or sys.platform == "darwin"
+        ):
             if open_terminal(raw_argv):
                 return 0
             print(

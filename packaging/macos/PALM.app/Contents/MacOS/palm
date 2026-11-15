@@ -1,0 +1,15 @@
+#!/bin/sh
+# PALM.app launcher. The portable tar payload lives in Contents/Resources/app.
+set -eu
+CONTENTS=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+APP_ROOT=${PALM_APP_ROOT:-"$CONTENTS/Resources/app"}
+if [ ! -x "$APP_ROOT/bin/palm" ]; then
+    echo "palm: portable app payload not found at $APP_ROOT" >&2
+    echo "palm: place the extracted tar at Contents/Resources/app" >&2
+    exit 1
+fi
+export PALM_MODE=packaged
+export PALM_APP_ROOT="$APP_ROOT"
+export PYTHONPATH="$APP_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONDONTWRITEBYTECODE=1
+exec "$APP_ROOT/bin/palm" "$@"

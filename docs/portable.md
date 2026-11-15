@@ -77,6 +77,26 @@ app folder. Replacing the app folder does not require downloading them again.
 
 Never delete `~/.local/share/palm` during an update; that is user data.
 
+## Windows and macOS launchers
+
+**Windows** ships `palm.cmd` next to the app root. It uses the embedded
+`python\python.exe` (falling back to `python\Scripts\python.exe`), sets
+`PALM_MODE=packaged`, `PALM_APP_ROOT`, `PALM_DATA_DIR` (`%LOCALAPPDATA%\palm`,
+or `%USERPROFILE%\AppData\Local\palm`), `PYTHONPATH`, `PYTHONUTF8=1`,
+`PYTHONIOENCODING=utf-8` and `PYTHONDONTWRITEBYTECODE=1`. Double-clicking opens
+a console attached to the launcher, so logs stream and Ctrl+C stops it. All
+arguments pass through, including `--status`, `--stop`, `--no-browser`,
+`--no-terminal` and `--data-dir`. Paths with spaces and non-ASCII characters
+are quoted by `%~dp0`; no `py` launcher or PATH lookup is used.
+
+**macOS** `PALM.app` (in `packaging/macos/`) is a Finder wrapper, not a native
+package. Place the extracted tar at `PALM.app/Contents/Resources/app`; the
+wrapper sets the packaged roots and executes `Contents/Resources/app/bin/palm`.
+Finder starts it without a tty, so the Python launcher opens Terminal.app via
+`osascript` for live logs and Ctrl+C, then opens the browser. `--status`,
+`--stop`, `--no-browser`, `--no-terminal` and `--data-dir` pass through. No
+native Windows/macOS package is built by `make package`.
+
 ## First run: network, disk, ffmpeg
 
 The first-run wizard installs three independent pieces. Nothing is downloaded
