@@ -12,7 +12,6 @@ import contextlib
 import importlib
 import os
 import shutil
-import signal
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -23,10 +22,14 @@ WINDOWS = sys.platform.startswith("win")
 MACOS = sys.platform == "darwin"
 POSIX = os.name == "posix"
 
-try:  # optional: the source environment may not have psutil installed
+PSUTIL_REQUIRED_MESSAGE = (
+    "PALM requires psutil 7.2.2 for portable process inspection. "
+    "Install the pinned application dependencies (uv sync --locked) and retry."
+)
+try:
     import psutil  # type: ignore[import-untyped]
-except ImportError:  # pragma: no cover - exercised by fake/fallback tests
-    psutil = None
+except ImportError as error:  # pragma: no cover - exercised by the missing-import test
+    raise ImportError(PSUTIL_REQUIRED_MESSAGE) from error
 
 
 class PlatformError(RuntimeError):
@@ -34,12 +37,10 @@ class PlatformError(RuntimeError):
 
 
 def process_supported() -> bool:
-    return psutil is not None or POSIX or WINDOWS
+    return True
 
 
 def _process(pid: int) -> Any | None:
-    if psutil is None:
-        return None
     try:
         return psutil.Process(pid)
     except (psutil.NoSuchProcess, psutil.AccessDenied) as error:
@@ -53,22 +54,12 @@ def process_is_alive(pid: int) -> bool:
     if pid <= 1:
         return False
     process = _process(pid)
-    if process is not None:
-        try:
-            return bool(process.is_running()) and process.status() != psutil.STATUS_ZOMBIE
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return False
-    if POSIX or WINDOWS:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        except OSError:
-            return False
-        return True
-    return False
+    if process is None:
+        return False
+    try:
+        return bool(process.is_running()) and process.status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
 
 
 def process_command(pid: int) -> str | None:
@@ -89,15 +80,11 @@ def signal_process(pid: int, signum: int) -> bool:
     if pid <= 1:
         return False
     process = _process(pid)
-    if process is not None:
-        try:
-            process.send_signal(signum)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            return False
-        return True
+    if process is None:
+        return False
     try:
-        os.kill(pid, signum)
-    except (OSError, ValueError):
+        process.send_signal(signum)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
         return False
     return True
 
@@ -107,13 +94,13 @@ def terminate_process(pid: int) -> bool:
     if pid <= 1:
         return False
     process = _process(pid)
-    if process is not None:
-        try:
-            process.terminate()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            return False
-        return True
-    return signal_process(pid, signal.SIGTERM)
+    if process is None:
+        return False
+    try:
+        process.terminate()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        return False
+    return True
 
 
 def kill_process(pid: int) -> bool:
@@ -121,13 +108,13 @@ def kill_process(pid: int) -> bool:
     if pid <= 1:
         return False
     process = _process(pid)
-    if process is not None:
-        try:
-            process.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            return False
-        return True
-    return signal_process(pid, signal.SIGKILL)
+    if process is None:
+        return False
+    try:
+        process.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        return False
+    return True
 
 
 def wait_process(pid: int, timeout: float) -> bool:

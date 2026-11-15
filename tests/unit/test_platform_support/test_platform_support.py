@@ -201,3 +201,82 @@ def test_packaged_windows_environment_uses_scripts_python(
     status = environment_status("cpu", runtime)
     assert status["installed"] is True
     assert status["python"] == str(python)
+
+
+def test_psutil_is_a_required_pinned_dependency() -> None:
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    root_project = tomllib.loads((root / "pyproject.toml").read_text())
+    runtime_project = tomllib.loads(
+        (root / "packaging" / "app-runtime" / "pyproject.toml").read_text()
+    )
+    assert "psutil==7.2.2" in root_project["project"]["dependencies"]
+    assert "psutil==7.2.2" in runtime_project["project"]["dependencies"]
+    for lock in (root / "uv.lock", root / "packaging/app-runtime/uv.lock"):
+        text = lock.read_text()
+        assert 'name = "psutil"' in text
+        assert 'version = "7.2.2"' in text
+
+
+def test_missing_psutil_fails_with_a_clear_message() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        [
+            str(Path(__file__).resolve().parents[3] / ".venv" / "bin" / "python"),
+            "-c",
+            "import sys; sys.modules['psutil'] = None; import basseparate.platform_support",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PYTHONPATH": str(Path(__file__).resolve().parents[3] / "src")},
+    )
+    assert result.returncode != 0
+    assert "requires psutil" in result.stderr
+
+
+def test_psutil_stop_validation_checks_recorded_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from basseparate import launcher
+
+    commands = {
+        111: "python -m basseparate.cli serve --data-root /data",
+        222: "python -m basseparate.launcher --data-root /data",
+    }
+    process = FakeProcess()
+    fake = FakePsutil(process)
+    fake.Process = lambda pid: FakeBoundProcess(commands[pid])
+    monkeypatch.setattr(ps, "psutil", fake)
+    state = launcher.RunState(
+        url="http://127.0.0.1:1/",
+        port=1,
+        pid=111,
+        launcher_pid=222,
+        started_at="2026-01-01T00:00:00Z",
+        mode="packaged",
+        app_root="/app",
+        data_root="/data",
+    )
+    health = launcher.inspect_run_state(state)
+    assert health.server_alive is True
+    assert health.launcher_alive is True
+    assert health.server_valid is True
+    assert health.launcher_valid is True
+
+
+class FakeBoundProcess:
+    def __init__(self, command: str) -> None:
+        self.command = command
+
+    def is_running(self) -> bool:
+        return True
+
+    def status(self) -> str:
+        return "running"
+
+    def cmdline(self) -> list[str]:
+        return self.command.split()

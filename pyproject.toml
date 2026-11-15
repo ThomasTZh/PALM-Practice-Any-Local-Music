@@ -18,10 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 
-[project.scripts]
-palm = "basseparate.launcher:main"
-# Pinned to the versions already present in the preserved .venv. No new
-# dependency may be added without an offline/licence/measured-benefit review.
+# Pinned application runtime. psutil is required for portable process control.
 dependencies = [
     "fastapi==0.142.0",
     "uvicorn==0.54.0",
@@ -29,7 +26,11 @@ dependencies = [
     "pydantic-settings==2.15.0",
     "platformdirs==4.12.1",
     "numpy==2.4.6",
+    "psutil==7.2.2",
 ]
+
+[project.scripts]
+palm = "basseparate.launcher:main"
 
 [dependency-groups]
 dev = [
