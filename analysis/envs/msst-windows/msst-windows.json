@@ -1,0 +1,5 @@
+{
+  "variant": "msst",
+  "platform": "windows",
+  "project": "analysis/envs/msst-windows"
+}

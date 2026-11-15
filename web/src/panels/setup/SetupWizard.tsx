@@ -226,7 +226,11 @@ export function SetupWizard({
       style={{ overflowY: "auto" }}
     >
       <div className="setup-card">
-        <p className="setup-early-warning" data-testid="setup-early-warning" role="note">
+        <p
+          className="setup-early-warning"
+          data-testid="setup-early-warning"
+          role="note"
+        >
           Early version 0.1.0-dev: limited testing and quality control. Keep
           backups of projects you care about.
         </p>
@@ -335,13 +339,13 @@ export function SetupWizard({
         <section className="setup-section" data-testid="setup-tools">
           <h2>Optional GPL tools</h2>
           <p className="setup-note">
-            Sonic Visualiser and the Vamp plugin pack are GPL/AGPL licensed and
-            required for chord and tempo analysis.
+            Sonic Annotator or Sonic Visualiser and the Vamp plugin pack are
+            GPL/AGPL licensed and required for chord and tempo analysis.
           </p>
           <ul className="setup-tool-list">
             {Object.entries(status.tools).map(([name, tool]) => (
               <li key={name}>
-                <span>{name.replaceAll("_", " ")}</span>
+                <span>{tool.name ?? name.replaceAll("_", " ")}</span>
                 <span className="setup-muted">
                   <a
                     data-testid={`tool-licence-${name}`}
@@ -393,34 +397,36 @@ export function SetupWizard({
             NVIDIA GPU and driver.
           </p>
           <div className="setup-environment-options">
-            {(["cpu", "cuda"] as const).map((choice) => (
-              <label key={choice} className="setup-environment-card">
-                <input
-                  type="radio"
-                  name="setup-environment"
-                  aria-label={`${choice.toUpperCase()} environment`}
-                  checked={variant === choice}
-                  onChange={() => {
-                    setVariant(choice);
-                    setEnvironmentConsent(null);
-                  }}
-                />
-                <span className="setup-environment-name">
-                  {choice.toUpperCase()}
-                </span>
-                <span className="setup-muted">
-                  {environmentEstimate(choice)}
-                </span>
-                <span
-                  className="setup-status"
-                  data-ok={status.environments[choice]?.installed === true}
-                >
-                  {status.environments[choice]?.installed
-                    ? "Installed"
-                    : "Missing"}
-                </span>
-              </label>
-            ))}
+            {(["cpu", "cuda"] as const)
+              .filter((choice) => status.environments[choice] !== undefined)
+              .map((choice) => (
+                <label key={choice} className="setup-environment-card">
+                  <input
+                    type="radio"
+                    name="setup-environment"
+                    aria-label={`${choice.toUpperCase()} environment`}
+                    checked={variant === choice}
+                    onChange={() => {
+                      setVariant(choice);
+                      setEnvironmentConsent(null);
+                    }}
+                  />
+                  <span className="setup-environment-name">
+                    {choice.toUpperCase()}
+                  </span>
+                  <span className="setup-muted">
+                    {environmentEstimate(choice)}
+                  </span>
+                  <span
+                    className="setup-status"
+                    data-ok={status.environments[choice]?.installed === true}
+                  >
+                    {status.environments[choice]?.installed
+                      ? "Installed"
+                      : "Missing"}
+                  </span>
+                </label>
+              ))}
           </div>
           {variant !== null && !environmentInstalled && (
             <label className="setup-consent">

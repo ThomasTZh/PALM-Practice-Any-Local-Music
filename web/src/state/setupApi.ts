@@ -101,6 +101,7 @@ function parseCheck(value: RawRecord): SetupCheck {
 
 function parseTool(value: RawRecord): SetupTool {
   return {
+    name: firstText(value, ["name"]) ?? undefined,
     installed: bool(value.installed),
     path: firstText(value, ["path"]) ?? "",
     license: firstText(value, ["license"]) ?? "",

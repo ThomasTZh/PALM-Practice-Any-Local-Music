@@ -94,6 +94,27 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("setup-model-install")).toBeDisabled();
   });
 
+  it("uses platform tool names and hides unsupported CUDA", () => {
+    const status = statusWith((value) => ({
+      ...value,
+      environments: { cpu: value.environments.cpu },
+      tools: {
+        ...value.tools,
+        sonic_visualiser: {
+          ...value.tools.sonic_visualiser,
+          name: "Sonic Annotator",
+        },
+      },
+    }));
+    renderWizard(createFakeSetupClient(status));
+
+    expect(screen.getByTestId("setup-tools")).toHaveTextContent(
+      "Sonic Annotator",
+    );
+    expect(screen.queryByLabelText("CUDA environment")).toBeNull();
+    expect(screen.getByLabelText("CPU environment")).toBeInTheDocument();
+  });
+
   it("links every tool and model licence safely and can scroll by keyboard", () => {
     renderWizard();
     const page = screen.getByTestId("setup-wizard");

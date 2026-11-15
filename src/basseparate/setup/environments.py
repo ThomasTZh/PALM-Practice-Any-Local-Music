@@ -18,6 +18,12 @@ from basseparate.setup.errors import SetupCancelled, SetupInstallError
 
 EnvVariant = Literal["cpu", "cuda"]
 ENV_VARIANTS: tuple[EnvVariant, ...] = ("cpu", "cuda")
+PLATFORM_ENV_PROJECTS = {
+    "cpu-windows": "Windows CPU",
+    "cpu-macos": "macOS CPU",
+    "msst-windows": "Windows MSST",
+    "msst-macos": "macOS MSST",
+}
 ENV_INDEX_URLS: dict[EnvVariant, str] = {
     "cpu": "https://download.pytorch.org/whl/cpu",
     "cuda": "https://download.pytorch.org/whl/cu128",
@@ -38,11 +44,34 @@ class EnvironmentSpec:
     index_url: str
 
 
+def available_env_variants() -> tuple[EnvVariant, ...]:
+    """CUDA is a Linux-only inference target."""
+    from basseparate.platform_support import MACOS, WINDOWS
+
+    if WINDOWS or MACOS:
+        return ("cpu",)
+    return ENV_VARIANTS
+
+
+def environment_project_name(variant: EnvVariant) -> str:
+    from basseparate.platform_support import MACOS, WINDOWS
+
+    if variant == "cuda":
+        return "cuda"
+    if WINDOWS:
+        return "cpu-windows"
+    if MACOS:
+        return "cpu-macos"
+    return "cpu"
+
+
 def environment_spec(variant: EnvVariant, runtime: RuntimePaths | None = None) -> EnvironmentSpec:
     active = runtime or runtime_paths()
-    if variant not in ENV_VARIANTS:
-        raise SetupInstallError(f"unknown environment variant {variant!r}")
-    project = active.analysis_dir / "envs" / variant
+    if variant not in available_env_variants():
+        raise SetupInstallError(
+            f"environment variant {variant!r} is not available on this platform"
+        )
+    project = active.analysis_dir / "envs" / environment_project_name(variant)
     target = active.data_path("environments", variant)
     python = active.bundled_python
     return EnvironmentSpec(
@@ -79,7 +108,7 @@ def environment_status(
 
 
 def environments_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
-    return {variant: environment_status(variant, runtime) for variant in ENV_VARIANTS}
+    return {variant: environment_status(variant, runtime) for variant in available_env_variants()}
 
 
 def _default_run_uv(
