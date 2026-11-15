@@ -195,9 +195,6 @@ jobs:
           root=$(mktemp -d)
           unzip -q "$zip" -d "$root"
           app="$root/PALM.app"
-          # zipfile does not retain Unix executable bits; restore them for the
-          # extracted smoke (the DMG and the native bundle keep their modes).
-          chmod -R u+x "$app/Contents"
           "$app/Contents/MacOS/palm" --help
           data=$(mktemp -d)
           "$app/Contents/MacOS/palm" --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-macos.out 2>&1 &
