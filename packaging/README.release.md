@@ -28,6 +28,8 @@ The launcher starts the server, prints the web address, and opens the browser.
 Closing the browser leaves the server running. Press **Ctrl+C** in the terminal
 to stop it.
 
+Press Space anywhere outside a text field to start or pause playback.
+
 Useful commands:
 
 ```sh

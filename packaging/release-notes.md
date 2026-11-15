@@ -31,6 +31,8 @@ Python environments, recordings, tests, caches or `.git`.
 5. Press Ctrl+C in that terminal when you are finished. Closing only the
    browser leaves PALM running.
 
+Press Space anywhere outside a text field to start or pause playback.
+
 Useful commands:
 
 ```sh
