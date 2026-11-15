@@ -14,9 +14,12 @@ licence edge cases. Keep your own backup of any project you care about.
 
 ## Start here
 
-1. Download the tar and `SHA256SUMS` from the release page.
-2. Extract the tar.
-3. Double-click `bin/palm`, or run `./bin/palm` in a terminal.
+1. Download the asset for your platform and `SHA256SUMS` from the release page.
+2. Extract the tar or ZIP.
+3. Start the launcher:
+   - Linux: `bin/palm` (or `./bin/palm` in a terminal)
+   - Windows beta: `palm.cmd`
+   - macOS experimental: right-click `PALM.app` and choose **Open**
 4. A terminal opens with the server log, and the setup page opens in your
    browser.
 5. When you are finished, press Ctrl+C in that terminal. Closing only the
@@ -24,46 +27,57 @@ licence edge cases. Keep your own backup of any project you care about.
 
 Press Space anywhere outside a text field to start or pause playback.
 
-If the terminal was closed, stop the server with `./bin/palm --stop`. Check a
-running instance with `./bin/palm --status`. No commands are needed for normal
-use beyond the first launch.
+If the terminal was closed, stop the server with the launcher's `--stop`.
+Check a running instance with `--status`. No commands are needed for normal use
+beyond the first launch.
 
 The first run asks which optional pieces to install. It can skip them: playback,
 importing, sections and the spectrogram work without the analysis tools or a
 separation model. The setup page explains what each piece adds and shows its
 licence before downloading.
 
-## Portable Linux release
+## Platform support
 
-The repository publishes a portable Linux x86_64 tar with `SHA256SUMS` and
-release notes. It bundles the app, web UI, analysis workers, setup code,
-launcher and a pinned Python/uv runtime. It does **not** bundle model weights,
-Sonic Visualiser/Piper, Vamp plugins, PyTorch environments or ffmpeg.
+| Platform | Status | Environment | GPU claim |
+| --- | --- | --- | --- |
+| Linux x86_64 | Supported | CPU or CUDA (NVIDIA) | Linux CUDA path only |
+| Windows x86_64 | Beta, CPU only | CPU | None; CUDA is not offered |
+| macOS Apple Silicon arm64 | Experimental, CPU-first | CPU | None; CUDA is not offered |
 
-The launcher is `bin/palm`; it starts the server and auto-opens the browser.
+Linux is the reference target. The Windows ZIP is an unsigned beta for a
+no-admin user-profile install. The macOS app is unsigned and not notarized.
+Windows and macOS have no stable-support claim until their checklists are
+completed: [Windows beta](docs/acceptance/windows-beta.md) and
+[macOS experimental](docs/acceptance/macos-experimental.md).
 
-```sh
-tar -xzf PALM-0.1.0-dev-linux-x86_64.tar.gz
-cd PALM-0.1.0-dev-linux-x86_64
-./bin/palm
-```
+## Portable release
 
-The first launch opens a setup wizard. It checks the machine, offers optional
-Sonic Visualiser and Vamp downloads with their licences, creates a CPU or CUDA
-environment, and lists the three separation models as equal choices with no
-default. Setup needs network access for the pieces you choose, and `ffmpeg` and
-`ffprobe` must already be installed. Setup can be skipped; playback, importing,
-chords, sections and the spectrogram then work without the optional pieces. See
-[docs/portable.md](docs/portable.md) and the clean-room record in
-[packaging/VERIFICATION.md](packaging/VERIFICATION.md).
+Each platform has a separate asset and checksum file:
+
+- Linux: `PALM-<version>-linux-x86_64.tar.gz`, launcher `bin/palm`
+- Windows beta: `PALM-<version>-windows-x86_64.zip`, launcher `palm.cmd`
+- macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg`, unsigned
+  `PALM.app` for Apple Silicon
+
+Every bundle contains the app, web UI, analysis workers, environment
+definitions, launchers, setup code, licences and a pinned Python/uv runtime.
+It does **not** bundle model weights, Sonic Visualiser/Piper, Sonic Annotator,
+Vamp plugins, PyTorch environments or FFmpeg.
+
+The first launch opens a setup wizard. Linux can choose CPU or CUDA and the
+existing Piper/Vamp tools. Windows beta uses CPU and Sonic Annotator; macOS
+experimental uses CPU and Sonic Annotator. All three models are equal choices
+with no default. Setup needs network access for the pieces you choose, and
+`ffmpeg`/`ffprobe` must already be installed. Setup can be skipped; playback,
+importing, chords, sections and the spectrogram then work without the optional
+pieces. See [docs/portable.md](docs/portable.md).
 
 ## Launcher lifecycle and cleanup
 
-From an interactive terminal, `bin/palm` streams server logs and Ctrl+C stops
-the server cleanly. A file-manager double-click opens an attached terminal that
-stays open for logs and Ctrl+C; closing only the browser does not stop the
-server. If no terminal emulator is available, PALM prints the log path and runs
-headless.
+On Linux, `bin/palm` streams server logs and Ctrl+C stops the server cleanly.
+On Windows, `palm.cmd` opens the console. On macOS, the unsigned app opens a
+Terminal window. Closing only the browser does not stop the server. If no
+terminal is available, PALM prints the log path and runs headless.
 
 Use `palm --status` to print the running URL, data root and pids without
 starting anything, and `palm --stop` to stop a server left by a closed terminal
@@ -130,7 +144,7 @@ local and attaches the analysis to the same bar grid that drives practice.
   so two clean builds from the same source and locked dependencies produce the
   same SHA-256. If a rebuild differs, something in the source or dependencies
   changed. The published `SHA256SUMS` always identifies the tested file.
-- Linux x86_64 is the tested platform; Windows and macOS are not packaged.
+- Linux x86_64 is the reference and supported platform. Windows x86_64 is an unsigned CPU-only beta and macOS Apple Silicon is an unsigned experimental app; neither has completed manual acceptance in this repository yet.
 - The server is loopback-only. There are no accounts, cloud processing or
   multi-user features.
 - Pitch shifting is not exposed; speed changes preserve pitch.
@@ -244,12 +258,12 @@ Your projects, downloaded models, tools and environments live in the data root,
 not in the app folder. Updating replaces only the app folder.
 
 1. Stop the old server: press Ctrl+C in its terminal. If that terminal is gone,
-   run `OLD_FOLDER/bin/palm --stop`.
-2. Download the new tar and `SHA256SUMS`, then check the archive.
-3. Extract the new folder next to the old one. Do not extract over the old
-   folder, and do not delete the data root.
-4. Start `NEW_FOLDER/bin/palm`. It uses the same default data root, so setup is
-   not repeated and models/tools/projects stay available.
+   run the old launcher's `--stop`.
+2. Download the new asset and `SHA256SUMS`, then check the archive.
+3. Extract the new folder or app next to the old one. Do not extract over the
+   old folder, and do not delete the data root.
+4. Start the new launcher. It uses the same default data root, so setup is not
+   repeated and models/tools/projects stay available.
 5. If the old launch used `--data-dir` or `PALM_DATA_DIR`, pass the same value
    to the new launcher.
 6. After checking playback and analysis, delete the old app folder. If you
@@ -263,17 +277,15 @@ data, not the application.
 
 The portable build does not install system packages. To remove it:
 
-1. Stop the running server:
-   ```sh
-   ./bin/palm --stop
-   ```
-2. Delete the extracted application directory.
-3. If you also want to remove all downloaded models, tools, environments and
-   projects, delete the data root, typically `~/.local/share/palm`. This
-   deletes your projects; back up `projects/` and `assets/` first if needed.
-4. If you installed the desktop entry, remove
-   `~/.local/share/applications/palm.desktop` and the `~/.local/bin/palm`
-   symlink.
+1. Stop the running server with the platform launcher (`bin/palm --stop`,
+   `palm.cmd --stop`, or the `.app` payload's `bin/palm --stop`).
+2. Delete the extracted application directory or `PALM.app`.
+3. If you also want to remove downloaded models, tools, environments and
+   projects, delete the data root: `~/.local/share/palm` on Linux,
+   `%LOCALAPPDATA%\palm` on Windows, or
+   `~/Library/Application Support/palm` on macOS. This deletes projects; back
+   up `projects/` and `assets/` first.
+4. Remove the desktop entry or symlink if you installed one.
 
 A source checkout has no system install; removing its `.venv`, `node_modules`,
 and data directory is a manual cleanup.
