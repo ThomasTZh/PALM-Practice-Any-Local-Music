@@ -18,6 +18,7 @@ export interface SetupCheck {
 }
 
 export interface SetupTool {
+  name?: string;
   installed: boolean;
   path: string;
   license: string;

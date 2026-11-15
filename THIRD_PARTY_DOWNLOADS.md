@@ -24,24 +24,6 @@ Each checkpoint is 84,141,271 bytes. The model directory must contain exactly
 these four checkpoints and the preset; `analysis/separate_track.py` verifies
 size and SHA-256 before loading and refuses anything else.
 
-### Optional model downloads
-
-`make models-install ID=<id>` fetches these into the ignored
-`models/<id>/` directory, verifies size and SHA-256 against
-`analysis/models.json`, and publishes atomically. `make models-verify` checks
-them offline. They are not downloaded by `make bootstrap` or the default gate.
-
-| Component | Version | Upstream URL | SHA-256 | Licence | Install path |
-| --- | --- | --- | --- | --- | --- |
-| SCNet XL IHF checkpoint | MSST v1.0.15 | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.15/model_scnet_ep_36_sdr_10.0891.ckpt | `ac25975f0f5704f3d1a3c3c251505b7a0f417a22eafe82773440ee4f7e14b74f` | no separate weight licence; research use | `models/scnet-xl-ihf/` |
-| SCNet XL IHF config | MSST v1.0.15 | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.15/config_musdb18_scnet_xl_more_wide_v5.yaml | `54ddcb8aeeae85c8d0e148741e7d87b0fbd38bd21cffa5d59ba124fe1e672f40` | MIT (MSST config) | `models/scnet-xl-ihf/` |
-| BS-RoFormer-SW checkpoint | mirror commit `2b98254` | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/main/BS-Rofo-SW-Fixed.ckpt | `24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e` | unknown upstream licence; private use only | `models/bs-roformer-sw/` |
-| BS-RoFormer-SW yaml | mirror commit `2b98254` | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/main/BS-Rofo-SW-Fixed.yaml | `f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b` | unknown upstream licence; private use only | `models/bs-roformer-sw/` |
-| MSST package | 0.1.0 | PyPI `msst[bs-roformer]` | pinned by `analysis-models/uv.lock` | MIT (code) | `analysis-models/.venv` |
-
-Sizes: SCNet checkpoint 214,063,778 B and config 5,906 B; BS-RoFormer-SW
-checkpoint 699,412,152 B and yaml 4,613 B.
-
 ### Demucs weights notice
 
 The Demucs code is MIT. The pretrained weights are a separate artifact; the
@@ -67,29 +49,6 @@ carved set under `storage/tools/plugins`:
 The full set of 23 carved libraries and their hashes is pinned in
 `scripts/install_tools.py`. Redistributing the pack or the libraries is
 governed by their own licences; this repository does not do so.
-
-## Screenshot input
-
-| Asset | Source | Licence | Distribution |
-| --- | --- | --- | --- |
-| “Eat” by HoliznaCC0, track 01 of the Funk Collection | https://opengameart.org/content/funk-collection | CC0 1.0 | Not distributed; only the UI screenshot is committed |
-
-The screenshot in `assets/screenshot.png` depicts this CC0 recording. No audio
-file is stored in the repository; the credit is kept in `assets/README.md` for
-provenance.
-
-## Bundled portable runtime
-
-The portable assets include a pinned Python runtime and `uv`. They are
-downloaded during the build with SHA-256 verification; they are not model or
-tool downloads.
-
-| Component | Version | Upstream URL | SHA-256 | Licence | Install path |
-| --- | --- | --- | --- | --- | --- |
-| CPython standalone | 3.11.15+20260728 | https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-x86_64-unknown-linux-gnu-install_only.tar.gz | `2db18c7bb3a47e32ff41727abd1bb5f158a17d8681931770abf0ba911f5b6580` | PSF-2.0 | `python/` |
-| uv | 0.12.0 | https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz | `eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9` | Apache-2.0 or MIT | `bin/uv` |
-
-The pinned list is authoritative in `packaging/build-manifest.toml`.
 
 ## Toolchain prerequisites
 
@@ -127,8 +86,6 @@ download or redistribute any of them.
 - Emscripten: MIT/NCSA, https://emscripten.org/.
 - FastAPI, Starlette, Pydantic, NumPy, React, Vite and TypeScript: see their
   upstream projects and the dependency manifests.
-- “Eat” by HoliznaCC0, used for the screenshot: CC0 1.0,
-  https://opengameart.org/content/funk-collection.
 
 ## Verify a download
 
@@ -139,3 +96,55 @@ sha256sum storage/tools/plugins/embed-07-8888130.so
 sha256sum models/htdemucs_ft/*.th
 make doctor
 ```
+
+## Windows and macOS platform assets
+
+These are downloaded by setup only after the licence gate and extracted below
+the writable data root. None are committed or installed system-wide.
+
+| Component | Version | Platform | Upstream URL | SHA-256 | Size | Licence |
+| --- | --- | --- | --- | ---: | ---: | --- |
+| Sonic Annotator | 1.7 | Windows x64 | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip | `c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693` | 6,618,013 B | GPL-2.0-or-later |
+| Sonic Annotator | 1.7 | macOS | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7.0-macos.tar.gz | `cb54f46af0f6c16b8274998d025019021b3b6c50410b8a8e2024d0aa7e65b040` | 10,638,233 B | GPL-2.0-or-later |
+| Vamp Plugin Pack | 2.0 | Windows x64 | https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer.2.0.exe | `24d12812ffde04a20e7acbeb543860552d7aa05a729d9e9123b33c6e097c4d5f` | 35,093,344 B | AGPL-3.0 pack; plugins GPL/AGPL |
+| Vamp Plugin Pack | 2.0 | macOS | https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer-2.0.dmg | `60e2569ab064dbaf9ca8a4c3cf8465298b91ea3be1b34c5395d45c1ca4c53f10` | 48,745,081 B | AGPL-3.0 pack; plugins GPL/AGPL |
+
+Windows uses a per-user extraction below the data root and does not request
+administrator rights. macOS uses `hdiutil`/`pkgutil` to extract the DMG below
+the data root; no system package is installed.
+
+## Embedded platform Python and uv
+
+Release builds embed the standalone CPython and uv binaries. They are downloaded
+by the build scripts and are not committed. The Linux tar, Windows ZIP and
+macOS app contain the interpreter and uv for that platform.
+
+| Component | Version | Platform | Upstream URL | SHA-256 | Size | Licence |
+| --- | --- | --- | --- | --- | ---: | --- |
+| CPython standalone | 3.11.15+20260728 | Linux x86_64 | https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-x86_64-unknown-linux-gnu-install_only.tar.gz | `2db18c7bb3a47e32ff41727abd1bb5f158a17d8681931770abf0ba911f5b6580` | 49,078,078 B | PSF-2.0 |
+| CPython standalone | 3.11.15+20260728 | Windows x86_64 | https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-x86_64-pc-windows-msvc-install_only.tar.gz | `b711f62a787476bc57b9d7d00e4bcccbe3bada78a1853f9143a112c0965ea347` | 48,441,840 B | PSF-2.0 |
+| CPython standalone | 3.11.15+20260728 | macOS arm64 | https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-aarch64-apple-darwin-install_only.tar.gz | `7dc10e31eede05a6ab1ec9e0b961f521078b0959f838ed1d7452597d529ff802` | 27,243,366 B | PSF-2.0 |
+| uv | 0.12.0 | Linux x86_64 | https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz | `eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9` | 21,373,358 B | MIT OR Apache-2.0 |
+| uv | 0.12.0 | Windows x86_64 | https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-pc-windows-msvc.zip | `68200e25de594df92387186bbfb9d9df606ec1d87efaa0ae0c7f690970e53db6` | 18,813,141 B | MIT OR Apache-2.0 |
+| uv | 0.12.0 | macOS arm64 | https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-apple-darwin.tar.gz | `2b9e582af54f84fa50c115427451a6c13e80f43b52f8282b8af5791077317bbf` | 17,387,877 B | MIT OR Apache-2.0 |
+
+The platform pins live in `packaging/build-manifest.toml`,
+`packaging/windows/build-manifest.toml` and
+`packaging/macos/build-manifest.toml`. Build scripts verify size and SHA-256
+before extraction.
+
+## Application dependency pins
+
+`pyproject.toml` pins the application runtime, including `psutil==7.2.2`
+(BSD-3-Clause) for process control. `uv.lock` and
+`packaging/app-runtime/uv.lock` carry the exact hashes. No PyPI package is
+vendored in git; setup/build installs from the locked indexes. FFmpeg is a
+user-installed prerequisite, not a dependency downloaded by PALM.
+
+| Package | Version | Upstream source | Pinned artifact | Licence |
+| --- | --- | --- | --- | --- |
+| psutil | 7.2.2 | https://pypi.org/project/psutil/7.2.2/ | sdist `psutil-7.2.2.tar.gz`, SHA-256 `0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372`; platform wheels pinned in `uv.lock` | BSD-3-Clause |
+
+The lockfiles contain the wheel URLs, hashes and sizes for each target
+platform. psutil is a required app dependency, not a separately downloaded
+tool.

@@ -1,0 +1,17 @@
+# Pinned inputs for the unsigned macOS arm64 experimental app.
+schema_version = 1
+
+[python]
+version = "3.11.15"
+build = "20260728"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-aarch64-apple-darwin-install_only.tar.gz"
+sha256 = "7dc10e31eede05a6ab1ec9e0b961f521078b0959f838ed1d7452597d529ff802"
+size = 27243366
+dest = "python"
+
+[uv]
+version = "0.12.0"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-apple-darwin.tar.gz"
+sha256 = "2b9e582af54f84fa50c115427451a6c13e80f43b52f8282b8af5791077317bbf"
+size = 17387877
+dest = "bin/uv"

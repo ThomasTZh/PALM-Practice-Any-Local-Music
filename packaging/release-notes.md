@@ -1,4 +1,4 @@
-# PALM 0.1.0-dev — portable Linux release
+# PALM 0.1.0-dev — platform pre-releases
 
 PALM is a free practice room that runs on your own computer, for music you
 already own. It splits a recording into singing, drums, bass and the rest,
@@ -12,7 +12,24 @@ control. It was checked on Linux, not across every distribution or audio
 device. Keep backups of projects you care about. No warranty is provided
 beyond the MIT licence.
 
-## Download
+## Platform pre-releases
+
+These are separate channels. Do not describe Windows or macOS as stable,
+signed, notarized or GPU-capable.
+
+| Channel | Asset | Status |
+| --- | --- | --- |
+| Linux x86_64 | `PALM-0.1.0-dev-linux-x86_64.tar.gz` | Supported Linux build |
+| Windows x64 | `PALM-0.1.0-dev-windows-x86_64.zip` | Unsigned beta, CPU only, no admin; acceptance pending laptop evidence |
+| macOS Apple Silicon | `PALM-0.1.0-dev-macos-arm64.zip` / `.dmg` | Unsigned experimental arm64, CPU-first; acceptance pending one-shot evidence |
+
+Linux is the supported target. The Windows beta is tested on Linux/CI plus
+Wine and must not be called Windows-accepted until the laptop checklist is
+returned. The macOS app is not notarized and has no stable-support claim until
+the Apple Silicon checklist is returned. Neither non-Linux channel supports
+CUDA or makes a GPU-performance claim.
+
+## Download: Linux supported build
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
@@ -22,7 +39,34 @@ beyond the MIT licence.
 The archive is under 2 GiB. It contains no model weights, analysis tools,
 Python environments, recordings, tests, caches or `.git`.
 
-## Start it
+## Windows x64 beta pre-release (separate channel)
+
+- Asset: `PALM-0.1.0-dev-windows-x86_64.zip`, plus `SHA256SUMS`.
+- Unsigned, x64 only, CPU inference only. No CUDA/GPU claim.
+- No administrator install: extract below the user profile and run
+  `palm.cmd`. The console shows logs; Ctrl+C or `--stop` stops it.
+- FFmpeg and ffprobe are not bundled. Use a trusted Windows build and set
+  `PALM_FFMPEG`/`PALM_FFPROBE` or the user PATH before setup.
+- Setup downloads Sonic Annotator, the Vamp Plugin Pack, one CPU environment
+  and one chosen model below `%LOCALAPPDATA%\palm`.
+- Acceptance is **pending** the no-admin laptop checklist in
+  [docs/acceptance/windows-beta.md](../docs/acceptance/windows-beta.md). Do not
+  call this a stable or Windows-accepted release before evidence is supplied.
+
+## macOS Apple Silicon experimental pre-release (separate channel)
+
+- Asset: `PALM-0.1.0-dev-macos-arm64.zip` or `.dmg`, plus `SHA256SUMS`.
+- Apple Silicon arm64 only. Unsigned and not notarized; right-click **Open** or
+  remove quarantine with `xattr -dr com.apple.quarantine ~/Applications/PALM.app`.
+- CPU-first setup. No CUDA/GPU claim. FFmpeg/ffprobe are prerequisites, not
+  bundled.
+- Data stays in `~/Library/Application Support/palm` unless overridden.
+- Acceptance is **pending** the one-shot checklist in
+  [docs/acceptance/macos-experimental.md](../docs/acceptance/macos-experimental.md).
+  Do not call this stable, signed, notarized or macOS-accepted before evidence
+  is supplied.
+
+## Start the Linux build
 
 1. Download the tar and `SHA256SUMS`.
 2. Extract the tar.
@@ -45,7 +89,7 @@ Useful commands:
 If no terminal program is available, PALM prints the log location and keeps
 running. Use `--stop` afterwards.
 
-## Updating from an older PALM
+## Updating from an older Linux build
 
 Your projects, downloaded models, tools and environments live in the data root,
 not in the app folder. Updating replaces only the app folder.
@@ -66,7 +110,7 @@ not in the app folder. Updating replaces only the app folder.
 Do not remove `~/.local/share/palm` during an update. That directory is your
 data, not the application.
 
-## First run
+## Linux first run
 
 The app is small. The optional pieces are downloaded only after you choose
 them and accept their licences:
@@ -89,7 +133,9 @@ licence and is private use only. PALM does not redistribute any of them.
 
 ## Where files go, cleanup and uninstall
 
-The default data root is `~/.local/share/palm`:
+The Linux default data root is `~/.local/share/palm`; Windows uses
+`%LOCALAPPDATA%\palm` and macOS uses `~/Library/Application Support/palm`.
+The same layout applies on every platform:
 
 | Folder | Contents |
 | --- | --- |
@@ -134,8 +180,10 @@ terminal log streaming and Ctrl+C; `--status`/`--stop`; second-launch reuse;
 stale-state handling. The full test gate passed with 381 Python tests and 9
 skipped, plus the web and browser suites.
 
-Not tested for this build: GPU separation timing, every desktop audio stack,
-non-Linux systems, and a final formal listening pass.
+Not tested for this Linux build: GPU separation timing, every desktop audio
+stack, and a final formal listening pass. Windows and macOS have separate
+pre-release channels above and remain pending manual acceptance evidence; they
+are not covered by this Linux build's testing claim.
 
 ## Build repeatability
 
@@ -149,6 +197,7 @@ identifies the exact tested file.
 
 ## AppImage
 
-This release is tar-only. The AppImage was removed because it was unreliable
-across desktops. The setup installer extracts the upstream Sonic Visualiser
-AppImage itself, so a desktop AppImage integration tool is not required.
+The Linux release is tar-only. The AppImage was removed because it was
+unreliable across desktops. The setup installer extracts the upstream Sonic
+Visualiser AppImage itself, so a desktop AppImage integration tool is not
+required. The Windows ZIP and macOS app are separate pre-release channels.

@@ -11,11 +11,14 @@ import importlib.util
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
 
 from basseparate.config import RuntimePaths, runtime_paths
+from basseparate.platform_support import plugin_suffix
 from basseparate.setup.errors import SetupCancelled, SetupInstallError
+from basseparate.setup.tool_assets import install_platform_tools, platform_name
 
 Progress = Callable[[float, str], None]
 Cancel = Callable[[], bool]
@@ -41,19 +44,38 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         id="vamp_plugin_pack",
         name="Vamp Plugin Pack",
         license="AGPL-3.0 (pack); individual plugins GPL/AGPL",
-        target="vamp-plugins/qm-vamp-plugins.so",
+        target=f"vamp-plugins/qm-vamp-plugins{plugin_suffix()}",
     ),
 )
 
 
+def tool_paths(
+    runtime: RuntimePaths | None = None, *, platform: str | None = None
+) -> tuple[Path, Path]:
+    """Expected executable and plugin paths for the active platform."""
+    active = runtime or runtime_paths()
+    selected = platform or platform_name()
+    if selected == "windows":
+        executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
+    elif selected == "macos":
+        executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
+    else:
+        executable = (
+            active.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
+        )
+    plugin = active.tools_root / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"
+    return executable, plugin
+
+
 def tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
     active = runtime or runtime_paths()
-    piper = active.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
-    plugin = active.tools_root / "vamp-plugins" / "qm-vamp-plugins.so"
+    executable, plugin = tool_paths(active)
+    selected = platform_name()
     return {
         "sonic_visualiser": {
-            "installed": piper.is_file(),
-            "path": str(piper),
+            "name": "Sonic Annotator" if selected != "linux" else "Sonic Visualiser / Piper",
+            "installed": executable.is_file(),
+            "path": str(executable),
             "license": "GPL-2.0-or-later",
         },
         "vamp_plugin_pack": {
@@ -100,6 +122,14 @@ def install_tools(
     if all(item["installed"] for item in tools_status(active).values()):
         if progress is not None:
             progress(1.0, "tools already installed")
+        return tools_status(active)
+    if platform_name() != "linux":
+        try:
+            install_platform_tools(active, progress=progress, cancel=cancel)
+        except SetupCancelled:
+            raise
+        except Exception as error:  # noqa: BLE001 - platform installer boundary
+            raise SetupInstallError(f"tool installation failed: {error}") from error
         return tools_status(active)
     module = _load_legacy_installer(active)
     try:

@@ -26,6 +26,14 @@ from basseparate.model_registry import (
     load_registry,
     verify_registry,
 )
+from basseparate.platform_support import (
+    ffmpeg_binary,
+    ffprobe_binary,
+    hidden_process_kwargs,
+    plugin_glob,
+    plugin_suffix,
+    venv_python,
+)
 
 DoctorStatus = Literal["ok", "missing"]
 ToolProbe = Callable[[str, Sequence[str], float], tuple[int, str]]
@@ -106,7 +114,7 @@ class DoctorLayout:
     def analysis_python(self) -> Path:
         if self.runtime is not None:
             return self.runtime.demucs_python
-        return self.root / "analysis" / ".venv" / "bin" / "python"
+        return venv_python(self.root / "analysis" / ".venv")
 
     @property
     def recordings(self) -> Path:
@@ -172,6 +180,7 @@ def default_tool_probe(command: str, args: Sequence[str], timeout: float) -> tup
             text=True,
             check=False,
             timeout=timeout,
+            **hidden_process_kwargs(),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as error:
         return 1, str(error)
@@ -283,7 +292,7 @@ def _check_model_bundle(layout: DoctorLayout) -> DoctorCheck:
 
 
 def _check_plugin_pack(layout: DoctorLayout) -> DoctorCheck:
-    plugin = layout.vamp_plugins / "qm-vamp-plugins.so"
+    plugin = layout.vamp_plugins / f"qm-vamp-plugins{plugin_suffix()}"
     if not layout.vamp_plugins.is_dir():
         return _check(
             "vamp_plugins",
@@ -292,13 +301,13 @@ def _check_plugin_pack(layout: DoctorLayout) -> DoctorCheck:
             f"missing {layout.vamp_plugins}",
             path=layout.vamp_plugins,
         )
-    plugins = sorted(layout.vamp_plugins.glob("*.so"))
+    plugins = sorted(layout.vamp_plugins.glob(plugin_glob()))
     plugin_state = "present" if plugin.is_file() else "missing"
     return _check(
         "vamp_plugins",
         "Vamp plugin pack",
         plugin.is_file(),
-        f"{len(plugins)} plugin libraries; qm-vamp-plugins.so {plugin_state}",
+        f"{len(plugins)} plugin libraries; qm-vamp-plugins{plugin_suffix()} {plugin_state}",
         path=layout.vamp_plugins,
     )
 
@@ -400,14 +409,14 @@ def diagnose(
         _tool_check(
             check_id="ffmpeg",
             label="ffmpeg",
-            command="ffmpeg",
+            command=ffmpeg_binary(),
             args=("-version",),
             tool_probe=probe,
         ),
         _tool_check(
             check_id="ffprobe",
             label="ffprobe",
-            command="ffprobe",
+            command=ffprobe_binary(),
             args=("-version",),
             tool_probe=probe,
         ),

@@ -1,0 +1,208 @@
+name: portable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux full gate and tar
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@12.15.0 --activate
+      - name: Install web dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Install Python environment
+        run: |
+          python -m pip install uv==0.12.0
+          uv sync --frozen
+      - name: Install Playwright browsers
+        run: pnpm --dir web exec playwright install --with-deps firefox chromium
+      - name: Full Linux gate
+        run: make gate
+      - name: Build Linux tar
+        run: make package PACKAGE_ARGS="--online"
+      - name: Validate Linux tar
+        run: make test-package
+      - name: Upload Linux assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: palm-linux
+          path: |
+            dist/PALM-*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64 package and smoke
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build web UI
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build uv
+        shell: pwsh
+        run: python -m pip install uv==0.12.0
+      - name: Install pinned Python environment
+        shell: pwsh
+        run: uv sync --frozen
+      - name: Build Windows ZIP
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe scripts/package_windows.py --online
+      - name: Validate Windows ZIP
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe scripts/package_windows.py --check
+      - name: Unit and adapter tests
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_platform_support tests/integration/test_package_windows
+      - name: Install Playwright browser
+        shell: pwsh
+        run: pnpm --dir web exec playwright install chromium
+      - name: No-admin launch and browser smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $root = Join-Path $env:RUNNER_TEMP "palm-win-browser"
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip.FullName -DestinationPath $root
+          $app = Get-ChildItem $root -Directory | Select-Object -First 1
+          $palm = Join-Path $app.FullName "palm.cmd"
+          $data = Join-Path $env:RUNNER_TEMP "palm-win-browser-data"
+          Remove-Item $data -Recurse -Force -ErrorAction SilentlyContinue
+          & $palm --help
+          if ($LASTEXITCODE -ne 0) { throw "palm.cmd --help failed" }
+          $proc = Start-Process -FilePath $palm -ArgumentList @("--no-browser", "--no-terminal", "--port", "0", "--data-dir", $data) -PassThru
+          try {
+            $state = Join-Path $data "run\server.json"
+            $deadline = (Get-Date).AddSeconds(90)
+            while (-not (Test-Path $state) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+            if (-not (Test-Path $state)) { throw "server state was not written" }
+            $url = (Get-Content $state -Raw | ConvertFrom-Json).url
+            $health = Invoke-RestMethod -Uri ($url.TrimEnd('/') + "/api/health") -TimeoutSec 30
+            if ($health.status -ne "ok") { throw "health was not ok" }
+            $env:PALM_URL = $url
+            pnpm --dir web exec node -e "const {chromium}=require('@playwright/test');(async()=>{const b=await chromium.launch({headless:true});const p=await b.newPage();await p.goto(process.env.PALM_URL,{waitUntil:'domcontentloaded'});const t=await p.title();if(!/PALM/i.test(t))throw new Error('unexpected title '+t);await p.waitForSelector('#root');console.log('browser smoke ok',t);await b.close()})().catch(e=>{console.error(e);process.exit(1)})"
+            if ($LASTEXITCODE -ne 0) { throw "browser smoke failed" }
+            & $palm --stop --data-dir $data
+            if ($LASTEXITCODE -ne 0) { throw "palm.cmd --stop failed" }
+            if (Test-Path $state) { throw "run state was not removed" }
+          } finally {
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          }
+          $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($zip.Name)" | Set-Content dist\SHA256SUMS -Encoding ascii
+      - name: Upload Windows assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: palm-windows
+          path: |
+            dist/PALM-*-windows-x86_64.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  macos-arm64:
+    name: macOS arm64 package and smoke
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build web UI
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build uv
+        run: python -m pip install uv==0.12.0
+      - name: Install pinned Python environment
+        run: uv sync --frozen
+      - name: Build unsigned macOS app
+        run: .venv/bin/python scripts/package_macos.py --online --dmg
+      - name: Validate macOS ZIP
+        run: .venv/bin/python scripts/package_macos.py --check
+      - name: Unit and adapter tests
+        run: .venv/bin/python -m pytest -q tests/unit/test_platform_support tests/integration/test_package_macos
+      - name: Install Playwright browser
+        run: pnpm --dir web exec playwright install chromium
+      - name: Native app and browser smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip=$(ls dist/PALM-*-macos-arm64.zip | head -1)
+          root=$(mktemp -d)
+          unzip -q "$zip" -d "$root"
+          app="$root/PALM.app"
+          "$app/Contents/MacOS/palm" --help
+          data=$(mktemp -d)
+          "$app/Contents/MacOS/palm" --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-macos.out 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 120); do [ -f "$data/run/server.json" ] && break; sleep 0.5; done
+          test -f "$data/run/server.json"
+          url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$data/run/server.json")
+          curl -fsS "${url%/}/api/health"
+          "$app/Contents/MacOS/palm" --status --data-dir "$data"
+          PALM_URL="$url" pnpm --dir web exec node -e "const {chromium}=require('@playwright/test');(async()=>{const b=await chromium.launch({headless:true});const p=await b.newPage();await p.goto(process.env.PALM_URL,{waitUntil:'domcontentloaded'});const t=await p.title();if(!/PALM/i.test(t))throw new Error('unexpected title '+t);await p.waitForSelector('#root');console.log('browser smoke ok',t);await b.close()})().catch(e=>{console.error(e);process.exit(1)})"
+          "$app/Contents/MacOS/palm" --stop --data-dir "$data"
+          wait "$pid" || true
+          test ! -f "$data/run/server.json"
+          shasum -a 256 dist/PALM-*-macos-arm64.zip > dist/SHA256SUMS
+          if ls dist/PALM-*-macos-arm64.dmg >/dev/null 2>&1; then shasum -a 256 dist/PALM-*-macos-arm64.dmg >> dist/SHA256SUMS; fi
+      - name: Upload macOS assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: palm-macos-arm64
+          path: |
+            dist/PALM-*-macos-arm64.zip
+            dist/PALM-*-macos-arm64.dmg
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  macos-intel-optional:
+    name: macOS Intel experimental (non-blocking, unsupported)
+    runs-on: macos-13
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Report experimental host
+        run: |
+          uname -m
+          python scripts/package_macos.py --help
+      - name: Note non-support
+        run: echo "macOS Intel is experimental and not a supported target in this task."

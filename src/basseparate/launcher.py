@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import fcntl
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -35,6 +35,13 @@ from urllib.parse import urlsplit
 
 from basseparate.config import DataPaths, RuntimePathError, RuntimePaths, runtime_paths
 from basseparate.doctor import DoctorLayout, diagnose
+from basseparate.platform_support import (
+    FileLock,
+    hidden_process_kwargs,
+    process_command,
+    process_is_alive,
+    signal_process,
+)
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 0
@@ -171,46 +178,9 @@ class RunState:
         )
 
 
-def process_is_alive(pid: int) -> bool:
-    """Whether a process id currently exists (without changing it)."""
-    if pid <= 1:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-    except OSError:
-        return True
-    fields = stat.rsplit(")", 1)
-    return not (len(fields) == 2 and fields[1].split()[:1] == ["Z"])
-
-
-def process_command(pid: int) -> str | None:
-    """Read a Linux process command line, or None when it cannot be inspected."""
-    if pid <= 1:
-        return None
-    try:
-        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except OSError:
-        return None
-    return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
-
-
-def signal_process(pid: int, signum: int) -> bool:
-    """Send a signal to a validated pid, returning whether it was delivered."""
-    if pid <= 1:
-        return False
-    try:
-        os.kill(pid, signum)
-    except (OSError, ValueError):
-        return False
-    return True
+# Process inspection and termination are platform operations owned by
+# ``basseparate.platform_support``. The names remain module attributes so the
+# launcher tests can inject fakes without knowing the implementation.
 
 
 @dataclass(frozen=True)
@@ -240,7 +210,7 @@ def inspect_run_state(
 
     The server must still be the CLI server for this data root; the launcher
     must still be the PALM launcher. A pid that cannot be inspected (for
-    example outside Linux /proc) is treated as valid when it is alive rather
+    example outside the current platform) is treated as valid when it is alive rather
     than killing an unrelated process.
     """
     alive = process_is_alive if alive is None else alive
@@ -484,6 +454,7 @@ class InstanceLock:
     def __init__(self, paths: LauncherPaths) -> None:
         self.paths = paths
         self._fd: int | None = None
+        self._lock_handle: FileLock | None = None
 
     @property
     def held(self) -> bool:
@@ -493,27 +464,21 @@ class InstanceLock:
         if self._fd is not None:
             return True
         self.paths.runtime.ensure_data_path(self.paths.lock_file)
-        descriptor = os.open(self.paths.lock_file, os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(descriptor)
+        lock = FileLock(self.paths.lock_file, blocking=False)
+        if not lock.acquire():
             return False
-        except OSError:
-            os.close(descriptor)
-            raise
-        self._fd = descriptor
+        self._lock_handle = lock
+        self._fd = 1
         return True
 
     def release(self) -> None:
-        descriptor = self._fd
-        if descriptor is None:
+        if self._fd is None:
             return
         self._fd = None
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-        finally:
-            os.close(descriptor)
+        lock = getattr(self, "_lock_handle", None)
+        if lock is not None:
+            lock.release()
+            self._lock_handle = None
 
     def __enter__(self) -> InstanceLock:
         if not self.acquire():
@@ -630,9 +595,43 @@ def run_doctor(runtime: RuntimePaths, *, stream: IO[str] | None = None) -> int:
 
 
 def terminal_command(
-    child: Sequence[str], *, which: Callable[[str], str | None] = shutil.which
+    child: Sequence[str],
+    *,
+    which: Callable[[str], str | None] = shutil.which,
+    platform: str | None = None,
+    environment: Mapping[str, str] | None = None,
 ) -> list[str] | None:
-    """Return the first available terminal emulator command for ``child``."""
+    """Return an available terminal command for ``child`` on this platform.
+
+    Linux uses the desktop emulator candidates. macOS uses Terminal.app through
+    osascript; Windows relies on the console opened by ``palm.cmd``.
+    """
+    current = sys.platform if platform is None else platform
+    if current == "darwin":
+        osascript = which("osascript")
+        if not osascript:
+            return None
+        child_command = " ".join(shlex.quote(str(item)) for item in child)
+        prefix = ""
+        if environment is not None:
+            exported = [
+                f"{name}={shlex.quote(str(environment[name]))}"
+                for name in (
+                    "PALM_MODE",
+                    "PALM_APP_ROOT",
+                    "PALM_DATA_DIR",
+                    "PYTHONPATH",
+                    "PYTHONDONTWRITEBYTECODE",
+                )
+                if name in environment
+            ]
+            if exported:
+                prefix = "env " + " ".join(exported) + " "
+        script = f"cd {shlex.quote(str(Path.cwd()))} && exec {prefix}{child_command}"
+        escaped = script.replace("\\", "\\\\").replace('"', '\\"')
+        return [osascript, "-e", f'tell application "Terminal" to do script "{escaped}"']
+    if current.startswith("win"):
+        return None
     for name, arguments in TERMINAL_CANDIDATES:
         executable = which(name)
         if executable:
@@ -657,6 +656,7 @@ def open_terminal(
     which: Callable[[str], str | None] = shutil.which,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
     environment: Mapping[str, str] | None = None,
+    platform: str | None = None,
 ) -> bool:
     """Open a terminal attached to a no-TTY launcher, if possible.
 
@@ -666,7 +666,9 @@ def open_terminal(
     base = dict(os.environ if environment is None else environment)
     if base.get(TERMINAL_MARKER) == "1":
         return False
-    command = terminal_command(terminal_child_command(argv), which=which)
+    command = terminal_command(
+        terminal_child_command(argv), which=which, environment=base, platform=platform
+    )
     if command is None:
         return False
     base[TERMINAL_MARKER] = "1"
@@ -678,6 +680,7 @@ def open_terminal(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            **hidden_process_kwargs(),
         )
     except OSError:
         return False
@@ -757,6 +760,7 @@ class Launcher:
                 bufsize=1,
                 env=environment,
                 cwd=str(self.paths.runtime.app_root),
+                **hidden_process_kwargs(),
             )
         except OSError as error:
             self._server_log.close()
@@ -969,7 +973,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.stop:
         return run_stop(paths)
     if not args.no_terminal and not terminal_active() and not sys.stdin.isatty():
-        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        if (
+            os.environ.get("DISPLAY")
+            or os.environ.get("WAYLAND_DISPLAY")
+            or sys.platform == "darwin"
+        ):
             if open_terminal(raw_argv):
                 return 0
             print(

@@ -1,0 +1,5 @@
+{
+  "variant": "cpu",
+  "platform": "windows",
+  "project": "analysis/envs/cpu-windows"
+}

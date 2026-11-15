@@ -50,6 +50,20 @@ still match the launcher/server commands, sends SIGTERM, waits and removes the
 state. Stale pids or a state file from another data root are reported and never
 used to kill an unrelated process. Use `--data-dir` for a non-default root.
 
+## Windows and macOS
+
+`palm.cmd` is the Windows entry point. It must sit next to the app root and
+uses the embedded `python\python.exe` (or `python\Scripts\python.exe`), sets
+the packaged roots, `PYTHONPATH`, UTF-8 variables and data root, then runs the
+Python launcher in the console. `--status`, `--stop` and all other flags pass
+through; Ctrl+C stops the server.
+
+`packaging/macos/PALM.app` is a Finder wrapper. Put the extracted tar under
+`Contents/Resources/app`; `Contents/MacOS/palm` sets the packaged roots and
+execs `bin/palm`. The launcher opens Terminal.app with `osascript` when Finder
+starts it without a tty, and passes `--status`/`--stop` through. No native
+package is produced by this task.
+
 ## Terminal-first launch
 
 When `bin/palm` runs in an interactive terminal it streams the server log

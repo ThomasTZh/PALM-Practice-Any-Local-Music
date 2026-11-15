@@ -1,129 +1,84 @@
-# Third-party components
+# Third-party components and boundaries
 
-This repository contains only original code. The components below are
-installed from their own release channels or compiled from MIT sources at build
-time; none of their source trees, binaries, model weights or tools are
-committed here. `LICENSE` covers the original files only.
+PALM's original application source is MIT (`licenses/LICENSE`). The following
+components, downloaded tools and data have their own terms. Nothing in this
+repository grants a licence to them.
 
-## Runtime components
+This is the human-readable summary. Exact pins, URLs, sizes and SHA-256 values
+are in [THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md); the generated
+dependency inventory is [licenses/NOTICES.md](licenses/NOTICES.md).
 
-| Component | Version / revision | Licence (upstream) | In this repository | Role |
-| --- | --- | --- | --- | --- |
-| Demucs | 4.1.0 | MIT (code) | No | Stem separation |
-| htdemucs_ft weights | four checkpoints, sizes and SHA-256 pinned in `analysis/checkpoints.json` | no separate weight licence; research use (see below) | No | Separation model |
-| Torch | 2.9.1 | BSD-3-Clause | No | Demucs runtime, isolated environment |
-| MSST | 0.1.0 | MIT (code) | No | SCNet / BS-RoFormer inference environment |
-| SCNet XL IHF weights | checkpoint 214,063,778 B + config 5,906 B, pinned in `analysis/models.json` | no separate weight licence; research use (see below) | No | Optional four-stem model |
-| BS-RoFormer-SW weights | checkpoint 699,412,152 B + yaml 4,613 B, pinned in `analysis/models.json` | unknown upstream licence; private use only | No | Optional six-stem model |
-| Sonic Visualiser / Piper host | 5.2.1 AppImage, downloaded by the installer | GPL-2.0-or-later | No | Runs Vamp plugins |
-| Vamp plugin SDK | local build | MIT-style permissive licence, see upstream `COPYING` | No | Plugin host interface |
-| NNLS-Chroma / Chordino | Vamp Plugin Pack 2.0 | GPL-2.0-or-later | No | Chord recognition |
-| QM Key Detector, QM Bar and Beat Tracker | Vamp Plugin Pack 2.0 | GPL-2.0-or-later | No | Key, beats and bars |
-| BeatRoot | Vamp Plugin Pack 2.0 | GPL-2.0-or-later | No | Alternative beat tracker |
-| Signalsmith Stretch | commit `a670068d9aeb64913331d5cc29337b19a457a7df` | MIT | Compiled WASM artifacts only, with the original wrapper | Time-stretch engine |
-| Signalsmith Linear | commit `de55e6a50ffcf6f8f43f649692d94691c7025151` (0.6.4) | MIT | Compiled WASM artifacts only | FFT support for Stretch |
-| Emscripten SDK | 4.0.23 | MIT / NCSA | No (build tool) | Builds the stretch WASM |
-| Python dependencies | see `pyproject.toml` and `analysis/uv.lock` | per package | No | Service and tests |
-| JavaScript dependencies | see `web/package.json` | per package | No | UI and tests |
-| FFmpeg / FFprobe | system package, 8.1.3 during development | LGPL/GPL depending on the build | No | Decoding and probing |
-| CPython (standalone) | 3.11.15+20260728 | PSF-2.0 | Bundled runtime in the portable asset | Runs PALM and setup |
-| uv | 0.12.0 | Apache-2.0 or MIT | Bundled in the portable asset | Creates the analysis environments |
+## Bundled or required at runtime
 
-Pinned download URLs, versions and SHA-256 values are in
-`THIRD_PARTY_DOWNLOADS.md`; the installer enforces them.
+| Component | Version | Licence | Role / boundary |
+| --- | --- | --- | --- |
+| CPython (python-build-standalone) | 3.11.15 | PSF-2.0 | Embedded interpreter in Linux tar, Windows ZIP and macOS app; downloaded at build time, not committed |
+| uv | 0.12.0 | MIT OR Apache-2.0 | Embedded environment installer for setup and build tooling; downloaded at build time, not committed |
+| psutil | 7.2.2 | BSD-3-Clause | Required app dependency for process inspection and `--status`/`--stop`; installed from the locked runtime |
+| FastAPI / Starlette / Uvicorn | 0.142.0 / 1.7.0 / 0.54.0 | MIT / BSD-3-Clause / BSD-3-Clause | Local HTTP server |
+| Pydantic / pydantic-settings | 2.13.5 / 2.15.0 | MIT | Request and settings models |
+| NumPy | 2.4.6 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | PCM and analysis math |
+| platformdirs | 4.12.1 | MIT | Platform-native data roots |
+| React / React DOM | 19.3.0 | MIT | Browser UI |
+| Vite / TypeScript | pinned in `web/package.json` | MIT / Apache-2.0 | UI build |
 
-## Installing the external components
+The packaged Linux tar, Windows ZIP and macOS app contain the application, the
+built UI, analysis workers/registry, environment definitions, launcher and
+licences. They do not contain model weights, Sonic Annotator, the Vamp Plugin
+Pack, FFmpeg or inference environments. Setup downloads tools and models only
+after the licence gate.
 
-```sh
-make install-tools                       # system checks, Sonic Visualiser, Vamp pack
-make install-tools ACCEPT_MODEL_TERMS=1  # also the htdemucs_ft weights
-```
+## Analysis tools and plugins
 
-The installer never writes third-party files into git. It writes only below
-the ignored `storage/` and `models/` directories, verifies every download
-against a pinned hash, and prints the upstream licence and credit information.
-It does not bundle or redistribute any of these components.
+| Component | Version | Licence | Platforms / use |
+| --- | --- | --- | --- |
+| Sonic Visualiser / Piper host | 5.2.1 | GPL-2.0-or-later | Linux analysis host, installed below the data root by setup |
+| Sonic Annotator | 1.7 | GPL-2.0-or-later | Windows/macOS analysis backend, installed below the data root by setup |
+| Vamp Plugin Pack | 2.0 | AGPL-3.0 for the pack; individual plugins GPL/AGPL | Chord/key/beat plugins on Linux, Windows and macOS; installed below the data root |
+| NNLS-Chroma / Chordino | pack 2.0 | GPL-2.0-or-later | Chord analysis |
+| QM Key Detector, QM Bar and Beat Tracker | pack 2.0 | GPL-2.0-or-later | Key, beats and bars |
+| BeatRoot | pack 2.0 | GPL-2.0-or-later | Beat analysis |
 
-## Demucs weights
+These are separate executables/libraries, downloaded from pinned upstream
+releases and extracted into the writable data root. They are not committed to
+this repository and are not system-installed. Their source is available from
+the upstream projects listed in the download record.
 
-The Demucs code is MIT. The pretrained `htdemucs_ft` weights are a separate
-artifact: the upstream repository does not state a separate weight licence, and
-the author has described the weights as research use. They were trained on
-MUSDB18-HQ, which is a research corpus. The installer downloads them only after
-the explicit `--accept-model-terms` flag (or typing `accept` at the prompt) and
-does not redistribute them. This project cannot grant a licence for the
-weights; obtain one from the rights holders if you need commercial use.
+## Model weights
 
-## Optional separation weights
+| Model | Engine | Licence boundary |
+| --- | --- | --- |
+| `htdemucs_ft` | Demucs | Code MIT; weights research-use, no separate upstream weight licence |
+| `scnet-xl-ihf` | MSST | MSST code MIT; weights distributed by MSST with no separate weight licence |
+| `bs-roformer-sw` | MSST | Mirror has no clear upstream weight licence; private use only |
 
-`analysis/models.json` pins the optional SCNet XL IHF and BS-RoFormer-SW
-checkpoints and configs by size and SHA-256. They are downloaded only by an
-explicit `make models-install ID=<id>` and are never committed. SCNet XL IHF
-comes from the MSST v1.0.15 release; the code is MIT, but the weights have no
-separate licence and are used for research (ICASSP 2024). BS-RoFormer-SW comes
-from the `FractalSurfer/BS-RoFormer-SW-6stem` mirror of the deleted
-`enerjazzer/BS-ROFO-SW-Fixed` repository; the mirror declares no licence, so
-the weights are used privately and are not redistributed. Obtain a licence from
-the rights holders for any other use.
+Model cards are equal choices with no default. The installer shows the
+licence/size and downloads only after explicit consent. The weights are never
+bundled in a release asset and must not be redistributed by this project.
 
-## GPL boundary
+## Web/audio third-party code
 
-Sonic Visualiser, Piper, the Vamp plugin pack and the individual Vamp plugins
-are GPL-family software. They are separate programs, invoked as subprocesses;
-they are not linked into this repository's code and are not distributed with
-it. If you redistribute those tools, you must comply with their licences,
-including source and notice obligations. The MIT licence for this repository
-does not apply to them.
+- Signalsmith Stretch and Linear: Geraint Luff / Signalsmith Audio, MIT; see
+  `web/src/player/stretch/NOTICES-signalsmith.md`.
+- Emscripten: MIT/NCSA, used only to build the preserved WASM artifacts.
+- React, Vite, TypeScript and testing tools: see `web/package.json`,
+  `web/pnpm-lock.yaml` and `licenses/NOTICES.md`.
 
-## Compiled stretch artifacts
+## Binary policy
 
-`web/src/player/stretch/dist/` contains the scalar and SIMD WebAssembly
-modules built from Signalsmith Stretch and Signalsmith Linear (both MIT) with
-this repository's `stretch_wrapper.cpp`. The exact input commits, toolchain
-version and artifact SHA-256 values are recorded in
-`web/src/player/stretch/BUILD.md`; the upstream MIT notice is preserved in
-`web/src/player/stretch/NOTICES-signalsmith.md`. The artifacts are committed so
-the application runs without a compiler. To rebuild them, follow
-`web/src/player/stretch/build.mjs`, which expects a local Emscripten 4.0.23 and
-clones of the two Signalsmith projects at the pinned commits.
-
-The compiled modules were produced with Emscripten 4.0.23 (MIT and
-University of Illinois/NCSA licences) and may include portions of musl libc
-(MIT) and compiler-rt (Apache-2.0 WITH LLVM-exception). The full licences are
-in `licenses/EMSCRIPTEN.txt`, `licenses/MUSL.txt` and
-`licenses/COMPILER-RT.txt`; the artifacts are unmodified output of that
-toolchain.
+No upstream executable, model weight or plugin binary is committed to git.
+Build scripts download pinned CPython/uv archives into an ignored cache; setup
+downloads tools/models into the user data root. The release artifacts contain
+the permitted embedded Python/uv runtime only, not FFmpeg, tools, plugins or
+models.
 
 ## Credits
 
-- Demucs and the htdemucs_ft weights: Simon Rouard, Francisco Massa and
-  Alexandre Defossez (Meta AI Research),
-  https://github.com/facebookresearch/demucs.
-- Chordino and NNLS-Chroma: Matthias Mauch and contributors,
-  https://github.com/c4dm/nnls-chroma.
-- QM Key Detector (Katy Noland, Christian Landone) and QM Bar and Beat Tracker
-  (Matthew Davies, Christian Landone, Chris Cannam), Queen Mary University of
-  London, https://code.soundsoftware.ac.uk/projects/qm-vamp-plugins.
-- BeatRoot: Simon Dixon, https://code.soundsoftware.ac.uk/projects/beatroot-vamp.
-- Sonic Visualiser, Piper and the Vamp plugin SDK: Chris Cannam and Queen Mary
-  University of London, https://www.sonicvisualiser.org/.
-- Signalsmith Stretch and Linear: Geraint Luff / Signalsmith Audio, MIT.
-- Emscripten: the Emscripten authors, MIT/NCSA.
-- FastAPI, Starlette, Pydantic, NumPy, React, Vite and TypeScript: see the
-  dependency manifests and each project's upstream licence.
-- HoliznaCC0 for the CC0 recording “Eat” used in the screenshot, and OpenGameArt
-  for hosting the Funk Collection: https://opengameart.org/content/funk-collection.
-
-## Obtain the excluded components
-
-- Demucs and the `htdemucs_ft` weights: `make install-tools ACCEPT_MODEL_TERMS=1`,
-  or place the four `.th` files and the preset YAML in `models/htdemucs_ft`
-  yourself. The runner verifies every file against `analysis/checkpoints.json`.
-- Vamp plugin pack and Sonic Visualiser / Piper: `make install-tools`, or
-  install the upstream builds and point the application at them as described in
-  `docs/troubleshooting.md`.
-- Python and JavaScript dependencies: `uv sync`, `pnpm install`, and
-  `(cd analysis && uv sync)`.
-
-No credentials, datasets, recordings or model weights are included in this
-repository.
+Sonic Visualiser, Piper, Sonic Annotator, the Vamp plugin SDK and the Vamp
+Plugin Pack are by Chris Cannam, Queen Mary University of London and
+contributors. Chordino/NNLS-Chroma is by Matthias Mauch and contributors. QM
+plugins are by Katy Noland, Christian Landone, Matthew Davies and Chris Cannam.
+BeatRoot is by Simon Dixon. Demucs is by Simon Rouard, Francisco Massa and
+Alexandre Defossez (Meta AI Research). See
+[THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md) and
+[licenses/NOTICES.md](licenses/NOTICES.md) for full pins and notices.

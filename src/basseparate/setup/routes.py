@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from basseparate.config import RuntimePaths
 from basseparate.jobs import JobContext, JobManager
 from basseparate.model_registry import ModelRegistryError, load_registry
-from basseparate.setup.environments import ENV_VARIANTS
+from basseparate.setup.environments import available_env_variants
 from basseparate.setup.errors import SetupError
 from basseparate.setup.service import SetupService
 
@@ -162,11 +162,18 @@ def install(app: Any) -> None:
                 status_code=400,
                 detail="licence acceptance is required before installing environments",
             )
+        available = available_env_variants()
         variants = list(body.variants)
         if body.variant is not None:
             variants = [body.variant]
         if not variants:
-            variants = list(ENV_VARIANTS)
+            variants = list(available)
+        unsupported = [variant for variant in variants if variant not in available]
+        if unsupported:
+            raise HTTPException(
+                status_code=400,
+                detail=f"environment variant {unsupported[0]} is not available on this platform",
+            )
         return _submit(
             jobs,
             "setup_environments",

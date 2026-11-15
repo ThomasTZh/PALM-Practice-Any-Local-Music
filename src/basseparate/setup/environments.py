@@ -13,10 +13,17 @@ from pathlib import Path
 from typing import Literal
 
 from basseparate.config import RuntimePaths, runtime_paths
+from basseparate.platform_support import venv_python
 from basseparate.setup.errors import SetupCancelled, SetupInstallError
 
 EnvVariant = Literal["cpu", "cuda"]
 ENV_VARIANTS: tuple[EnvVariant, ...] = ("cpu", "cuda")
+PLATFORM_ENV_PROJECTS = {
+    "cpu-windows": "Windows CPU",
+    "cpu-macos": "macOS CPU",
+    "msst-windows": "Windows MSST",
+    "msst-macos": "macOS MSST",
+}
 ENV_INDEX_URLS: dict[EnvVariant, str] = {
     "cpu": "https://download.pytorch.org/whl/cpu",
     "cuda": "https://download.pytorch.org/whl/cu128",
@@ -37,11 +44,34 @@ class EnvironmentSpec:
     index_url: str
 
 
+def available_env_variants() -> tuple[EnvVariant, ...]:
+    """CUDA is a Linux-only inference target."""
+    from basseparate.platform_support import MACOS, WINDOWS
+
+    if WINDOWS or MACOS:
+        return ("cpu",)
+    return ENV_VARIANTS
+
+
+def environment_project_name(variant: EnvVariant) -> str:
+    from basseparate.platform_support import MACOS, WINDOWS
+
+    if variant == "cuda":
+        return "cuda"
+    if WINDOWS:
+        return "cpu-windows"
+    if MACOS:
+        return "cpu-macos"
+    return "cpu"
+
+
 def environment_spec(variant: EnvVariant, runtime: RuntimePaths | None = None) -> EnvironmentSpec:
     active = runtime or runtime_paths()
-    if variant not in ENV_VARIANTS:
-        raise SetupInstallError(f"unknown environment variant {variant!r}")
-    project = active.analysis_dir / "envs" / variant
+    if variant not in available_env_variants():
+        raise SetupInstallError(
+            f"environment variant {variant!r} is not available on this platform"
+        )
+    project = active.analysis_dir / "envs" / environment_project_name(variant)
     target = active.data_path("environments", variant)
     python = active.bundled_python
     return EnvironmentSpec(
@@ -60,7 +90,7 @@ def environment_status(
 ) -> dict[str, object]:
     active = runtime or runtime_paths()
     spec = environment_spec(variant, active)
-    python = spec.target / "bin" / "python"
+    python = venv_python(spec.target)
     installed = python.is_file()
     # The source checkout already has one working inference environment; keep
     # it visible as the CPU variant instead of making development run setup.
@@ -78,7 +108,7 @@ def environment_status(
 
 
 def environments_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
-    return {variant: environment_status(variant, runtime) for variant in ENV_VARIANTS}
+    return {variant: environment_status(variant, runtime) for variant in available_env_variants()}
 
 
 def _default_run_uv(
@@ -157,7 +187,7 @@ def create_environment(
             cache_dir=spec.cache_dir,
             index_url=spec.index_url,
         )
-    if (spec.target / "bin" / "python").is_file():
+    if venv_python(spec.target).is_file():
         if progress is not None:
             progress(1.0, f"{variant} environment already installed")
         return environment_status(variant, active)
@@ -197,8 +227,8 @@ def create_environment(
             )
         if cancel is not None and cancel():
             raise SetupCancelled(f"{variant} environment creation cancelled")
-        if not (staging / "bin" / "python").is_file():
-            raise SetupInstallError(f"uv finished but {staging / 'bin' / 'python'} is missing")
+        if not venv_python(staging).is_file():
+            raise SetupInstallError(f"uv finished but {venv_python(staging)} is missing")
         if spec.target.exists():
             shutil.rmtree(spec.target)
         staging.replace(spec.target)

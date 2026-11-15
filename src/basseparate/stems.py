@@ -63,6 +63,7 @@ from basseparate.peaks import (
     decode_peaks,
     encode_peaks,
 )
+from basseparate.platform_support import hidden_process_kwargs
 from basseparate.projects import Project, ProjectStore, RevisionConflict
 
 DEFAULT_MODEL_ID = "htdemucs_ft"
@@ -780,6 +781,7 @@ def separate_asset(
             stderr=stderr_stream,
             env=environment,
             bufsize=0,
+            **hidden_process_kwargs(),
         )
         if process.stdout is None:
             raise StemError("separation worker exposed no stdout")

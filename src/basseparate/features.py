@@ -23,7 +23,6 @@ half-written result.
 
 from __future__ import annotations
 
-import concurrent.futures
 import hashlib
 import json
 import math
@@ -31,8 +30,6 @@ import shutil
 import statistics
 import subprocess
 import tempfile
-import threading
-import time
 import wave
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -42,14 +39,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from basseparate import analysis_backend
+from basseparate.analysis_backend import AnalysisBackend
 from basseparate.config import DEFAULT_SAMPLE_RATE
 from basseparate.media import atomic_write_bytes
 from basseparate.piper import (
     CancelCheck,
     FeatureMap,
-    LoadedPlugin,
     PiperPaths,
-    PiperSession,
     feature_label,
     feature_time,
     feature_values,
@@ -64,7 +61,6 @@ CHORD_PLUGIN = "Chordino"
 KEY_PLUGIN = "Key Detector"
 BEAT_PLUGIN = "Bar and Beat Tracker"
 WARM_UP_SECONDS = 2.0
-TAIL_PADDING_SECONDS = 2.0
 TRAILING_GUARD_SECONDS = 0.05
 EDGE_TOLERANCE_SECONDS = 0.1
 DECODE_TIMEOUT_SECONDS = 3600
@@ -512,10 +508,13 @@ def analysis_cache_key(
     bpb: int,
     lead_in_seconds: float,
     specs: Sequence[tuple[str, Mapping[str, float]]],
+    backend_id: str = "piper",
+    backend_version: str = "1",
 ) -> str:
-    """Content address: source bytes, rate, meter and plugin parameters."""
+    """Content address: source bytes, rate, meter, backend and plugin parameters."""
     identity = {
         "schema": ANALYSIS_VERSION,
+        "backend": {"id": backend_id, "version": backend_version},
         "source_sha256": source_sha256,
         "sample_rate": sample_rate if sample_rate is not None else "native",
         "bpb": bpb,
@@ -785,88 +784,6 @@ def _effective_lead_in(requested: float | None) -> float:
     return requested
 
 
-def _run_plugins(
-    signal: NDArray[np.float32],
-    *,
-    sample_rate: int,
-    lead_in_seconds: float,
-    bpb: int,
-    paths: PiperPaths,
-    timeout_seconds: float,
-    is_cancelled: CancelCheck | None,
-    on_progress: ProgressReporter | None,
-) -> tuple[list[tuple[str, LoadedPlugin, FeatureMap]], float]:
-    """Run the three plugins in parallel Piper sessions.
-
-    Each plugin has a different preferred framing and the beat tracker is the
-    slowest on a five-minute mix; separate children let the three analyses use
-    the machine's cores while keeping each session single-threaded. The raw
-    feature maps are merged in the fixed plugin order, so the result does not
-    depend on which child finishes first.
-    """
-    specs = plugin_specs(bpb)
-    warm_up_frames = int(round(lead_in_seconds * sample_rate))
-    beat_signal = signal
-    if warm_up_frames > 0:
-        # Both edges need context: the tracker only decides on a downbeat once
-        # it has seen enough following audio. The padding is removed again by
-        # ``parse_grid`` (timestamps shifted, events past the end trimmed).
-        lead = np.zeros(warm_up_frames, dtype=np.float32)
-        tail = np.zeros(int(round(TAIL_PADDING_SECONDS * sample_rate)), dtype=np.float32)
-        beat_signal = np.concatenate((lead, signal, tail))
-    signals = {CHORD_PLUGIN: signal, KEY_PLUGIN: signal, BEAT_PLUGIN: beat_signal}
-    fractions: dict[str, float] = {name: 0.0 for name, _ in specs}
-    progress_lock = threading.Lock()
-    internal_cancel = threading.Event()
-
-    def cancelled() -> bool:
-        if internal_cancel.is_set():
-            return True
-        return is_cancelled is not None and is_cancelled()
-
-    def report(display_name: str, processed: int, total: int) -> None:
-        if on_progress is None:
-            return
-        fraction = (processed / total) if total > 0 else 1.0
-        with progress_lock:
-            fractions[display_name] = min(1.0, max(0.0, fraction))
-            overall = sum(fractions.values()) / len(specs)
-        on_progress(min(1.0, max(0.0, overall)), display_name)
-
-    def run_one(
-        display_name: str, parameters: Mapping[str, float]
-    ) -> tuple[str, LoadedPlugin, FeatureMap]:
-        with PiperSession(
-            paths,
-            timeout_seconds=timeout_seconds,
-            is_cancelled=cancelled,
-            on_progress=report,
-        ) as session:
-            plugin, features = session.analyze(
-                display_name,
-                signals[display_name],
-                sample_rate=sample_rate,
-                parameters=parameters,
-            )
-        return display_name, plugin, features
-
-    started = time.perf_counter()
-    runs: list[tuple[str, LoadedPlugin, FeatureMap]] = []
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=len(specs), thread_name_prefix="piper-analysis"
-    ) as pool:
-        futures = {name: pool.submit(run_one, name, parameters) for name, parameters in specs}
-        try:
-            for name, _ in specs:
-                runs.append(futures[name].result())
-        except BaseException:
-            internal_cancel.set()
-            for future in futures.values():
-                future.cancel()
-            raise
-    return runs, time.perf_counter() - started
-
-
 def analyze_signal(
     signal: NDArray[np.float32],
     *,
@@ -881,8 +798,9 @@ def analyze_signal(
     on_progress: ProgressReporter | None = None,
     force: bool = False,
     source_name: str | None = None,
+    backend: AnalysisBackend | None = None,
 ) -> AnalysisResult:
-    """Analyse an already decoded mono signal."""
+    """Analyse an already decoded mono signal with the selected backend."""
     if sample_rate <= 0:
         raise ValueError("sample_rate must be positive")
     if not 2 <= bpb <= 16:
@@ -894,29 +812,33 @@ def analyze_signal(
     duration_seconds = float(signal.shape[0]) / sample_rate
     lead_in = _effective_lead_in(lead_in_seconds)
     specs = plugin_specs(bpb)
+    selected = analysis_backend.resolve_backend(
+        backend, piper_paths=piper_paths, timeout_seconds=timeout_seconds
+    )
     key = analysis_cache_key(
         source_sha256,
         sample_rate=sample_rate,
         bpb=bpb,
         lead_in_seconds=lead_in,
         specs=specs,
+        backend_id=selected.id,
+        backend_version=selected.version,
     )
     if cache_dir is not None and not force:
         cached = read_cache(cache_dir, key)
         if cached is not None:
             return cached
-    paths = piper_paths or PiperPaths.for_project()
-    runs, elapsed = _run_plugins(
+    backend_result = selected.analyze(
         signal,
         sample_rate=sample_rate,
-        lead_in_seconds=lead_in,
         bpb=bpb,
-        paths=paths,
-        timeout_seconds=timeout_seconds,
+        lead_in_seconds=lead_in,
+        specs=specs,
         is_cancelled=is_cancelled,
         on_progress=on_progress,
     )
-    by_name = {name: features for name, _, features in runs}
+    elapsed = backend_result.elapsed_seconds
+    by_name = backend_result.features
     grid = parse_grid(
         by_name[BEAT_PLUGIN],
         bpb=bpb,
@@ -936,7 +858,7 @@ def analyze_signal(
         elapsed_seconds=round(elapsed, 6),
         plugins=tuple(
             PluginRun(
-                role=name,
+                role=plugin.role,
                 display_name=plugin.display_name,
                 key=plugin.key,
                 version=plugin.version,
@@ -944,7 +866,7 @@ def analyze_signal(
                 block_size=plugin.block_size,
                 step_size=plugin.step_size,
             )
-            for name, plugin, _ in runs
+            for plugin in backend_result.plugins
         ),
     )
     result = AnalysisResult(
@@ -980,6 +902,7 @@ def analyze_file(
     is_cancelled: CancelCheck | None = None,
     on_progress: ProgressReporter | None = None,
     force: bool = False,
+    backend: AnalysisBackend | None = None,
 ) -> AnalysisResult:
     """Analyse a recording, reusing a complete content-addressed cache entry."""
     path = Path(source)
@@ -988,6 +911,9 @@ def analyze_file(
     digest = file_sha256(path)
     lead_in = _effective_lead_in(lead_in_seconds)
     rate = source_sample_rate(path, sample_rate)
+    selected = analysis_backend.resolve_backend(
+        backend, piper_paths=piper_paths, timeout_seconds=timeout_seconds
+    )
     if cache_dir is not None and not force:
         key = analysis_cache_key(
             digest,
@@ -995,6 +921,8 @@ def analyze_file(
             bpb=bpb,
             lead_in_seconds=lead_in,
             specs=plugin_specs(bpb),
+            backend_id=selected.id,
+            backend_version=selected.version,
         )
         cached = read_cache(cache_dir, key)
         if cached is not None:
@@ -1017,4 +945,5 @@ def analyze_file(
         on_progress=on_progress,
         force=force,
         source_name=path.name,
+        backend=selected,
     )

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from basseparate.config import RuntimePaths
+from basseparate.platform_support import MACOS, WINDOWS, ffmpeg_binary
 
 DiskProbe = Callable[[Path], object]
 Which = Callable[[str], str | None]
@@ -36,16 +37,22 @@ def system_checks(
         disk_ok = False
         disk_detail = f"cannot inspect {runtime.data_root}: {error}"
     libc_name, libc_version = platform.libc_ver()
-    glibc_ok = bool(libc_version)
-    version_parts = tuple(int(part) for part in libc_version.split(".") if part.isdigit())
-    if len(version_parts) >= 2 and version_parts < (2, 31):
-        glibc_ok = False
-    ffmpeg = find("ffmpeg")
+    if WINDOWS or MACOS:
+        glibc_ok = True
+        libc_detail = f"not required on {'Windows' if WINDOWS else 'macOS'}"
+    else:
+        glibc_ok = bool(libc_version)
+        version_parts = tuple(int(part) for part in libc_version.split(".") if part.isdigit())
+        if len(version_parts) >= 2 and version_parts < (2, 31):
+            glibc_ok = False
+        libc_detail = f"{libc_name or 'libc'} {libc_version or 'unknown'}"
+    resolved_ffmpeg = ffmpeg_binary(which=find)
+    ffmpeg = resolved_ffmpeg if resolved_ffmpeg != "ffmpeg" else None
     return {
         "glibc": {
             "ok": glibc_ok,
             "status": "ok" if glibc_ok else "missing",
-            "detail": f"{libc_name or 'libc'} {libc_version or 'unknown'}",
+            "detail": libc_detail,
         },
         "disk": {
             "ok": disk_ok,

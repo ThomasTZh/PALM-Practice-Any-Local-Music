@@ -1,0 +1,59 @@
+name: macos-package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Enable pnpm and build UI
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build uv
+        run: python -m pip install uv==0.12.0
+      - name: Build unsigned macOS app
+        run: python scripts/package_macos.py --online --dmg
+      - name: Validate macOS ZIP
+        run: python scripts/package_macos.py --check
+      - name: Native app smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip=$(ls dist/PALM-*-macos-arm64.zip | head -1)
+          root=$(mktemp -d)
+          unzip -q "$zip" -d "$root"
+          app="$root/PALM.app"
+          "$app/Contents/MacOS/palm" --help
+          data=$(mktemp -d)
+          "$app/Contents/MacOS/palm" --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-macos.out 2>&1 &
+          pid=$!
+          for _ in $(seq 1 120); do [ -f "$data/run/server.json" ] && break; sleep 0.5; done
+          test -f "$data/run/server.json"
+          url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$data/run/server.json")
+          curl -fsS "${url%/}/api/health"
+          "$app/Contents/MacOS/palm" --status --data-dir "$data"
+          "$app/Contents/MacOS/palm" --stop --data-dir "$data"
+          wait "$pid" || true
+          test ! -f "$data/run/server.json"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: palm-macos-experimental
+          path: |
+            dist/PALM-*-macos-arm64.zip
+            dist/PALM-*-macos-arm64.dmg
+          if-no-files-found: error

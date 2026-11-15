@@ -1,0 +1,17 @@
+# Pinned inputs for the unsigned Windows x64 portable ZIP.
+schema_version = 1
+
+[python]
+version = "3.11.15"
+build = "20260728"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15%2B20260728-x86_64-pc-windows-msvc-install_only.tar.gz"
+sha256 = "b711f62a787476bc57b9d7d00e4bcccbe3bada78a1853f9143a112c0965ea347"
+size = 48441840
+dest = "python"
+
+[uv]
+version = "0.12.0"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-pc-windows-msvc.zip"
+sha256 = "68200e25de594df92387186bbfb9d9df606ec1d87efaa0ae0c7f690970e53db6"
+size = 18813141
+dest = "bin/uv.exe"

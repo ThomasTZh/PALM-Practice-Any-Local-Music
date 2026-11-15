@@ -11,8 +11,8 @@ from basseparate.model_registry import ModelRegistryError, load_registry, verify
 from basseparate.setup.checks import system_checks
 from basseparate.setup.download import Fetch
 from basseparate.setup.environments import (
-    ENV_VARIANTS,
     RunUv,
+    available_env_variants,
     create_environment,
     environments_status,
 )
@@ -73,6 +73,7 @@ class SetupService:
         ready = checks_ok and env_ready and model_ready and not skipped
         return {
             "mode": self.runtime.mode,
+            "environment_variants": list(available_env_variants()),
             "ready": ready,
             "skipped": skipped,
             "skip": skipped,
@@ -133,7 +134,7 @@ class SetupService:
         return {"tools": result}
 
     def install_environments_job(self, context: JobContext, params: Mapping[str, Any]) -> object:
-        variants = params.get("variants") or list(ENV_VARIANTS)
+        variants = params.get("variants") or list(available_env_variants())
         results: dict[str, object] = {}
         count = len(variants)
         try:
