@@ -45,35 +45,63 @@ weights only after the explicit `--accept-model-terms` flag or an `accept` answe
 [THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md) for URLs, hashes, licences
 and credits. Nothing third-party is committed.
 
+## Platform support
+
+| Platform | Status | Environment | GPU claim |
+| --- | --- | --- | --- |
+| Linux x86_64 | **Supported** | CPU or CUDA (NVIDIA) | Linux CUDA path only |
+| Windows x86_64 | **Beta, CPU only** | CPU | None. CUDA is not offered on Windows. |
+| macOS Apple Silicon (arm64) | **Experimental, CPU-first** | CPU | None. CUDA is not offered on macOS. |
+
+Linux is the supported target. The Windows ZIP is an unsigned beta for a
+no-admin user-profile install; Windows acceptance is still pending the
+laptop checklist in [docs/acceptance/windows-beta.md](docs/acceptance/windows-beta.md).
+The macOS app is an unsigned experimental arm64 build for Apple Silicon; it is
+not notarized and has no stable-support claim until the one-shot checklist in
+[docs/acceptance/macos-experimental.md](docs/acceptance/macos-experimental.md)
+is completed. Windows and macOS are not GPU-accelerated targets in this
+release, and no Windows/macOS stable claim is made.
+
 ## Portable release
 
-The downloadable release is one portable asset plus checksums and notes:
+Each platform has its own asset plus checksums and notes:
 
-- `PALM-<version>-linux-x86_64.tar.gz` (extract and run `./bin/palm`)
-- `SHA256SUMS` and `RELEASE-NOTES.md`
+- Linux: `PALM-<version>-linux-x86_64.tar.gz` (extract and run `./bin/palm`)
+- Windows beta: `PALM-<version>-windows-x86_64.zip` (extract, run `palm.cmd`;
+  no administrator rights)
+- macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg` (unsigned
+  `PALM.app` for Apple Silicon)
 
-The bundle contains only the app, built UI, analysis workers/registry,
-environment definitions, launcher, desktop icon, setup code and licences.
-Model weights, tools and Python environments are **not** bundled.
+Every bundle contains the app, built UI, analysis workers/registry,
+environment definitions, launcher, setup code and licences. Model weights,
+tools, FFmpeg and Python environments are **not** bundled.
 
 **First run** opens a setup wizard. It needs a network connection for the
 downloads you choose, but does not upload anything:
 
-- **ffmpeg and ffprobe must already be installed**; they are not bundled.
+- **FFmpeg and ffprobe must already be installed** on every platform; they are
+  not bundled. Windows can use a portable FFmpeg build through
+  `PALM_FFMPEG`/`PALM_FFPROBE`; macOS can use a trusted build on `PATH` or the
+  same overrides.
 - At least **5 GiB free** under the data root; the wizard checks this first.
-- One environment: **CPU (~500 MB)** or **CUDA (~3.5 GB)**, for an NVIDIA GPU.
+- Linux only: one environment, **CPU (~500 MB)** or **CUDA (~3.5 GB)** for an
+  NVIDIA GPU. Windows uses CPU only. macOS Apple Silicon uses CPU only.
 - At least one model card, all equal with **no default**: `htdemucs_ft`
   (321.0 MiB, four stems), `scnet-xl-ihf` (204.2 MiB, four stems), or
   `bs-roformer-sw` (667.0 MiB, six stems including guitar/piano).
-- Optional analysis tools (Sonic Visualiser/Piper and Vamp plugins).
+- Optional analysis tools (Sonic Visualiser/Piper and Vamp plugins). On
+  Windows/macOS the setup uses Sonic Annotator and the Vamp Plugin Pack, all
+  below the data root.
 
 Choose a model, accept its licence and install. `Skip setup` returns to the
 library; Import/Analyse/Separate explain what is still missing and offer
-`Open setup`. The data root defaults to `~/.local/share/palm` (override with
-`--data-dir` or `PALM_DATA_DIR`) and holds models, tools, environments, logs,
-run state, setup state and projects. See [docs/portable.md](docs/portable.md)
-for launcher options, data layout, setup API, upgrade/uninstall, first-run
-troubleshooting and licence boundaries.
+`Open setup`. The data root is `~/.local/share/palm` on Linux,
+`%LOCALAPPDATA%\palm` on Windows, and
+`~/Library/Application Support/palm` on macOS (override with `--data-dir` or
+`PALM_DATA_DIR`). It holds models, tools, environments, logs, run state, setup
+state and projects. See [docs/portable.md](docs/portable.md) for launcher
+options, data layout, setup API, update/uninstall, first-run troubleshooting
+and licence boundaries.
 
 ## Launcher lifecycle and cleanup
 
@@ -287,8 +315,10 @@ the checklist is not claimed as fully passed.
   Raw labels are preserved; the UI normalises for display.
 - **Automated audio cannot be heard:** tests assert engine/transport state with
   the real WASM and AudioWorklet, but no headless run claims audible quality.
-- **Single platform, local only:** Linux, loopback, Python 3.11 and preserved
-  assets; no macOS/Windows/mobile, no accounts or cloud.
+- **Platform boundaries, local only:** Linux x86_64 is supported; Windows x64
+  is an unsigned CPU-only beta and macOS Apple Silicon is an experimental
+  CPU-first app. There is no mobile or GPU claim for Windows/macOS, and no
+  accounts or cloud.
 - **Practical boundaries:** sections are bar ranges, loops are project frames;
   autosave pauses while playing (flushes on pause/stop); spectrogram PCM loads
   on expand; `make dev`'s API uses an ephemeral port while the Vite proxy
@@ -334,5 +364,9 @@ sibling path).
 
 ## Platform
 
-Linux first. Firefox and Chromium are supported for the browser UI; the local
+Linux x86_64 is the supported target (CPU and NVIDIA CUDA), with Firefox and
+Chromium for the browser UI. Windows x64 is a beta, CPU-only, no-admin portable
+ZIP with no GPU claim. macOS Apple Silicon is an unsigned experimental arm64
+app with CPU-first setup and no GPU claim. Both non-Linux builds are pending
+manual acceptance evidence; see [docs/portable.md](docs/portable.md). The local
 server binds loopback only and is not exposed to the network.

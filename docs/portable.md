@@ -1,18 +1,39 @@
 # Portable release guide
 
-PALM ships as a self-contained Linux x86_64 tar. It contains the application,
-the built UI, the analysis workers/registry, environment definitions, the
-launcher, the desktop entry/icon and licences. It does **not** contain model
+PALM ships as platform-specific portable builds. Every bundle contains the
+application, the built UI, the analysis workers/registry, environment
+definitions, the launcher and licences. It does **not** contain FFmpeg, model
 weights, analysis tools, Python environments, caches, recordings, tests, `.git`
-or any virtual environment. The first run downloads what you choose and
-verifies every file.
+or a virtual environment. The first run downloads what you choose and verifies
+every file.
 
-- Release assets: `PALM-<version>-linux-x86_64.tar.gz`, `SHA256SUMS`,
-  `RELEASE-NOTES.md`
-- Source release notes: [../packaging/release-notes.md](../packaging/release-notes.md)
-- Clean-room evidence: [../packaging/VERIFICATION.md](../packaging/VERIFICATION.md)
+## Support matrix
 
-## Run the tar
+| Platform | Status | Architecture | Inference | GPU claim |
+| --- | --- | --- | --- | --- |
+| Linux | **Supported** | x86_64 | CPU or CUDA | Linux CUDA path only |
+| Windows | **Beta** | x64 | CPU only | No CUDA/GPU support |
+| macOS | **Experimental** | Apple Silicon arm64 | CPU-first | No CUDA/GPU support |
+
+Linux is the supported platform. The Windows build is an unsigned beta for a
+normal user account; Windows acceptance is pending the laptop checklist at
+[docs/acceptance/windows-beta.md](acceptance/windows-beta.md). The macOS build
+is an unsigned, non-notarized experimental app for Apple Silicon; it has no
+stable-support claim until the one-shot checklist at
+[docs/acceptance/macos-experimental.md](acceptance/macos-experimental.md) is
+completed. Do not describe either as stable, signed, notarized or GPU-capable.
+
+| Platform | Asset | Launcher |
+| --- | --- | --- |
+| Linux x86_64 | `PALM-<version>-linux-x86_64.tar.gz` | `bin/palm` |
+| Windows x64 beta | `PALM-<version>-windows-x86_64.zip` | `palm.cmd` |
+| macOS arm64 experimental | `PALM-<version>-macos-arm64.zip` / `.dmg` | `PALM.app` |
+
+Each release also provides `SHA256SUMS` and `RELEASE-NOTES.md`. Source release
+notes: [../packaging/release-notes.md](../packaging/release-notes.md).
+Clean-room evidence: [../packaging/VERIFICATION.md](../packaging/VERIFICATION.md).
+
+## Run the Linux tar
 
 ```sh
 tar -xzf PALM-<version>-linux-x86_64.tar.gz
@@ -77,25 +98,50 @@ app folder. Replacing the app folder does not require downloading them again.
 
 Never delete `~/.local/share/palm` during an update; that is user data.
 
-## Windows and macOS launchers
+## Windows beta
 
-**Windows** ships `palm.cmd` next to the app root. It uses the embedded
-`python\python.exe` (falling back to `python\Scripts\python.exe`), sets
-`PALM_MODE=packaged`, `PALM_APP_ROOT`, `PALM_DATA_DIR` (`%LOCALAPPDATA%\palm`,
-or `%USERPROFILE%\AppData\Local\palm`), `PYTHONPATH`, `PYTHONUTF8=1`,
+The Windows asset is an unsigned x64 portable ZIP. Extract it under your user
+profile, for example `%LOCALAPPDATA%\Programs\PALM`, and run `palm.cmd`. No
+administrator shell, system installer, service or machine-wide PATH change is
+required. `palm.cmd` uses the embedded `python\python.exe` (falling back to
+`python\Scripts\python.exe`), sets `PALM_MODE=packaged`, `PALM_APP_ROOT`,
+`PALM_DATA_DIR` (`%LOCALAPPDATA%\palm`, or
+`%USERPROFILE%\AppData\Local\palm`), `PYTHONPATH`, `PYTHONUTF8=1`,
 `PYTHONIOENCODING=utf-8` and `PYTHONDONTWRITEBYTECODE=1`. Double-clicking opens
 a console attached to the launcher, so logs stream and Ctrl+C stops it. All
 arguments pass through, including `--status`, `--stop`, `--no-browser`,
 `--no-terminal` and `--data-dir`. Paths with spaces and non-ASCII characters
 are quoted by `%~dp0`; no `py` launcher or PATH lookup is used.
 
-**macOS** `PALM.app` (in `packaging/macos/`) is a Finder wrapper, not a native
-package. Place the extracted tar at `PALM.app/Contents/Resources/app`; the
-wrapper sets the packaged roots and executes `Contents/Resources/app/bin/palm`.
-Finder starts it without a tty, so the Python launcher opens Terminal.app via
-`osascript` for live logs and Ctrl+C, then opens the browser. `--status`,
-`--stop`, `--no-browser`, `--no-terminal` and `--data-dir` pass through. No
-native Windows/macOS package is built by `make package`.
+FFmpeg and ffprobe are not bundled. Install a trusted Windows build and set
+both `PALM_FFMPEG` and `PALM_FFPROBE` to the executable paths before starting,
+or add them to the user PATH. Windows setup offers **CPU only**; CUDA is hidden.
+The beta is unsigned, so SmartScreen may ask for confirmation. Full no-admin
+steps and evidence capture are in
+[docs/acceptance/windows-beta.md](acceptance/windows-beta.md). Stable Windows
+support is not claimed.
+
+## macOS experimental app
+
+`PALM.app` is an unsigned Apple Silicon arm64 app. Extract it under
+`~/Applications` and right-click **Open** the first time; macOS may require
+confirming **Open** or removing quarantine with
+`xattr -dr com.apple.quarantine ~/Applications/PALM.app`. It is not signed or
+notarized. Place the app's payload at `Contents/Resources/app` if you assemble
+it manually; the packaged ZIP/DMG already contains it.
+
+The wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`, the native
+`PALM_DATA_DIR` (`~/Library/Application Support/palm` unless overridden) and
+`PYTHONPATH`, then executes `Contents/Resources/app/bin/palm`. Finder starts it
+without a tty, so the Python launcher opens Terminal.app via `osascript` for
+live logs and Ctrl+C, then opens the browser. `--status`, `--stop`,
+`--no-browser`, `--no-terminal` and `--data-dir` pass through.
+
+FFmpeg and ffprobe are not bundled; install a trusted build on `PATH` or set
+`PALM_FFMPEG`/`PALM_FFPROBE`. Setup is CPU-first; CUDA is hidden on macOS. The
+app is experimental and has no stable support, GPU or notarization claim until
+[docs/acceptance/macos-experimental.md](acceptance/macos-experimental.md) is
+completed on Apple Silicon.
 
 ## First run: network, disk, ffmpeg
 
@@ -121,7 +167,12 @@ plugin pack are resolved there, not from the read-only app tree.
 
 **FFmpeg and ffprobe must already be installed** (`ffmpeg -version`); they are
 used for import/decode and are not bundled. The setup page reports this check
-and links back here.
+and links back here. On Windows use a trusted portable build and set
+`PALM_FFMPEG`/`PALM_FFPROBE` or the user PATH. On macOS put it on PATH or use
+the same overrides. Do not expect the app to download FFmpeg.
+
+Windows is CPU-only. macOS Apple Silicon is CPU-first. CUDA is a Linux-only
+option and is hidden from setup on Windows/macOS.
 
 **Disk:** setup requires at least **5 GiB free** (it checks before downloading);
 the three models together are about 1.2 GiB, so choose only the model(s) you
@@ -150,7 +201,9 @@ UI falls back to requiring a new choice rather than guessing Demucs.
 | Mode | App root (read-only) | Data root (writable) |
 | --- | --- | --- |
 | Source checkout | repository checkout | `~/.local/share/basseparate` (or `PALM_DATA_DIR` / `BASSEPARATE_DATA_DIR`) |
-| Packaged tar | extracted directory | `~/.local/share/palm` (or `PALM_DATA_DIR` / `--data-dir`) |
+| Linux tar | extracted directory | `~/.local/share/palm` (or `PALM_DATA_DIR` / `--data-dir`) |
+| Windows ZIP | extracted `palm-*-windows-x86_64` | `%LOCALAPPDATA%\palm` (or `PALM_DATA_DIR` / `--data-dir`) |
+| macOS app | `PALM.app/Contents/Resources/app` | `~/Library/Application Support/palm` (or `PALM_DATA_DIR` / `--data-dir`) |
 
 The data root contains:
 
@@ -170,15 +223,15 @@ In packaged mode the app tree is read-only by contract; setup writes only below
 the data root. In source mode the checkout and data root are separate too, but
 `make models-*`/`make bootstrap` retain the preserved developer assets.
 
-**Two roots can duplicate downloads.** The packaged app defaults to
-`~/.local/share/palm`; a source checkout defaults to
+**Two roots can duplicate downloads.** Linux packaged builds default to
+`~/.local/share/palm`; Windows uses `%LOCALAPPDATA%\palm`; macOS uses
+`~/Library/Application Support/palm`; a source checkout defaults to
 `~/.local/share/basseparate`. Models, tools and environments live under
-whichever root is active. If both modes are used, the same model can be
-downloaded twice. Pick one root and pass `--data-dir "$HOME/.local/share/palm"`
-to source commands, or set `PALM_DATA_DIR` (packaged) and
-`BASSEPARATE_DATA_DIR` (source) to the same path. `palm --status` shows which
-root the running launcher uses. Do not run two servers against one data root;
-the launcher lock prevents it.
+whichever root is active. If both modes or platforms are used, the same model
+can be downloaded twice. Pick one root and pass `--data-dir` to source
+commands, or set `PALM_DATA_DIR` (packaged) and `BASSEPARATE_DATA_DIR` (source)
+to the same path. `palm --status` shows which root the running launcher uses.
+Do not run two servers against one data root; the launcher lock prevents it.
 
 ### Safe cleanup
 
@@ -238,18 +291,30 @@ The downloaded size/SHA-256 must match the registry pins.
 
 ## Upgrade and uninstall
 
-**Upgrade:** stop PALM with `palm --stop`, replace the extracted app directory
-with the new release, and keep the data root. Models, tools, environments, setup
-state and projects stay valid; if a pinned download changed, setup reports the
-affected item and offers a verified reinstall. Do not copy the old app tree over
-the new one.
+**Upgrade:** stop PALM with `palm --stop` (or Ctrl+C), replace the app folder
+with the new release of the same platform, and keep the data root. Linux uses
+the extracted tar; Windows uses the extracted ZIP folder; macOS uses a fresh
+`PALM.app` in `~/Applications`. Models, tools, environments, setup state and
+projects stay valid; if a pinned download changed, setup reports the affected
+item and offers a verified reinstall. Do not copy the old app tree over the new
+one.
 
 **Uninstall:** stop PALM first (`palm --stop` or Ctrl+C), then remove the app
-directory. To remove practice data as well, delete the data root
-(`~/.local/share/palm` for the packaged build,
-`~/.local/share/basseparate` for source). Back up `projects/`/`assets/` first;
-deletion is permanent. Nothing is installed system-wide. Removing only the app
-leaves the data untouched for a later reinstall.
+folder. To remove practice data as well, delete the platform data root:
+
+```sh
+# Linux
+rm -rf ~/.local/share/palm
+# macOS
+rm -rf "$HOME/Library/Application Support/palm"
+# Windows PowerShell
+Remove-Item "$env:LOCALAPPDATA\palm" -Recurse -Force
+```
+
+Also remove any `--data-dir`/`PALM_DATA_DIR` environment override you added.
+Back up `projects/`, `assets/` and `uploads/` first; deletion is permanent.
+Nothing is installed system-wide. Removing only the app leaves the data
+untouched for a later reinstall.
 
 ## Licence boundaries
 
