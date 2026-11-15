@@ -236,6 +236,27 @@ unchanged identifiers keep existing projects and data directories working.
    is present. `make doctor` ends with
    `doctor: required toolchain and environment present; no network access was used`.
 
+## Updating from an older PALM
+
+Your projects, downloaded models, tools and environments live in the data root,
+not in the app folder. Updating replaces only the app folder.
+
+1. Stop the old server: press Ctrl+C in its terminal. If that terminal is gone,
+   run `OLD_FOLDER/bin/palm --stop`.
+2. Download the new tar and `SHA256SUMS`, then check the archive.
+3. Extract the new folder next to the old one. Do not extract over the old
+   folder, and do not delete the data root.
+4. Start `NEW_FOLDER/bin/palm`. It uses the same default data root, so setup is
+   not repeated and models/tools/projects stay available.
+5. If the old launch used `--data-dir` or `PALM_DATA_DIR`, pass the same value
+   to the new launcher.
+6. After checking playback and analysis, delete the old app folder. If you
+   installed the desktop entry or `~/.local/bin/palm` symlink, point it at the
+   new folder.
+
+Do not remove `~/.local/share/palm` during an update. That directory is your
+data, not the application.
+
 ## Uninstall
 
 The portable build does not install system packages. To remove it:

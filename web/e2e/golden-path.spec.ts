@@ -517,10 +517,6 @@ test("golden path: import, analyze, reopen, practise and export", async ({
   await expect(section).toBeVisible();
   await expect(section).toContainText("Section 1");
   await section.getByRole("button", { name: "Loop Section 1" }).click();
-  await expect(page.getByLabel("Practice loop")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
   await expect(page.getByLabel("Loop", { exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",

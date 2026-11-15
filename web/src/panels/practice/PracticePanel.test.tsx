@@ -21,8 +21,8 @@ describe("PracticePanel", () => {
     expect(screen.queryByLabelText("Pitch")).not.toBeInTheDocument();
     expect(screen.queryByTestId("pitch-value")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Practice loop" }),
-    ).toHaveAttribute("aria-pressed", "false");
+      screen.queryByRole("button", { name: "Practice loop" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText("Count-in")).toHaveValue("0");
     expect(screen.getByRole("button", { name: "Metronome" })).toHaveAttribute(
       "aria-pressed",
@@ -36,7 +36,7 @@ describe("PracticePanel", () => {
     expect(controller.getState().metronomeVolume).toBe(1);
   });
 
-  it("changes speed and loop", () => {
+  it("changes speed without a duplicate loop control", () => {
     const { controller } = setup();
 
     fireEvent.change(screen.getByLabelText("Practice speed"), {
@@ -44,12 +44,9 @@ describe("PracticePanel", () => {
     });
     expect(controller.calls).toContain("setSpeed");
     expect(controller.getState().speed).toBe(0.75);
-
-    fireEvent.click(screen.getByRole("button", { name: "Practice loop" }));
-    expect(controller.getState().loopEnabled).toBe(true);
     expect(
-      screen.getByRole("button", { name: "Practice loop" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.queryByRole("button", { name: "Practice loop" }),
+    ).not.toBeInTheDocument();
   });
 
   it("changes count-in and metronome enable", () => {

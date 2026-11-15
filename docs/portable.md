@@ -61,6 +61,22 @@ headless. Install the desktop entry and a `palm` symlink as described in
 [packaging/launcher/README.md](../packaging/launcher/README.md) so a desktop
 launch uses `Terminal=true` without typing commands.
 
+## Updating an installed copy
+
+Your projects, models, tools and environments live in the data root, not the
+app folder. Replacing the app folder does not require downloading them again.
+
+1. Stop the old server with Ctrl+C, or `OLD_FOLDER/bin/palm --stop`.
+2. Download the new tar and `SHA256SUMS`; verify the checksum.
+3. Extract the new folder beside the old one.
+4. Start `NEW_FOLDER/bin/palm`. The default data root is unchanged, so setup,
+   models, tools and projects are reused.
+5. If the old run used `--data-dir` or `PALM_DATA_DIR`, pass the same value.
+6. Delete the old app folder after checking playback and analysis. Update any
+   `~/.local/bin/palm` symlink or desktop entry to the new folder.
+
+Never delete `~/.local/share/palm` during an update; that is user data.
+
 ## First run: network, disk, ffmpeg
 
 The first-run wizard installs three independent pieces. Nothing is downloaded

@@ -11,8 +11,8 @@ export interface PracticePanelProps {
 }
 
 /**
- * Compact practice controls in the bottom bar: speed, loop, count-in,
- * metronome, accent and metronome volume. Snap lives only in Sections.
+ * Compact practice controls in the bottom bar: speed, count-in, metronome,
+ * accent and metronome volume. Loop lives in the transport; snap in Sections.
  */
 export function PracticePanel({ controller }: PracticePanelProps) {
   const state = usePracticeState(controller);
@@ -45,15 +45,6 @@ export function PracticePanel({ controller }: PracticePanelProps) {
             ))}
           </select>
         </label>
-
-        <button
-          type="button"
-          aria-label="Practice loop"
-          aria-pressed={state.loopEnabled}
-          onClick={() => controller.setLoopEnabled(!state.loopEnabled)}
-        >
-          Loop
-        </button>
 
         <label className="practice-control">
           Count-in

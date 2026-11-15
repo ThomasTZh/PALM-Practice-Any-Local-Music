@@ -318,6 +318,11 @@ export class PcmTransport {
     return this.reachedEndValue;
   }
 
+  /** True while the user intends playback, including during a seek/buffer. */
+  get playingIntent(): boolean {
+    return this.desiredPlaying;
+  }
+
   get durationFrames(): number {
     return this.asset?.frameCount ?? 0;
   }
@@ -1075,6 +1080,9 @@ export class PcmTransport {
         };
         return;
       case "anchor":
+        // After a natural end, ignore trailing anchors: the worklet resets
+        // its stream cursor, and applying it would snap the playhead to 0.
+        if (this.reachedEndValue && !this.desiredPlaying) return;
         this.anchor = {
           frame: Number(message.frame) || 0,
           time: Number(message.time) || 0,

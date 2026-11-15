@@ -36,8 +36,10 @@ export function TransportPanel({
   practice = null,
 }: TransportPanelProps) {
   const state = usePlayerState(player);
-  const playing = state.status === "playing";
-  const canPlay = state.durationSeconds > 0 && state.status !== "loading";
+  const playing = state.intendedPlaying ?? state.status === "playing";
+  const canPlay =
+    state.durationSeconds > 0 &&
+    (state.status !== "loading" || state.intendedPlaying === true);
 
   function handleLoop(): void {
     if (state.loopEnabled) {

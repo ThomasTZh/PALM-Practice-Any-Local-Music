@@ -231,6 +231,7 @@ function samePlayerState(a: PlayerState, b: PlayerState): boolean {
     a.speed === b.speed &&
     a.loopEnabled === b.loopEnabled &&
     a.loopRange === b.loopRange &&
+    a.intendedPlaying === b.intendedPlaying &&
     a.error === b.error
   );
 }
@@ -348,6 +349,7 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
       speed: practice.speed,
       loopEnabled: practice.loopEnabled,
       loopRange: practiceLoopRange,
+      intendedPlaying: transport.playingIntent,
       error: fatalError ?? transport.error,
     };
   }
@@ -504,7 +506,9 @@ export function createStudioPlayer(options: StudioPlayerOptions): StudioEngine {
       emitNotice();
     },
     toggle() {
-      if (player.getState().status === "playing") player.pause();
+      // Use the transport's intent, not the transient status: a seek while
+      // playing reports loading but must still show/pause as playing.
+      if (transport.playingIntent) player.pause();
       else player.play();
     },
     seek(seconds) {

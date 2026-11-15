@@ -16,7 +16,7 @@ beyond the MIT licence.
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
-| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,044,734 B | `c26baa055af16228b9a023070354184b889dafc3cc065cd3770ea834596fc0ba` |
+| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,044,838 B | `7cdcdcae70f498f29a4ec5b74a2b954c6b725b047f97ff295611d263cfec36d4` |
 | `SHA256SUMS` | 101 B | contains the line above |
 
 The archive is under 2 GiB. It contains no model weights, analysis tools,
@@ -42,6 +42,27 @@ Useful commands:
 
 If no terminal program is available, PALM prints the log location and keeps
 running. Use `--stop` afterwards.
+
+## Updating from an older PALM
+
+Your projects, downloaded models, tools and environments live in the data root,
+not in the app folder. Updating replaces only the app folder.
+
+1. Stop the old server: press Ctrl+C in its terminal. If that terminal is gone,
+   run `OLD_FOLDER/bin/palm --stop`.
+2. Download the new tar and `SHA256SUMS`, then check the archive.
+3. Extract the new folder next to the old one. Do not extract over the old
+   folder, and do not delete the data root.
+4. Start `NEW_FOLDER/bin/palm`. It uses the same default data root, so setup is
+   not repeated and models/tools/projects stay available.
+5. If the old launch used `--data-dir` or `PALM_DATA_DIR`, pass the same value
+   to the new launcher.
+6. After checking playback and analysis, delete the old app folder. If you
+   installed the desktop entry or `~/.local/bin/palm` symlink, point it at the
+   new folder.
+
+Do not remove `~/.local/share/palm` during an update. That directory is your
+data, not the application.
 
 ## First run
 
