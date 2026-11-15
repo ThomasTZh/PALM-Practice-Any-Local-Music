@@ -367,3 +367,23 @@ make package      -> exit 0, tar 70,041,725 B
 make test-package -> exit 0, 6,488 members, checksums, bin/palm --help
 make gate         -> exit 0
 ```
+
+## t103 required psutil and packaged-runtime evidence (2026-11-15)
+
+- `psutil==7.2.2` is pinned in `pyproject.toml` and
+  `packaging/app-runtime/pyproject.toml`; root `uv.lock` and
+  `packaging/app-runtime/uv.lock` contain `psutil` 7.2.2.
+- Local package build: `PALM-0.1.0-dev-linux-x86_64.tar.gz`, 70,334,324 B,
+  sha256 `6607bb0d27983e31415ee37c4ea58fcb7a8ce88385eefce32f9da6c3c52afc7a`.
+- Extracted bundled interpreter import:
+
+```text
+$ tar -xzf PALM-0.1.0-dev-linux-x86_64.tar.gz -C <scratch>
+$ <scratch>/palm-0.1.0-dev-linux-x86_64/python/bin/python3.11 \
+    -c 'import psutil; print("packaged psutil", psutil.__version__)'
+packaged psutil 7.2.2
+```
+
+- Platform tests also run a child Python with `psutil` blocked and assert a
+  non-zero exit containing `PALM requires psutil 7.2.2 ...`.
+- No release asset was published for this build.

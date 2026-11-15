@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -225,14 +226,17 @@ def test_missing_psutil_fails_with_a_clear_message() -> None:
 
     result = subprocess.run(
         [
-            str(Path(__file__).resolve().parents[3] / ".venv" / "bin" / "python"),
+            sys.executable,
             "-c",
             "import sys; sys.modules['psutil'] = None; import basseparate.platform_support",
         ],
         capture_output=True,
         text=True,
         check=False,
-        env={"PYTHONPATH": str(Path(__file__).resolve().parents[3] / "src")},
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3] / "src"),
+        },
     )
     assert result.returncode != 0
     assert "requires psutil" in result.stderr
