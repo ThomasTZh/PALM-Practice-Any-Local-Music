@@ -10,7 +10,6 @@ never a half-written file; concurrent saves are ordered and revision-checked.
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import json
 import os
 import re
@@ -24,6 +23,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.peaks import PEAK_HEADER_SIZE
+from basseparate.platform_support import FileLock
 
 PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -242,13 +242,12 @@ class ProjectStore:
     @contextlib.contextmanager
     def _lock(self, project_id: str) -> Iterator[None]:
         validate_project_id(project_id)
-        descriptor = os.open(self._locks / f"{project_id}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+        lock = FileLock(self._locks / f"{project_id}.lock", blocking=True)
+        lock.acquire()
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
             yield
         finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
+            lock.release()
 
     def create(self, project: Project) -> Project:
         path = self._path(project.id)

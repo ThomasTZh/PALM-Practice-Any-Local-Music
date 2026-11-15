@@ -19,6 +19,8 @@ from platformdirs import user_data_dir
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from basseparate.platform_support import WINDOWS, native_data_root, venv_python
+
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parent.parent
 
@@ -71,7 +73,10 @@ class RuntimePaths:
         elif os.environ.get("PALM_DATA_DIR"):
             resolved_data = Path(os.environ["PALM_DATA_DIR"])
         elif runtime_mode == "packaged":
-            resolved_data = Path(user_data_dir("palm", appauthor=False))
+            native = native_data_root("palm")
+            resolved_data = (
+                native if native is not None else Path(user_data_dir("palm", appauthor=False))
+            )
         elif os.environ.get("BASSEPARATE_DATA_DIR"):
             resolved_data = Path(os.environ["BASSEPARATE_DATA_DIR"])
         else:
@@ -111,6 +116,10 @@ class RuntimePaths:
     @property
     def uv(self) -> Path:
         if self.packaged:
+            for name in ("uv", "uv.exe"):
+                candidate = self.app_root / "bin" / name
+                if candidate.is_file():
+                    return candidate
             return self.app_root / "bin" / "uv"
         found = shutil.which("uv")
         return Path(found) if found else Path("uv")
@@ -124,14 +133,22 @@ class RuntimePaths:
         """The interpreter shipped with a packaged app (source: this process)."""
         if not self.packaged:
             return Path(sys.executable)
-        candidates = (
+        candidates = [
             self.app_root / "python" / "bin" / "python3.11",
             self.app_root / "python" / "bin" / "python3",
             self.app_root / "python" / "bin" / "python",
             self.app_root / "bin" / "python3.11",
             self.app_root / "bin" / "python3",
             self.app_root / "bin" / "python",
-        )
+        ]
+        if WINDOWS:
+            candidates = [
+                self.app_root / "python" / "python.exe",
+                self.app_root / "python" / "Scripts" / "python.exe",
+                self.app_root / "python" / "bin" / "python.exe",
+                self.app_root / "bin" / "python.exe",
+                *candidates,
+            ]
         for candidate in candidates:
             if candidate.is_file():
                 return candidate
@@ -152,8 +169,8 @@ class RuntimePaths:
     @property
     def demucs_python(self) -> Path:
         if self.packaged:
-            return self.environments_root / "demucs" / "bin" / "python"
-        return self.app_root / "analysis" / ".venv" / "bin" / "python"
+            return venv_python(self.environments_root / "demucs")
+        return venv_python(self.app_root / "analysis" / ".venv")
 
     @property
     def msst_python(self) -> Path:
@@ -161,11 +178,11 @@ class RuntimePaths:
             # Setup creates environments/<variant>; use whichever variant is
             # actually installed, preferring CUDA when both exist.
             for variant in ("cuda", "cpu"):
-                candidate = self.environments_root / variant / "bin" / "python"
+                candidate = venv_python(self.environments_root / variant)
                 if candidate.is_file():
                     return candidate
-            return self.environments_root / "cpu" / "bin" / "python"
-        return self.app_root / "analysis-models" / ".venv" / "bin" / "python"
+            return venv_python(self.environments_root / "cpu")
+        return venv_python(self.app_root / "analysis-models" / ".venv")
 
     @property
     def analysis_python(self) -> Path:

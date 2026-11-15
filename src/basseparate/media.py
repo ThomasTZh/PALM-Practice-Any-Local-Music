@@ -19,6 +19,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from basseparate.peaks import PEAK_BUCKET_SIZES, compute_peaks_from_file, encode_peaks
+from basseparate.platform_support import (
+    ffmpeg_binary,
+    ffprobe_binary,
+    hidden_process_kwargs,
+)
 
 # A decoded block is read and fed to the peak accumulator in chunks. 1 Mi
 # frames of stereo float32 is 8 MiB, small enough for any practice machine.
@@ -318,8 +323,9 @@ def parse_ffprobe(payload: object) -> MediaInfo:
     )
 
 
-def probe_media(path: Path, *, ffprobe: str = "ffprobe") -> MediaInfo:
+def probe_media(path: Path, *, ffprobe: str | None = None) -> MediaInfo:
     path = Path(path)
+    ffprobe = ffprobe or ffprobe_binary()
     if not path.is_file():
         raise MediaError(f"source file does not exist: {path}")
     try:
@@ -338,6 +344,7 @@ def probe_media(path: Path, *, ffprobe: str = "ffprobe") -> MediaInfo:
             text=True,
             check=False,
             timeout=120,
+            **hidden_process_kwargs(),
         )
     except FileNotFoundError as error:
         raise MediaError(f"{ffprobe} is not installed") from error
@@ -422,7 +429,7 @@ def decode_to_pcm(
     duration_seconds: float,
     progress: Callable[[float, str], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
-    ffmpeg: str = "ffmpeg",
+    ffmpeg: str | None = None,
     timeout_seconds: int = DECODE_TIMEOUT_SECONDS,
 ) -> int:
     """Decode the first audio stream to interleaved little-endian float32.
@@ -432,6 +439,7 @@ def decode_to_pcm(
     """
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = ffmpeg or ffmpeg_binary()
     log_path = target.with_name(f"{target.name}.ffmpeg.log")
     command = [
         ffmpeg,
@@ -472,6 +480,7 @@ def decode_to_pcm(
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=log_handle,
+                **hidden_process_kwargs(),
             )
             if process.stdout is None:  # pragma: no cover - defensive
                 raise MediaError("ffmpeg stdout was not captured")
@@ -587,8 +596,8 @@ def import_media(
     sample_rate: int | None = None,
     progress: Callable[[float, str], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
-    ffmpeg: str = "ffmpeg",
-    ffprobe: str = "ffprobe",
+    ffmpeg: str | None = None,
+    ffprobe: str | None = None,
 ) -> DecodedAsset:
     """Probe, hash, copy, decode and derive peaks for one source file.
 
@@ -603,6 +612,8 @@ def import_media(
     source = Path(source)
     if not source.is_file():
         raise MediaError(f"source file does not exist: {source}")
+    ffmpeg = ffmpeg or ffmpeg_binary()
+    ffprobe = ffprobe or ffprobe_binary()
     _check_cancelled(is_cancelled)
     report(0.02, "reading metadata")
     info = probe_media(source, ffprobe=ffprobe)

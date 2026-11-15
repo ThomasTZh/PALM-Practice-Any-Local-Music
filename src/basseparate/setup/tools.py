@@ -15,6 +15,7 @@ from types import ModuleType
 from typing import Any, cast
 
 from basseparate.config import RuntimePaths, runtime_paths
+from basseparate.platform_support import plugin_suffix
 from basseparate.setup.errors import SetupCancelled, SetupInstallError
 
 Progress = Callable[[float, str], None]
@@ -41,7 +42,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         id="vamp_plugin_pack",
         name="Vamp Plugin Pack",
         license="AGPL-3.0 (pack); individual plugins GPL/AGPL",
-        target="vamp-plugins/qm-vamp-plugins.so",
+        target=f"vamp-plugins/qm-vamp-plugins{plugin_suffix()}",
     ),
 )
 
@@ -49,7 +50,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
 def tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
     active = runtime or runtime_paths()
     piper = active.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
-    plugin = active.tools_root / "vamp-plugins" / "qm-vamp-plugins.so"
+    plugin = active.tools_root / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"
     return {
         "sonic_visualiser": {
             "installed": piper.is_file(),

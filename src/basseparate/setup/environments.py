@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from basseparate.config import RuntimePaths, runtime_paths
+from basseparate.platform_support import venv_python
 from basseparate.setup.errors import SetupCancelled, SetupInstallError
 
 EnvVariant = Literal["cpu", "cuda"]
@@ -60,7 +61,7 @@ def environment_status(
 ) -> dict[str, object]:
     active = runtime or runtime_paths()
     spec = environment_spec(variant, active)
-    python = spec.target / "bin" / "python"
+    python = venv_python(spec.target)
     installed = python.is_file()
     # The source checkout already has one working inference environment; keep
     # it visible as the CPU variant instead of making development run setup.
@@ -157,7 +158,7 @@ def create_environment(
             cache_dir=spec.cache_dir,
             index_url=spec.index_url,
         )
-    if (spec.target / "bin" / "python").is_file():
+    if venv_python(spec.target).is_file():
         if progress is not None:
             progress(1.0, f"{variant} environment already installed")
         return environment_status(variant, active)
@@ -197,8 +198,8 @@ def create_environment(
             )
         if cancel is not None and cancel():
             raise SetupCancelled(f"{variant} environment creation cancelled")
-        if not (staging / "bin" / "python").is_file():
-            raise SetupInstallError(f"uv finished but {staging / 'bin' / 'python'} is missing")
+        if not venv_python(staging).is_file():
+            raise SetupInstallError(f"uv finished but {venv_python(staging)} is missing")
         if spec.target.exists():
             shutil.rmtree(spec.target)
         staging.replace(spec.target)
