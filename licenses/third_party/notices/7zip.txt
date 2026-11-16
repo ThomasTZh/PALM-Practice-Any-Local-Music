@@ -1,0 +1,14 @@
+7-Zip helper notice
+
+Component: 7-Zip command-line helper (7z/7zz)
+Version: 26.04
+Copyright: Igor Pavlov, 1999-2026
+Licence: LGPL-2.1-or-later, with the 7-Zip unRAR restriction
+Project: https://www.7-zip.org/
+Source: https://www.7-zip.org/download.html
+
+The helper is downloaded on first use only after explicit consent. It is not
+committed to git, bundled in a release, or installed system-wide. The full
+LGPL text is licenses/third_party/licenses/LGPL-2.1-or-later.txt; the 7-Zip
+restriction notice is
+licenses/third_party/licenses/7-Zip-LGPL-2.1-or-later.txt.

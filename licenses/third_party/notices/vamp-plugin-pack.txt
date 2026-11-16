@@ -1,0 +1,16 @@
+Vamp Plugin Pack notice
+
+Component: Vamp Plugin Pack (including Chordino/NNLS-Chroma, QM Key Detector,
+QM Bar and Beat Tracker, BeatRoot and the other pack plugins)
+Version: 2.0
+Copyright: Queen Mary University of London and the individual plugin authors
+Licence: AGPL-3.0 for the pack; individual plugins are GPL-2.0-or-later or
+AGPL-3.0 as stated by the upstream project.
+Project: https://github.com/vamp-plugins/vamp-plugin-pack
+Release: https://github.com/vamp-plugins/vamp-plugin-pack/releases/tag/v2.0
+
+Downloaded and extracted below the user data root by setup on Linux, Windows
+and macOS. Not committed, not bundled in a release, and not installed
+system-wide. Full AGPL text:
+licenses/third_party/licenses/AGPL-3.0-or-later.txt. GPL text:
+licenses/third_party/licenses/GPL-2.0-or-later.txt.

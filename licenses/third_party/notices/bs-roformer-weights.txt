@@ -1,0 +1,10 @@
+BS-RoFormer-SW weights notice
+
+Model: bs-roformer-sw (six stems: bass, drums, other, vocals, guitar, piano)
+Checkpoint: BS-Rofo-SW-Fixed.ckpt; YAML BS-Rofo-SW-Fixed.yaml
+Copyright: FractalSurfer and the BS-RoFormer authors; see the model card.
+Licence: the model card has no clear upstream weight licence. MSST inference
+code is MIT. Treat the weights as private use only and do not redistribute them.
+Sources:
+  https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1
+Status: downloaded after explicit consent; never committed or bundled.

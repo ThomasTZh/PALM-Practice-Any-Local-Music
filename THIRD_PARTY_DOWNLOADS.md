@@ -148,3 +148,41 @@ user-installed prerequisite, not a dependency downloaded by PALM.
 The lockfiles contain the wheel URLs, hashes and sizes for each target
 platform. psutil is a required app dependency, not a separately downloaded
 tool.
+
+## Download-on-first-run: FFmpeg, FFprobe and 7-Zip
+
+These components are downloaded only after explicit consent and are not
+committed to git or bundled in a release. The manifest records them as
+`downloaded`.
+
+| Component | Version | Upstream URL | SHA-256 | Size | Licence |
+| --- | --- | --- | --- | ---: | --- |
+| FFmpeg static (Linux x64, descriptive platform example) | n6.1.2-9-g4571c80b40-20241023 / descriptinc b6.1.2-rc.1 | https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1/ffmpeg-linux-x64 | `d7791526ff9447dbdf88b78c43a2b98975862c8b18980b56b0f11e5bf1eafc08` | 128,513,072 B | GPL-3.0-or-later; build has `--enable-gpl --enable-version3`, not LGPL-only |
+| FFprobe static (Linux x64, descriptive platform example) | n6.1.2-9-g4571c80b40-20241023 / descriptinc b6.1.2-rc.1 | https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1/ffprobe-linux-x64 | `33e4d1be0482dce5355a04c62ccbda3d3f9f91fe4aa40cdb3585493278d91a1d` | 128,374,768 B | GPL-3.0-or-later; same build configuration |
+| 7-Zip helper | 26.04 | https://www.7-zip.org/download.html | pinned by the downloader when implemented; no binary is committed | n/a | LGPL-2.1-or-later with unRAR restriction |
+
+Exact `ffmpeg -L` and `ffprobe -L` output is in
+`licenses/third_party/notices/ffmpeg-static-license-output.txt`. The source
+release and per-platform assets are recorded in the manifest and docs; the
+binary is not added to git or a release asset.
+
+## Documentation match
+
+The authoritative list is `licenses/third_party/manifest.json`. This file and
+`THIRD_PARTY.md` are summaries of it; `licenses/third_party/licenses/` contains
+the full texts and `licenses/third_party/notices/` contains component notices.
+
+## Source pages for downloaded components
+
+These are the source/release pages used by the manifest; they are not
+additional downloads.
+
+| Component | Source page |
+| --- | --- |
+| ffmpeg-static, ffprobe-static | https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/tag/b6.1.2-rc.1 |
+| sonic-annotator | https://github.com/sonic-visualiser/sonic-annotator/releases/tag/sonic-annotator-1.7 |
+| sonic-visualiser-piper | https://github.com/sonic-visualiser/sonic-visualiser/releases/tag/sv_v5.2.1 |
+| vamp-plugin-pack | https://github.com/vamp-plugins/vamp-plugin-pack/releases/tag/v2.0 |
+| demucs-code, demucs-weights | https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5 |
+| msst-code, scnet-weights | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15 |
+| bs-roformer-weights | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1 |

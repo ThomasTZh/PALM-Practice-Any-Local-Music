@@ -1,0 +1,12 @@
+Sonic Annotator notice
+
+Component: Sonic Annotator
+Version: 1.7
+Copyright: Chris Cannam, Queen Mary University of London and contributors
+Licence: GPL-2.0-or-later
+Project: https://www.sonicvisualiser.org/sonic-annotator/
+Release: https://github.com/sonic-visualiser/sonic-annotator/releases/tag/sonic-annotator-1.7
+
+Downloaded and extracted below the user data root by setup on Windows/macOS.
+Not committed, not bundled in a release, and not installed system-wide. Full
+licence text: licenses/third_party/licenses/GPL-2.0-or-later.txt.

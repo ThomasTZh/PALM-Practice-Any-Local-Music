@@ -1,5 +1,21 @@
 # PALM — Dependency Notices
 
+## Authoritative licence manifest
+
+The authoritative list of included and downloaded components is
+[`licenses/third_party/manifest.json`](third_party/manifest.json). It records
+version, copyright owner, licence id, source URL and bundled/downloaded/excluded
+status, and links the full texts and notices under `licenses/third_party/`.
+The dependency inventory below is generated from the installed environments and
+does not override the manifest.
+
+Downloaded-only components include the pinned descriptinc FFmpeg/FFprobe static
+build (GPL-3.0-or-later; the exact `ffmpeg -L` output is in
+`third_party/notices/ffmpeg-static-license-output.txt`), the 7-Zip helper
+(LGPL-2.1-or-later with unRAR restriction), Sonic Annotator/Vamp tools, and the
+Demucs/SCNet/BS-RoFormer weights. None are bundled in the application package.
+
+
 Generated: 2026-10-24T10:41:49.752569+00:00
 
 The application environment installs no machine-learning packages.

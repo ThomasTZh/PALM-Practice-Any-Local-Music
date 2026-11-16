@@ -1,0 +1,417 @@
+{
+  "schema_version": 1,
+  "generated": "2026-11-16",
+  "palm_license": {
+    "name": "PALM application source",
+    "version": "0.1.0-dev",
+    "copyright": "PALM contributors",
+    "license": "MIT",
+    "license_file": "licenses/LICENSE",
+    "source_url": "https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music",
+    "distribution": "bundled",
+    "component_type": "application",
+    "notes": "MIT applies only to original PALM source, not third-party material."
+  },
+  "license_texts": [
+    "licenses/third_party/licenses/AGPL-3.0-or-later.txt",
+    "licenses/third_party/licenses/Apache-2.0.txt",
+    "licenses/third_party/licenses/BSD-3-Clause.txt",
+    "licenses/third_party/licenses/GPL-2.0-or-later.txt",
+    "licenses/third_party/licenses/GPL-3.0-or-later.txt",
+    "licenses/third_party/licenses/LGPL-2.1-or-later.txt",
+    "licenses/third_party/licenses/MIT.txt",
+    "licenses/third_party/licenses/PSF-2.0.txt",
+    "licenses/third_party/licenses/7-Zip-LGPL-2.1-or-later.txt"
+  ],
+  "notice_texts": [
+    "licenses/third_party/notices/7zip.txt",
+    "licenses/third_party/notices/bs-roformer-weights.txt",
+    "licenses/third_party/notices/demucs-weights.txt",
+    "licenses/third_party/notices/ffmpeg-static-license-output.txt",
+    "licenses/third_party/notices/python-uv.txt",
+    "licenses/third_party/notices/scnet-weights.txt",
+    "licenses/third_party/notices/sonic-annotator.txt",
+    "licenses/third_party/notices/sonic-visualiser-piper.txt",
+    "licenses/third_party/notices/vamp-plugin-pack.txt"
+  ],
+  "components": [
+    {
+      "id": "python",
+      "name": "CPython",
+      "version": "3.11.15+20260728",
+      "copyright": "Python Software Foundation",
+      "license": "PSF-2.0",
+      "license_file": "licenses/third_party/licenses/PSF-2.0.txt",
+      "notice_file": "licenses/third_party/notices/python-uv.txt",
+      "source_url": "https://github.com/astral-sh/python-build-standalone/releases/tag/20260728",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "uv",
+      "name": "uv",
+      "version": "0.12.0",
+      "copyright": "Astral Software Inc.",
+      "license": "MIT OR Apache-2.0",
+      "license_files": [
+        "licenses/third_party/licenses/MIT.txt",
+        "licenses/third_party/licenses/Apache-2.0.txt"
+      ],
+      "notice_file": "licenses/third_party/notices/python-uv.txt",
+      "source_url": "https://github.com/astral-sh/uv/releases/tag/0.12.0",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "bin/uv"
+      ]
+    },
+    {
+      "id": "fastapi",
+      "name": "FastAPI",
+      "version": "0.142.0",
+      "copyright": "Sebastian Ramirez and contributors",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/fastapi/fastapi",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "starlette",
+      "name": "Starlette",
+      "version": "1.7.0",
+      "copyright": "Tom Christie and contributors",
+      "license": "BSD-3-Clause",
+      "license_file": "licenses/third_party/licenses/BSD-3-Clause.txt",
+      "source_url": "https://github.com/encode/starlette",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "uvicorn",
+      "name": "Uvicorn",
+      "version": "0.54.0",
+      "copyright": "Tom Christie and contributors",
+      "license": "BSD-3-Clause",
+      "license_file": "licenses/third_party/licenses/BSD-3-Clause.txt",
+      "source_url": "https://github.com/encode/uvicorn",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "pydantic",
+      "name": "Pydantic",
+      "version": "2.13.5",
+      "copyright": "Samuel Colvin and contributors",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/pydantic/pydantic",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "numpy",
+      "name": "NumPy",
+      "version": "2.4.6",
+      "copyright": "NumPy developers",
+      "license": "BSD-3-Clause",
+      "license_file": "licenses/third_party/licenses/BSD-3-Clause.txt",
+      "source_url": "https://github.com/numpy/numpy",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "psutil",
+      "name": "psutil",
+      "version": "7.2.2",
+      "copyright": "Giampaolo Rodola and contributors",
+      "license": "BSD-3-Clause",
+      "license_file": "licenses/third_party/licenses/BSD-3-Clause.txt",
+      "source_url": "https://github.com/giampaolo/psutil",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "platformdirs",
+      "name": "platformdirs",
+      "version": "4.12.1",
+      "copyright": "platformdirs contributors",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/platformdirs/platformdirs",
+      "distribution": "bundled",
+      "component_type": "runtime",
+      "bundled_paths": [
+        "python"
+      ]
+    },
+    {
+      "id": "react",
+      "name": "React",
+      "version": "19.3.0",
+      "copyright": "Meta Platforms, Inc. and affiliates",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/facebook/react",
+      "distribution": "bundled",
+      "component_type": "web",
+      "bundled_paths": [
+        "web/dist"
+      ]
+    },
+    {
+      "id": "react-dom",
+      "name": "React DOM",
+      "version": "19.3.0",
+      "copyright": "Meta Platforms, Inc. and affiliates",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/facebook/react",
+      "distribution": "bundled",
+      "component_type": "web",
+      "bundled_paths": [
+        "web/dist"
+      ]
+    },
+    {
+      "id": "signalsmith-stretch",
+      "name": "Signalsmith Stretch",
+      "version": "commit a670068d9aeb64913331d5cc29337b19a457a7df",
+      "copyright": "Geraint Luff / Signalsmith Audio Ltd.",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/Signalsmith-Audio/signalsmith-stretch",
+      "distribution": "bundled",
+      "component_type": "audio",
+      "bundled_paths": [
+        "web/dist"
+      ]
+    },
+    {
+      "id": "ffmpeg-static",
+      "name": "FFmpeg static build",
+      "version": "n6.1.2-9-g4571c80b40-20241023 (descriptinc b6.1.2-rc.1)",
+      "copyright": "FFmpeg developers",
+      "license": "GPL-3.0-or-later",
+      "license_file": "licenses/third_party/licenses/GPL-3.0-or-later.txt",
+      "notice_file": "licenses/third_party/notices/ffmpeg-static-license-output.txt",
+      "source_url": "https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/tag/b6.1.2-rc.1",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/ffmpeg",
+      "notes": "Consent-gated; build uses --enable-gpl --enable-version3, not LGPL-only."
+    },
+    {
+      "id": "ffprobe-static",
+      "name": "FFprobe static build",
+      "version": "n6.1.2-9-g4571c80b40-20241023 (descriptinc b6.1.2-rc.1)",
+      "copyright": "FFmpeg developers",
+      "license": "GPL-3.0-or-later",
+      "license_file": "licenses/third_party/licenses/GPL-3.0-or-later.txt",
+      "notice_file": "licenses/third_party/notices/ffmpeg-static-license-output.txt",
+      "source_url": "https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/tag/b6.1.2-rc.1",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/ffprobe"
+    },
+    {
+      "id": "7zip-helper",
+      "name": "7-Zip command-line helper",
+      "version": "26.04",
+      "copyright": "Igor Pavlov, 1999-2026",
+      "license": "LGPL-2.1-or-later",
+      "license_file": "licenses/third_party/licenses/LGPL-2.1-or-later.txt",
+      "notice_file": "licenses/third_party/notices/7zip.txt",
+      "source_url": "https://www.7-zip.org/download.html",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/7z",
+      "license_files": [
+        "licenses/third_party/licenses/7-Zip-LGPL-2.1-or-later.txt"
+      ]
+    },
+    {
+      "id": "sonic-annotator",
+      "name": "Sonic Annotator",
+      "version": "1.7",
+      "copyright": "Chris Cannam, Queen Mary University of London and contributors",
+      "license": "GPL-2.0-or-later",
+      "license_file": "licenses/third_party/licenses/GPL-2.0-or-later.txt",
+      "notice_file": "licenses/third_party/notices/sonic-annotator.txt",
+      "source_url": "https://github.com/sonic-visualiser/sonic-annotator/releases/tag/sonic-annotator-1.7",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/sonic-annotator-1.7.0"
+    },
+    {
+      "id": "sonic-visualiser-piper",
+      "name": "Sonic Visualiser and Piper",
+      "version": "5.2.1",
+      "copyright": "Chris Cannam, Queen Mary University of London and contributors",
+      "license": "GPL-2.0-or-later",
+      "license_file": "licenses/third_party/licenses/GPL-2.0-or-later.txt",
+      "notice_file": "licenses/third_party/notices/sonic-visualiser-piper.txt",
+      "source_url": "https://github.com/sonic-visualiser/sonic-visualiser/releases/tag/sv_v5.2.1",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/sv"
+    },
+    {
+      "id": "vamp-plugin-pack",
+      "name": "Vamp Plugin Pack",
+      "version": "2.0",
+      "copyright": "Queen Mary University of London and plugin authors",
+      "license": "AGPL-3.0",
+      "license_file": "licenses/third_party/licenses/AGPL-3.0-or-later.txt",
+      "notice_file": "licenses/third_party/notices/vamp-plugin-pack.txt",
+      "source_url": "https://github.com/vamp-plugins/vamp-plugin-pack/releases/tag/v2.0",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/plugins"
+    },
+    {
+      "id": "vamp-plugins",
+      "name": "Vamp plugins (Chordino, QM, BeatRoot, pack members)",
+      "version": "2.0",
+      "copyright": "Individual plugin authors; see pack notice",
+      "license": "GPL-2.0-or-later OR AGPL-3.0",
+      "license_file": "licenses/third_party/licenses/GPL-2.0-or-later.txt",
+      "license_files": [
+        "licenses/third_party/licenses/AGPL-3.0-or-later.txt"
+      ],
+      "notice_file": "licenses/third_party/notices/vamp-plugin-pack.txt",
+      "source_url": "https://github.com/vamp-plugins/vamp-plugin-pack",
+      "distribution": "downloaded",
+      "component_type": "tool",
+      "download_target": "<data>/tools/plugins"
+    },
+    {
+      "id": "demucs-code",
+      "name": "Demucs",
+      "version": "commit b1ea86542ca11d7695cba4238909f461752283b5",
+      "copyright": "Simon Rouard, Francisco Massa, Alexandre Defossez and Meta AI Research",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5",
+      "distribution": "downloaded",
+      "component_type": "analysis",
+      "download_target": "<data>/environments/cpu"
+    },
+    {
+      "id": "demucs-weights",
+      "name": "Demucs htdemucs_ft weights",
+      "version": "4.1.0 release checkpoint set",
+      "copyright": "Simon Rouard, Francisco Massa, Alexandre Defossez and Meta AI Research",
+      "license": "LicenseRef-DemucsResearchWeights",
+      "license_file": "licenses/third_party/notices/demucs-weights.txt",
+      "notice_file": "licenses/third_party/notices/demucs-weights.txt",
+      "source_url": "https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5",
+      "distribution": "downloaded",
+      "component_type": "model",
+      "download_target": "<data>/models/htdemucs_ft"
+    },
+    {
+      "id": "msst-code",
+      "name": "Music-Source-Separation-Training (MSST)",
+      "version": "1.0.15",
+      "copyright": "ZFTurbo and contributors",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15",
+      "distribution": "downloaded",
+      "component_type": "analysis",
+      "download_target": "<data>/environments/cpu"
+    },
+    {
+      "id": "scnet-weights",
+      "name": "SCNet XL IHF weights",
+      "version": "v1.0.15 checkpoint",
+      "copyright": "SCNet and MSST authors",
+      "license": "LicenseRef-SCNetWeights",
+      "license_file": "licenses/third_party/notices/scnet-weights.txt",
+      "notice_file": "licenses/third_party/notices/scnet-weights.txt",
+      "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15",
+      "distribution": "downloaded",
+      "component_type": "model",
+      "download_target": "<data>/models/scnet-xl-ihf"
+    },
+    {
+      "id": "bs-roformer-weights",
+      "name": "BS-RoFormer-SW weights",
+      "version": "commit 2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
+      "copyright": "FractalSurfer and BS-RoFormer authors",
+      "license": "LicenseRef-BSRoFormerUnknown",
+      "license_file": "licenses/third_party/notices/bs-roformer-weights.txt",
+      "notice_file": "licenses/third_party/notices/bs-roformer-weights.txt",
+      "source_url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
+      "distribution": "downloaded",
+      "component_type": "model",
+      "download_target": "<data>/models/bs-roformer-sw"
+    },
+    {
+      "id": "emscripten",
+      "name": "Emscripten build toolchain",
+      "version": "build-time only",
+      "copyright": "Emscripten authors",
+      "license": "MIT OR NCSA",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://emscripten.org/",
+      "distribution": "excluded",
+      "component_type": "build"
+    },
+    {
+      "id": "nodejs",
+      "name": "Node.js build runtime",
+      "version": "22",
+      "copyright": "OpenJS Foundation and contributors",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://nodejs.org/",
+      "distribution": "excluded",
+      "component_type": "build"
+    },
+    {
+      "id": "vite",
+      "name": "Vite build tool",
+      "version": "8.3.1",
+      "copyright": "Vite contributors",
+      "license": "MIT",
+      "license_file": "licenses/third_party/licenses/MIT.txt",
+      "source_url": "https://github.com/vitejs/vite",
+      "distribution": "excluded",
+      "component_type": "build"
+    },
+    {
+      "id": "typescript",
+      "name": "TypeScript compiler",
+      "version": "5.9.3",
+      "copyright": "Microsoft Corporation",
+      "license": "Apache-2.0",
+      "license_file": "licenses/third_party/licenses/Apache-2.0.txt",
+      "source_url": "https://github.com/microsoft/TypeScript",
+      "distribution": "excluded",
+      "component_type": "build"
+    }
+  ]
+}

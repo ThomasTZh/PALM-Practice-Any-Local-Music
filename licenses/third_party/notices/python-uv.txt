@@ -1,0 +1,14 @@
+Embedded Python and uv notice
+
+CPython: 3.11.15, build 20260728, PSF-2.0. Copyright Python Software Foundation.
+Built by python-build-standalone:
+https://github.com/astral-sh/python-build-standalone/releases/tag/20260728
+uv: 0.12.0, MIT OR Apache-2.0. Copyright Astral Software Inc.
+https://github.com/astral-sh/uv/releases/tag/0.12.0
+
+Both are downloaded at build time and embedded in the per-platform release
+artifact. Full texts:
+licenses/third_party/licenses/PSF-2.0.txt,
+licenses/third_party/licenses/MIT.txt and
+licenses/third_party/licenses/Apache-2.0.txt. This notice is retained in the
+packaged application.

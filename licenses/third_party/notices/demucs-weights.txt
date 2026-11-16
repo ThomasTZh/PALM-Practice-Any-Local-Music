@@ -1,0 +1,14 @@
+Demucs htdemucs_ft weights notice
+
+Model: htdemucs_ft (four stems: drums, bass, other, vocals)
+Code version: Demucs commit b1ea86542ca11d7695cba4238909f461752283b5
+Copyright: Simon Rouard, Francisco Massa, Alexandre Defossez and Meta AI
+Research contributors.
+Code licence: MIT. The pretrained weights are a separate artifact. The upstream
+repository does not state a separate weight licence and describes them as
+research use only. They were trained on MUSDB18-HQ, a research corpus.
+Sources:
+  https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5
+  https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/
+Licence URL: https://github.com/facebookresearch/demucs/blob/main/LICENSE
+Status: downloaded after explicit consent; never committed or bundled.

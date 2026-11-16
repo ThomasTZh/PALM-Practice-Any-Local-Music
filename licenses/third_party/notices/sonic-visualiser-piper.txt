@@ -1,0 +1,12 @@
+Sonic Visualiser / Piper notice
+
+Component: Sonic Visualiser and the Piper Vamp host
+Version: 5.2.1 Linux AppImage
+Copyright: Chris Cannam, Queen Mary University of London and contributors
+Licence: GPL-2.0-or-later
+Project: https://www.sonicvisualiser.org/
+Release: https://github.com/sonic-visualiser/sonic-visualiser/releases/tag/sv_v5.2.1
+
+Downloaded and extracted below the user data root on Linux by setup. Not
+committed, not bundled in a release, and not installed system-wide. Full
+licence text: licenses/third_party/licenses/GPL-2.0-or-later.txt.

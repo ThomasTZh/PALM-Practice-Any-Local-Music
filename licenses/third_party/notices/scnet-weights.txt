@@ -1,0 +1,12 @@
+SCNet XL IHF weights notice
+
+Model: scnet-xl-ihf (four stems)
+Code version/release: MSST v1.0.15; checkpoint
+model_scnet_ep_36_sdr_10.0891.ckpt
+Copyright: the SCNet and Music-Source-Separation-Training authors.
+Code licence: MIT. The weights are distributed by MSST with no separate weight
+licence; treat them as research use and do not redistribute them separately.
+Sources:
+  https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15
+  https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/LICENSE
+Status: downloaded after explicit consent; never committed or bundled.

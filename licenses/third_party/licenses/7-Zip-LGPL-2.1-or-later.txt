@@ -1,0 +1,8 @@
+7-Zip is licensed under the GNU Lesser General Public License, version 2.1 or
+later, with the unRAR restriction described by the 7-Zip project. The full
+LGPL text is in LGPL-2.1-or-later.txt. This notice does not relicense 7-Zip or
+the unRAR code under PALM's MIT licence.
+
+7-Zip copyright: Igor Pavlov, 1999-2026.
+Project: https://www.7-zip.org/
+Source: https://www.7-zip.org/download.html
