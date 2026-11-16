@@ -42,6 +42,8 @@ jobs:
         run: pnpm --dir web exec playwright install --with-deps chromium
       - name: Backend tests without optional assets
         run: make test-backend TESTS="tests/unit --ignore=tests/unit/test_models"
+      - name: Licence/package/update audit
+        run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
       - name: Web tests and build
         run: |
           make test-web
@@ -58,8 +60,18 @@ jobs:
           scratch=$(mktemp -d)
           tar -xzf "$tar_path" -C "$scratch"
           app=$(find "$scratch" -mindepth 1 -maxdepth 1 -type d | head -1)
+          test -f "$app/install.json"
+          test -f "$app/licenses/third_party/manifest.json"
+          test -x "$app/bin/palm"
+          python - "$app/install.json" <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1]))
+          assert payload["channel"] == "linux-x86_64"
+          assert payload["assets"]["linux-x86_64"]["name"].endswith(".tar.gz")
+          print("install metadata ok")
+          PY
           data=$(mktemp -d)
-          "$app/bin/palm" --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-linux-smoke.out 2>&1 &
+          "$app/bin/palm" --window --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-linux-smoke.out 2>&1 &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           for _ in $(seq 1 120); do [ -f "$data/run/server.json" ] && break; sleep 0.5; done
@@ -112,6 +124,52 @@ jobs:
       - name: Unit and adapter tests
         shell: pwsh
         run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_platform_support tests/integration/test_package_windows
+      - name: Licence/package/update audit
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
+      - name: Verify Windows archive metadata and modes
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $env:PALM_ZIP = $zip.FullName
+          .\.venv\Scripts\python.exe -c @"
+          import json, os, zipfile
+          with zipfile.ZipFile(os.environ['PALM_ZIP']) as z:
+              names = z.namelist()
+              install = next(n for n in names if n.endswith('/install.json'))
+              payload = json.loads(z.read(install))
+              assert payload['channel'] == 'windows-x86_64'
+              assert payload['assets']['windows-x86_64']['name'].endswith('.zip')
+              assert any(n.lower().endswith('/palm.exe') for n in names)
+              assert any(n.endswith('/licenses/third_party/manifest.json') for n in names)
+              for suffix in ('/PALM.exe', '/python/python.exe', '/bin/uv.exe'):
+                  info = next(z.getinfo(n) for n in names if n.lower().endswith(suffix.lower()))
+                  assert info.create_system == 3, suffix
+                  assert (info.external_attr >> 16) & 0o111, suffix
+          print('windows install/licence/modes ok')
+          "@
+      - name: Windows Vamp extraction report
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dir = Join-Path $env:RUNNER_TEMP "palm-vamp-extract"
+          Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe" -OutFile "$dir\7zr.exe"
+          if ((Get-FileHash "$dir\7zr.exe" -Algorithm SHA256).Hash.ToLower() -ne "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc") { throw "7zr hash mismatch" }
+          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-extra.7z" -OutFile "$dir\extra.7z"
+          if ((Get-FileHash "$dir\extra.7z" -Algorithm SHA256).Hash.ToLower() -ne "396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104") { throw "7z extra hash mismatch" }
+          Invoke-WebRequest -Uri "https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer.2.0.exe" -OutFile "$dir\vamp.exe"
+          if ((Get-FileHash "$dir\vamp.exe" -Algorithm SHA256).Hash.ToLower() -ne "24d12812ffde04a20e7acbeb543860552d7aa05a729d9e9123b33c6e097c4d5f") { throw "Vamp installer hash mismatch" }
+          & "$dir\7zr.exe" x "$dir\extra.7z" "-o$dir\seven" -y | Out-Null
+          $seven = Get-ChildItem "$dir\seven" -Filter 7za.exe -Recurse | Select-Object -First 1
+          if (-not $seven) { throw "7za.exe not extracted" }
+          $result = "EXTRACTION_FAILED; one-UAC fallback documented (no no-admin claim)"
+          & $seven.FullName x "$dir\vamp.exe" "-o$dir\vamp" -y | Out-Null
+          if (Test-Path "$dir\vamp\qm-vamp-plugins.dll") { $result = "EXTRACTION_OK" }
+          $result | Set-Content dist\vamp-extraction.txt -Encoding ascii
+          Write-Host $result
+          exit 0
       - name: Install Playwright browser
         shell: pwsh
         run: pnpm --dir web exec playwright install chromium
@@ -185,6 +243,8 @@ jobs:
         run: .venv/bin/python scripts/package_macos.py --check
       - name: Unit and adapter tests
         run: .venv/bin/python -m pytest -q tests/unit/test_platform_support tests/integration/test_package_macos
+      - name: Licence/package/update audit
+        run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
       - name: Install Playwright browser
         run: pnpm --dir web exec playwright install chromium
       - name: Native app and browser smoke
@@ -195,6 +255,15 @@ jobs:
           root=$(mktemp -d)
           unzip -q "$zip" -d "$root"
           app="$root/PALM.app"
+          test -f "$app/Contents/Resources/app/install.json"
+          test -f "$app/Contents/Resources/app/licenses/third_party/manifest.json"
+          python - "$app/Contents/Resources/app/install.json" <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1]))
+          assert payload["channel"] == "macos-arm64"
+          assert payload["assets"]["macos-arm64"]["name"].endswith(".zip")
+          print("install metadata ok")
+          PY
           "$app/Contents/MacOS/palm" --help
           data=$(mktemp -d)
           "$app/Contents/MacOS/palm" --no-browser --no-terminal --port 0 --data-dir "$data" >/tmp/palm-macos.out 2>&1 &

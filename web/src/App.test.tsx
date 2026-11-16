@@ -497,7 +497,8 @@ describe("App integration", () => {
     expect(
       screen.queryByRole("button", { name: "Open Demo take" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("setup-checks")).toHaveTextContent("ffmpeg");
+    expect(screen.getByTestId("setup-checks")).not.toHaveTextContent("ffmpeg");
+    expect(screen.getByTestId("setup-media-tools")).toHaveTextContent("ffmpeg");
     expect(setupFake.calls).toContain("status");
 
     fireEvent.click(screen.getByTestId("setup-skip"));
@@ -527,12 +528,8 @@ describe("App integration", () => {
     expect(
       screen.getByRole("button", { name: "Separate stems" }),
     ).toBeDisabled();
-    expect(screen.getByTestId("analysis-setup")).toHaveTextContent(
-      /system checks/,
-    );
-    expect(screen.getByTestId("library-setup")).toHaveTextContent(
-      /system checks/,
-    );
+    expect(screen.getByTestId("analysis-setup")).toHaveTextContent(/FFmpeg/);
+    expect(screen.getByTestId("library-setup")).toHaveTextContent(/FFmpeg/);
     expect(screen.getByTestId("separation-setup")).toHaveTextContent(
       /Open setup/,
     );
@@ -541,6 +538,33 @@ describe("App integration", () => {
       screen.getByRole("button", { name: "Open setup from analysis" }),
     );
     expect(await screen.findByTestId("setup-wizard")).toBeInTheDocument();
+  });
+
+  it("gates import and analysis when only media tools are missing", async () => {
+    const missingMedia = readySetupStatus({
+      mediaTools: {
+        ffmpeg: { installed: false, path: "/tools/ffmpeg/ffmpeg" },
+        ffprobe: { installed: false, path: "/tools/ffmpeg/ffprobe" },
+      },
+      mediaToolsReady: false,
+      readiness: {
+        ...readySetupStatus().readiness,
+        media_tools_ready: false,
+      },
+    });
+    setup({
+      project: PROJECT_WITHOUT_STEMS,
+      setupClient: createFakeSetupClient(missingMedia),
+    });
+    await openProject();
+
+    expect(screen.getByLabelText("Run analysis")).toBeDisabled();
+    expect(screen.getByLabelText("Import recording")).toBeDisabled();
+    expect(screen.getByTestId("analysis-setup")).toHaveTextContent(/FFmpeg/);
+    expect(screen.getByTestId("library-setup")).toHaveTextContent(/FFmpeg/);
+    expect(
+      screen.getByRole("button", { name: "Separate stems" }),
+    ).toBeDisabled();
   });
 
   it("never selects a separation model implicitly for a fresh project", async () => {
@@ -1311,14 +1335,14 @@ describe("App integration", () => {
 
     const before = rig.player.calls.filter((call) => call === "toggle").length;
     fireEvent.keyDown(document.body, { key: " " });
-    expect(
-      rig.player.calls.filter((call) => call === "toggle").length,
-    ).toBe(before + 1);
+    expect(rig.player.calls.filter((call) => call === "toggle").length).toBe(
+      before + 1,
+    );
 
     fireEvent.keyDown(screen.getByLabelText("Practice speed"), { key: " " });
-    expect(
-      rig.player.calls.filter((call) => call === "toggle").length,
-    ).toBe(before + 1);
+    expect(rig.player.calls.filter((call) => call === "toggle").length).toBe(
+      before + 1,
+    );
   });
 
   it("adds a bar-snapped section and loops it through the player", async () => {

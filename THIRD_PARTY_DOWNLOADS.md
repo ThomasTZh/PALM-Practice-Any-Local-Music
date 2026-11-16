@@ -148,3 +148,58 @@ user-installed prerequisite, not a dependency downloaded by PALM.
 The lockfiles contain the wheel URLs, hashes and sizes for each target
 platform. psutil is a required app dependency, not a separately downloaded
 tool.
+
+## Download-on-first-run: FFmpeg, FFprobe and 7-Zip
+
+These components are downloaded only after explicit consent and are not
+committed to git or bundled in a release. The manifest records them as
+`downloaded`.
+
+| Component | Version/build | Platform | Upstream URL | Size | SHA-256 | Licence |
+| --- | --- | --- | --- | ---: | --- | --- |
+| FFmpeg | 9.0.2 / Martin Riedl 1789931100_9.0.2 | Linux x86_64 | https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2/ffmpeg.zip | 33,326,445 B | `fa8ecf4abbd290d98f7d188b8649cc6b391ae209a98452be955a15aab1909d7f` | GPL-3.0-or-later; nonfree parts, not redistributable |
+| FFprobe | 9.0.2 / Martin Riedl 1789931100_9.0.2 | Linux x86_64 | https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2/ffprobe.zip | 33,223,234 B | `3f428c49070be3d24ec338602b76d412e401ffcb8a5641ef0e729181a232fc32` | GPL-3.0-or-later; nonfree parts, not redistributable |
+| FFmpeg | 9.0.2 / Martin Riedl 1789931890_9.0.2 | macOS arm64 | https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip | 28,395,699 B | `c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924` | GPL-3.0-or-later |
+| FFprobe | 9.0.2 / Martin Riedl 1789931890_9.0.2 | macOS arm64 | https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip | 28,317,701 B | `fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6` | GPL-3.0-or-later |
+| FFmpeg | 8.1.2 / gyan.dev essentials 2026-06-27 | Windows x64 | https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip | 109,728,040 B | `db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec` | GPL-3.0-or-later |
+| FFprobe | 8.1.2 / gyan.dev essentials 2026-06-27 | Windows x64 | https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip | 109,728,040 B | `db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec` | GPL-3.0-or-later |
+| 7-Zip helper | 26.06 | Windows | https://www.7-zip.org/download.html | pinned by downloader | pinned by downloader | LGPL-2.1-or-later with unRAR restriction |
+
+Exact Linux and Windows `ffmpeg -L`/`ffprobe -L` output, and the macOS build
+configuration extracted from the signed Mach-O binary, are in
+`licenses/third_party/notices/ffmpeg-media-licenses.txt`. The Linux Martin
+Riedl build reports nonfree parts; PALM does not redistribute any managed
+media binary.
+
+## Documentation match
+
+The authoritative list is `licenses/third_party/manifest.json`. This file and
+`THIRD_PARTY.md` are summaries of it; `licenses/third_party/licenses/` contains
+the full texts and `licenses/third_party/notices/` contains component notices.
+
+## Source pages for downloaded components
+
+These are the source/release pages used by the manifest; they are not
+additional downloads.
+
+| Component | Source page |
+| --- | --- |
+| ffmpeg-linux-x86_64, ffprobe-linux-x86_64 | https://ffmpeg.martin-riedl.de/ |
+| ffmpeg-macos-arm64, ffprobe-macos-arm64 | https://ffmpeg.martin-riedl.de/ |
+| ffmpeg-windows-x86_64, ffprobe-windows-x86_64 | https://www.gyan.dev/ffmpeg/builds/ |
+| sonic-annotator | https://github.com/sonic-visualiser/sonic-annotator/releases/tag/sonic-annotator-1.7 |
+| sonic-visualiser-piper | https://github.com/sonic-visualiser/sonic-visualiser/releases/tag/sv_v5.2.1 |
+| vamp-plugin-pack | https://github.com/vamp-plugins/vamp-plugin-pack/releases/tag/v2.0 |
+| demucs-code, demucs-weights | https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5 |
+| msst-code, scnet-weights | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15 |
+| bs-roformer-weights | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1 |
+
+7-Zip 26.06 assets used by the Windows Vamp helper:
+
+- `7z2606-extra.7z` — 1,758,340 B, SHA-256
+  `396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104`
+- `7zr.exe` bootstrap — 600,064 B, SHA-256
+  `e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc`
+
+Both are downloaded only inside the licence-gated setup job, verified before
+use, and persisted below `<data>/tools/7zip`; neither is committed or bundled.

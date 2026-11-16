@@ -4,6 +4,7 @@ from basseparate.setup.checks import system_checks
 from basseparate.setup.download import download_file, download_verified
 from basseparate.setup.environments import ENV_VARIANTS, create_environment, environments_status
 from basseparate.setup.errors import DownloadError, SetupError, SetupInstallError
+from basseparate.setup.media_tools import install_media_tools, media_tools_status
 from basseparate.setup.models import install_model, install_models
 from basseparate.setup.routes import install
 from basseparate.setup.service import SetupService
@@ -22,9 +23,11 @@ __all__ = [
     "download_verified",
     "environments_status",
     "install_model",
+    "install_media_tools",
     "install_models",
     "install",
     "install_tools",
+    "media_tools_status",
     "system_checks",
     "tools_status",
 ]

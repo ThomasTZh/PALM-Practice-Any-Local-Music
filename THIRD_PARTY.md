@@ -4,9 +4,13 @@ PALM's original application source is MIT (`licenses/LICENSE`). The following
 components, downloaded tools and data have their own terms. Nothing in this
 repository grants a licence to them.
 
-This is the human-readable summary. Exact pins, URLs, sizes and SHA-256 values
-are in [THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md); the generated
-dependency inventory is [licenses/NOTICES.md](licenses/NOTICES.md).
+The authoritative machine-readable list is
+[licenses/third_party/manifest.json](licenses/third_party/manifest.json). It
+records every component's version, copyright owner, licence id, source URL and
+bundled/downloaded/excluded status, and points at the full texts under
+[licenses/third_party/](licenses/third_party/). Exact pins, URLs, sizes and
+SHA-256 values are in [THIRD_PARTY_DOWNLOADS.md](THIRD_PARTY_DOWNLOADS.md);
+the generated dependency inventory is [licenses/NOTICES.md](licenses/NOTICES.md).
 
 ## Bundled or required at runtime
 
@@ -20,13 +24,29 @@ dependency inventory is [licenses/NOTICES.md](licenses/NOTICES.md).
 | NumPy | 2.4.6 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | PCM and analysis math |
 | platformdirs | 4.12.1 | MIT | Platform-native data roots |
 | React / React DOM | 19.3.0 | MIT | Browser UI |
-| Vite / TypeScript | pinned in `web/package.json` | MIT / Apache-2.0 | UI build |
+| Vite / TypeScript | pinned in `web/package.json` | MIT / Apache-2.0 | UI build (excluded from releases) |
 
 The packaged Linux tar, Windows ZIP and macOS app contain the application, the
 built UI, analysis workers/registry, environment definitions, launcher and
 licences. They do not contain model weights, Sonic Annotator, the Vamp Plugin
 Pack, FFmpeg or inference environments. Setup downloads tools and models only
 after the licence gate.
+
+## Download-on-first-run tools
+
+| Component | Version | Licence | Status |
+| --- | --- | --- | --- |
+| FFmpeg / FFprobe, Linux x86_64 | Martin Riedl 9.0.2 (build 1789931100_9.0.2) | **GPL-3.0-or-later**; binary also reports `--enable-nonfree` and “not legally redistributable” | Downloaded after explicit consent; never bundled |
+| FFmpeg / FFprobe, macOS arm64 | Martin Riedl 9.0.2 (build 1789931890_9.0.2) | **GPL-3.0-or-later**; `--enable-gpl --enable-version3` | Downloaded after explicit consent; never bundled |
+| FFmpeg / FFprobe, Windows x64 | gyan.dev 8.1.2 essentials (2026-06-27) | **GPL-3.0-or-later** | Downloaded after explicit consent; never bundled |
+| 7-Zip helper | 26.06 | LGPL-2.1-or-later with the 7-Zip unRAR restriction | Downloaded after explicit consent; never bundled |
+
+FFmpeg/FFprobe sources:
+[Martin Riedl builds](https://ffmpeg.martin-riedl.de/) and
+[gyan.dev builds](https://www.gyan.dev/ffmpeg/builds/). Exact per-platform
+`ffmpeg -L`/`ffprobe -L` evidence and pinned hashes are in
+[licenses/third_party/notices/ffmpeg-media-licenses.txt](licenses/third_party/notices/ffmpeg-media-licenses.txt).
+7-Zip source: <https://www.7-zip.org/download.html>.
 
 ## Analysis tools and plugins
 
@@ -42,7 +62,8 @@ after the licence gate.
 These are separate executables/libraries, downloaded from pinned upstream
 releases and extracted into the writable data root. They are not committed to
 this repository and are not system-installed. Their source is available from
-the upstream projects listed in the download record.
+the upstream projects listed in the download record. The manifest marks tools
+as `downloaded`; the release-audit test rejects a `bundled` tool or model.
 
 ## Model weights
 

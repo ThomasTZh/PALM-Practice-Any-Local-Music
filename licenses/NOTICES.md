@@ -1,5 +1,29 @@
 # PALM — Dependency Notices
 
+## Authoritative licence manifest
+
+The authoritative list of included and downloaded components is
+[`licenses/third_party/manifest.json`](third_party/manifest.json). It records
+version, copyright owner, licence id, source URL and bundled/downloaded/excluded
+status, and links the full texts and notices under `licenses/third_party/`.
+The dependency inventory below is generated from the installed environments and
+does not override the manifest.
+
+Downloaded-only components include the managed FFmpeg/FFprobe builds pinned by
+setup: Martin Riedl 9.0.2 for Linux x86_64 and macOS arm64, and gyan.dev 8.1.2
+essentials for Windows x64, all GPL-3.0-or-later. The exact per-platform
+`ffmpeg -L`/`ffprobe -L` evidence is in
+`third_party/notices/ffmpeg-media-licenses.txt`. PALM does not redistribute
+FFmpeg or FFprobe: they are downloaded only by the user-consented setup flow
+and remain user-downloaded runtime files. The Linux Martin Riedl build reports
+`--enable-nonfree` and states that it is not legally redistributable; it is
+used only as a user-downloaded runtime and is never included in a PALM release.
+
+The same downloaded-only category includes the 7-Zip helper
+(LGPL-2.1-or-later with unRAR restriction), Sonic Annotator/Vamp tools, and the
+Demucs/SCNet/BS-RoFormer weights. None are bundled in the application package.
+
+
 Generated: 2026-10-24T10:41:49.752569+00:00
 
 The application environment installs no machine-learning packages.

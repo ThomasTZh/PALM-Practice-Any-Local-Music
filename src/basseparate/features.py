@@ -51,6 +51,7 @@ from basseparate.piper import (
     feature_time,
     feature_values,
 )
+from basseparate.platform_support import ffmpeg_binary
 
 ANALYSIS_VERSION = 1
 CHORD_OUTPUT = "simplechord"
@@ -408,11 +409,11 @@ def source_sample_rate(path: Path, requested: int | None) -> int:
 
 
 def _decode_ffmpeg(path: Path, *, sample_rate: int, timeout_seconds: int) -> NDArray[np.float32]:
-    executable = shutil.which("ffmpeg")
-    if executable is None:
+    executable = ffmpeg_binary()
+    if executable == "ffmpeg":
         raise AnalysisError(
-            "ffmpeg is required to decode or resample this recording but was not found "
-            "on PATH; the preserved local toolchain normally provides it."
+            "FFmpeg is required to analyse this recording but no managed or system "
+            "binary was found. Open Setup and install the media tools."
         )
     command = [
         executable,

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -54,7 +55,12 @@ REQUIRED = (
     "analysis/envs/msst-windows/uv.lock",
     "analysis/envs/cpu-windows/pyproject.toml",
     "licenses/LICENSE",
+    "licenses/third_party/manifest.json",
     "runtime-requirements.txt",
+    "install.json",
+    "PALM.exe",
+    "updaters/update_helper.py",
+    "updaters/uninstall_helper.py",
 )
 
 
@@ -258,6 +264,12 @@ def stage(stage: Path, manifest: dict[str, Any], requirements: Path, *, online: 
     copy_file(ROOT / "scripts" / "install_tools.py", stage / "scripts" / "install_tools.py")
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, stage / "licenses" / name)
+    copy_tree(ROOT / "licenses" / "third_party", stage / "licenses" / "third_party")
+    for name in ("update_helper.py", "uninstall_helper.py"):
+        copy_file(ROOT / "packaging" / "updaters" / name, stage / "updaters" / name)
+    copy_file(ROOT / "packaging" / "windows" / "PALM.exe", stage / "PALM.exe")
+    copy_file(ROOT / "pyproject.toml", stage / "pyproject.toml")
+    write_install_json(stage / "install.json", "windows-x86_64", version())
     copy_file(ROOT / "README.md", stage / "README.md")
     copy_file(ROOT / "palm.cmd", stage / "palm.cmd")
     copy_file(requirements, stage / "runtime-requirements.txt")
@@ -280,6 +292,33 @@ def clean_bytecode(root: Path) -> None:
             path.unlink(missing_ok=True)
 
 
+def write_install_json(destination: Path, channel: str, version_value: str) -> None:
+    mapping = json.loads((ROOT / "packaging" / "install.json").read_text(encoding="utf-8"))
+    spec = mapping["channels"][channel]
+    asset = str(spec["asset"]).format(version=version_value)
+    destination.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "channel": channel,
+                "version": version_value,
+                "assets": {
+                    channel: {
+                        "name": asset,
+                        "kind": spec["kind"],
+                        "version": version_value,
+                        "url": f"https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/download/v{version_value}/{asset}",
+                        "sha256": "",
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def build_zip(stage: Path, output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
@@ -289,6 +328,11 @@ def build_zip(stage: Path, output: Path) -> Path:
                 info = zipfile.ZipInfo(f"{stage.name}/{relative}")
                 info.date_time = (1980, 1, 1, 0, 0, 0)
                 info.compress_type = zipfile.ZIP_DEFLATED
+                mode = path.stat().st_mode & 0o777
+                if not mode & 0o111:
+                    mode = 0o644
+                info.create_system = 3
+                info.external_attr = (0o100000 | mode) << 16
                 archive.writestr(info, path.read_bytes())
     print(f"package-windows: wrote {output} ({output.stat().st_size} bytes)")
     return output
@@ -308,7 +352,13 @@ def check_zip(path: Path) -> int:
     bad = [name for name in names if forbidden(name)]
     if bad:
         raise PackageError(f"ZIP contains excluded paths: {bad[:5]}")
-    if any("ffmpeg" in name.lower() or "sonic-annotator" in name.lower() for name in names):
+    payload_names = [
+        name
+        for name in names
+        if "licenses/" not in name.lower()
+        and ("ffmpeg" in name.lower() or "sonic-annotator" in name.lower())
+    ]
+    if payload_names:
         raise PackageError("ZIP contains FFmpeg/Sonic Annotator payload")
     print(f"package-windows-check: {len(names)} entries, required content present")
     return 0

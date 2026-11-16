@@ -252,11 +252,24 @@ def plugin_glob(stem: str = "*") -> str:
     return f"{stem}{plugin_suffix()}"
 
 
+def managed_media_binary(name: str) -> Path | None:
+    """The setup-managed FFmpeg/FFprobe under the runtime data root."""
+    from basseparate.config import runtime_paths
+
+    candidate = (
+        runtime_paths().data_root / "tools" / "ffmpeg" / f"{name}{'.exe' if WINDOWS else ''}"
+    )
+    return candidate if candidate.is_file() else None
+
+
 def ffmpeg_binary(*, which: Any = None) -> str:
     for key in ("PALM_FFMPEG", "BASSEPARATE_FFMPEG"):
         override = os.environ.get(key)
         if override:
             return override
+    managed = managed_media_binary("ffmpeg")
+    if managed is not None:
+        return str(managed)
     find = which or shutil.which
     return find("ffmpeg") or "ffmpeg"
 
@@ -266,6 +279,9 @@ def ffprobe_binary(*, which: Any = None) -> str:
         override = os.environ.get(key)
         if override:
             return override
+    managed = managed_media_binary("ffprobe")
+    if managed is not None:
+        return str(managed)
     find = which or shutil.which
     return find("ffprobe") or "ffprobe"
 
@@ -305,6 +321,7 @@ __all__ = [
     "file_lock",
     "hidden_process_kwargs",
     "kill_process",
+    "managed_media_binary",
     "native_data_root",
     "plugin_glob",
     "plugin_suffix",

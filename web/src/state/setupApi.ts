@@ -5,6 +5,7 @@ import type {
   SetupClient,
   SetupEnvironment,
   SetupJobState,
+  SetupMediaTool,
   SetupJobStatus,
   SetupStatus,
   SetupTool,
@@ -120,6 +121,17 @@ function parseEnvironment(value: RawRecord): SetupEnvironment {
   };
 }
 
+function parseMediaTool(value: RawRecord): SetupMediaTool {
+  return {
+    installed: bool(value.installed),
+    path: firstText(value, ["path"]) ?? "",
+    version: firstText(value, ["version"]) ?? undefined,
+    build: firstText(value, ["build"]) ?? undefined,
+    license: firstText(value, ["license"]) ?? undefined,
+    source_url: firstText(value, ["source_url"]) ?? undefined,
+  };
+}
+
 function parseModel(value: RawRecord): SeparationModel {
   const id = firstText(value, ["id"]);
   const name = firstText(value, ["name"]);
@@ -186,6 +198,17 @@ export function parseSetupStatus(value: unknown): SetupStatus {
       parseEnvironment(entry),
     ]),
   );
+  const mediaTools = Object.fromEntries(
+    Object.entries(recordMap(raw.media_tools)).map(([key, entry]) => [
+      key,
+      parseMediaTool(entry),
+    ]),
+  );
+  const environmentVariants = Array.isArray(raw.environment_variants)
+    ? raw.environment_variants.filter(
+        (item): item is "cpu" | "cuda" => item === "cpu" || item === "cuda",
+      )
+    : (Object.keys(environments) as Array<"cpu" | "cuda">);
   const models = Array.isArray(raw.models)
     ? raw.models
         .map((entry) => recordOrNull(entry))
@@ -199,6 +222,9 @@ export function parseSetupStatus(value: unknown): SetupStatus {
   const toolsReady =
     firstBoolean(readinessRaw, "tools_ready") ??
     Object.values(tools).every((tool) => tool.installed);
+  const mediaToolsReady =
+    firstBoolean(readinessRaw, "media_tools_ready") ??
+    Object.values(mediaTools).every((tool) => tool.installed);
   const environmentReady =
     firstBoolean(readinessRaw, "environment_ready") ??
     Object.values(environments).some((environment) => environment.installed);
@@ -209,7 +235,11 @@ export function parseSetupStatus(value: unknown): SetupStatus {
     mode: firstText(raw, ["mode"]) ?? "source",
     ready:
       firstBoolean(raw, "ready") ??
-      (checksOk && environmentReady && modelReady && !bool(raw.skipped)),
+      (checksOk &&
+        mediaToolsReady &&
+        environmentReady &&
+        modelReady &&
+        !bool(raw.skipped)),
     skipped: bool(raw.skipped) || bool(raw.skip),
     requiresModelChoice:
       firstBoolean(raw, "requires_model_choice") ?? !modelReady,
@@ -220,14 +250,22 @@ export function parseSetupStatus(value: unknown): SetupStatus {
     ),
     checks,
     tools,
+    mediaTools,
+    mediaToolsReady,
+    environmentVariants,
     environments,
     models,
     readiness: {
       ready:
         firstBoolean(readinessRaw, "ready") ??
-        (checksOk && environmentReady && modelReady && !bool(raw.skipped)),
+        (checksOk &&
+          mediaToolsReady &&
+          environmentReady &&
+          modelReady &&
+          !bool(raw.skipped)),
       checks_ok: checksOk,
       tools_ready: toolsReady,
+      media_tools_ready: mediaToolsReady,
       environment_ready: environmentReady,
       model_ready: modelReady,
       requires_model_choice:
@@ -343,6 +381,13 @@ export function createSetupClient(options: SetupApiOptions = {}): SetupClient {
     async startTools(consent) {
       return parseJob(
         await post("/api/setup/tools", { accept_licenses: consent }),
+      );
+    },
+    async startMediaTools(consent) {
+      return parseJob(
+        await post("/api/setup/media-tools", {
+          accept_licenses: consent,
+        }),
       );
     },
     async startEnvironment(variant, consent = true) {

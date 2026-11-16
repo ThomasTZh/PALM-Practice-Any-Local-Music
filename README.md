@@ -17,13 +17,13 @@ licence edge cases. Keep your own backup of any project you care about.
 1. Download the asset for your platform and `SHA256SUMS` from the release page.
 2. Extract the tar or ZIP.
 3. Start the launcher:
-   - Linux: `bin/palm` (or `./bin/palm` in a terminal)
-   - Windows beta: `palm.cmd`
+   - Linux: `bin/palm` or the **PALM** desktop entry
+   - Windows beta: `PALM.exe`
    - macOS experimental: right-click `PALM.app` and choose **Open**
-4. A terminal opens with the server log, and the setup page opens in your
-   browser.
-5. When you are finished, press Ctrl+C in that terminal. Closing only the
-   browser leaves PALM running.
+4. A PALM control window opens, the server starts, and the setup page opens in
+   your browser.
+5. Use the control window to open the browser, view logs, check for updates,
+   uninstall, or quit. Closing only the browser leaves PALM running.
 
 Press Space anywhere outside a text field to start or pause playback.
 
@@ -55,7 +55,7 @@ completed: [Windows beta](docs/acceptance/windows-beta.md) and
 Each platform has a separate asset and checksum file:
 
 - Linux: `PALM-<version>-linux-x86_64.tar.gz`, launcher `bin/palm`
-- Windows beta: `PALM-<version>-windows-x86_64.zip`, launcher `palm.cmd`
+- Windows beta: `PALM-<version>-windows-x86_64.zip`, launcher `PALM.exe`
 - macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg`, unsigned
   `PALM.app` for Apple Silicon
 
@@ -64,20 +64,26 @@ definitions, launchers, setup code, licences and a pinned Python/uv runtime.
 It does **not** bundle model weights, Sonic Visualiser/Piper, Sonic Annotator,
 Vamp plugins, PyTorch environments or FFmpeg.
 
-The first launch opens a setup wizard. Linux can choose CPU or CUDA and the
-existing Piper/Vamp tools. Windows beta uses CPU and Sonic Annotator; macOS
-experimental uses CPU and Sonic Annotator. All three models are equal choices
-with no default. Setup needs network access for the pieces you choose, and
-`ffmpeg`/`ffprobe` must already be installed. Setup can be skipped; playback,
-importing, chords, sections and the spectrogram then work without the optional
-pieces. See [docs/portable.md](docs/portable.md).
+The first launch opens a licence screen and then a setup wizard. It lists every
+downloadable component with its version, licence, source and size, plus the
+bundled Python/uv and runtime packages. Each group needs explicit consent; full
+licence texts are included in the app. The recommended action downloads managed
+FFmpeg/FFprobe, installs the analysis tools, creates the CPU environment and
+selects Demucs visibly. Windows may show one UAC prompt only if the Vamp
+installer cannot be extracted without elevation. Linux can choose CPU or CUDA;
+Windows/macOS use CPU. All model cards remain equal and editable. Setup can be
+skipped; playback, importing, sections and the spectrogram then work without
+the optional pieces. FFmpeg is **not** a user prerequisite. See
+[docs/portable.md](docs/portable.md).
 
 ## Launcher lifecycle and cleanup
 
-On Linux, `bin/palm` streams server logs and Ctrl+C stops the server cleanly.
-On Windows, `palm.cmd` opens the console. On macOS, the unsigned app opens a
-Terminal window. Closing only the browser does not stop the server. If no
-terminal is available, PALM prints the log path and runs headless.
+The normal launcher opens a PALM control window. It starts the server, opens the
+browser once, shows status and logs, and stops the server on Quit. Windows uses
+the native `PALM.exe` with no console; macOS uses `PALM.app`; Linux has a
+Terminal=false desktop entry. `palm.cmd` and `bin/palm` remain diagnostic
+terminal launchers. Closing only the browser does not stop PALM. If no display
+is available, PALM prints the log path and runs headless.
 
 Use `palm --status` to print the running URL, data root and pids without
 starting anything, and `palm --stop` to stop a server left by a closed terminal

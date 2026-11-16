@@ -633,10 +633,10 @@ def test_parser_defaults_and_flags() -> None:
     assert build_parser().parse_args(["--status"]).status is True
 
 
-def test_desktop_entry_is_terminal_first() -> None:
+def test_desktop_entry_uses_control_window_without_terminal() -> None:
     entry = (Path(__file__).resolve().parents[3] / "packaging/launcher/palm.desktop").read_text()
-    assert "Terminal=true" in entry
-    assert "Exec=palm" in entry
+    assert "Terminal=false" in entry
+    assert "Exec=palm --window" in entry
     readme = (Path(__file__).resolve().parents[3] / "packaging/launcher/README.md").read_text()
     assert "ln -sf" in readme
     assert ".local/share/applications" in readme
