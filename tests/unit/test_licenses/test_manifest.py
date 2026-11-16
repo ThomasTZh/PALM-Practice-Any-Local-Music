@@ -33,8 +33,12 @@ def test_manifest_matches_platform_docs() -> None:
     downloads = (ROOT / "THIRD_PARTY_DOWNLOADS.md").read_text()
     assert "licenses/third_party/manifest.json" in portable
     for cid in (
-        "ffmpeg-static",
-        "ffprobe-static",
+        "ffmpeg-linux-x86_64",
+        "ffprobe-linux-x86_64",
+        "ffmpeg-macos-arm64",
+        "ffprobe-macos-arm64",
+        "ffmpeg-windows-x86_64",
+        "ffprobe-windows-x86_64",
         "7zip-helper",
         "sonic-annotator",
         "vamp-plugin-pack",
@@ -42,16 +46,19 @@ def test_manifest_matches_platform_docs() -> None:
         "python",
         "uv",
     ):
-        aliases = {
-            "7zip-helper": "7-Zip",
-            "ffmpeg-static": "FFmpeg",
-            "ffprobe-static": "FFprobe",
-        }
+        if cid.startswith("ffmpeg"):
+            alias = "FFmpeg"
+        elif cid.startswith("ffprobe"):
+            alias = "FFprobe"
+        elif cid == "7zip-helper":
+            alias = "7-Zip"
+        else:
+            alias = cid
         folded = portable.casefold()
         assert (
             cid in portable
             or cid.replace("-", " ").casefold() in folded
-            or aliases.get(cid, cid).casefold() in folded
+            or alias.casefold() in folded
         ), cid
     for component in data["components"]:
         if component["distribution"] == "downloaded":
@@ -126,3 +133,25 @@ def test_absolute_path_fails(tmp_path: Path) -> None:
         assert "absolute" in str(error)
     else:
         raise AssertionError("absolute path was accepted")
+
+
+def test_media_tools_pins_and_manifest_cannot_diverge() -> None:
+    from basseparate.setup.media_tools import PLATFORM_MEDIA_ASSETS
+
+    data = audit.load_manifest(ROOT)
+    components = {component["id"]: component for component in data["components"]}
+    channels = {
+        "linux": "linux-x86_64",
+        "macos": "macos-arm64",
+        "windows": "windows-x86_64",
+    }
+    for (platform, tool), pin in PLATFORM_MEDIA_ASSETS.items():
+        component = components[f"{tool}-{channels[platform]}"]
+        assert component["version"] == pin.version
+        assert component["build"] == pin.build
+        assert component["source_url"] == pin.source_url
+        assert component["asset_url"] == pin.url
+        assert component["sha256"] == pin.sha256
+        assert component["size"] == pin.size
+        assert component["license"] == "GPL-3.0-or-later"
+        assert component["distribution"] == "downloaded"

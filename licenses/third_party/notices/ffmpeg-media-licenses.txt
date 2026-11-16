@@ -1,0 +1,96 @@
+FFmpeg / FFprobe managed media licence record
+===========================================
+
+These binaries are downloaded by setup only after explicit media-tool consent.
+They are not committed or bundled in any release asset.
+
+Linux x86_64 pins (Martin Riedl build 1789931100_9.0.2)
+  ffmpeg.zip  https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2/ffmpeg.zip
+  size 33,326,445 B; SHA-256 fa8ecf4abbd290d98f7d188b8649cc6b391ae209a98452be955a15aab1909d7f
+  ffprobe.zip https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2/ffprobe.zip
+  size 33,223,234 B; SHA-256 3f428c49070be3d24ec338602b76d412e401ffcb8a5641ef0e729181a232fc32
+  License: GPL-3.0-or-later. The build also has --enable-nonfree and prints
+  "This version of ffmpeg has nonfree parts compiled in. Therefore it is not
+  legally redistributable." PALM does not redistribute this binary.
+
+macOS arm64 pins (Martin Riedl build 1789931890_9.0.2)
+  ffmpeg.zip  https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip
+  size 28,395,699 B; SHA-256 c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924
+  ffprobe.zip https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip
+  size 28,317,701 B; SHA-256 fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6
+  License: GPL-3.0-or-later. Build configuration extracted from the Mach-O
+  binary (not executable on this Linux verification host):
+  --prefix=/Volumes/ffmpeg_arm64/out --pkg-config-flags=--static --extra-version='https://www.martin-riedl.de' --enable-gray --enable-libxml2 --enable-version3 --enable-gpl --enable-openssl --enable-libfreetype --enable-fontconfig --enable-libharfbuzz --enable-libbluray --enable-libsnappy --enable-libsrt --enable-libvmaf --enable-libass --enable-libklvanc --enable-libzimg --enable-libzvbi --enable-libaom --enable-libdav1d --enable-libopenh264 --enable-libopenjpeg --enable-librav1e --enable-libsvtav1 --enable-libvpx --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libtheora
+  ffprobe build configuration (same source/build):
+  --prefix=/Volumes/ffmpeg_arm64/out --pkg-config-flags=--static --extra-version='https://www.martin-riedl.de' --enable-gray --enable-libxml2 --enable-version3 --enable-gpl --enable-openssl --enable-libfreetype --enable-fontconfig --enable-libharfbuzz --enable-libbluray --enable-libsnappy --enable-libsrt --enable-libvmaf --enable-libass --enable-libklvanc --enable-libzimg --enable-libzvbi --enable-libaom --enable-libdav1d --enable-libopenh264 --enable-libopenjpeg --enable-librav1e --enable-libsvtav1 --enable-libvpx --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libtheora
+
+
+Windows x86_64 pins (gyan.dev ffmpeg-8.1.2-essentials_build 2026-06-27)
+  ffmpeg-8.1.2-essentials_build.zip
+  https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip
+  size 109,728,040 B; SHA-256 db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec
+  License: GPL-3.0-or-later.
+
+Exact Linux `ffmpeg -L` output:
+
+ffmpeg version 9.0.2-https://www.martin-riedl.de Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 12 (Debian 12.2.0-14+deb12u1)
+  configuration: --prefix=/home/ffmpegBuild/out --pkg-config-flags=--static --extra-version='https://www.martin-riedl.de' --enable-gray --enable-libxml2 --enable-nonfree --enable-version3 --enable-gpl --enable-openssl --enable-libfreetype --enable-fontconfig --enable-libharfbuzz --enable-libbluray --enable-libsnappy --enable-libsrt --enable-libvmaf --enable-libass --enable-libklvanc --enable-libzimg --enable-libzvbi --enable-libaom --enable-libdav1d --enable-libopenh264 --enable-libopenjpeg --enable-librav1e --enable-libsvtav1 --enable-libvpx --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libtheora --enable-decklink
+  libavutil      61.  1.102 / 61.  1.102
+  libavcodec     63.  1.102 / 63.  1.102
+  libavformat    63.  1.102 / 63.  1.102
+  libavdevice    63.  1.102 / 63.  1.102
+  libavfilter    12.  1.102 / 12.  1.102
+  libswscale     10.  1.102 / 10.  1.102
+  libswresample   7.  1.102 /  7.  1.102
+This version of ffmpeg has nonfree parts compiled in.
+Therefore it is not legally redistributable.
+
+
+Exact Linux `ffprobe -L` output:
+
+ffprobe version 9.0.2-https://www.martin-riedl.de Copyright (c) 2007-2026 the FFmpeg developers
+  built with gcc 12 (Debian 12.2.0-14+deb12u1)
+  configuration: --prefix=/home/ffmpegBuild/out --pkg-config-flags=--static --extra-version='https://www.martin-riedl.de' --enable-gray --enable-libxml2 --enable-nonfree --enable-version3 --enable-gpl --enable-openssl --enable-libfreetype --enable-fontconfig --enable-libharfbuzz --enable-libbluray --enable-libsnappy --enable-libsrt --enable-libvmaf --enable-libass --enable-libklvanc --enable-libzimg --enable-libzvbi --enable-libaom --enable-libdav1d --enable-libopenh264 --enable-libopenjpeg --enable-librav1e --enable-libsvtav1 --enable-libvpx --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libtheora --enable-decklink
+  libavutil      61.  1.102 / 61.  1.102
+  libavcodec     63.  1.102 / 63.  1.102
+  libavformat    63.  1.102 / 63.  1.102
+  libavdevice    63.  1.102 / 63.  1.102
+  libavfilter    12.  1.102 / 12.  1.102
+  libswscale     10.  1.102 / 10.  1.102
+  libswresample   7.  1.102 /  7.  1.102
+This version of ffprobe has nonfree parts compiled in.
+Therefore it is not legally redistributable.
+
+
+Exact Windows `ffmpeg -L` output (run under Wine):
+
+ffmpeg is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or
+(at your option) any later version.
+
+ffmpeg is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with ffmpeg.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Exact Windows `ffprobe -L` output (run under Wine):
+
+ffprobe is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or
+(at your option) any later version.
+
+ffprobe is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with ffprobe.  If not, see <http://www.gnu.org/licenses/>.
+

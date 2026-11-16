@@ -13,8 +13,12 @@ REQUIRED_IDS = {
     "python",
     "uv",
     "psutil",
-    "ffmpeg-static",
-    "ffprobe-static",
+    "ffmpeg-linux-x86_64",
+    "ffprobe-linux-x86_64",
+    "ffmpeg-macos-arm64",
+    "ffprobe-macos-arm64",
+    "ffmpeg-windows-x86_64",
+    "ffprobe-windows-x86_64",
     "7zip-helper",
     "sonic-annotator",
     "vamp-plugin-pack",
@@ -93,11 +97,11 @@ def validate(root: Path = Path(), data: dict[str, Any] | None = None) -> None:
             errors.append(f"{cid}: tool/model must not be bundled")
         if component.get("component_type") in {"tool", "model"} and distribution == "bundled":
             errors.append(f"{cid}: downloaded tool/model is bundled")
-        if cid in {"ffmpeg-static", "ffprobe-static"}:
+        if cid.startswith(("ffmpeg-", "ffprobe-")):
             if component.get("license") != "GPL-3.0-or-later":
                 errors.append(f"{cid}: pinned static build must be GPL-3.0-or-later")
             notice = (root / str(component.get("notice_file", ""))).read_text(errors="ignore")
-            if "ffmpeg -L" not in notice or "--enable-gpl" not in notice:
+            if "-L" not in notice or "--enable-gpl" not in notice:
                 errors.append(f"{cid}: exact ffmpeg -L/build licence evidence is missing")
         if cid == "7zip-helper" and component.get("license") != "LGPL-2.1-or-later":
             errors.append("7zip-helper: must be LGPL-2.1-or-later")
