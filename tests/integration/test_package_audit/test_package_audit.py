@@ -33,8 +33,16 @@ def test_no_third_party_binary_or_model_is_tracked() -> None:
         ".zip",
         ".tar.gz",
     )
-    offenders = [name for name in tracked if name.lower().endswith(forbidden)]
+    allowed = {"packaging/windows/PALM.exe"}
+    offenders = [
+        name for name in tracked if name.lower().endswith(forbidden) and name not in allowed
+    ]
     assert offenders == []
+    # The one first-party exception must stay buildable from committed source.
+    windows = ROOT / "packaging" / "windows"
+    assert (windows / "palm_launcher.c").is_file()
+    assert (windows / "build_launcher.ps1").is_file()
+    assert (windows / "PALM.exe").is_file()
 
 
 def test_built_packages_contain_no_tools_or_models() -> None:
