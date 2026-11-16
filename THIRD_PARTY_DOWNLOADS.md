@@ -159,7 +159,7 @@ committed to git or bundled in a release. The manifest records them as
 | --- | --- | --- | --- | ---: | --- |
 | FFmpeg static (Linux x64, descriptive platform example) | n6.1.2-9-g4571c80b40-20241023 / descriptinc b6.1.2-rc.1 | https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1/ffmpeg-linux-x64 | `d7791526ff9447dbdf88b78c43a2b98975862c8b18980b56b0f11e5bf1eafc08` | 128,513,072 B | GPL-3.0-or-later; build has `--enable-gpl --enable-version3`, not LGPL-only |
 | FFprobe static (Linux x64, descriptive platform example) | n6.1.2-9-g4571c80b40-20241023 / descriptinc b6.1.2-rc.1 | https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1/ffprobe-linux-x64 | `33e4d1be0482dce5355a04c62ccbda3d3f9f91fe4aa40cdb3585493278d91a1d` | 128,374,768 B | GPL-3.0-or-later; same build configuration |
-| 7-Zip helper | 26.04 | https://www.7-zip.org/download.html | pinned by the downloader when implemented; no binary is committed | n/a | LGPL-2.1-or-later with unRAR restriction |
+| 7-Zip helper (extra + bootstrap) | 26.06 | https://github.com/ip7z/7zip/releases/tag/26.06 | `7z2606-extra.7z` SHA-256 `396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104`, 1,758,340 B; `7zr.exe` SHA-256 `e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc`, 600,064 B | n/a | LGPL-2.1-or-later with unRAR restriction |
 
 Exact `ffmpeg -L` and `ffprobe -L` output is in
 `licenses/third_party/notices/ffmpeg-static-license-output.txt`. The source

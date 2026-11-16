@@ -59,11 +59,26 @@ class SevenZipAsset:
 
 
 SEVEN_ZIP = SevenZipAsset(
-    version="9.20",
-    url="https://www.7-zip.org/a/7za920.zip",
-    sha256="2a3afe19c180f8373fa02ff00254d5394fec0349f5804e0ad2f6067854ff28ac",
-    size=384_846,
-    filename="7za920.zip",
+    version="26.06",
+    url="https://github.com/ip7z/7zip/releases/download/26.06/7z2606-extra.7z",
+    sha256="396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104",
+    size=1_758_340,
+    filename="7z2606-extra.7z",
+    member="7za.exe",
+    license="LGPL-2.1-or-later with the 7-Zip unRAR restriction",
+    source_url="https://www.7-zip.org/download.html",
+)
+
+
+SEVEN_ZIP_BOOTSTRAP = SevenZipAsset(
+    version="26.06",
+    url="https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
+    sha256="e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc",
+    size=600_064,
+    filename="7zr.exe",
+    member="7zr.exe",
+    license="LGPL-2.1-or-later with the 7-Zip unRAR restriction",
+    source_url="https://www.7-zip.org/download.html",
 )
 
 
@@ -194,25 +209,39 @@ def _download(asset: PinnedToolAsset, path: Path) -> None:
 def _install_seven_zip(
     runtime: RuntimePaths,
     downloader: Callable[[SevenZipAsset, Path], None] | None,
+    runner: Runner,
 ) -> Path:
     root = runtime.tools_root / "7zip"
-    helper = root / SEVEN_ZIP.member
+    helper = root / "7za.exe"
     if helper.is_file():
         return helper
     root.mkdir(parents=True, exist_ok=True)
-    archive = root / SEVEN_ZIP.filename
-    if downloader is not None:
-        downloader(SEVEN_ZIP, archive)
-    else:
-        download_verified(
-            SEVEN_ZIP.url,
-            archive,
-            size_bytes=SEVEN_ZIP.size,
-            sha256=SEVEN_ZIP.sha256,
-        )
-    _verify_archive(SEVEN_ZIP, archive)  # type: ignore[arg-type]
-    with zipfile.ZipFile(archive) as bundle:
-        helper.write_bytes(bundle.read(SEVEN_ZIP.member))
+    extra = root / SEVEN_ZIP.filename
+    bootstrap = root / SEVEN_ZIP_BOOTSTRAP.filename
+    for asset, path in ((SEVEN_ZIP, extra), (SEVEN_ZIP_BOOTSTRAP, bootstrap)):
+        if downloader is not None:
+            downloader(asset, path)
+        else:
+            download_verified(
+                asset.url,
+                path,
+                size_bytes=asset.size,
+                sha256=asset.sha256,
+            )
+        _verify_archive(asset, path)  # type: ignore[arg-type]
+    result = runner(
+        [
+            str(bootstrap),
+            "x",
+            "-y",
+            f"-o{root}",
+            str(extra),
+        ]
+    )
+    if result is not None and getattr(result, "returncode", 0) not in (0, None):
+        raise SetupInstallError("7-Zip could not unpack its current console helper")
+    if not helper.is_file():
+        raise SetupInstallError("current 7-Zip helper did not contain 7za.exe")
     helper.chmod(0o755)
     return helper
 
@@ -376,7 +405,7 @@ def install_vamp_plugin_pack(
             _download(asset, archive)
         _verify_archive(asset, archive)
         if selected == "windows":
-            helper = _install_seven_zip(runtime, helper_downloader)
+            helper = _install_seven_zip(runtime, helper_downloader, run)
             _install_vamp_windows(asset, archive, target, run, seven_zip=helper, work=Path(tmp))
         elif selected == "macos":
             _install_vamp_macos(asset, archive, target, run)
@@ -415,6 +444,7 @@ __all__ = [
     "PLATFORM_ASSETS",
     "PinnedToolAsset",
     "SEVEN_ZIP",
+    "SEVEN_ZIP_BOOTSTRAP",
     "SevenZipAsset",
     "asset_for",
     "install_platform_tools",

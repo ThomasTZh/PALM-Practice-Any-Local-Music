@@ -56,15 +56,16 @@ def _seven_zip_bytes() -> bytes:
 
 def _helper(monkeypatch: pytest.MonkeyPatch, data: bytes | None = None) -> bytes:
     payload = data or _seven_zip_bytes()
-    monkeypatch.setattr(
-        tool_assets,
-        "SEVEN_ZIP",
-        replace(
-            tool_assets.SEVEN_ZIP,
-            size=len(payload),
-            sha256=hashlib.sha256(payload).hexdigest(),
-        ),
-    )
+    for name in ("SEVEN_ZIP", "SEVEN_ZIP_BOOTSTRAP"):
+        monkeypatch.setattr(
+            tool_assets,
+            name,
+            replace(
+                getattr(tool_assets, name),
+                size=len(payload),
+                sha256=hashlib.sha256(payload).hexdigest(),
+            ),
+        )
     return payload
 
 
@@ -158,7 +159,12 @@ def test_windows_vamp_extracts_with_pinned_7zip(
 
     def runner(command: list[str]):
         commands.append(command)
-        if command[0].endswith("7za.exe"):
+        if command[0].endswith("7zr.exe"):
+            out = next(arg[2:] for arg in command if arg.startswith("-o"))
+            destination = Path(out)
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / "7za.exe").write_bytes(b"7za")
+        elif command[0].endswith("7za.exe"):
             out = next(arg[2:] for arg in command if arg.startswith("-o"))
             destination = Path(out)
             destination.mkdir(parents=True, exist_ok=True)
@@ -177,7 +183,8 @@ def test_windows_vamp_extracts_with_pinned_7zip(
     assert (
         runtime.tools_root / "cache" / PLATFORM_ASSETS[("windows", "vamp_plugin_pack")].filename
     ).is_file()
-    assert commands and "7za.exe" in commands[0][0]
+    assert commands and commands[0][0].endswith("7zr.exe")
+    assert any(command[0].endswith("7za.exe") for command in commands)
     assert not any("powershell.exe" in command[0] for command in commands)
 
 
@@ -200,7 +207,10 @@ def test_windows_vamp_uses_one_uac_fallback_when_extraction_has_no_dll(
 
     def runner(command: list[str]):
         commands.append(command)
-        if "powershell.exe" in command[0]:
+        if command[0].endswith("7zr.exe"):
+            out = next(arg[2:] for arg in command if arg.startswith("-o"))
+            Path(out, "7za.exe").write_bytes(b"7za")
+        elif "powershell.exe" in command[0]:
             target = runtime.tools_root / "vamp-plugins"
             target.mkdir(parents=True, exist_ok=True)
             (target / "qm-vamp-plugins.dll").write_bytes(b"dll")
@@ -234,6 +244,9 @@ def test_windows_vamp_uac_denial_is_clear_and_does_not_ask_for_manual_copy(
     runtime.app_root.mkdir()
 
     def denied(command: list[str]):
+        if command[0].endswith("7zr.exe"):
+            out = next(arg[2:] for arg in command if arg.startswith("-o"))
+            Path(out, "7za.exe").write_bytes(b"7za")
         if "powershell.exe" in command[0]:
             return type("Result", (), {"returncode": 1})()
         return None
@@ -386,3 +399,17 @@ def test_windows_macos_tool_status_paths(tmp_path: Path, monkeypatch: pytest.Mon
     assert status["sonic_visualiser"]["name"] == "Sonic Annotator"
     assert status["sonic_visualiser"]["path"] == str(windows_exe)
     assert status["vamp_plugin_pack"]["path"] == str(windows_plugin)
+
+
+def test_7zip_code_and_manifest_agree() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    assert tool_assets.SEVEN_ZIP.version == "26.06"
+    assert tool_assets.SEVEN_ZIP_BOOTSTRAP.version == "26.06"
+    manifest = (root / "THIRD_PARTY_DOWNLOADS.md").read_text()
+    summary = (root / "THIRD_PARTY.md").read_text()
+    assert "| 7-Zip helper" in manifest
+    assert "26.06" in manifest and "26.06" in summary
+    assert tool_assets.SEVEN_ZIP.sha256 in manifest
+    assert tool_assets.SEVEN_ZIP_BOOTSTRAP.sha256 in manifest

@@ -37,7 +37,7 @@ after the licence gate.
 | Component | Version | Licence | Status |
 | --- | --- | --- | --- |
 | FFmpeg / FFprobe static build | descriptinc `b6.1.2-rc.1` (`n6.1.2-9-g4571c80b40-20241023`) | **GPL-3.0-or-later**; the pinned build uses `--enable-gpl --enable-version3` and is not LGPL-only | Downloaded after explicit consent; never bundled |
-| 7-Zip helper | 26.04 | LGPL-2.1-or-later with the 7-Zip unRAR restriction | Downloaded after explicit consent; never bundled |
+| 7-Zip helper | 26.06 | LGPL-2.1-or-later with the 7-Zip unRAR restriction | Downloaded after explicit consent; never bundled |
 
 FFmpeg/FFprobe source:
 <https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/tag/b6.1.2-rc.1>.
