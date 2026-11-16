@@ -113,6 +113,9 @@ def test_control_falls_back_without_display(
 def test_native_wrapper_sources_and_desktop_entry() -> None:
     root = Path(__file__).resolve().parents[3]
     c_source = (root / "packaging/windows/palm_launcher.c").read_text()
+    native = root / "packaging/windows/PALM.exe"
+    assert native.read_bytes()[:2] == b"MZ"
+    assert native.stat().st_size > 4096
     assert "wWinMain" in c_source
     assert "pythonw.exe" in c_source
     assert "CreateProcessW" in c_source
