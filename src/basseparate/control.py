@@ -8,11 +8,14 @@ server-only environment can still use the CLI.
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from basseparate.launcher import LauncherController, LauncherError, LauncherPaths
+from basseparate.updater import UninstallPlan, launch_uninstall_helper
 
 
 def _load_tk() -> Any:
@@ -158,6 +161,31 @@ class ControlWindow:
             self.controller.stop()
         finally:
             self.root.destroy()
+
+
+def uninstall_app(
+    controller: LauncherController,
+    paths: LauncherPaths,
+    *,
+    delete_data: bool = False,
+    helper: Path | None = None,
+    popen: Callable[..., Any] | None = None,
+) -> Path:
+    """Stop the app, then launch the external uninstall helper (default keep data)."""
+    controller.stop()
+    executable = helper or paths.runtime.app_root.parent / "uninstall-helper.py"
+    shortcuts = (
+        Path.home() / ".local/share/applications/palm.desktop",
+        Path.home() / ".local/bin/palm",
+    )
+    plan = UninstallPlan(
+        app_root=paths.runtime.app_root,
+        data_root=paths.runtime.data_root,
+        delete_data=delete_data is True,
+        pid=os.getpid(),
+        shortcuts=shortcuts,
+    )
+    return launch_uninstall_helper(plan, executable, popen=popen)
 
 
 def run_control(

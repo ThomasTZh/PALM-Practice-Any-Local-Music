@@ -246,3 +246,40 @@ def test_metadata_reports_missing_and_invalid(tmp_path: Path) -> None:
     with pytest.raises(UpdateError, match="channel and version"):
         load_metadata(app, tmp_path)
     assert helper_path(app) == app.parent / "palm-update-helper.py"
+
+
+def test_uninstall_app_stops_then_launches_external_helper(tmp_path: Path) -> None:
+    from basseparate import control
+
+    meta = metadata(tmp_path)
+    helper = meta.app_root.parent / "uninstall-helper.py"
+    helper.write_text("# helper")
+    calls: list[list[str]] = []
+
+    class Controller:
+        stopped = 0
+
+        def stop(self) -> None:
+            self.stopped += 1
+
+    controller = Controller()
+    plan = control.uninstall_app(
+        controller,  # type: ignore[arg-type]
+        type(
+            "Paths",
+            (),
+            {
+                "runtime": type(
+                    "Runtime",
+                    (),
+                    {"app_root": meta.app_root, "data_root": meta.data_root},
+                )()
+            },
+        )(),
+        delete_data=False,
+        helper=helper,
+        popen=lambda command, **kw: calls.append(command),
+    )
+    assert controller.stopped == 1
+    assert calls and "--plan" in calls[0]
+    assert plan.read_text().find('"delete_data": false') >= 0
