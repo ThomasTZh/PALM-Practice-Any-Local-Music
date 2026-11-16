@@ -32,6 +32,8 @@ class ControlWindow:
         *,
         ttk: Any,
         tk: Any,
+        update_action: Callable[[], str] | None = None,
+        uninstall_action: Callable[[], str] | None = None,
     ) -> None:
         self.root = root
         self.controller = controller
@@ -39,6 +41,8 @@ class ControlWindow:
         self._tk = tk
         self._started = False
         self._log_window: Any | None = None
+        self._update_action = update_action
+        self._uninstall_action = uninstall_action
         root.title("PALM — Practice Any Local Music")
         root.minsize(520, 360)
         root.protocol("WM_DELETE_WINDOW", self.quit)
@@ -75,10 +79,10 @@ class ControlWindow:
         ttk.Button(buttons, text="Quit", command=self.quit).grid(
             row=0, column=2, padx=3, pady=3, sticky="ew"
         )
-        ttk.Button(buttons, text="Update (coming soon)", state="disabled").grid(
+        ttk.Button(buttons, text="Check for updates", command=self.check_update).grid(
             row=1, column=0, padx=3, pady=3, sticky="ew"
         )
-        ttk.Button(buttons, text="Uninstall (coming soon)", state="disabled").grid(
+        ttk.Button(buttons, text="Uninstall", command=self.uninstall).grid(
             row=1, column=1, padx=3, pady=3, sticky="ew"
         )
         self.log = self._tk.Text(frame, height=8, wrap="none", state="disabled")
@@ -100,6 +104,24 @@ class ControlWindow:
         self.status.set(f"Running at {url}")
         self.detail.set(f"Data: {self.controller.paths.runtime.data_root}")
         self.refresh_logs()
+
+    def check_update(self) -> None:
+        if self._update_action is None:
+            self.detail.set("Update metadata is not configured for this install.")
+            return
+        try:
+            self.detail.set(self._update_action())
+        except Exception as error:  # user-facing helper errors must not crash Tk
+            self.detail.set(f"Update check failed: {error}")
+
+    def uninstall(self) -> None:
+        if self._uninstall_action is None:
+            self.detail.set("Uninstall helper is not configured for this install.")
+            return
+        try:
+            self.detail.set(self._uninstall_action())
+        except Exception as error:  # user-facing helper errors must not crash Tk
+            self.detail.set(f"Uninstall failed: {error}")
 
     def open_browser(self) -> None:
         if not self.controller.open_browser():
