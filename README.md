@@ -20,7 +20,35 @@ BS-RoFormer-SW models. The build log and all measured evidence are in
 - Clean-room evidence: [packaging/VERIFICATION.md](packaging/VERIFICATION.md)
 - Product intent: [GOALS.md](GOALS.md)
 
-## Quick start
+## Packaged first run
+
+Extract the asset for your platform, then double-click the native control
+launcher:
+
+- **Linux:** install/launch the included `palm.desktop` entry (or `bin/palm`
+  from the desktop environment), which opens the PALM control window.
+- **Windows beta:** double-click **`PALM.exe`** at the root of the extracted
+  ZIP. No console is required; `palm.cmd` is only a diagnostic fallback.
+- **macOS experimental:** double-click **`PALM.app`**. No Terminal window is
+  involved.
+
+The control window starts the local server, waits for health, opens the browser
+once and offers **Open browser**, **View logs**, **Quit**, **Check for updates**
+and **Uninstall**. Quit stops the server; closing only the browser leaves it
+running. Uninstall removes the app and shortcuts but keeps projects, models and
+tools by default; deleting data is a separate explicit choice.
+
+On first run the browser opens the licence and setup screen. Review the
+component licences, then use **Install recommended setup**: PALM downloads and
+verifies managed FFmpeg/FFprobe, Sonic Annotator and the Vamp Plugin Pack, the
+CPU environment and the selected model. FFmpeg is not an external prerequisite.
+`PALM_FFMPEG`/`PALM_FFPROBE` remain advanced overrides for a custom binary, not
+part of the normal installation.
+
+## Source-checkout development
+
+The commands below are for developers working in a checkout, not for users of
+the packaged app.
 
 ```sh
 make doctor       # toolchain, assets, Vamp pack, Piper, model bundle, GPU
@@ -66,68 +94,61 @@ release, and no Windows/macOS stable claim is made.
 
 Each platform has its own asset plus checksums and notes:
 
-- Linux: `PALM-<version>-linux-x86_64.tar.gz` (extract and run `./bin/palm`)
-- Windows beta: `PALM-<version>-windows-x86_64.zip` (extract, run `palm.cmd`;
-  no administrator rights)
-- macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg` (unsigned
-  `PALM.app` for Apple Silicon)
+- Linux: `PALM-<version>-linux-x86_64.tar.gz` (extract; launch the desktop
+  entry or `bin/palm` to open the control window)
+- Windows beta: `PALM-<version>-windows-x86_64.zip` (extract, double-click
+  `PALM.exe`; no console or administrator rights)
+- macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg` (double-click
+  the unsigned `PALM.app` for Apple Silicon; no Terminal)
 
 Every bundle contains the app, built UI, analysis workers/registry,
 environment definitions, launcher, setup code and licences. Model weights,
 tools, FFmpeg and Python environments are **not** bundled.
 
-**First run** opens a setup wizard. It needs a network connection for the
-downloads you choose, but does not upload anything:
+**First run** opens the licence and setup screen. It needs a network connection
+for the downloads you choose, but does not upload anything:
 
-- **FFmpeg and ffprobe must already be installed** on every platform; they are
-  not bundled. Windows can use a portable FFmpeg build through
-  `PALM_FFMPEG`/`PALM_FFPROBE`; macOS can use a trusted build on `PATH` or the
-  same overrides.
+- **Managed FFmpeg/FFprobe** are downloaded and SHA-256 verified by setup, under
+  the data root. They are not bundled and are not an external prerequisite.
+  `PALM_FFMPEG`/`PALM_FFPROBE` are advanced overrides only.
+- **Sonic Annotator and the Vamp Plugin Pack** are installed automatically by
+  setup under the data root after their licence consent.
 - At least **5 GiB free** under the data root; the wizard checks this first.
 - Linux only: one environment, **CPU (~500 MB)** or **CUDA (~3.5 GB)** for an
   NVIDIA GPU. Windows uses CPU only. macOS Apple Silicon uses CPU only.
 - At least one model card, all equal with **no default**: `htdemucs_ft`
   (321.0 MiB, four stems), `scnet-xl-ihf` (204.2 MiB, four stems), or
   `bs-roformer-sw` (667.0 MiB, six stems including guitar/piano).
-- Optional analysis tools (Sonic Visualiser/Piper and Vamp plugins). On
-  Windows/macOS the setup uses Sonic Annotator and the Vamp Plugin Pack, all
-  below the data root.
 
-Choose a model, accept its licence and install. `Skip setup` returns to the
-library; Import/Analyse/Separate explain what is still missing and offer
-`Open setup`. The data root is `~/.local/share/palm` on Linux,
+Review the licences, then use **Install recommended setup**. `Skip setup`
+returns to the library; Import/Analyse/Separate explain what is still missing
+and offer `Open setup`. The data root is `~/.local/share/palm` on Linux,
 `%LOCALAPPDATA%\palm` on Windows, and
 `~/Library/Application Support/palm` on macOS (override with `--data-dir` or
 `PALM_DATA_DIR`). It holds models, tools, environments, logs, run state, setup
-state and projects. See [docs/portable.md](docs/portable.md) for launcher
-options, data layout, setup API, update/uninstall, first-run troubleshooting
-and licence boundaries.
+state and projects. See [docs/portable.md](docs/portable.md) for the control
+window, data layout, setup API, update/uninstall and troubleshooting.
 
-## Launcher lifecycle and cleanup
+## Control window, updates and cleanup
 
-From an interactive terminal, `bin/palm` streams server logs and Ctrl+C stops
-the server cleanly. A file-manager double-click opens an attached terminal that
-stays open for logs and Ctrl+C; closing only the browser does not stop the
-server. If no terminal emulator is available, PALM prints the log path and runs
-headless.
+Normal use is entirely in the native control window: it starts the server,
+opens the browser once, shows status and logs, and **Quit** stops the server.
+Closing only the browser does not stop PALM.
 
-Use `palm --status` to print the running URL, data root and pids without
-starting anything, and `palm --stop` to stop a server left by a closed terminal
-or old build. `--stop` validates the recorded pids against their commands,
-terminates the launcher/server gracefully and removes `run/server.json`; stale
-or unrelated records are reported and never kill an arbitrary process.
+**Check for updates** reads the installed channel from `install.json`, verifies
+and stages a new asset below the data root, and waits for Quit before the
+external helper swaps it with rollback. **Uninstall** confirms the action,
+stops the server, launches the external helper and keeps projects, models and
+tools by default; deleting the data root is a separate explicit choice.
 
 The packaged data root defaults to `~/.local/share/palm`; a source checkout uses
 `~/.local/share/basseparate`, so using both can duplicate model/tool downloads.
-Pick one root with `--data-dir` or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR`. Stop
-PALM before cleanup: deleting `cache/` is safe (it is re-downloaded), while
-`models/`, `tools/` and `environments/` require setup again and
-`projects/`/`assets/`/`uploads/` are your data. Uninstall by stopping PALM,
-removing the app directory, and optionally deleting the data root after
-backing up projects. The desktop entry uses `Terminal=true`; install a `palm`
-symlink and the entry as documented in
-[packaging/launcher/README.md](packaging/launcher/README.md). Full exact paths
-and safety warnings are in [docs/portable.md](docs/portable.md).
+Pick one root with `--data-dir` or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR`.
+Deleting `cache/` is safe (it is re-downloaded), while `models/`, `tools/` and
+`environments/` require setup again and `projects/`/`assets/`/`uploads/` are
+your data. Advanced recovery commands (`--status`, `--stop`, console launcher)
+are documented in the troubleshooting appendix of
+[docs/portable.md](docs/portable.md).
 
 ## What it does
 

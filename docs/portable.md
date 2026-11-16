@@ -25,28 +25,43 @@ completed. Do not describe either as stable, signed, notarized or GPU-capable.
 
 | Platform | Asset | Launcher |
 | --- | --- | --- |
-| Linux x86_64 | `PALM-<version>-linux-x86_64.tar.gz` | `bin/palm` |
-| Windows x64 beta | `PALM-<version>-windows-x86_64.zip` | `palm.cmd` |
-| macOS arm64 experimental | `PALM-<version>-macos-arm64.zip` / `.dmg` | `PALM.app` |
+| Linux x86_64 | `PALM-<version>-linux-x86_64.tar.gz` | desktop entry / `bin/palm` control window |
+| Windows x64 beta | `PALM-<version>-windows-x86_64.zip` | double-click `PALM.exe` |
+| macOS arm64 experimental | `PALM-<version>-macos-arm64.zip` / `.dmg` | double-click `PALM.app` |
 
 Each release also provides `SHA256SUMS` and `RELEASE-NOTES.md`. Source release
 notes: [../packaging/release-notes.md](../packaging/release-notes.md).
 Clean-room evidence: [../packaging/VERIFICATION.md](../packaging/VERIFICATION.md).
 
-## Run the Linux tar
+## Normal launch: control window
 
-```sh
-tar -xzf PALM-<version>-linux-x86_64.tar.gz
-cd PALM-<version>-linux-x86_64
-./bin/palm
-```
+### Linux
 
-The launcher prints `palm: running at http://127.0.0.1:<port>/` and opens your
-browser. It starts the existing server, keeps one instance per data root,
-records `run/server.json`, writes `logs/launcher.log` and `logs/server.log`,
-and forwards SIGINT/SIGTERM. The application listens on loopback only.
+Extract the tar, install the included desktop entry if desired, and launch
+PALM from the desktop menu or by double-clicking `bin/palm`. The control window
+opens; no console is required. The window starts the existing server, waits for
+health, opens the browser once and offers **Open browser**, **View logs**,
+**Quit**, **Check for updates** and **Uninstall**. The server listens on
+loopback only and writes `run/server.json`, `logs/launcher.log` and
+`logs/server.log` below the data root.
 
-Launcher options:
+### Windows beta
+
+Extract the ZIP under your user profile and double-click **`PALM.exe`**. It is
+a GUI-subsystem launcher: no console window is required, and no administrator
+rights are used. `palm.cmd` is only the diagnostic fallback in the appendix.
+
+### macOS experimental
+
+Drag **`PALM.app`** to `~/Applications` and double-click it. If Gatekeeper
+blocks the unsigned app, right-click **Open** or use System Settings > Privacy
+& Security > **Open Anyway**. No Terminal window is involved.
+
+## Appendix: diagnostic console and recovery commands
+
+Normal users do not need this section. These options are recovery/diagnostics
+only, not part of installation or first run. From a terminal in a Linux
+extraction:
 
 | Option | Meaning |
 | --- | --- |
@@ -58,66 +73,55 @@ Launcher options:
 | `--status` | print the URL, data root and recorded pids without starting anything |
 | `--stop` | stop the recorded launcher/server, remove run state and report |
 
-`bin/uv` is included for the setup's environment installation; `bin/palm` uses
-the bundled `python/` tree, so no system Python or Node is required.
+`bin/uv` is included for setup's environment installation; `bin/palm` uses the
+bundled `python/` tree, so no system Python or Node is required.
 
-## Stop, status and terminal lifecycle
+Click **Quit** in the control window to stop the server cleanly; closing only
+the browser does **not** stop it. The window shows the URL, data root and logs.
 
-`palm --status` is read-only. It prints the URL recorded in
-`<data>/run/server.json`, the data root and the server/launcher pids, and exits
-1 for missing, stale or invalid state. It never starts a server.
+`palm --status` prints the recorded URL, data root and pids without starting
+anything. `palm --stop` validates the recorded pids against their command lines,
+terminates the launcher/server gracefully and removes `run/server.json`; stale
+or unrelated records are reported and never kill an arbitrary process. Use
+`--data-dir` if the instance is not on the default root.
 
-`palm --stop` validates the recorded pids against their command lines, sends
-SIGTERM to the launcher (which forwards it to the server), waits, and removes
-`run/server.json`. If a pid is gone, the command no longer matches, or the
-recorded data root is different, it reports the stale record and does not kill
-an unrelated process. Use `--data-dir` if the instance is not on the default
-root.
-
-Closing only the browser does **not** stop the server. The terminal stays open
-with live logs and Ctrl+C, or `palm --stop` stops it later. A file-manager
-double-click on `bin/palm` opens an attached terminal and leaves it open for the
-same reason; if no terminal emulator exists, it prints the log path and runs
-headless. Install the desktop entry and a `palm` symlink as described in
-[packaging/launcher/README.md](../packaging/launcher/README.md) so a desktop
-launch uses `Terminal=true` without typing commands.
-
-## Updating an installed copy
+## Updates and uninstall from the control window
 
 Your projects, models, tools and environments live in the data root, not the
-app folder. Replacing the app folder does not require downloading them again.
+app folder, so replacing the app does not download them again.
 
-1. Stop the old server with Ctrl+C, or `OLD_FOLDER/bin/palm --stop`.
-2. Download the new tar and `SHA256SUMS`; verify the checksum.
-3. Extract the new folder beside the old one.
-4. Start `NEW_FOLDER/bin/palm`. The default data root is unchanged, so setup,
-   models, tools and projects are reused.
-5. If the old run used `--data-dir` or `PALM_DATA_DIR`, pass the same value.
-6. Delete the old app folder after checking playback and analysis. Update any
-   `~/.local/bin/palm` symlink or desktop entry to the new folder.
+**Check for updates** reads `install.json`, selects the installed channel's
+asset, verifies its SHA-256 and stages it below `<data>/updates`; the running
+app is untouched. The external helper waits for Quit, swaps the app with a
+rollback backup and restarts the control window. The helper keeps the data root
+and does not replace a running binary. If the check reports no update or a
+network/staging error, the exact message stays in the control window detail.
 
-Never delete `~/.local/share/palm` during an update; that is user data.
+**Uninstall** asks for confirmation, stops the server first, launches an
+external helper and removes the app folder and shortcuts. It keeps projects,
+models, tools and environments by default; deleting the data root is a separate
+explicit choice. Never delete the data root during an update.
+
+Manual tar replacement remains an advanced recovery path only; normal users
+should use Check for updates and Uninstall.
 
 ## Windows beta
 
 The Windows asset is an unsigned x64 portable ZIP. Extract it under your user
-profile, for example `%LOCALAPPDATA%\Programs\PALM`, and run `palm.cmd`. No
-administrator shell, system installer, service or machine-wide PATH change is
-required. `palm.cmd` uses the embedded `python\python.exe` (falling back to
-`python\Scripts\python.exe`), sets `PALM_MODE=packaged`, `PALM_APP_ROOT`,
-`PALM_DATA_DIR` (`%LOCALAPPDATA%\palm`, or
-`%USERPROFILE%\AppData\Local\palm`), `PYTHONPATH`, `PYTHONUTF8=1`,
-`PYTHONIOENCODING=utf-8` and `PYTHONDONTWRITEBYTECODE=1`. Double-clicking opens
-a console attached to the launcher, so logs stream and Ctrl+C stops it. All
-arguments pass through, including `--status`, `--stop`, `--no-browser`,
-`--no-terminal` and `--data-dir`. Paths with spaces and non-ASCII characters
-are quoted by `%~dp0`; no `py` launcher or PATH lookup is used.
+profile, for example `%LOCALAPPDATA%\Programs\PALM`, and double-click
+**`PALM.exe`**. It is a GUI-subsystem launcher: no console window, administrator
+shell, system installer, service or machine-wide PATH change is required.
+`PALM.exe` starts the control window, which starts the server, waits for health,
+opens the browser once and offers Open browser, View logs, Quit, Check for
+updates and Uninstall. `PALM_DATA_DIR` defaults to `%LOCALAPPDATA%\palm`; paths
+with spaces and non-ASCII characters are handled by the native launcher.
 
-FFmpeg and ffprobe are not bundled. Install a trusted Windows build and set
-both `PALM_FFMPEG` and `PALM_FFPROBE` to the executable paths before starting,
-or add them to the user PATH. Windows setup offers **CPU only**; CUDA is hidden.
-The beta is unsigned, so SmartScreen may ask for confirmation. Full no-admin
-steps and evidence capture are in
+FFmpeg and ffprobe are **not** an external prerequisite: setup downloads managed
+FFmpeg/FFprobe after licence consent, plus Sonic Annotator and the Vamp Plugin
+Pack automatically. Windows setup offers **CPU only**; CUDA is hidden. The beta
+is unsigned, so SmartScreen may ask for confirmation. `palm.cmd` and terminal
+flags are diagnostic fallbacks in the troubleshooting appendix, not normal
+steps. Full no-admin steps and evidence capture are in
 [docs/acceptance/windows-beta.md](acceptance/windows-beta.md). Stable Windows
 support is not claimed.
 
@@ -132,14 +136,18 @@ it manually; the packaged ZIP/DMG already contains it.
 
 The wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`, the native
 `PALM_DATA_DIR` (`~/Library/Application Support/palm` unless overridden) and
-`PYTHONPATH`, then executes `Contents/Resources/app/bin/palm`. Finder starts it
-without a tty, so the Python launcher opens Terminal.app via `osascript` for
-live logs and Ctrl+C, then opens the browser. `--status`, `--stop`,
-`--no-browser`, `--no-terminal` and `--data-dir` pass through.
+`PYTHONPATH`, then executes `Contents/Resources/app/bin/palm --window`. Finder
+starts the control window directly; no Terminal.app window is opened. The
+control window starts the server, waits for health, opens the browser once and
+offers Open browser, View logs, Quit, Check for updates and Uninstall.
+`--status`, `--stop`, `--no-browser`, `--no-terminal` and `--data-dir` remain
+advanced recovery flags.
 
-FFmpeg and ffprobe are not bundled; install a trusted build on `PATH` or set
-`PALM_FFMPEG`/`PALM_FFPROBE`. Setup is CPU-first; CUDA is hidden on macOS. The
-app is experimental and has no stable support, GPU or notarization claim until
+Managed FFmpeg/FFprobe, Sonic Annotator and the Vamp Plugin Pack are installed
+by setup after licence consent, under the data root. `PALM_FFMPEG` and
+`PALM_FFPROBE` are advanced overrides only. Setup is CPU-first; CUDA is hidden
+on macOS. The app is experimental and has no stable support, GPU or
+notarization claim until
 [docs/acceptance/macos-experimental.md](acceptance/macos-experimental.md) is
 completed on Apple Silicon.
 
@@ -151,25 +159,26 @@ until you press Install and accept the relevant licence.
 Installed tools live under `<data>/tools`; in packaged mode Piper and the Vamp
 plugin pack are resolved there, not from the read-only app tree.
 
-1. **Analysis tools** (optional for practice, required for analysis): Sonic
-   Visualiser/Piper (GPL-2.0-or-later) and the Vamp Plugin Pack (AGPL-3.0;
-   individual plugins GPL/AGPL). These are downloaded from their pinned
-   upstream releases.
-2. **One inference environment**: CPU (about **500 MB download**, works
+1. **Managed FFmpeg/FFprobe** (required for import/decode): downloaded and
+   SHA-256 verified into `<data>/tools/ffmpeg`; no external install or
+   `PALM_FFMPEG` override is needed.
+2. **Analysis tools** (required for analysis): Sonic Annotator and the Vamp
+   Plugin Pack (AGPL-3.0; individual plugins GPL/AGPL) are installed
+   automatically into the data root after their group consent.
+3. **One inference environment**: CPU (about **500 MB download**, works
    everywhere) or CUDA (about **3.5 GB download**, needs an NVIDIA GPU and
    driver). PyTorch wheels come from the pinned CPU or cu128 index.
-3. **At least one separation model**: all three are equal cards, with no
+4. **At least one separation model**: all three are equal cards, with no
    default and no bundled model:
    - `htdemucs_ft` — 321.0 MiB, four stems (drums, bass, other, vocals)
    - `scnet-xl-ihf` — 204.2 MiB, four stems
    - `bs-roformer-sw` — 667.0 MiB, six stems (bass, drums, other, vocals,
      guitar, piano)
 
-**FFmpeg and ffprobe must already be installed** (`ffmpeg -version`); they are
-used for import/decode and are not bundled. The setup page reports this check
-and links back here. On Windows use a trusted portable build and set
-`PALM_FFMPEG`/`PALM_FFPROBE` or the user PATH. On macOS put it on PATH or use
-the same overrides. Do not expect the app to download FFmpeg.
+**FFmpeg and FFprobe are managed by setup**, not external prerequisites. The
+**Install recommended setup** flow downloads both after consent, verifies the
+pinned SHA-256 and records them under `<data>/tools/ffmpeg`. `PALM_FFMPEG` and
+`PALM_FFPROBE` remain advanced overrides for a custom binary, not normal setup.
 
 Windows is CPU-only. macOS Apple Silicon is CPU-first. CUDA is a Linux-only
 option and is hidden from setup on Windows/macOS.
@@ -235,7 +244,7 @@ Do not run two servers against one data root; the launcher lock prevents it.
 
 ### Safe cleanup
 
-Stop PALM first (`palm --stop`, Ctrl+C, or close the terminal). Then:
+Stop PALM with **Quit** in the control window. Then:
 
 - Safe to delete: `<data>/cache/` (downloads, uv cache; rebuilt or re-downloaded
   on demand), `<data>/logs/` (diagnostics), stale `<data>/run/server.json`.
@@ -267,8 +276,10 @@ The downloaded size/SHA-256 must match the registry pins.
 
 ## Troubleshooting first-run failures
 
-- **ffmpeg missing / import fails**: install `ffmpeg` and `ffprobe` from your
-  distribution, then reload. The setup checks report the exact missing command.
+- **ffmpeg missing / import fails**: open **Setup** and install managed
+  media tools; setup downloads/verifies FFmpeg and FFprobe under the data root.
+  Do not install a system FFmpeg as the normal fix; `PALM_FFMPEG` overrides are
+  advanced only.
 - **Not enough disk / disk check fails**: free space under the data root; setup
   requires 5 GiB. Models are installed one at a time; remove unused models with
   `make models-*` only in source mode, or delete their directories in the data
@@ -291,16 +302,15 @@ The downloaded size/SHA-256 must match the registry pins.
 
 ## Upgrade and uninstall
 
-**Upgrade:** stop PALM with `palm --stop` (or Ctrl+C), replace the app folder
-with the new release of the same platform, and keep the data root. Linux uses
-the extracted tar; Windows uses the extracted ZIP folder; macOS uses a fresh
-`PALM.app` in `~/Applications`. Models, tools, environments, setup state and
-projects stay valid; if a pinned download changed, setup reports the affected
-item and offers a verified reinstall. Do not copy the old app tree over the new
-one.
+**Upgrade:** use **Check for updates** in the control window. It verifies and
+stages the asset, then the external helper swaps after Quit, can roll back, and
+keeps the data root. Manual folder replacement is an advanced recovery path.
 
-**Uninstall:** stop PALM first (`palm --stop` or Ctrl+C), then remove the app
-folder. To remove practice data as well, delete the platform data root:
+**Uninstall:** use **Uninstall** in the control window. It confirms, stops the
+server, launches the external helper and removes the app and shortcuts while
+keeping the data root by default. Deleting practice data is a separate explicit
+choice; the manual commands below are only for advanced recovery after
+backing up projects:
 
 ```sh
 # Linux

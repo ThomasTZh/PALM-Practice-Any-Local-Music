@@ -1,9 +1,10 @@
 """Small Tk control window for the packaged PALM launcher.
 
-The window is deliberately a thin client over ``LauncherController``: all
-process, health, state and logging behavior is shared with the terminal
-launcher and the native Windows/macOS wrappers. Tk is imported lazily so a
-server-only environment can still use the CLI.
+The window is deliberately a thin client over ``LauncherController``: process,
+health, state and logging behavior is shared with the native Windows/macOS
+wrappers. It also wires Check for updates to install.json-based staging and
+Uninstall to an external helper that keeps user data by default. Tk is imported
+lazily so a server-only environment can still use the diagnostic CLI.
 """
 
 from __future__ import annotations
@@ -35,7 +36,13 @@ def _load_tk() -> Any:
 
 
 class ControlWindow:
-    """A minimal status/start/stop window; update and uninstall are placeholders."""
+    """Status/start/stop window with wired update and uninstall actions.
+
+    Check for updates reads install.json, verifies and stages the channel asset,
+    and leaves the running app untouched until Quit. Uninstall asks for
+    confirmation, stops the server and launches the external helper; projects,
+    models and tools are kept unless delete-data is explicitly chosen.
+    """
 
     def __init__(
         self,
