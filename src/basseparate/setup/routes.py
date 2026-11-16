@@ -118,6 +118,11 @@ def install(app: Any) -> None:
             raise SetupError("licence acceptance is required before installing environments")
         return service.install_environments_job(context, params)
 
+    def guarded_media_tools(context: JobContext, params: Mapping[str, Any]) -> object:
+        if not params.get("accept_licenses"):
+            raise SetupError("licence acceptance is required before installing media tools")
+        return service.install_media_tools_job(context, params)
+
     def guarded_models(context: JobContext, params: Mapping[str, Any]) -> object:
         if not params.get("accept_licenses"):
             raise SetupError("licence acceptance is required before installing models")
@@ -131,6 +136,7 @@ def install(app: Any) -> None:
         return service.install_models_job(context, params)
 
     jobs.register("setup_environments", guarded_environments)
+    jobs.register("setup_media_tools", guarded_media_tools)
     jobs.register("setup_models", guarded_models)
     router = APIRouter(tags=["setup"])
 
@@ -154,6 +160,15 @@ def install(app: Any) -> None:
             "setup_tools",
             {"accept_licenses": True, "force": body.force},
         )
+
+    @router.post("/setup/media-tools", status_code=status.HTTP_202_ACCEPTED)
+    def setup_media_tools(body: SetupToolsRequest) -> dict[str, Any]:
+        if not body.consented:
+            raise HTTPException(
+                status_code=400,
+                detail="licence acceptance is required before installing media tools",
+            )
+        return _submit(jobs, "setup_media_tools", {"accept_licenses": True})
 
     @router.post("/setup/environments", status_code=status.HTTP_202_ACCEPTED)
     def setup_environments(body: SetupEnvironmentsRequest) -> dict[str, Any]:

@@ -7,6 +7,7 @@ import json
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from basseparate.app import create_app
@@ -82,7 +83,7 @@ def make_client(tmp_path: Path) -> tuple[TestClient, RuntimePaths, SetupService]
         fetch=fake_fetch,
         run_uv=fake_uv,
         tool_installer=fake_tools,
-        which=lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
+        which=lambda name: f"/usr/bin/{name}" if name in {"ffmpeg", "ffprobe"} else None,
         disk_probe=lambda _root: type("Usage", (), {"free": 10 * 1024**3})(),
     )
     settings = Settings(data_dir=runtime.data_root, web_dir=runtime.web_dir)
@@ -108,8 +109,11 @@ def test_status_is_local_and_reports_equal_models(tmp_path: Path) -> None:
     body = response.json()
     assert body["mode"] == "packaged"
     assert body["roots"]["data_root"] == str(runtime.data_root)
-    assert set(body["checks"]) == {"glibc", "disk", "ffmpeg"}
+    assert set(body["checks"]) == {"glibc", "disk", "ffmpeg", "ffprobe"}
     assert body["checks"]["ffmpeg"]["ok"] is True
+    assert body["checks"]["ffprobe"]["ok"] is True
+    assert set(body["media_tools"]) == {"ffmpeg", "ffprobe"}
+    assert body["media_tools_ready"] is True
     assert set(body["environments"]) == {"cpu", "cuda"}
     assert [model["id"] for model in body["models"]] == ["fake-model"]
     assert body["readiness"]["ready"] is False
@@ -287,3 +291,33 @@ def test_each_requested_model_needs_its_own_acceptance(tmp_path: Path) -> None:
         assert accepted.status_code == 202
         job = wait_job(client, accepted.json()["id"])
         assert job["state"] == "succeeded", job
+
+
+def test_media_tools_require_consent_and_install_under_data_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, runtime, _service = make_client(tmp_path)
+    with client:
+        assert client.post("/api/setup/media-tools", json={}).status_code == 400
+
+        def fake_install(active, **_kwargs):
+            root = active.data_root / "tools" / "ffmpeg"
+            root.mkdir(parents=True)
+            for tool in ("ffmpeg", "ffprobe"):
+                path = root / tool
+                path.write_text("binary")
+                path.chmod(0o755)
+            (root / "media-tools.json").write_text('{"ffmpeg": {"version": "9.0.2"}}')
+
+        from basseparate.setup import service as service_module
+
+        monkeypatch.setattr(service_module, "install_media_tools", fake_install)
+        response = client.post("/api/setup/media-tools", json={"accept_licenses": True})
+        assert response.status_code == 202
+        job = wait_job(client, response.json()["id"])
+        assert job["state"] == "succeeded", job
+        status = client.get("/api/setup/status").json()
+        assert status["media_tools"]["ffmpeg"]["installed"] is True
+        assert status["media_tools"]["ffprobe"]["installed"] is True
+        assert status["media_tools_ready"] is True
+        assert runtime.setup_state.is_relative_to(runtime.data_root)

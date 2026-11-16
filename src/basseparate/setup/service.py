@@ -17,6 +17,11 @@ from basseparate.setup.environments import (
     environments_status,
 )
 from basseparate.setup.errors import SetupCancelled, SetupError
+from basseparate.setup.media_tools import (
+    install_media_tools,
+    media_tools_ready,
+    media_tools_status,
+)
 from basseparate.setup.models import install_models
 from basseparate.setup.state import SetupStateStore
 from basseparate.setup.tools import ToolInstaller, install_tools, tools_status
@@ -51,6 +56,7 @@ class SetupService:
             which=self.which,
         )
         tools = tools_status(self.runtime)
+        media_tools = media_tools_status(self.runtime)
         environments = environments_status(self.runtime)
         registry_error: str | None = None
         models: list[dict[str, Any]] = []
@@ -70,7 +76,10 @@ class SetupService:
         env_ready = any(bool(item.get("installed")) for item in environments.values())
         model_ready = any(item.get("status") == "installed" for item in models)
         tools_ready = all(bool(item.get("installed")) for item in tools.values())
-        ready = checks_ok and env_ready and model_ready and not skipped
+        media_ready = media_tools_ready(self.runtime) or (
+            bool(checks.get("ffmpeg", {}).get("ok")) and bool(checks.get("ffprobe", {}).get("ok"))
+        )
+        ready = checks_ok and env_ready and model_ready and media_ready and not skipped
         return {
             "mode": self.runtime.mode,
             "environment_variants": list(available_env_variants()),
@@ -90,6 +99,8 @@ class SetupService:
             },
             "checks": checks,
             "tools": tools,
+            "media_tools": media_tools,
+            "media_tools_ready": media_ready,
             "environments": environments,
             "models": models,
             "registry_error": registry_error,
@@ -97,6 +108,7 @@ class SetupService:
                 "ready": ready,
                 "checks_ok": checks_ok,
                 "tools_ready": tools_ready,
+                "media_tools_ready": media_ready,
                 "environment_ready": env_ready,
                 "model_ready": model_ready,
                 "requires_model_choice": not model_ready,
@@ -132,6 +144,20 @@ class SetupService:
             raise JobCancelled(context.job_id) from error
         self.state.record("tools", installed=result)
         return {"tools": result}
+
+    def install_media_tools_job(self, context: JobContext, params: Mapping[str, Any]) -> object:
+        if not params.get("accept_licenses"):
+            raise SetupError("licence acceptance is required before installing media tools")
+        try:
+            result = install_media_tools(
+                self.runtime,
+                progress=self._job_progress(context),
+                cancel=lambda: context.cancelled,
+            )
+        except SetupCancelled as error:
+            raise JobCancelled(context.job_id) from error
+        self.state.record("media_tools", installed=result)
+        return {"media_tools": result}
 
     def install_environments_job(self, context: JobContext, params: Mapping[str, Any]) -> object:
         variants = params.get("variants") or list(available_env_variants())
@@ -182,5 +208,6 @@ class SetupService:
 
     def register(self, manager: JobManager) -> None:
         manager.register("setup_tools", self.install_tools_job)
+        manager.register("setup_media_tools", self.install_media_tools_job)
         manager.register("setup_environments", self.install_environments_job)
         manager.register("setup_models", self.install_models_job)

@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from basseparate.config import RuntimePaths
-from basseparate.platform_support import MACOS, WINDOWS, ffmpeg_binary
+from basseparate.platform_support import MACOS, WINDOWS, ffmpeg_binary, ffprobe_binary
 
 DiskProbe = Callable[[Path], object]
 Which = Callable[[str], str | None]
@@ -48,6 +48,8 @@ def system_checks(
         libc_detail = f"{libc_name or 'libc'} {libc_version or 'unknown'}"
     resolved_ffmpeg = ffmpeg_binary(which=find)
     ffmpeg = resolved_ffmpeg if resolved_ffmpeg != "ffmpeg" else None
+    resolved_ffprobe = ffprobe_binary(which=find)
+    ffprobe = resolved_ffprobe if resolved_ffprobe != "ffprobe" else None
     return {
         "glibc": {
             "ok": glibc_ok,
@@ -65,6 +67,12 @@ def system_checks(
             "ok": ffmpeg is not None,
             "status": "ok" if ffmpeg is not None else "missing",
             "path": ffmpeg,
-            "detail": ffmpeg or "ffmpeg is not on PATH",
+            "detail": ffmpeg or "ffmpeg is not managed or on PATH",
+        },
+        "ffprobe": {
+            "ok": ffprobe is not None,
+            "status": "ok" if ffprobe is not None else "missing",
+            "path": ffprobe,
+            "detail": ffprobe or "ffprobe is not managed or on PATH",
         },
     }
