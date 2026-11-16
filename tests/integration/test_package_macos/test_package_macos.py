@@ -102,7 +102,11 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "PALM.app/Contents/Resources/app/analysis/envs/cpu-macos/uv.lock",
         "PALM.app/Contents/Resources/app/analysis/envs/msst-macos/uv.lock",
         "PALM.app/Contents/Resources/app/licenses/LICENSE",
+        "PALM.app/Contents/Resources/app/licenses/third_party/manifest.json",
+        "PALM.app/Contents/Resources/app/install.json",
         "PALM.app/Contents/Resources/app/runtime-requirements.txt",
+        "PALM.app/Contents/Resources/updaters/update_helper.py",
+        "PALM.app/Contents/Resources/updaters/uninstall_helper.py",
     ]
     with zipfile.ZipFile(archive, "w") as bundle:
         for name in required:
@@ -170,9 +174,19 @@ def test_built_macos_zip_when_present() -> None:
             assert (info.external_attr >> 16) & 0o111, name
     lower = [name.lower() for name in names]
     assert any(name.endswith("palm.app/contents/macos/palm") for name in lower)
+    assert any(name.endswith("resources/app/install.json") for name in lower)
+    assert any(name.endswith("resources/updaters/update_helper.py") for name in lower)
+    assert any(name.endswith("resources/app/licenses/third_party/manifest.json") for name in lower)
     assert any(name.endswith("resources/app/python/bin/python3.11") for name in lower)
     assert any(name.endswith("resources/app/bin/uv") for name in lower)
     assert any(name.endswith("resources/app/web/dist/index.html") for name in lower)
+    import json
+
+    install = next(name for name in names if name.lower().endswith("resources/app/install.json"))
+    with zipfile.ZipFile(zips[-1]) as archive:
+        payload = json.loads(archive.read(install))
+    assert payload["channel"] == "macos-arm64"
+    assert payload["assets"]["macos-arm64"]["name"].endswith(".zip")
     root_forbidden = {"models", "tools", "environments", "cache", "tests", "storage"}
     assert not any(
         len(Path(name).parts) >= 2 and Path(name).parts[1] in root_forbidden for name in lower

@@ -63,6 +63,11 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "palm-0.1.0-dev-windows-x86_64/analysis/envs/msst-windows/uv.lock",
         "palm-0.1.0-dev-windows-x86_64/analysis/envs/cpu-windows/pyproject.toml",
         "palm-0.1.0-dev-windows-x86_64/licenses/LICENSE",
+        "palm-0.1.0-dev-windows-x86_64/licenses/third_party/manifest.json",
+        "palm-0.1.0-dev-windows-x86_64/install.json",
+        "palm-0.1.0-dev-windows-x86_64/PALM.exe",
+        "palm-0.1.0-dev-windows-x86_64/updaters/update_helper.py",
+        "palm-0.1.0-dev-windows-x86_64/updaters/uninstall_helper.py",
         "palm-0.1.0-dev-windows-x86_64/runtime-requirements.txt",
     ]
     with zipfile.ZipFile(archive, "w") as bundle:
@@ -83,13 +88,26 @@ def test_built_zip_has_only_allowed_payload_when_present() -> None:
     assert module.check_zip(zips[-1]) == 0
     with zipfile.ZipFile(zips[-1]) as archive:
         names = archive.namelist()
+        install = next(name for name in names if name.endswith("/install.json"))
+        import json
+
+        payload = json.loads(archive.read(install))
+        assert payload["channel"] == "windows-x86_64"
+        assert payload["assets"]["windows-x86_64"]["name"].endswith(".zip")
     lower = [name.lower() for name in names]
     assert any(name.endswith("palm.cmd") for name in lower)
     assert any(name.endswith("python/python.exe") for name in lower)
     assert any(name.endswith("bin/uv.exe") for name in lower)
     assert any(name.endswith("web/dist/index.html") for name in lower)
     assert any(name.endswith("analysis/envs/cpu-windows/uv.lock") for name in lower)
-    assert not any("/ffmpeg" in name or "/sonic-annotator" in name for name in lower)
+    assert any(name.endswith("/palm.exe") for name in lower)
+    assert any(name.endswith("/install.json") for name in lower)
+    assert any(name.endswith("/updaters/update_helper.py") for name in lower)
+    assert any(name.endswith("/licenses/third_party/manifest.json") for name in lower)
+    assert not any(
+        ("/ffmpeg" in name or "/sonic-annotator" in name) and "/licenses/" not in name
+        for name in lower
+    )
     root_forbidden = {"models", "tools", "environments", "cache", "tests", "storage"}
     assert not any(
         len(Path(name).parts) >= 2 and Path(name).parts[1] in root_forbidden for name in lower

@@ -54,7 +54,11 @@ REQUIRED = (
     "PALM.app/Contents/Resources/app/analysis/envs/cpu-macos/uv.lock",
     "PALM.app/Contents/Resources/app/analysis/envs/msst-macos/uv.lock",
     "PALM.app/Contents/Resources/app/licenses/LICENSE",
+    "PALM.app/Contents/Resources/app/licenses/third_party/manifest.json",
+    "PALM.app/Contents/Resources/app/install.json",
     "PALM.app/Contents/Resources/app/runtime-requirements.txt",
+    "PALM.app/Contents/Resources/updaters/update_helper.py",
+    "PALM.app/Contents/Resources/updaters/uninstall_helper.py",
 )
 
 
@@ -275,6 +279,13 @@ def stage(stage_root: Path, data: dict[str, Any], requirements: Path, *, online:
     copy_file(ROOT / "scripts" / "install_tools.py", app / "scripts" / "install_tools.py")
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, app / "licenses" / name)
+    copy_tree(ROOT / "licenses" / "third_party", app / "licenses" / "third_party")
+    for name in ("update_helper.py", "uninstall_helper.py"):
+        copy_file(
+            ROOT / "packaging" / "updaters" / name,
+            bundle / "Contents" / "Resources" / "updaters" / name,
+        )
+    write_install_json(app / "install.json", "macos-arm64", version())
     copy_file(ROOT / "README.md", app / "README.md")
     copy_file(requirements, app / "runtime-requirements.txt")
     copy_file(ROOT / "packaging" / "macos" / "build-manifest.toml", app / "BUILD-MANIFEST.toml")
@@ -304,10 +315,45 @@ def check_zip(path: Path) -> int:
     bad = [name for name in names if forbidden(name)]
     if bad:
         raise PackageError(f"ZIP contains excluded paths: {bad[:5]}")
-    if any("ffmpeg" in name.lower() or "sonic-annotator" in name.lower() for name in names):
+    payload_names = [
+        name
+        for name in names
+        if "licenses/" not in name.lower()
+        and ("ffmpeg" in name.lower() or "sonic-annotator" in name.lower())
+    ]
+    if payload_names:
         raise PackageError("ZIP contains FFmpeg/Sonic Annotator payload")
     print(f"package-macos-check: {len(names)} entries, required content present")
     return 0
+
+
+def write_install_json(destination: Path, channel: str, version_value: str) -> None:
+    import json
+
+    mapping = json.loads((ROOT / "packaging" / "install.json").read_text(encoding="utf-8"))
+    spec = mapping["channels"][channel]
+    asset = str(spec["asset"]).format(version=version_value)
+    destination.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "channel": channel,
+                "version": version_value,
+                "assets": {
+                    channel: {
+                        "name": asset,
+                        "kind": spec["kind"],
+                        "version": version_value,
+                        "url": f"https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/download/v{version_value}/{asset}",
+                        "sha256": "",
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def build_zip(bundle_parent: Path, output: Path) -> Path:

@@ -17,6 +17,7 @@ import argparse
 import gzip
 import hashlib
 import importlib.metadata
+import json
 import os
 import shutil
 import subprocess
@@ -65,6 +66,10 @@ REQUIRED_TAR_PARTS = (
     "palm.desktop",
     "palm.svg",
     "runtime-requirements.txt",
+    "install.json",
+    "updaters/update_helper.py",
+    "updaters/uninstall_helper.py",
+    "licenses/third_party/manifest.json",
 )
 
 
@@ -252,6 +257,27 @@ def copy_file(source: Path, destination: Path, *, executable: bool = False) -> N
         destination.chmod(0o755)
 
 
+def write_install_json(destination: Path, channel: str, version_value: str) -> None:
+    mapping = json.loads((ROOT / "packaging" / "install.json").read_text(encoding="utf-8"))
+    spec = mapping["channels"][channel]
+    asset = str(spec["asset"]).format(version=version_value)
+    payload = {
+        "schema_version": 1,
+        "channel": channel,
+        "version": version_value,
+        "assets": {
+            channel: {
+                "name": asset,
+                "kind": spec["kind"],
+                "version": version_value,
+                "url": f"https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/download/v{version_value}/{asset}",
+                "sha256": "",
+            }
+        },
+    }
+    destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def stage_app(stage: Path, manifest: dict[str, Any]) -> None:
     if not (ROOT / "web" / "dist" / "index.html").is_file():
         raise PackageError("web/dist/index.html is missing; run `make build-web` first")
@@ -274,6 +300,10 @@ def stage_app(stage: Path, manifest: dict[str, Any]) -> None:
     copy_file(ROOT / "scripts" / "install_tools.py", stage / "scripts" / "install_tools.py")
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, stage / "licenses" / name)
+    copy_tree_filtered(ROOT / "licenses" / "third_party", stage / "licenses" / "third_party")
+    for name in ("update_helper.py", "uninstall_helper.py"):
+        copy_file(ROOT / "packaging" / "updaters" / name, stage / "updaters" / name)
+    write_install_json(stage / "install.json", "linux-x86_64", version())
     copy_file(ROOT / "packaging" / "README.release.md", stage / "README.md")
     copy_file(ROOT / "docs" / "portable.md", stage / "docs" / "portable.md")
     copy_file(ROOT / "packaging" / "launcher" / "palm", stage / "bin" / "palm", executable=True)
