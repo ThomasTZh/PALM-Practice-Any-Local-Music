@@ -12,6 +12,8 @@ const SC = {
   default: false,
   size_bytes: 214069684,
   license: "MIT code; weights by MSST",
+  source_url:
+    "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15",
   install_command: "make models-install ID=scnet-xl-ihf",
   labels: ["drums", "bass", "other", "vocals"],
   metrics: {
@@ -28,6 +30,8 @@ const BS = {
   name: "BS-RoFormer-SW",
   size_bytes: 699416765,
   license: "Unknown weight licence; MSST code MIT",
+  source_url:
+    "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
   install_command: "make models-install ID=bs-roformer-sw",
   labels: ["bass", "drums", "other", "vocals", "guitar", "piano"],
   metrics: {
@@ -68,6 +72,7 @@ export function readySetupStatus(
         detail: "100000 MiB free; 5120 MiB required",
       },
       ffmpeg: { ok: true, status: "ok", detail: "/usr/bin/ffmpeg" },
+      ffprobe: { ok: true, status: "ok", detail: "/usr/bin/ffprobe" },
     },
     tools: {
       sonic_visualiser: {
@@ -81,6 +86,24 @@ export function readySetupStatus(
         license: "AGPL-3.0",
       },
     },
+    mediaTools: {
+      ffmpeg: {
+        installed: true,
+        path: "/studio/tools/ffmpeg/ffmpeg",
+        version: "9.0.2",
+        license: "GPL-3.0-or-later",
+        source_url: "https://ffmpeg.martin-riedl.de/",
+      },
+      ffprobe: {
+        installed: true,
+        path: "/studio/tools/ffmpeg/ffprobe",
+        version: "9.0.2",
+        license: "GPL-3.0-or-later",
+        source_url: "https://ffmpeg.martin-riedl.de/",
+      },
+    },
+    mediaToolsReady: true,
+    environmentVariants: ["cpu", "cuda"],
     environments: {
       cpu: {
         variant: "cpu",
@@ -104,6 +127,7 @@ export function readySetupStatus(
       ready: true,
       checks_ok: true,
       tools_ready: true,
+      media_tools_ready: true,
       environment_ready: true,
       model_ready: true,
       requires_model_choice: false,
@@ -129,7 +153,17 @@ export function incompleteSetupStatus(): SetupStatus {
     checks: {
       ...base.checks,
       ffmpeg: { ok: false, status: "missing", detail: "ffmpeg is not on PATH" },
+      ffprobe: {
+        ok: false,
+        status: "missing",
+        detail: "ffprobe is not on PATH",
+      },
     },
+    mediaTools: {
+      ffmpeg: { installed: false, path: "/studio/tools/ffmpeg/ffmpeg" },
+      ffprobe: { installed: false, path: "/studio/tools/ffmpeg/ffprobe" },
+    },
+    mediaToolsReady: false,
     tools: {
       sonic_visualiser: {
         installed: false,
@@ -151,6 +185,7 @@ export function incompleteSetupStatus(): SetupStatus {
       ready: false,
       checks_ok: false,
       tools_ready: false,
+      media_tools_ready: false,
       environment_ready: false,
       model_ready: false,
       requires_model_choice: true,
@@ -209,6 +244,10 @@ export function createFakeSetupClient(
     },
     async startTools(consent) {
       calls.push(`tools:${consent}`);
+      return job("queued", 0, { id: `job-${calls.length}` });
+    },
+    async startMediaTools(consent) {
+      calls.push(`media-tools:${consent}`);
       return job("queued", 0, { id: `job-${calls.length}` });
     },
     async startEnvironment(variant) {

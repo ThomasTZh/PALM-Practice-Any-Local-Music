@@ -326,3 +326,131 @@ button:disabled {
 .setup-tool-list a:hover {
   color: var(--text);
 }
+
+/* Before-download licence summary and recommended path */
+.setup-before-download {
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(13, 18, 24, 0.55);
+}
+
+.setup-component-list {
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.setup-component-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 0.5rem 0.8rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.76rem;
+}
+
+.setup-component-main,
+.setup-component-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  align-items: baseline;
+}
+
+.setup-component-main span,
+.setup-component-meta span {
+  color: var(--muted);
+}
+
+.setup-component-meta a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.setup-requirement {
+  padding: 0 0.3rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.setup-requirement[data-required="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.setup-licence-texts {
+  margin-top: 0.55rem;
+  font-size: 0.74rem;
+}
+
+.setup-licence-texts summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.setup-licence-texts section {
+  margin-top: 0.6rem;
+}
+
+.setup-licence-texts h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+}
+
+.setup-licence-texts pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0a0d12;
+  color: #c7d1dc;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.setup-recommended {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: rgba(49, 168, 136, 0.08);
+}
+
+.setup-recommended h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.setup-recommended button {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.9rem;
+  border-color: var(--accent);
+  background: var(--accent-strong);
+  color: #06110d;
+  font-weight: 650;
+}
+
+@media (max-width: 700px) {
+  .setup-recommended {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .setup-component-list li {
+    grid-template-columns: 1fr;
+  }
+}

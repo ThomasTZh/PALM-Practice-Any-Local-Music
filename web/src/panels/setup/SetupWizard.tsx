@@ -4,11 +4,13 @@ import type { SeparationModel } from "../../api/types";
 import {
   environmentEstimate,
   modelLicenceLink,
+  setupLicenceComponents,
   toolLicenceLink,
   type SetupClient,
   type SetupJobState,
   type SetupStatus,
 } from "../../state/setup";
+import { LICENCE_TEXTS } from "./licenceTexts";
 import { formatModelSize } from "../../state/separationModels";
 import "./setup.css";
 
@@ -20,7 +22,7 @@ export interface SetupWizardProps {
   pollIntervalMs?: number;
 }
 
-type SetupOperation = "tools" | "environment" | "models";
+type SetupOperation = "media" | "tools" | "environment" | "models";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -56,6 +58,7 @@ export function SetupWizard({
   onClose,
   pollIntervalMs = 350,
 }: SetupWizardProps) {
+  const [mediaConsent, setMediaConsent] = useState(false);
   const [toolsConsent, setToolsConsent] = useState(false);
   const [variant, setVariant] = useState<"cpu" | "cuda" | null>(null);
   const [environmentConsent, setEnvironmentConsent] = useState<
@@ -64,7 +67,7 @@ export function SetupWizard({
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [modelConsents, setModelConsents] = useState<string[]>([]);
   const [job, setJob] = useState<SetupJobState | null>(null);
-  const [operation, setOperation] = useState<SetupOperation | null>(null);
+  const [operation, setOperation] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState<(() => void) | null>(null);
@@ -87,27 +90,27 @@ export function SetupWizard({
   }
 
   async function runJob(
-    kind: SetupOperation,
+    _kind: SetupOperation,
     label: string,
-    start: () => Promise<SetupJobState>,
+    startJob: () => Promise<SetupJobState>,
     retryAction: () => void,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const token = runTokenRef.current + 1;
     runTokenRef.current = token;
     setBusy(true);
     setError(null);
     setRetry(null);
-    setOperation(kind);
+    setOperation(label);
     try {
-      let state = await start();
+      let state = await startJob();
       activeJobRef.current = state.id;
-      if (!mountedRef.current || token !== runTokenRef.current) return;
+      if (!mountedRef.current || token !== runTokenRef.current) return false;
       setJob(state);
       while (!isTerminal(state.status)) {
         await delay(pollIntervalMs);
-        if (!mountedRef.current || token !== runTokenRef.current) return;
+        if (!mountedRef.current || token !== runTokenRef.current) return false;
         state = await client.job(state.id);
-        if (!mountedRef.current || token !== runTokenRef.current) return;
+        if (!mountedRef.current || token !== runTokenRef.current) return false;
         setJob(state);
       }
       activeJobRef.current = null;
@@ -120,15 +123,17 @@ export function SetupWizard({
         );
       }
       const next = await client.status();
-      if (!mountedRef.current || token !== runTokenRef.current) return;
+      if (!mountedRef.current || token !== runTokenRef.current) return false;
       onStatus(next);
       setJob(null);
       setOperation(null);
+      return true;
     } catch (failure) {
-      if (!mountedRef.current || token !== runTokenRef.current) return;
+      if (!mountedRef.current || token !== runTokenRef.current) return false;
       setError(errorMessage(failure));
       setRetry(() => retryAction);
       setOperation(null);
+      return false;
     } finally {
       activeJobRef.current = null;
       if (mountedRef.current && token === runTokenRef.current) {
@@ -144,6 +149,68 @@ export function SetupWizard({
       () => client.startTools(toolsConsent),
       installTools,
     );
+  }
+
+  function installMediaTools(): void {
+    void runJob(
+      "media",
+      "Media tools",
+      () => client.startMediaTools(mediaConsent),
+      installMediaTools,
+    );
+  }
+
+  async function installRecommended(): Promise<void> {
+    if (
+      !mediaConsent ||
+      !toolsConsent ||
+      environmentConsent !== "cpu" ||
+      (!modelConsents.includes("htdemucs_ft") &&
+        status.models.find((model) => model.id === "htdemucs_ft")?.installed !==
+          true)
+    ) {
+      return;
+    }
+    setVariant("cpu");
+    setEnvironmentConsent("cpu");
+    setSelectedModels((current) =>
+      current.includes("htdemucs_ft") ? current : [...current, "htdemucs_ft"],
+    );
+    setModelConsents((current) =>
+      current.includes("htdemucs_ft") ? current : [...current, "htdemucs_ft"],
+    );
+    const steps: Array<{
+      kind: SetupOperation;
+      label: string;
+      start: () => Promise<SetupJobState>;
+    }> = [
+      {
+        kind: "media",
+        label: "Recommended 1/4 · Media tools",
+        start: () => client.startMediaTools(true),
+      },
+      {
+        kind: "tools",
+        label: "Recommended 2/4 · Analysis tools",
+        start: () => client.startTools(true),
+      },
+      {
+        kind: "environment",
+        label: "Recommended 3/4 · CPU environment",
+        start: () => client.startEnvironment("cpu", true),
+      },
+      {
+        kind: "models",
+        label: "Recommended 4/4 · Demucs model",
+        start: () => client.startModels(["htdemucs_ft"], ["htdemucs_ft"]),
+      },
+    ];
+    for (const step of steps) {
+      const ok = await runJob(step.kind, step.label, step.start, () => {
+        void installRecommended();
+      });
+      if (!ok || !mountedRef.current) return;
+    }
   }
 
   function installEnvironment(): void {
@@ -206,6 +273,19 @@ export function SetupWizard({
   const toolsInstalled = Object.values(status.tools).every(
     (tool) => tool.installed,
   );
+  const mediaToolsInstalled =
+    status.mediaTools.ffmpeg?.installed === true &&
+    status.mediaTools.ffprobe?.installed === true;
+  const demucs = status.models.find((model) => model.id === "htdemucs_ft");
+  const demucsConsent =
+    demucs?.installed === true || modelConsents.includes("htdemucs_ft");
+  const canInstallRecommended =
+    !busy &&
+    (mediaToolsInstalled || mediaConsent) &&
+    (toolsInstalled || toolsConsent) &&
+    (status.environments.cpu?.installed === true ||
+      environmentConsent === "cpu") &&
+    demucsConsent;
   const environmentInstalled =
     variant !== null && status.environments[variant]?.installed === true;
   const selectedMissing = status.models.filter(
@@ -217,6 +297,12 @@ export function SetupWizard({
   const canInstallModels =
     selectedMissing.length > 0 && allSelectedConsented && !busy;
   const progress = job === null ? 0 : Math.round(job.progress * 100);
+  const licenceComponents = setupLicenceComponents(status);
+  const licenceTextKeys = Array.from(
+    new Set(
+      licenceComponents.flatMap((component) => component.licenceTextKeys),
+    ),
+  );
 
   return (
     <main
@@ -316,18 +402,145 @@ export function SetupWizard({
           </div>
         )}
 
-        <section className="setup-section" data-testid="setup-checks">
-          <h2>System checks</h2>
-          <ul className="setup-check-list">
-            {Object.entries(status.checks).map(([name, check]) => (
-              <li key={name} data-ok={check.ok}>
-                <span className="setup-check-name">{name}</span>
-                <span className="setup-check-detail">{check.detail}</span>
-                <span className="setup-status" data-ok={check.ok}>
-                  {check.ok ? "Ready" : "Needs attention"}
+        <section
+          className="setup-section setup-before-download"
+          data-testid="setup-licence-summary"
+        >
+          <h2>Before downloading</h2>
+          <p className="setup-note">
+            Review every component this setup can download. No download starts
+            until each group is accepted below.
+          </p>
+          <ul className="setup-component-list">
+            {licenceComponents.map((component) => (
+              <li
+                key={component.id}
+                data-testid={`licence-component-${component.id}`}
+                data-required={component.required}
+              >
+                <div className="setup-component-main">
+                  <strong>{component.name}</strong>
+                  <span>{component.version}</span>
+                </div>
+                <div className="setup-component-meta">
+                  <a
+                    href={component.licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {component.licence}
+                  </a>
+                  <a
+                    data-testid={`licence-source-${component.id}`}
+                    href={component.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Source
+                  </a>
+                  <span>{component.size}</span>
+                  <span
+                    className="setup-requirement"
+                    data-required={component.required}
+                  >
+                    {component.requirementLabel}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <details
+            className="setup-licence-texts"
+            data-testid="setup-licence-texts"
+          >
+            <summary>Full bundled licence texts</summary>
+            {licenceTextKeys.map((key) => (
+              <section key={key}>
+                <h3>{key}</h3>
+                <pre data-testid={`licence-text-${key}`}>
+                  {LICENCE_TEXTS[key]}
+                </pre>
+              </section>
+            ))}
+          </details>
+        </section>
+
+        <section className="setup-recommended" data-testid="setup-recommended">
+          <div>
+            <h2>Install recommended setup</h2>
+            <p className="setup-note">
+              FFmpeg/FFprobe, the analysis tools, the CPU environment and Demucs
+              htdemucs_ft. Demucs is selected visibly and the model cards stay
+              editable.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="setup-recommended-install"
+            disabled={!canInstallRecommended}
+            onClick={() => {
+              void installRecommended();
+            }}
+          >
+            Install recommended setup
+          </button>
+        </section>
+
+        <section className="setup-section" data-testid="setup-media-tools">
+          <h2>Media tools</h2>
+          <p className="setup-note">
+            FFmpeg and FFprobe are downloaded by this setup. They are not a
+            system prerequisite and do not need to be installed beforehand.
+          </p>
+          <ul className="setup-tool-list">
+            {Object.entries(status.mediaTools).map(([name, tool]) => (
+              <li key={name}>
+                <span>{name}</span>
+                <span className="setup-muted">
+                  {tool.version ? `${tool.version} · ` : ""}
+                  {tool.license ?? "GPL-3.0-or-later"}
+                </span>
+                <span className="setup-status" data-ok={tool.installed}>
+                  {tool.installed ? "Installed" : "Missing"}
                 </span>
               </li>
             ))}
+          </ul>
+          <label className="setup-consent">
+            <input
+              type="checkbox"
+              aria-label="Accept media tools licences"
+              checked={mediaConsent}
+              onChange={(event) => setMediaConsent(event.target.checked)}
+            />
+            I accept the FFmpeg/FFprobe GPL-3.0 licences.
+          </label>
+          <button
+            type="button"
+            data-testid="setup-media-install"
+            disabled={busy || mediaToolsInstalled || !mediaConsent}
+            onClick={installMediaTools}
+          >
+            {mediaToolsInstalled
+              ? "Media tools installed"
+              : "Install media tools"}
+          </button>
+        </section>
+
+        <section className="setup-section" data-testid="setup-checks">
+          <h2>System checks</h2>
+          <ul className="setup-check-list">
+            {Object.entries(status.checks)
+              .filter(([name]) => name !== "ffmpeg" && name !== "ffprobe")
+              .map(([name, check]) => (
+                <li key={name} data-ok={check.ok}>
+                  <span className="setup-check-name">{name}</span>
+                  <span className="setup-check-detail">{check.detail}</span>
+                  <span className="setup-status" data-ok={check.ok}>
+                    {check.ok ? "Ready" : "Needs attention"}
+                  </span>
+                </li>
+              ))}
           </ul>
           {status.registryError !== null && (
             <p className="setup-error" role="alert">
@@ -341,6 +554,11 @@ export function SetupWizard({
           <p className="setup-note">
             Sonic Annotator or Sonic Visualiser and the Vamp plugin pack are
             GPL/AGPL licensed and required for chord and tempo analysis.
+          </p>
+          <p className="setup-note" data-testid="setup-windows-uac">
+            On Windows, the Vamp plugin pack may show one UAC prompt. Approve it
+            to finish the tool installation; denying it stops setup and you can
+            retry.
           </p>
           <ul className="setup-tool-list">
             {Object.entries(status.tools).map(([name, tool]) => (

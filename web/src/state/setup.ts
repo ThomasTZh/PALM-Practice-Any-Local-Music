@@ -1,4 +1,5 @@
 import type { SeparationModel } from "../api/types";
+import { formatModelSize } from "./separationModels";
 
 export type SetupJobStatus =
   "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -24,6 +25,15 @@ export interface SetupTool {
   license: string;
 }
 
+export interface SetupMediaTool {
+  installed: boolean;
+  path: string;
+  version?: string;
+  build?: string;
+  license?: string;
+  source_url?: string;
+}
+
 export interface SetupEnvironment {
   variant: "cpu" | "cuda";
   installed: boolean;
@@ -37,6 +47,7 @@ export interface SetupReadiness {
   ready: boolean;
   checks_ok: boolean;
   tools_ready: boolean;
+  media_tools_ready: boolean;
   environment_ready: boolean;
   model_ready: boolean;
   requires_model_choice: boolean;
@@ -50,6 +61,9 @@ export interface SetupStatus {
   roots: Record<string, string>;
   checks: Record<string, SetupCheck>;
   tools: Record<string, SetupTool>;
+  mediaTools: Record<string, SetupMediaTool>;
+  mediaToolsReady: boolean;
+  environmentVariants: Array<"cpu" | "cuda">;
   environments: Record<string, SetupEnvironment>;
   models: SeparationModel[];
   readiness: SetupReadiness;
@@ -61,6 +75,7 @@ export interface SetupClient {
   status(options?: { signal?: AbortSignal }): Promise<SetupStatus>;
   skip(skip?: boolean): Promise<SetupStatus>;
   startTools(consent: boolean): Promise<SetupJobState>;
+  startMediaTools(consent: boolean): Promise<SetupJobState>;
   startEnvironment(
     variant: "cpu" | "cuda",
     consent?: boolean,
@@ -130,6 +145,205 @@ export function environmentEstimate(variant: "cpu" | "cuda"): string {
   return ENVIRONMENT_ESTIMATES[variant];
 }
 
+export type LicenceTextKey =
+  | "GPL-2.0"
+  | "GPL-3.0"
+  | "AGPL-3.0"
+  | "LGPL-2.1"
+  | "MIT"
+  | "Apache-2.0"
+  | "BSD-3-Clause";
+
+export interface LicenceComponent {
+  id: string;
+  group: "media" | "tools" | "environment" | "model";
+  name: string;
+  version: string;
+  licence: string;
+  licenceUrl: string;
+  sourceUrl: string;
+  size: string;
+  required: boolean;
+  requirementLabel: string;
+  licenceTextKeys: LicenceTextKey[];
+}
+
+export type SetupPlatform = "windows" | "macos" | "linux";
+
+interface MediaPin {
+  tool: "ffmpeg" | "ffprobe";
+  version: string;
+  licence: string;
+  sourceUrl: string;
+  size: string;
+}
+
+const MEDIA_PINS: Record<SetupPlatform, MediaPin[]> = {
+  linux: [
+    {
+      tool: "ffmpeg",
+      version: "9.0.2",
+      licence: "GPL-3.0-or-later",
+      sourceUrl: "https://ffmpeg.martin-riedl.de/",
+      size: "32 MB",
+    },
+    {
+      tool: "ffprobe",
+      version: "9.0.2",
+      licence: "GPL-3.0-or-later",
+      sourceUrl: "https://ffmpeg.martin-riedl.de/",
+      size: "32 MB",
+    },
+  ],
+  macos: [
+    {
+      tool: "ffmpeg",
+      version: "9.0.2",
+      licence: "GPL-3.0-or-later",
+      sourceUrl: "https://ffmpeg.martin-riedl.de/",
+      size: "27 MB",
+    },
+    {
+      tool: "ffprobe",
+      version: "9.0.2",
+      licence: "GPL-3.0-or-later",
+      sourceUrl: "https://ffmpeg.martin-riedl.de/",
+      size: "27 MB",
+    },
+  ],
+  windows: [
+    {
+      tool: "ffmpeg",
+      version: "8.1.2",
+      licence: "GPL-3.0-or-later",
+      sourceUrl: "https://www.gyan.dev/ffmpeg/builds/",
+      size: "105 MB",
+    },
+    {
+      tool: "ffprobe",
+      version: "8.1.2",
+      licence: "GPL-3.0-or-later",
+      sourceUrl: "https://www.gyan.dev/ffmpeg/builds/",
+      size: "105 MB",
+    },
+  ],
+};
+
+export function setupPlatform(): SetupPlatform {
+  if (typeof navigator === "undefined") return "linux";
+  const label = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+  if (label.includes("win")) return "windows";
+  if (label.includes("mac")) return "macos";
+  return "linux";
+}
+
+function environmentComponents(status: SetupStatus): LicenceComponent[] {
+  const variants = status.environmentVariants.length
+    ? status.environmentVariants
+    : (Object.keys(status.environments) as Array<"cpu" | "cuda">);
+  return variants.map((variant) => ({
+    id: `environment-${variant}`,
+    group: "environment",
+    name: `${variant.toUpperCase()} inference environment`,
+    version:
+      variant === "cpu"
+        ? "PyTorch 2.9.1 CPU, MSST 0.1.0"
+        : "PyTorch 2.9.1 CUDA 12.8, MSST 0.1.0",
+    licence: "BSD-3-Clause, MIT and Apache-2.0 dependencies",
+    licenceUrl: "https://github.com/pytorch/pytorch/blob/main/LICENSE",
+    sourceUrl:
+      variant === "cpu"
+        ? "https://download.pytorch.org/whl/cpu"
+        : "https://download.pytorch.org/whl/cu128",
+    size: environmentEstimate(variant),
+    required: variant === "cpu",
+    requirementLabel: variant === "cpu" ? "Required" : "Optional",
+    licenceTextKeys: ["BSD-3-Clause", "MIT", "Apache-2.0"] as LicenceTextKey[],
+  }));
+}
+
+/** Every downloaded component shown before the first download can start. */
+export function setupLicenceComponents(
+  status: SetupStatus,
+): LicenceComponent[] {
+  const platform = setupPlatform();
+  const media = MEDIA_PINS[platform].map((pin): LicenceComponent => {
+    const installed = status.mediaTools[pin.tool];
+    return {
+      id: `media-${pin.tool}`,
+      group: "media",
+      name: pin.tool,
+      version: installed?.version ?? pin.version,
+      licence: installed?.license ?? pin.licence,
+      licenceUrl: "https://www.gnu.org/licenses/gpl-3.0.html",
+      sourceUrl: installed?.source_url ?? pin.sourceUrl,
+      size: pin.size,
+      required: true,
+      requirementLabel: "Required",
+      licenceTextKeys: ["GPL-3.0"],
+    };
+  });
+  const tools: LicenceComponent[] = [
+    {
+      id: "tool-sonic",
+      group: "tools",
+      name:
+        platform === "linux" ? "Sonic Visualiser / Piper" : "Sonic Annotator",
+      version: "1.7",
+      licence: "GPL-2.0-or-later",
+      licenceUrl: "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+      sourceUrl: "https://github.com/sonic-visualiser/sonic-annotator",
+      size: platform === "linux" ? "bundled launcher" : "6-11 MB",
+      required: false,
+      requirementLabel: "Optional (needed for analysis)",
+      licenceTextKeys: ["GPL-2.0"],
+    },
+    {
+      id: "tool-vamp",
+      group: "tools",
+      name: "Vamp Plugin Pack",
+      version: "2.0",
+      licence: "AGPL-3.0 (pack); individual plugins GPL/AGPL",
+      licenceUrl: "https://www.gnu.org/licenses/agpl-3.0.html",
+      sourceUrl: "https://github.com/vamp-plugins/vamp-plugin-pack",
+      size: "33-47 MB",
+      required: false,
+      requirementLabel: "Optional (needed for analysis)",
+      licenceTextKeys: ["AGPL-3.0"],
+    },
+  ];
+  if (platform === "windows") {
+    tools.push({
+      id: "tool-7zip",
+      group: "tools",
+      name: "7-Zip console helper",
+      version: "26.06",
+      licence: "LGPL-2.1-or-later with the unRAR restriction",
+      licenceUrl: "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
+      sourceUrl: "https://www.7-zip.org/download.html",
+      size: "2 MB",
+      required: false,
+      requirementLabel: "Optional (Windows helper)",
+      licenceTextKeys: ["LGPL-2.1"],
+    });
+  }
+  const models = status.models.map((model): LicenceComponent => ({
+    id: `model-${model.id}`,
+    group: "model",
+    name: model.name,
+    version: `${model.id} (${model.engine.toUpperCase()})`,
+    licence: model.license,
+    licenceUrl: modelLicenceLink(model).licenceUrl,
+    sourceUrl: model.source_url || modelLicenceLink(model).licenceUrl,
+    size: formatModelSize(model.size_bytes),
+    required: false,
+    requirementLabel: "Optional (choose at least one)",
+    licenceTextKeys:
+      model.id === "bs-roformer-sw" ? [] : (["MIT"] as LicenceTextKey[]),
+  }));
+  return [...media, ...tools, ...environmentComponents(status), ...models];
+}
+
 /**
  * The server exposes readiness booleans; the UI derives per-operation gates so
  * optional tools do not block importing, while analysis needs the Vamp tools
@@ -146,12 +360,18 @@ export function setupGates(status: SetupStatus | null): SetupGates {
       separateReason: "Checking studio setup…",
     };
   }
-  const checksOk = status.readiness.checks_ok;
+  const coreChecksOk = Object.entries(status.checks)
+    .filter(([name]) => name !== "ffmpeg" && name !== "ffprobe")
+    .every(([, check]) => check.ok);
+  const mediaReady =
+    status.readiness.media_tools_ready ??
+    (status.checks.ffmpeg?.ok === true && status.checks.ffprobe?.ok === true);
   const toolsReady = status.readiness.tools_ready;
   const environmentReady = status.readiness.environment_ready;
   const modelReady = status.readiness.model_ready;
-  const canImport = checksOk;
-  const canAnalyze = checksOk && toolsReady && environmentReady;
+  const canImport = coreChecksOk && mediaReady;
+  const canAnalyze =
+    coreChecksOk && mediaReady && toolsReady && environmentReady;
   const canSeparate = canAnalyze && modelReady;
   return {
     canImport,
@@ -159,21 +379,29 @@ export function setupGates(status: SetupStatus | null): SetupGates {
     canSeparate,
     importReason: canImport
       ? null
-      : "Importing needs the system checks to pass. Open Setup to see what is missing.",
+      : !coreChecksOk
+        ? "Importing needs the system checks to pass. Open Setup to see what is missing."
+        : "Importing needs the managed FFmpeg/FFprobe media tools. Open Setup to install them.",
     analyzeReason: canAnalyze
       ? null
-      : !checksOk
+      : !coreChecksOk
         ? "Analysis needs the system checks to pass. Open Setup to get the studio ready."
-        : !toolsReady
-          ? "Analysis needs the optional GPL tools (Sonic Visualiser and the Vamp plugin pack). Open Setup to install them."
-          : "Analysis needs the CPU or CUDA inference environment. Open Setup to create it.",
+        : !mediaReady
+          ? "Analysis needs the managed FFmpeg/FFprobe media tools. Open Setup to install them."
+          : !toolsReady
+            ? "Analysis needs the optional GPL tools (Sonic Visualiser and the Vamp plugin pack). Open Setup to install them."
+            : "Analysis needs the CPU or CUDA inference environment. Open Setup to create it.",
     separateReason: canSeparate
       ? null
-      : !environmentReady
-        ? "Stem separation needs the CPU or CUDA inference environment. Open Setup to create it."
-        : !modelReady
-          ? "Stem separation needs a separation model. Open Setup to install one."
-          : "Stem separation needs the system checks to pass. Open Setup to see what is missing.",
+      : !coreChecksOk
+        ? "Stem separation needs the system checks to pass. Open Setup to see what is missing."
+        : !mediaReady
+          ? "Stem separation needs the managed FFmpeg/FFprobe media tools. Open Setup to install them."
+          : !environmentReady
+            ? "Stem separation needs the CPU or CUDA inference environment. Open Setup to create it."
+            : !modelReady
+              ? "Stem separation needs a separation model. Open Setup to install one."
+              : "Stem separation needs the optional analysis tools. Open Setup to install them.",
   };
 }
 

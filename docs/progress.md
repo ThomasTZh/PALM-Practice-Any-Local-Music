@@ -2484,3 +2484,45 @@ Tests added:
 
 make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass. No
 dependency added.
+
+## 2026-11-16 — licence-first setup and recommended one-click install (t115)
+
+### Before downloading
+
+Setup now opens with a "Before downloading" summary populated from the setup
+status: FFmpeg/FFprobe (platform-pinned 9.0.2 or 8.1.2, GPL-3.0), Sonic
+Visualiser/Annotator 1.7 (GPL-2.0), Vamp Plugin Pack 2.0 (AGPL-3.0), CPU/CUDA
+PyTorch/MSST environments and all three equal models. Each row shows version,
+licence link, Source link, size and Required/Optional status. A details block
+contains the full bundled GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, MIT, Apache-2.0
+and BSD-3-Clause texts.
+
+### Consent and recommended path
+
+Media tools have their own consent checkbox and install action. The existing
+tool, environment and per-model consents are required before their actions.
+"Install recommended setup" requires those consents, visibly selects Demucs in
+the equal model grid, and sequentially installs: media tools, analysis tools,
+CPU environment, Demucs htdemucs_ft with accepted_model_ids. Other model cards
+remain selectable/editable; no implicit mixer default was introduced. The
+Windows copy says the Vamp pack may show one UAC prompt and never claims no-admin
+extraction.
+
+### FFmpeg prerequisite removed
+
+The System checks list excludes ffmpeg/ffprobe. Media tools are shown as a
+setup-managed download, explicitly "not a system prerequisite". Readiness gates
+now use core checks + managed media readiness: import needs media, analysis adds
+tools/environment, separation adds a model. Missing media shows the managed
+FFmpeg/FFprobe reason and Open setup.
+
+### Verification
+
+- Firefox mock at 1280x720 and 1600x900: 9 component rows, full GPL text
+  available, UAC note present, setup page scrollHeight 2162 vs client 720/900.
+- Tests cover summary/versions/required flags/full texts, safe links, media
+  consent gating, recommended sequence spies and accepted model id, Demucs
+  visible selection with SCNet editable, media-only gating, and existing
+  consent/no-default/skip/progress/scroll tests.
+- make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass.
+  No dependency added.

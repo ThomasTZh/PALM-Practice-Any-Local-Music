@@ -63,7 +63,7 @@ describe("SetupWizard", () => {
     );
     const checks = screen.getByTestId("setup-checks");
     expect(checks).toHaveTextContent("glibc");
-    expect(checks).toHaveTextContent("ffmpeg is not on PATH");
+    expect(checks).not.toHaveTextContent("ffmpeg");
     const tools = screen.getByTestId("setup-tools");
     expect(tools).toHaveTextContent("GPL");
     expect(tools).toHaveTextContent("AGPL");
@@ -92,6 +92,64 @@ describe("SetupWizard", () => {
       ).not.toBeChecked();
     }
     expect(screen.getByTestId("setup-model-install")).toBeDisabled();
+  });
+
+  it("shows every downloadable component and full bundled licences before download", () => {
+    renderWizard();
+    const summary = screen.getByTestId("setup-licence-summary");
+    expect(summary).toHaveTextContent("Before downloading");
+    for (const id of [
+      "media-ffmpeg",
+      "media-ffprobe",
+      "tool-sonic",
+      "tool-vamp",
+      "environment-cpu",
+      "environment-cuda",
+      "model-htdemucs_ft",
+      "model-scnet-xl-ihf",
+      "model-bs-roformer-sw",
+    ]) {
+      expect(summary).toContainElement(
+        screen.getByTestId(`licence-component-${id}`),
+      );
+    }
+    const ffmpeg = screen.getByTestId("licence-component-media-ffmpeg");
+    expect(ffmpeg).toHaveTextContent("ffmpeg");
+    expect(ffmpeg).toHaveTextContent(/9\.0\.2|8\.1\.2/);
+    expect(ffmpeg).toHaveTextContent("GPL-3.0-or-later");
+    expect(ffmpeg).toHaveTextContent("Required");
+    expect(screen.getByTestId("licence-component-tool-vamp")).toHaveTextContent(
+      "Optional",
+    );
+    expect(
+      screen.getByTestId("licence-source-media-ffmpeg").getAttribute("href"),
+    ).toMatch(/ffmpeg\.martin-riedl\.de|gyan\.dev/);
+    expect(
+      screen.getByTestId("licence-source-model-bs-roformer-sw"),
+    ).toHaveAttribute(
+      "href",
+      "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
+    );
+    expect(
+      screen.getByTestId("licence-component-environment-cpu"),
+    ).toHaveTextContent("~500 MB download");
+    expect(screen.getByTestId("licence-text-GPL-3.0")).toHaveTextContent(
+      "GNU GENERAL PUBLIC LICENSE",
+    );
+    expect(screen.getByTestId("licence-text-AGPL-3.0")).toHaveTextContent(
+      "GNU AFFERO GENERAL PUBLIC LICENSE",
+    );
+    expect(screen.getByTestId("setup-media-tools")).toHaveTextContent(
+      "not a system prerequisite",
+    );
+    expect(screen.getByTestId("setup-windows-uac")).toHaveTextContent(
+      "may show one UAC prompt",
+    );
+    expect(screen.getByTestId("setup-windows-uac")).not.toHaveTextContent(
+      /no admin|no-admin|without.*admin/i,
+    );
+    expect(screen.getByTestId("setup-media-install")).toBeDisabled();
+    expect(screen.getByTestId("setup-recommended-install")).toBeDisabled();
   });
 
   it("uses platform tool names and hides unsupported CUDA", () => {
@@ -313,6 +371,50 @@ describe("SetupWizard", () => {
       screen.getByLabelText("Accept CUDA environment licence"),
     ).not.toBeChecked();
     expect(screen.getByTestId("setup-env-install")).toBeDisabled();
+  });
+
+  it("installs the recommended stack and visibly selects editable Demucs", async () => {
+    const client = createFakeSetupClient(incompleteSetupStatus());
+    const startMediaTools = vi.fn(async () => job("queued", 0));
+    const startTools = vi.fn(async () => job("queued", 0));
+    const startEnvironment = vi.fn(async () => job("queued", 0));
+    const startModels = vi.fn(async () => job("queued", 0));
+    client.startMediaTools = startMediaTools;
+    client.startTools = startTools;
+    client.startEnvironment = startEnvironment;
+    client.startModels = startModels;
+    renderWizard(client);
+
+    fireEvent.click(screen.getByLabelText("Accept media tools licences"));
+    fireEvent.click(screen.getByLabelText("Accept GPL tool licences"));
+    fireEvent.click(screen.getByLabelText("CPU environment"));
+    fireEvent.click(screen.getByLabelText("Accept CPU environment licence"));
+    fireEvent.click(screen.getByLabelText("Select Demucs htdemucs_ft"));
+    fireEvent.click(screen.getByLabelText("Accept Demucs htdemucs_ft licence"));
+
+    const recommended = screen.getByTestId("setup-recommended-install");
+    expect(recommended).toBeEnabled();
+    fireEvent.click(recommended);
+    expect(screen.getByLabelText("Select Demucs htdemucs_ft")).toBeChecked();
+
+    await waitFor(() =>
+      expect(startModels).toHaveBeenCalledWith(
+        ["htdemucs_ft"],
+        ["htdemucs_ft"],
+      ),
+    );
+    expect(startMediaTools).toHaveBeenCalledWith(true);
+    expect(startTools).toHaveBeenCalledWith(true);
+    expect(startEnvironment).toHaveBeenCalledWith("cpu", true);
+    expect(
+      screen.getByTestId("setup-model-card-scnet-xl-ihf"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(
+        screen.getByTestId("setup-model-card-scnet-xl-ihf"),
+      ).getByLabelText("Select SCNet XL IHF"),
+    );
+    expect(screen.getByLabelText("Select SCNet XL IHF")).toBeChecked();
   });
 
   it("installs a chosen environment and selected consented models", async () => {
