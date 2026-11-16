@@ -387,3 +387,31 @@ packaged psutil 7.2.2
 - Platform tests also run a child Python with `psutil` blocked and assert a
   non-zero exit containing `PALM requires psutil 7.2.2 ...`.
 - No release asset was published for this build.
+
+## t126 final clean-checkout and native artifact verification
+
+Status: **PASSED** on the curated `portable-final` branch.
+
+- Clean checkout at the CI commit contains 19/19 files under
+  `licenses/third_party`; `git check-ignore` does not ignore the manifest.
+  `tests/unit/test_licenses` + `tests/integration/test_package_audit` passed 12
+  (package archive skipped only because that clean worktree had no dist).
+- Control wiring: `run_control` supplies real update/uninstall callbacks;
+  scoped control/updater tests passed 18.
+- GitHub Actions run **43972664919** succeeded from branch `portable-final`:
+  Linux full gate/tar, Windows ZIP/package, macOS arm64 app/package; Intel
+  manual-only and skipped.
+- Downloaded final CI artifacts and verified flat checksums:
+  - `PALM-0.1.0-dev-linux-x86_64.tar.gz` 88,419,888 B,
+    SHA-256 `f25f6f6fde72f736c9ee6bb92191809b10396963ad0d3d13c330fcbb5264fac9`
+  - `PALM-0.1.0-dev-windows-x86_64.zip` 79,622,676 B,
+    SHA-256 `29336f1c24ac6243e91dca4cb2dc74900f99909d0d4c855cd06e3aaab892fc01`
+  - `PALM-0.1.0-dev-macos-arm64.zip` 69,372,886 B,
+    SHA-256 `67af69eaee36581019b29a94644d7bf06620436c064ffafb92e63ef463f1d99f`
+  - `PALM-0.1.0-dev-macos-arm64.dmg` 81,636,504 B,
+    SHA-256 `ea9cb69ba2339109180420cdefd3d5baa5efcdd614af7d603dca4314e1466d7c`
+- All three SHA256SUMS verified from flat artifact directories. Windows
+  PALM.exe/python.exe and macOS wrapper/python are executable Unix entries.
+- Package launch/health/stop, install.json/licence-tree checks and no-terminal
+  control smoke are in the Linux/Windows/macOS jobs. No third-party tools,
+  models or environments are bundled. No release was published.
