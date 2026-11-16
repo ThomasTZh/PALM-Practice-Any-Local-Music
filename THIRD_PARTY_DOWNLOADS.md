@@ -196,9 +196,9 @@ additional downloads.
 
 7-Zip 26.06 assets used by the Windows Vamp helper:
 
-- `7z2606-extra.7z` — 1,758,340 B, SHA-256
+- `7z2606-extra.7z` - 1,758,340 B, SHA-256
   `396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104`
-- `7zr.exe` bootstrap — 600,064 B, SHA-256
+- `7zr.exe` bootstrap - 600,064 B, SHA-256
   `e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc`
 
 Both are downloaded only inside the licence-gated setup job, verified before
