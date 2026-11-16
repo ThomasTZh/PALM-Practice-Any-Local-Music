@@ -40,7 +40,7 @@ records the URL in `run/server.json`, opens the browser (unless
 `--no-browser`), forwards SIGINT/SIGTERM and removes the run state on exit. A
 second launch prints the running URL instead of starting another server.
 
-Supported options: `--no-browser`, `--no-terminal` (also `--detach`),
+Supported options: `--window`, `--console`, `--no-browser`, `--no-terminal` (also `--detach`),
 `--port N`, `--data-dir DIR`, `--setup`, `--doctor`, `--status` and `--stop`;
 no writes are made under the read-only app root.
 
@@ -60,13 +60,16 @@ through; Ctrl+C stops the server.
 
 `packaging/macos/PALM.app` is a Finder wrapper. Put the extracted tar under
 `Contents/Resources/app`; `Contents/MacOS/palm` sets the packaged roots and
-execs `bin/palm`. The launcher opens Terminal.app with `osascript` when Finder
+execs `bin/palm`. The app passes `--window`, so Finder opens the graphical
+control window without Terminal. A terminal launch remains available with
+`--console`; if Tk/display is unavailable the launcher falls back to a terminal
+or headless mode and prints the log path.
 starts it without a tty, and passes `--status`/`--stop` through. No native
 package is produced by this task.
 
-## Terminal-first launch
+## Launch modes
 
-When `bin/palm` runs in an interactive terminal it streams the server log
+An interactive terminal runs `bin/palm` in console mode and streams the server log
 lines to that terminal as they arrive and keeps writing `logs/server.log`;
 Ctrl+C forwards SIGINT and stops the launcher and server cleanly.
 
@@ -90,8 +93,9 @@ install -m644 palm.desktop ~/.local/share/applications/palm.desktop
 
 The entry's `Exec=palm` resolves through that symlink. If you keep the tar
 somewhere else, use an absolute symlink or update `Exec` to the launcher path.
-On a desktop whose file manager ignores `Terminal=true`, run `bin/palm` from a
-terminal or add a desktop launcher whose command is `bin/palm`.
+On a desktop whose file manager cannot launch the control window, run
+`bin/palm --console` from a terminal; `--window` explicitly requests the window
+and `--console` explicitly requests the diagnostic console.
 
 ### Data roots and cleanup
 

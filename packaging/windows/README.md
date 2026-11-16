@@ -17,7 +17,10 @@ UI, analysis workers/registry and Windows env definitions, scripts, licences
 and the hashed runtime requirements. It intentionally contains no FFmpeg,
 Sonic Annotator, Vamp plugins, models, inference environments or development
 sources. No administrator rights are needed: extract the ZIP under the user's
-profile and double-click `palm.cmd`; the console shows logs and Ctrl+C stops it.
+profile and double-click `PALM.exe` for the native control window, or
+`palm.cmd` for the diagnostic console fallback. `PALM.exe` is built from
+`palm_launcher.c` with the Windows SDK and starts `pythonw.exe --window` with
+no console.
 `palm.cmd --status` and `palm.cmd --stop` use the normal launcher state under
 `%LOCALAPPDATA%\palm`.
 

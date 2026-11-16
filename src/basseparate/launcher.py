@@ -32,6 +32,7 @@ from pathlib import Path
 from types import FrameType
 from typing import IO, Any
 from urllib.parse import urlsplit
+from urllib.request import urlopen
 
 from basseparate.config import DataPaths, RuntimePathError, RuntimePaths, runtime_paths
 from basseparate.doctor import DoctorLayout, diagnose
@@ -705,7 +706,7 @@ class Launcher:
     ) -> None:
         self.paths = paths
         self.port = port
-        self.open_browser = open_browser
+        self._should_open_browser = open_browser
         self.startup_timeout = startup_timeout
         self.state_timeout = state_timeout
         self._browser_open = browser_open if browser_open is not None else webbrowser.open
@@ -715,15 +716,18 @@ class Launcher:
         self._lock = InstanceLock(paths)
         self._server: subprocess.Popen[str] | None = None
         self._server_log: IO[str] | None = None
+        self._owns_instance = False
+        self._browser_opened = False
         self._stop = threading.Event()
         self._url_event = threading.Event()
         self._url: str | None = None
         self._signum: int | None = None
         self._previous_handlers: dict[int, Any] = {}
 
-    def _open_browser(self, url: str) -> None:
-        if self.open_browser:
-            self._browser_open(url)
+    def _open_browser(self, url: str) -> bool:
+        if self._should_open_browser:
+            return bool(self._browser_open(url))
+        return False
 
     def _write_log(self, line: str) -> None:
         if self._server_log is not None:
@@ -851,6 +855,7 @@ class Launcher:
             self._server_log.close()
             self._server_log = None
         self._lock.release()
+        self._owns_instance = False
         self._restore_signal_handlers()
 
     def _report_running(self) -> int:
@@ -864,37 +869,188 @@ class Launcher:
         self._open_browser(state.url)
         return 0
 
-    def run(self) -> int:
+    @property
+    def owns_instance(self) -> bool:
+        """Whether this object started the instance and owns its shutdown."""
+        return self._owns_instance
+
+    def start(self) -> str:
+        """Start the server and return its URL without waiting for exit.
+
+        If another launcher already owns the data root, return that instance's
+        URL and leave ownership false. The control window and terminal runner
+        both use this operation.
+        """
         try:
             self.paths.ensure()
         except (OSError, RuntimePathError) as error:
-            print(f"palm: cannot prepare data root: {error}", file=sys.stderr)
-            return 1
+            raise LauncherError(f"cannot prepare data root: {error}") from error
         if not self._lock.acquire():
-            return self._report_running()
+            state = wait_for_run_state(
+                self.paths.state_file, timeout=self.state_timeout, sleep=self._sleep
+            )
+            if state is None:
+                raise LauncherError("another instance is starting; retry in a moment")
+            self._url = state.url
+            return state.url
+        self._owns_instance = True
+        self._install_signal_handlers()
+        log = self.paths.launcher_log.open("a", encoding="utf-8")
+        log.write(
+            f"{utc_now()} starting mode={self.paths.runtime.mode} "
+            f"app={self.paths.runtime.app_root} data={self.paths.runtime.data_root}\n"
+        )
+        log.flush()
+        log.close()
         try:
-            self._install_signal_handlers()
-            with self.paths.launcher_log.open("a", encoding="utf-8") as log:
-                log.write(
-                    f"{utc_now()} starting mode={self.paths.runtime.mode} "
-                    f"app={self.paths.runtime.app_root} data={self.paths.runtime.data_root}\n"
-                )
-                log.flush()
-                self._start_server()
-                url = self._wait_for_url()
-                self._write_running_state(url)
-                print(f"palm: running at {url}")
-                print(f"palm: logs in {self.paths.logs_root}")
-                self._open_browser(url)
-                return self._wait_for_exit()
+            self._start_server()
+            url = self._wait_for_url()
+            self._write_running_state(url)
+            print(f"palm: running at {url}")
+            print(f"palm: logs in {self.paths.logs_root}")
+            self._url = url
+            return url
+        except Exception:
+            self._cleanup()
+            raise
+
+    def open_browser(self, url: str | None = None) -> bool:
+        """Open the studio URL once for the current instance."""
+        target = url or self._url
+        if target is None or self._browser_opened:
+            return False
+        self._browser_opened = True
+        return self._open_browser(target)
+
+    def stop(self) -> None:
+        """Stop this instance and remove its state; safe to call repeatedly."""
+        self._stop.set()
+        forward_signal(self._server, signal.SIGTERM)
+        self._cleanup()
+
+    def run(self) -> int:
+        try:
+            url = self.start()
         except LauncherError as error:
             print(f"palm: {error}", file=sys.stderr)
             return 1
         except (OSError, RuntimePathError) as error:
             print(f"palm: {error}", file=sys.stderr)
             return 1
+        try:
+            if not self.owns_instance:
+                return self._report_running()
+            self._open_browser(url)
+            return self._wait_for_exit()
+        except LauncherError as error:
+            print(f"palm: {error}", file=sys.stderr)
+            return 1
         finally:
-            self._cleanup()
+            if self.owns_instance:
+                self._cleanup()
+
+
+class LauncherController:
+    """Start/status/log/stop operations shared by the UI and native wrappers."""
+
+    def __init__(
+        self,
+        paths: LauncherPaths,
+        *,
+        launcher_factory: Callable[..., Launcher] = Launcher,
+        health_check: Callable[[str], bool] | None = None,
+        browser_open: Callable[[str], bool] | None = None,
+        health_timeout: float = STARTUP_TIMEOUT_SECONDS,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.paths = paths
+        self._launcher = launcher_factory(paths, open_browser=False)
+        self._health_check = health_check or health_url
+        self._browser_open = browser_open or webbrowser.open
+        self._health_timeout = health_timeout
+        self._sleep = sleep
+        self._url: str | None = None
+        self._browser_opened = False
+        self._started = False
+
+    @property
+    def url(self) -> str | None:
+        return self._url
+
+    @property
+    def log_path(self) -> Path:
+        return self.paths.server_log
+
+    def _wait_health(self) -> bool:
+        if self._url is None:
+            return False
+        deadline = time.monotonic() + self._health_timeout
+        while True:
+            if self._health_check(self._url):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            self._sleep(0.1)
+
+    def start(self) -> str:
+        if self._started and self._url is not None:
+            return self._url
+        self._url = self._launcher.start()
+        if not self._wait_health():
+            self._launcher.stop()
+            raise LauncherError(
+                f"the server did not become healthy within {self._health_timeout:.0f}s; "
+                f"see {self.paths.server_log}"
+            )
+        self._started = True
+        if not self._browser_opened:
+            self._browser_open(self._url)
+            self._browser_opened = True
+        return self._url
+
+    def status(self) -> str:
+        state = read_run_state(self.paths.state_file)
+        if state is None:
+            return f"not running\nlogs: {self.paths.logs_root}"
+        health = inspect_run_state(state)
+        status = "running" if health.server_valid or health.launcher_valid else "stale"
+        return (
+            f"{status}\nURL: {state.url}\ndata: {state.data_root}\n"
+            f"server pid: {state.pid}; launcher pid: {state.launcher_pid}"
+        )
+
+    def log_tail(self, lines: int = 40) -> str:
+        try:
+            content = self.paths.server_log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return f"no server log yet ({self.paths.server_log})"
+        return "\n".join(content.splitlines()[-lines:])
+
+    def open_browser(self) -> bool:
+        if self._url is None:
+            state = read_run_state(self.paths.state_file)
+            self._url = state.url if state else None
+        if self._url is None:
+            return False
+        return bool(self._browser_open(self._url))
+
+    def open_logs(self) -> Path:
+        return self.paths.logs_root
+
+    def stop(self) -> None:
+        if self._launcher.owns_instance:
+            self._launcher.stop()
+        self._started = False
+
+
+def health_url(url: str, *, timeout: float = 1.0) -> bool:
+    """Return whether the local server reports a healthy API."""
+    try:
+        with urlopen(url.rstrip("/") + "/api/health", timeout=timeout) as response:  # noqa: S310
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("status") == "ok"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -926,6 +1082,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="writable data root (default: PALM_DATA_DIR or the per-user data dir)",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--window",
+        action="store_true",
+        help="open the graphical control window (default on a desktop launch)",
+    )
+    mode.add_argument(
+        "--console",
+        action="store_true",
+        help="run the diagnostic console launcher even when a desktop is available",
     )
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument(
@@ -972,12 +1139,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_status(paths)
     if args.stop:
         return run_stop(paths)
-    if not args.no_terminal and not terminal_active() and not sys.stdin.isatty():
-        if (
-            os.environ.get("DISPLAY")
-            or os.environ.get("WAYLAND_DISPLAY")
-            or sys.platform == "darwin"
-        ):
+    graphical = bool(
+        os.environ.get("DISPLAY")
+        or os.environ.get("WAYLAND_DISPLAY")
+        or sys.platform in {"darwin", "win32"}
+    )
+    want_window = args.window or (not args.console and not sys.stdin.isatty() and graphical)
+    if want_window:
+        from basseparate.control import run_control
+
+        result = run_control(paths)
+        if result is not None:
+            return result
+        # Tk/display unavailable: fall through to terminal/headless fallback.
+    if (
+        not args.console
+        and not args.no_terminal
+        and not terminal_active()
+        and not sys.stdin.isatty()
+    ):
+        if graphical:
             if open_terminal(raw_argv):
                 return 0
             print(

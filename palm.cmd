@@ -20,5 +20,5 @@ if not exist "%PALM_PYTHON%" (
     echo palm: embedded Python not found at "%~dp0python\python.exe" or "%~dp0python\Scripts\python.exe" 1>&2
     exit /b 1
 )
-"%PALM_PYTHON%" -m basseparate.launcher %*
+"%PALM_PYTHON%" -m basseparate.launcher --console %*
 exit /b %ERRORLEVEL%
