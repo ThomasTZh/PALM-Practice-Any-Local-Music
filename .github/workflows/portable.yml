@@ -288,10 +288,19 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
       - name: Download uploaded macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: palm-macos-arm64
-          path: artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf artifact
+          for attempt in 1 2 3 4 5; do
+            if gh run download "$GITHUB_RUN_ID" -n palm-macos-arm64 -D artifact; then
+              break
+            fi
+            sleep 10
+          done
+          test -f artifact/SHA256SUMS
       - name: Verify flat artifact checksums and modes
         shell: bash
         run: |
