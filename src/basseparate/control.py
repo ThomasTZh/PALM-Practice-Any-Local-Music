@@ -9,13 +9,22 @@ server-only environment can still use the CLI.
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from basseparate.launcher import LauncherController, LauncherError, LauncherPaths
-from basseparate.updater import UninstallPlan, launch_uninstall_helper
+from basseparate.updater import (
+    UninstallPlan,
+    UpdateError,
+    check_for_update,
+    launch_uninstall_helper,
+    load_metadata,
+    stage_update,
+    write_plan,
+)
 
 
 def _load_tk() -> Any:
@@ -37,6 +46,7 @@ class ControlWindow:
         tk: Any,
         update_action: Callable[[], str] | None = None,
         uninstall_action: Callable[[], str] | None = None,
+        confirm_uninstall: Callable[[], bool] | None = None,
     ) -> None:
         self.root = root
         self.controller = controller
@@ -46,6 +56,7 @@ class ControlWindow:
         self._log_window: Any | None = None
         self._update_action = update_action
         self._uninstall_action = uninstall_action
+        self._confirm_uninstall = confirm_uninstall or self._ask_uninstall
         root.title("PALM — Practice Any Local Music")
         root.minsize(520, 360)
         root.protocol("WM_DELETE_WINDOW", self.quit)
@@ -117,7 +128,25 @@ class ControlWindow:
         except Exception as error:  # user-facing helper errors must not crash Tk
             self.detail.set(f"Update check failed: {error}")
 
+    def _ask_uninstall(self) -> bool:
+        try:
+            from tkinter import messagebox
+
+            return bool(
+                messagebox.askyesno(
+                    "Uninstall PALM?",
+                    "Stop PALM and remove the application?\n\n"
+                    "Your projects, models and tools are kept by default. "
+                    "Delete data separately only if you intend to remove them.",
+                )
+            )
+        except Exception:
+            return False
+
     def uninstall(self) -> None:
+        if not self._confirm_uninstall():
+            self.detail.set("Uninstall cancelled; PALM is still running.")
+            return
         if self._uninstall_action is None:
             self.detail.set("Uninstall helper is not configured for this install.")
             return
@@ -188,6 +217,50 @@ def uninstall_app(
     return launch_uninstall_helper(plan, executable, popen=popen)
 
 
+def _external_helper(paths: LauncherPaths, name: str) -> Path:
+    """Copy a packaged updater/helper below the writable data root."""
+    source = paths.runtime.app_root / "updaters" / name
+    destination = paths.runtime.data_root / "updates" / "helpers" / name
+    if source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        destination.chmod(0o755)
+        return destination
+    return paths.runtime.app_root.parent / name
+
+
+def check_for_updates(
+    paths: LauncherPaths,
+    *,
+    fetch_release: Callable[[str], Any] | None = None,
+    download: Callable[[str, Path], None] | None = None,
+) -> str:
+    """Read install.json, check the channel and stage a verified update."""
+    try:
+        metadata = load_metadata(paths.runtime.app_root, paths.runtime.data_root)
+    except UpdateError as error:
+        return f"Update check failed: {error}"
+    release_url = os.environ.get(
+        "PALM_UPDATE_MANIFEST",
+        "https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/latest/download/release.json",
+    )
+    try:
+        candidate = check_for_update(metadata, fetch_release=fetch_release, release_url=release_url)
+    except (UpdateError, OSError) as error:
+        return f"Update check failed: {error}"
+    if candidate is None:
+        return f"No update available for {metadata.channel} (installed {metadata.version})."
+    try:
+        staged = stage_update(candidate, paths.runtime.data_root, download=download)
+        helper = _external_helper(paths, "update_helper.py")
+        if not helper.is_file():
+            return "Update is available but the external update helper is missing."
+        write_plan(metadata, candidate, staged, helper)
+    except (UpdateError, OSError) as error:
+        return f"Update could not be staged: {error}"
+    return f"Update {candidate.version} staged; quit PALM to install and restart."
+
+
 def run_control(
     paths: LauncherPaths,
     *,
@@ -218,7 +291,23 @@ def run_control(
             if controller_factory is not None
             else LauncherController(paths)
         )
-        ControlWindow(root, controller, ttk=ttk, tk=tk)
+
+        def update_action() -> str:
+            return check_for_updates(paths)
+
+        def uninstall_action() -> str:
+            helper = _external_helper(paths, "uninstall-helper.py")
+            uninstall_app(controller, paths, helper=helper)
+            return "Uninstall helper launched; your data is kept."
+
+        ControlWindow(
+            root,
+            controller,
+            ttk=ttk,
+            tk=tk,
+            update_action=update_action,
+            uninstall_action=uninstall_action,
+        )
         root.mainloop()
         return 0
     except Exception as error:

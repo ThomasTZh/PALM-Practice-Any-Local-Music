@@ -244,9 +244,26 @@ def test_control_window_starts_and_quits_with_shared_controller() -> None:
 
     root = Root()
     controller = Controller()
-    window = control.ControlWindow(root, controller, ttk=Ttk, tk=Tk)  # type: ignore[arg-type]
+    actions: list[str] = []
+    cancelled: list[bool] = []
+    window = control.ControlWindow(  # type: ignore[arg-type]
+        root,
+        controller,
+        ttk=Ttk,
+        tk=Tk,
+        update_action=lambda: "checked",
+        uninstall_action=lambda: actions.append("uninstall") or "launched",
+        confirm_uninstall=lambda: cancelled.append(True) or False,
+    )
     window.start()
     assert "Running at" in window.status.value
+    window.check_update()
+    assert window.detail.value == "checked"
+    window.uninstall()
+    assert actions == []
+    window._confirm_uninstall = lambda: True
+    window.uninstall()
+    assert actions == ["uninstall"]
     assert root.callback is not None
     window.quit()
     assert controller.stopped == 1
@@ -275,3 +292,63 @@ def test_window_and_console_are_explicit_modes(
     monkeypatch.setenv("DISPLAY", ":0")
     assert launcher_module.main(["--window", "--data-dir", str(tmp_path)]) == 0
     assert len(called) == 1
+
+
+def test_check_for_updates_reports_no_update_and_network_error(
+    paths: LauncherPaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from basseparate.updater import UpdateError
+
+    metadata = SimpleNamespace(
+        channel="linux-x86_64",
+        version="0.1.0",
+        app_root=paths.runtime.app_root,
+        data_root=paths.runtime.data_root,
+    )
+    monkeypatch.setattr(control, "load_metadata", lambda *_a, **_k: metadata)
+    monkeypatch.setattr(control, "check_for_update", lambda *_a, **_k: None)
+    assert "No update available" in control.check_for_updates(paths)
+
+    def network_error(*_a: Any, **_k: Any) -> Any:
+        raise UpdateError("network unavailable")
+
+    monkeypatch.setattr(control, "check_for_update", network_error)
+    message = control.check_for_updates(paths)
+    assert message.startswith("Update check failed")
+    assert "network unavailable" in message
+
+
+def test_check_for_updates_stages_verified_asset(
+    paths: LauncherPaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from basseparate.updater import UpdateAsset
+
+    metadata = SimpleNamespace(
+        channel="linux-x86_64",
+        version="0.1.0",
+        app_root=paths.runtime.app_root,
+        data_root=paths.runtime.data_root,
+    )
+    candidate = UpdateAsset(
+        channel="linux-x86_64",
+        version="0.2.0",
+        name="PALM-0.2.0-linux-x86_64.tar.gz",
+        url="https://example.invalid/new.tar.gz",
+        sha256="a" * 64,
+        kind="tar.gz",
+    )
+    staged = paths.runtime.data_root / "updates/0.2.0/new.tar.gz"
+    helper = paths.runtime.app_root / "updaters/update_helper.py"
+    helper.parent.mkdir()
+    helper.write_text("# helper")
+    monkeypatch.setattr(control, "load_metadata", lambda *_a, **_k: metadata)
+    monkeypatch.setattr(control, "check_for_update", lambda *_a, **_k: candidate)
+    monkeypatch.setattr(control, "stage_update", lambda *_a, **_k: staged)
+    message = control.check_for_updates(paths)
+    assert "staged" in message
+    assert (paths.runtime.data_root / "updates/helpers/update_helper.py").is_file()
+    assert (paths.runtime.data_root / "updates/pending.json").is_file()
