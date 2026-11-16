@@ -47,6 +47,27 @@ def _tar_bytes() -> bytes:
     return stream.getvalue()
 
 
+def _seven_zip_bytes() -> bytes:
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("7za.exe", b"MZ7zip")
+    return stream.getvalue()
+
+
+def _helper(monkeypatch: pytest.MonkeyPatch, data: bytes | None = None) -> bytes:
+    payload = data or _seven_zip_bytes()
+    monkeypatch.setattr(
+        tool_assets,
+        "SEVEN_ZIP",
+        replace(
+            tool_assets.SEVEN_ZIP,
+            size=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest(),
+        ),
+    )
+    return payload
+
+
 def test_all_platform_assets_are_pinned() -> None:
     expected = {
         ("windows", "sonic_annotator"),
@@ -118,7 +139,7 @@ def test_bad_hash_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         )
 
 
-def test_windows_vamp_installer_without_admin_is_clear(
+def test_windows_vamp_extracts_with_pinned_7zip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     data = b"installer"
@@ -128,27 +149,109 @@ def test_windows_vamp_installer_without_admin_is_clear(
         _asset("vamp_plugin_pack", "windows", data),
     )
     monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    helper_data = _helper(monkeypatch)
+    runtime = RuntimePaths.from_environment(
+        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data with spaces"
+    )
+    runtime.app_root.mkdir()
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]):
+        commands.append(command)
+        if command[0].endswith("7za.exe"):
+            out = next(arg[2:] for arg in command if arg.startswith("-o"))
+            destination = Path(out)
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / "qm-vamp-plugins.dll").write_bytes(b"dll")
+        return
+
+    target = install_vamp_plugin_pack(
+        runtime,
+        platform="windows",
+        downloader=lambda _asset, path: path.write_bytes(data),
+        helper_downloader=lambda _asset, path: path.write_bytes(helper_data),
+        runner=runner,
+    )
+    assert (target / "qm-vamp-plugins.dll").is_file()
+    assert (runtime.tools_root / "7zip" / "7za.exe").is_file()
+    assert (
+        runtime.tools_root / "cache" / PLATFORM_ASSETS[("windows", "vamp_plugin_pack")].filename
+    ).is_file()
+    assert commands and "7za.exe" in commands[0][0]
+    assert not any("powershell.exe" in command[0] for command in commands)
+
+
+def test_windows_vamp_uses_one_uac_fallback_when_extraction_has_no_dll(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = b"installer"
+    monkeypatch.setitem(
+        PLATFORM_ASSETS,
+        ("windows", "vamp_plugin_pack"),
+        _asset("vamp_plugin_pack", "windows", data),
+    )
+    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    helper_data = _helper(monkeypatch)
+    runtime = RuntimePaths.from_environment(
+        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
+    )
+    runtime.app_root.mkdir()
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]):
+        commands.append(command)
+        if "powershell.exe" in command[0]:
+            target = runtime.tools_root / "vamp-plugins"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "qm-vamp-plugins.dll").write_bytes(b"dll")
+        return
+
+    target = install_vamp_plugin_pack(
+        runtime,
+        platform="windows",
+        downloader=lambda _asset, path: path.write_bytes(data),
+        helper_downloader=lambda _asset, path: path.write_bytes(helper_data),
+        runner=runner,
+    )
+    assert (target / "qm-vamp-plugins.dll").is_file()
+    assert sum("powershell.exe" in command[0] for command in commands) == 1
+
+
+def test_windows_vamp_uac_denial_is_clear_and_does_not_ask_for_manual_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = b"installer"
+    monkeypatch.setitem(
+        PLATFORM_ASSETS,
+        ("windows", "vamp_plugin_pack"),
+        _asset("vamp_plugin_pack", "windows", data),
+    )
+    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    helper_data = _helper(monkeypatch)
     runtime = RuntimePaths.from_environment(
         mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
     )
     runtime.app_root.mkdir()
 
-    def denied(_command: list[str]):
-        raise PermissionError("elevation required")
+    def denied(command: list[str]):
+        if "powershell.exe" in command[0]:
+            return type("Result", (), {"returncode": 1})()
+        return None
 
     with pytest.raises(SetupInstallError) as error:
         install_vamp_plugin_pack(
             runtime,
             platform="windows",
             downloader=lambda _asset, path: path.write_bytes(data),
+            helper_downloader=lambda _asset, path: path.write_bytes(helper_data),
             runner=denied,
         )
     message = str(error.value)
-    assert "elevation" in message and "admin" in message
-    assert PLATFORM_ASSETS[("windows", "vamp_plugin_pack")].url in message
+    assert "denied" in message and "retry" in message
+    assert "copy" not in message and "download" not in message
 
 
-def test_windows_vamp_installer_can_install_per_user(
+def test_windows_vamp_bad_helper_hash_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     data = b"installer"
@@ -158,23 +261,19 @@ def test_windows_vamp_installer_can_install_per_user(
         _asset("vamp_plugin_pack", "windows", data),
     )
     monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    _helper(monkeypatch)
     runtime = RuntimePaths.from_environment(
-        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data with spaces"
+        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
     )
     runtime.app_root.mkdir()
-
-    def install(command: list[str]):
-        target = Path(command[-1].split("=", 1)[1])
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "qm-vamp-plugins.dll").write_bytes(b"dll")
-
-    target = install_vamp_plugin_pack(
-        runtime,
-        platform="windows",
-        downloader=lambda _asset, path: path.write_bytes(data),
-        runner=install,
-    )
-    assert (target / "qm-vamp-plugins.dll").is_file()
+    with pytest.raises(SetupInstallError, match="SHA-256"):
+        install_vamp_plugin_pack(
+            runtime,
+            platform="windows",
+            downloader=lambda _asset, path: path.write_bytes(data),
+            helper_downloader=lambda _asset, path: path.write_bytes(b"bad"),
+            runner=lambda _command: None,
+        )
 
 
 def test_macos_dmg_uses_hdiutil_and_pkgutil(

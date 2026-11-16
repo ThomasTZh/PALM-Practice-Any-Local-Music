@@ -46,6 +46,27 @@ class PinnedToolAsset:
     install_name: str
 
 
+@dataclass(frozen=True)
+class SevenZipAsset:
+    version: str
+    url: str
+    sha256: str
+    size: int
+    filename: str
+    member: str = "7za.exe"
+    license: str = "LGPL-2.1-or-later"
+    source_url: str = "https://www.7-zip.org/"
+
+
+SEVEN_ZIP = SevenZipAsset(
+    version="9.20",
+    url="https://www.7-zip.org/a/7za920.zip",
+    sha256="2a3afe19c180f8373fa02ff00254d5394fec0349f5804e0ad2f6067854ff28ac",
+    size=384_846,
+    filename="7za920.zip",
+)
+
+
 PLATFORM_ASSETS: dict[tuple[str, str], PinnedToolAsset] = {
     ("windows", "sonic_annotator"): PinnedToolAsset(
         tool="sonic_annotator",
@@ -170,27 +191,84 @@ def _download(asset: PinnedToolAsset, path: Path) -> None:
     )
 
 
-def _manual_vamp_windows(asset: PinnedToolAsset, target: Path) -> str:
-    return (
-        f"the official Vamp Plugin Pack installer could not be installed without "
-        f"elevation. Download {asset.url}, run it as the current user, or copy the "
-        f"pack's plugin DLLs manually into {target}. PALM never requests admin."
-    )
+def _install_seven_zip(
+    runtime: RuntimePaths,
+    downloader: Callable[[SevenZipAsset, Path], None] | None,
+) -> Path:
+    root = runtime.tools_root / "7zip"
+    helper = root / SEVEN_ZIP.member
+    if helper.is_file():
+        return helper
+    root.mkdir(parents=True, exist_ok=True)
+    archive = root / SEVEN_ZIP.filename
+    if downloader is not None:
+        downloader(SEVEN_ZIP, archive)
+    else:
+        download_verified(
+            SEVEN_ZIP.url,
+            archive,
+            size_bytes=SEVEN_ZIP.size,
+            sha256=SEVEN_ZIP.sha256,
+        )
+    _verify_archive(SEVEN_ZIP, archive)  # type: ignore[arg-type]
+    with zipfile.ZipFile(archive) as bundle:
+        helper.write_bytes(bundle.read(SEVEN_ZIP.member))
+    helper.chmod(0o755)
+    return helper
 
 
 def _install_vamp_windows(
-    asset: PinnedToolAsset, archive: Path, target: Path, runner: Runner
+    asset: PinnedToolAsset,
+    archive: Path,
+    target: Path,
+    runner: Runner,
+    *,
+    seven_zip: Path,
+    work: Path,
 ) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    command = [str(archive), "/S", f"/D={target}"]
+    extracted = work / "vamp-extracted"
+    extracted.mkdir(parents=True, exist_ok=True)
+    extraction_error: str | None = None
     try:
-        result = runner(command)
+        result = runner([str(seven_zip), "x", "-y", f"-o{extracted}", str(archive)])
+        if result is not None and getattr(result, "returncode", 0) not in (0, None):
+            extraction_error = f"7-Zip exited {result.returncode}"
     except OSError as error:
-        raise SetupInstallError(_manual_vamp_windows(asset, target)) from error
-    if result is not None and getattr(result, "returncode", 0) not in (0, None):
-        raise SetupInstallError(_manual_vamp_windows(asset, target))
-    if _find(target, f"qm-vamp-plugins{plugin_suffix()}") is None:
-        raise SetupInstallError(_manual_vamp_windows(asset, target))
+        extraction_error = str(error)
+    dlls = [] if extraction_error else sorted(extracted.rglob("*.dll"))
+    plugin = next((path for path in dlls if path.name == "qm-vamp-plugins.dll"), None)
+    if plugin is not None:
+        for dll in dlls:
+            if dll.is_file():
+                shutil.copy2(dll, target / dll.name)
+        if (target / "qm-vamp-plugins.dll").is_file():
+            return
+    # Exactly one explicit elevation fallback. This is the only UAC request.
+    quoted_installer = str(archive).replace("'", "''")
+    quoted_target = str(target).replace("'", "''")
+    script = (
+        f"$p = Start-Process -FilePath '{quoted_installer}' "
+        f"-ArgumentList @('/S','/D={quoted_target}') -Verb RunAs -Wait -PassThru; "
+        "exit $p.ExitCode"
+    )
+    try:
+        uac = runner(["powershell.exe", "-NoProfile", "-Command", script])
+    except OSError as error:
+        raise SetupInstallError(
+            "Windows administrator approval could not be requested; retry setup "
+            "and approve the UAC prompt."
+        ) from error
+    if uac is not None and getattr(uac, "returncode", 0) not in (0, None):
+        raise SetupInstallError(
+            "Windows administrator approval was denied or the installer failed; "
+            "retry setup and approve the UAC prompt."
+        )
+    if not (target / "qm-vamp-plugins.dll").is_file():
+        raise SetupInstallError(
+            "The Windows installer did not produce qm-vamp-plugins.dll after the "
+            "UAC-assisted install; retry setup or choose the Linux/macOS build."
+        )
 
 
 def _install_vamp_macos(
@@ -273,6 +351,7 @@ def install_vamp_plugin_pack(
     *,
     platform: PlatformName | None = None,
     downloader: Downloader | None = None,
+    helper_downloader: Callable[[SevenZipAsset, Path], None] | None = None,
     runner: Runner | None = None,
 ) -> Path:
     selected = platform or platform_name()
@@ -287,15 +366,18 @@ def install_vamp_plugin_pack(
             command, capture_output=True, text=True, check=False, **hidden_process_kwargs()
         )
     )
+    cache = runtime.tools_root / "cache"
+    cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".vamp-pack-", dir=runtime.tools_root) as tmp:
-        archive = Path(tmp) / asset.filename
+        archive = cache / asset.filename
         if downloader is not None:
             downloader(asset, archive)
         else:
             _download(asset, archive)
         _verify_archive(asset, archive)
         if selected == "windows":
-            _install_vamp_windows(asset, archive, target, run)
+            helper = _install_seven_zip(runtime, helper_downloader)
+            _install_vamp_windows(asset, archive, target, run, seven_zip=helper, work=Path(tmp))
         elif selected == "macos":
             _install_vamp_macos(asset, archive, target, run)
         else:
@@ -332,6 +414,8 @@ def install_platform_tools(
 __all__ = [
     "PLATFORM_ASSETS",
     "PinnedToolAsset",
+    "SEVEN_ZIP",
+    "SevenZipAsset",
     "asset_for",
     "install_platform_tools",
     "install_sonic_annotator",
