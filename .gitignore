@@ -44,7 +44,7 @@ logs/
 docs/evidence/
 
 # Third-party build toolchains (downloaded once, pinned, never tracked)
-third_party/
+/third_party/
 
 # User-supplied recordings and local analysis tools (preserved, never tracked)
 audio2test/
