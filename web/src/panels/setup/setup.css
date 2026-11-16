@@ -454,3 +454,17 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.setup-caveat {
+  margin: 0.55rem 0;
+  padding: 0.55rem 0.65rem;
+  border-left: 3px solid #d6a756;
+  background: rgba(214, 167, 86, 0.08);
+  color: #e3c98f;
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.setup-caveat code {
+  color: var(--text);
+}

@@ -136,6 +136,106 @@ export function modelLicenceLink(model: SeparationModel): LicenceLink {
   };
 }
 
+export interface BundledComponent {
+  id: string;
+  name: string;
+  version: string;
+  licence: string;
+  licenceUrl: string;
+  sourceUrl: string;
+  licenceTextKeys: LicenceTextKey[];
+}
+
+const LICENCE_URLS: Record<LicenceTextKey, string> = {
+  "GPL-2.0": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+  "GPL-3.0": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "AGPL-3.0": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "LGPL-2.1": "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
+  MIT: "https://opensource.org/license/mit",
+  "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0",
+  "BSD-3-Clause": "https://opensource.org/license/bsd-3-clause",
+  "PSF-2.0": "https://docs.python.org/3/license.html",
+};
+
+function pypi(
+  name: string,
+  version: string,
+  licence: string,
+  licenceKey: LicenceTextKey,
+): BundledComponent {
+  return {
+    id: `python-${name}`,
+    name,
+    version,
+    licence,
+    licenceUrl: LICENCE_URLS[licenceKey],
+    sourceUrl: `https://pypi.org/project/${name}/${version}/`,
+    licenceTextKeys: [licenceKey],
+  };
+}
+
+/** Third-party software already included in the portable package. */
+export function setupBundledComponents(): BundledComponent[] {
+  return [
+    {
+      id: "python",
+      name: "CPython (python-build-standalone)",
+      version: "3.11.15",
+      licence: "PSF-2.0",
+      licenceUrl: LICENCE_URLS["PSF-2.0"],
+      sourceUrl:
+        "https://github.com/astral-sh/python-build-standalone/releases/tag/20260728",
+      licenceTextKeys: ["PSF-2.0"],
+    },
+    {
+      id: "uv",
+      name: "uv",
+      version: "0.12.0",
+      licence: "MIT OR Apache-2.0",
+      licenceUrl: "https://github.com/astral-sh/uv/blob/0.12.0/LICENSE-MIT",
+      sourceUrl: "https://github.com/astral-sh/uv/releases/tag/0.12.0",
+      licenceTextKeys: ["MIT", "Apache-2.0"],
+    },
+    pypi("fastapi", "0.142.0", "MIT", "MIT"),
+    pypi("uvicorn", "0.54.0", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("pydantic", "2.13.5", "MIT", "MIT"),
+    pypi("pydantic-core", "2.46.5", "MIT", "MIT"),
+    pypi("pydantic-settings", "2.15.0", "MIT", "MIT"),
+    pypi("starlette", "1.10.0", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("numpy", "2.4.6", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("psutil", "7.2.2", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("platformdirs", "4.12.1", "MIT", "MIT"),
+    pypi("click", "8.5.1", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("h11", "0.16.0", "MIT", "MIT"),
+    pypi("idna", "3.20", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("anyio", "4.16.0", "MIT", "MIT"),
+    pypi("annotated-doc", "0.0.5", "MIT", "MIT"),
+    pypi("annotated-types", "0.8.0", "MIT", "MIT"),
+    pypi("opentelemetry-api", "1.45.2", "Apache-2.0", "Apache-2.0"),
+    pypi("python-dotenv", "1.2.4", "BSD-3-Clause", "BSD-3-Clause"),
+    pypi("typing-extensions", "4.16.0", "PSF-2.0", "PSF-2.0"),
+    pypi("typing-inspection", "0.4.5", "MIT", "MIT"),
+    {
+      id: "react",
+      name: "React",
+      version: "19.3.0",
+      licence: "MIT",
+      licenceUrl: LICENCE_URLS.MIT,
+      sourceUrl: "https://github.com/facebook/react/tree/v19.3.0",
+      licenceTextKeys: ["MIT"],
+    },
+    {
+      id: "react-dom",
+      name: "React DOM",
+      version: "19.3.0",
+      licence: "MIT",
+      licenceUrl: LICENCE_URLS.MIT,
+      sourceUrl: "https://github.com/facebook/react/tree/v19.3.0",
+      licenceTextKeys: ["MIT"],
+    },
+  ];
+}
+
 const ENVIRONMENT_ESTIMATES: Record<"cpu" | "cuda", string> = {
   cpu: "~500 MB download",
   cuda: "~3.5 GB download",
@@ -152,7 +252,8 @@ export type LicenceTextKey =
   | "LGPL-2.1"
   | "MIT"
   | "Apache-2.0"
-  | "BSD-3-Clause";
+  | "BSD-3-Clause"
+  | "PSF-2.0";
 
 export interface LicenceComponent {
   id: string;

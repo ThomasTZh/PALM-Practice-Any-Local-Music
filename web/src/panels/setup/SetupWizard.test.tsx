@@ -152,6 +152,54 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("setup-recommended-install")).toBeDisabled();
   });
 
+  it("shows bundled components, full PSF/Apache/MIT/BSD texts and the FFmpeg caveat", () => {
+    renderWizard();
+
+    const bundled = screen.getByTestId("setup-bundled-components");
+    expect(bundled).toHaveTextContent("Bundled components");
+    expect(screen.getByTestId("bundled-component-python")).toHaveTextContent(
+      "3.11.15",
+    );
+    expect(screen.getByTestId("bundled-component-python")).toHaveTextContent(
+      "PSF-2.0",
+    );
+    expect(screen.getByTestId("bundled-component-uv")).toHaveTextContent(
+      "0.12.0",
+    );
+    expect(screen.getByTestId("bundled-component-uv")).toHaveTextContent(
+      /MIT.*Apache-2.0/,
+    );
+    expect(
+      screen.getByTestId("bundled-component-python-fastapi"),
+    ).toHaveTextContent("0.142.0");
+    expect(screen.getByTestId("bundled-component-react")).toHaveTextContent(
+      "19.3.0",
+    );
+    expect(screen.getByTestId("bundled-source-python")).toHaveAttribute(
+      "href",
+      "https://github.com/astral-sh/python-build-standalone/releases/tag/20260728",
+    );
+    expect(
+      screen.getByTestId("bundled-licence-text-PSF-2.0"),
+    ).toHaveTextContent("Python Software Foundation");
+    expect(
+      screen.getByTestId("bundled-licence-text-Apache-2.0"),
+    ).toHaveTextContent("Apache License");
+    expect(screen.getByTestId("bundled-licence-text-MIT")).toHaveTextContent(
+      "Permission is hereby granted",
+    );
+    expect(
+      screen.getByTestId("bundled-licence-text-BSD-3-Clause"),
+    ).toHaveTextContent("Redistribution and use");
+
+    const caveat = screen.getByTestId("setup-ffmpeg-nonfree");
+    expect(caveat).toHaveTextContent("GPL-3.0-or-later");
+    expect(caveat).toHaveTextContent("--enable-nonfree");
+    expect(caveat).toHaveTextContent("not legally redistributable");
+    expect(caveat).toHaveTextContent("PALM downloads it");
+    expect(caveat).toHaveTextContent("does not bundle");
+  });
+
   it("uses platform tool names and hides unsupported CUDA", () => {
     const status = statusWith((value) => ({
       ...value,

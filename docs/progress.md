@@ -2526,3 +2526,38 @@ FFmpeg/FFprobe reason and Open setup.
   consent/no-default/skip/progress/scroll tests.
 - make test-web, make build-web and make e2e (2 specs, Firefox+Chromium) pass.
   No dependency added.
+
+## 2026-11-16 — bundled third-party licences and FFmpeg nonfree caveat (t123)
+
+### Bundled components
+
+First-run setup now has a separate Bundled components section before any
+download action, listing third-party software included in the package:
+- CPython 3.11.15 (PSF-2.0, python-build-standalone source)
+- uv 0.12.0 (MIT OR Apache-2.0)
+- the pinned app runtime: FastAPI 0.142.0, Uvicorn 0.54.0, Pydantic 2.13.5,
+  pydantic-core 2.46.5, pydantic-settings 2.15.0, Starlette 1.10.0, NumPy 2.4.6,
+  psutil 7.2.2, platformdirs 4.12.1, Click 8.5.1, h11 0.16.0, idna 3.20,
+  AnyIO 4.16.0, annotated-doc 0.0.5, annotated-types 0.8.0,
+  opentelemetry-api 1.45.2, python-dotenv 1.2.4, typing-extensions 4.16.0,
+  typing-inspection 0.4.5
+- React 19.3.0 and React DOM 19.3.0.
+Every row links its licence and source. A details block contains the full PSF,
+MIT, Apache-2.0 and BSD-3-Clause texts; the new PSF text is bundled under
+web/src/panels/setup/licences.
+
+### FFmpeg caveat
+
+The Before downloading summary states FFmpeg/FFprobe GPL-3.0-or-later and that
+Linux/macOS use Martin Riedl 9.0.2; the Linux build is configured with
+--enable-nonfree and is not legally redistributable. PALM downloads it at setup
+time and does not bundle or redistribute it. Windows uses gyan.dev 8.1.2.
+
+### Verification
+
+Firefox mock at 1280x720 and 1600x900: 23 bundled rows, full PSF text present,
+FFmpeg caveat present, setup scrollHeight 3065 vs client 720/900, no horizontal
+overflow. Tests assert Python 3.11.15/PSF, uv 0.12 MIT/Apache, representative
+Python/frontend dependencies and source links, full PSF/MIT/Apache/BSD texts,
+the nonfree notice and page scrolling. make test-web, make build-web and make
+e2e (2 specs, Firefox+Chromium) pass. No dependency added.

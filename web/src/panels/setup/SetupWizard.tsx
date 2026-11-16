@@ -4,6 +4,7 @@ import type { SeparationModel } from "../../api/types";
 import {
   environmentEstimate,
   modelLicenceLink,
+  setupBundledComponents,
   setupLicenceComponents,
   toolLicenceLink,
   type SetupClient,
@@ -298,9 +299,15 @@ export function SetupWizard({
     selectedMissing.length > 0 && allSelectedConsented && !busy;
   const progress = job === null ? 0 : Math.round(job.progress * 100);
   const licenceComponents = setupLicenceComponents(status);
+  const bundledComponents = setupBundledComponents();
   const licenceTextKeys = Array.from(
     new Set(
       licenceComponents.flatMap((component) => component.licenceTextKeys),
+    ),
+  );
+  const bundledTextKeys = Array.from(
+    new Set(
+      bundledComponents.flatMap((component) => component.licenceTextKeys),
     ),
   );
 
@@ -449,6 +456,13 @@ export function SetupWizard({
               </li>
             ))}
           </ul>
+          <div className="setup-caveat" data-testid="setup-ffmpeg-nonfree">
+            <strong>FFmpeg build licence:</strong> GPL-3.0-or-later. Linux x64
+            and macOS arm64 use Martin Riedl 9.0.2; the Linux build is
+            configured with <code>--enable-nonfree</code> and is not legally
+            redistributable. PALM downloads it at setup time and does not bundle
+            or redistribute it. Windows uses gyan.dev 8.1.2 essentials.
+          </div>
           <details
             className="setup-licence-texts"
             data-testid="setup-licence-texts"
@@ -458,6 +472,61 @@ export function SetupWizard({
               <section key={key}>
                 <h3>{key}</h3>
                 <pre data-testid={`licence-text-${key}`}>
+                  {LICENCE_TEXTS[key]}
+                </pre>
+              </section>
+            ))}
+          </details>
+        </section>
+
+        <section
+          className="setup-section"
+          data-testid="setup-bundled-components"
+        >
+          <h2>Bundled components</h2>
+          <p className="setup-note">
+            These third-party components are already included in the packaged
+            app; they are not downloads.
+          </p>
+          <ul className="setup-component-list">
+            {bundledComponents.map((component) => (
+              <li
+                key={component.id}
+                data-testid={`bundled-component-${component.id}`}
+              >
+                <div className="setup-component-main">
+                  <strong>{component.name}</strong>
+                  <span>{component.version}</span>
+                </div>
+                <div className="setup-component-meta">
+                  <a
+                    href={component.licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {component.licence}
+                  </a>
+                  <a
+                    data-testid={`bundled-source-${component.id}`}
+                    href={component.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Source
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <details
+            className="setup-licence-texts"
+            data-testid="setup-bundled-licence-texts"
+          >
+            <summary>Full bundled third-party licence texts</summary>
+            {bundledTextKeys.map((key) => (
+              <section key={key}>
+                <h3>{key}</h3>
+                <pre data-testid={`bundled-licence-text-${key}`}>
                   {LICENCE_TEXTS[key]}
                 </pre>
               </section>
