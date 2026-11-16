@@ -1,241 +1,298 @@
 # macOS Apple Silicon one-shot acceptance kit
 
-Status: **NOT RUN**. This is a one-shot kit for a friend's Apple Silicon Mac.
-It does not claim macOS acceptance until the run is complete and the evidence
-listed below is supplied. Do not edit the app, install developer tools, or try
-to fix code on the Mac. The Mac is a test client; fixes belong in the Linux/CI
-tree and will be re-tested there.
+Status: **NOT RUN**. This is a one-shot kit for the owner's Apple Silicon Mac.
+It makes no macOS acceptance claim until the run is complete and the evidence
+below is supplied. Do not edit the app, install developer tools, or fix code on
+the Mac; fixes belong in the Linux/CI tree and are re-tested there.
 
 Target time: **45 to 60 minutes**. Stop at 60 minutes, keep the evidence and
 report the blocker rather than extending the session.
 
+This kit tests the unsigned **`PALM.app` control window**. Do not use Terminal,
+a shell, a system installer or an administrator install. The app must be
+usable entirely from the control window and the browser.
+
 ## Artifact and prerequisites
 
-Use the arm64 experimental asset:
-
-`PALM-0.1.0-dev-macos-arm64.zip` (or the matching `.dmg` if supplied)
-
-Record the exact filename, byte size and SHA-256. The app is unsigned and not
-notarized. The Mac needs:
-
-- Apple Silicon (arm64), macOS 11 or newer;
-- a user account that can write `~/Applications` and `~/Library`;
-- a network connection for the setup downloads;
-- Safari and Google Chrome installed;
-- FFmpeg and FFprobe available. If they are not on PATH, use a trusted
-  portable build and set both overrides in the terminal that launches PALM:
-
-```sh
-export PALM_FFMPEG="$HOME/Downloads/ffmpeg/bin/ffmpeg"
-export PALM_FFPROBE="$HOME/Downloads/ffmpeg/bin/ffprobe"
-"$PALM_FFMPEG" -version
-"$PALM_FFPROBE" -version
-```
-
-No administrator password is required for the app or its data. Do not install
-a system service or a system-wide package.
-
-## 0. Host record (5 minutes)
-
-Run in Terminal and save as `evidence/01-host.txt`:
-
-```sh
-set -eu
-sw_vers
-uname -m
-system_profiler SPHardwareDataType
-sysctl -n machdep.cpu.brand_string 2>/dev/null || true
-defaults read /Applications/Safari.app/Contents/Info.plist CFBundleShortVersionString
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
-sw_vers -productVersion
-```
-
-Record macOS version/build, chip model, memory, Safari version, Chrome version,
-whether FFmpeg/FFprobe were found, and the ZIP SHA-256:
-
-```sh
-shasum -a 256 "$HOME/Downloads/PALM-0.1.0-dev-macos-arm64.zip"
-```
-
-## 1. Unsigned launch (10 minutes)
-
-Extract to the user's Applications folder. Do not use `sudo`:
-
-```sh
-mkdir -p "$HOME/Applications"
-cd "$HOME/Downloads"
-unzip -q PALM-0.1.0-dev-macos-arm64.zip -d "$HOME/Applications"
-xattr -dr com.apple.quarantine "$HOME/Applications/PALM.app"
-open "$HOME/Applications/PALM.app"
-```
-
-If Finder blocks the app: right-click `PALM.app`, choose **Open**, then confirm
-**Open**. If it still refuses, run the `xattr` command above and try again.
-The app should open a Terminal window with logs and then the browser at a
-loopback URL. Keep Terminal open.
-
-Record whether Gatekeeper required right-click Open, whether the quarantine
-command was needed, and whether a UAC/admin prompt appeared (expected: none).
-Take a screenshot of the Terminal and browser as `evidence/02-launch.png`.
-
-## 2. Setup, CPU only (10 minutes)
-
-In the setup wizard:
-
-1. Confirm the system checks. FFmpeg/FFprobe must resolve to the path shown
-   above, and the disk check must pass.
-2. Install the analysis tools if offered. On macOS this is Sonic Annotator and
-   the Vamp plugin pack. Do not grant admin or install system-wide; if the
-   tool installer asks for elevation, stop and record the exact message.
-3. Select **CPU**, never CUDA. Record the estimated download size.
-4. Install exactly one model card. Record model id, size and licence shown.
-5. Wait for setup complete. Do not skip a failed step.
-
-Save setup screenshots in `evidence/03-setup/` and copy the setup section of
-Terminal output. Expected data root:
-`$HOME/Library/Application Support/palm`.
-
-## 3. CPU analysis (10 minutes)
-
-Import a short local recording you own, ideally 5 to 30 seconds. Click Analyse.
-Record:
-
-- import and duration;
-- key and BPM;
-- chord ribbon entries;
-- bar/beat grid;
-- no `PiperUnavailable`, missing-tool or missing-FFmpeg error.
-
-Save `evidence/04-analysis.png` and the relevant
-`~/Library/Application Support/palm/logs/server.log` tail.
-
-## 4. Short separation (10 minutes)
-
-With the installed model selected, separate the same short recording. Record:
-
-- selected model id;
-- progress stages;
-- completion and elapsed wall time;
-- expected stem lanes (drums/bass/other/vocals, plus guitar/piano if the model
-  provides them);
-- at least one stem playing.
-
-Save `evidence/05-separation.png` and the server log tail. If it fails, record
-the exact error, model id, recording duration and whether the app stayed
-responsive.
-
-## 5. Safari and Chrome playback (10 minutes)
-
-Run the same checks in Safari and Google Chrome. Record for each:
-
-- page loads at the loopback URL and the library is usable;
-- Play starts and the position advances;
-- speed 0.5x and 1.5x work while pitch remains usable;
-- metronome and count-in are audible;
-- a selected section loops;
-- closing only the browser tab does not stop the Terminal/server.
-
-Take one screenshot per browser in `evidence/06-browser/` and state whether
-audio was actually audible. A moving position alone is not proof of audio.
-
-## 6. Status, Ctrl+C and stop (5 minutes)
-
-In a new Terminal window, query the running app. Use the wrapper path, not a
-new app launch:
-
-```sh
-"$HOME/Applications/PALM.app/Contents/MacOS/palm" --status
-```
-
-Expected: exit 0, URL, data root `.../Library/Application Support/palm`, and
-server/launcher pids. Save as `evidence/07-status.txt`.
-
-Return to the PALM Terminal and press **Ctrl+C**. Expected: launcher exits, the
-URL stops responding, and `run/server.json` is gone. Verify:
-
-```sh
-test ! -f "$HOME/Library/Application Support/palm/run/server.json" && echo stopped
-```
-
-If the server remains, run:
-
-```sh
-"$HOME/Applications/PALM.app/Contents/MacOS/palm" --stop
-```
-
-Record the output and exit code, then verify the state file is gone. Stop any
-leftover process before continuing.
-
-## 7. Logs, screenshots and uninstall (5 minutes)
-
-Copy these to `evidence/08-logs/` before deleting anything:
+Use the arm64 experimental artifact supplied with this kit:
 
 ```text
-~/Library/Application Support/palm/logs/launcher.log
-~/Library/Application Support/palm/logs/server.log
-~/Library/Application Support/palm/run/server.json (if present)
-~/Library/Application Support/palm/setup.json
+PALM-0.1.0-dev-macos-arm64.zip
 ```
 
-Evidence folder:
+or the matching `.dmg`. Record the exact filename, byte size and the SHA-256
+published with the artifact. The app is unsigned and not notarized.
+
+The Mac needs:
+
+- Apple Silicon (arm64), macOS 11 or newer;
+- a normal user account that can write `~/Applications` and `~/Library`;
+- a network connection for the setup downloads;
+- Safari and Google Chrome installed.
+
+Do not install FFmpeg, Sonic Annotator, Vamp plugins or Python. PALM's setup
+downloads FFmpeg/FFprobe and the analysis tools after consent.
+
+## 0. Host record
+
+Use the Apple menu and System Settings only; no Terminal. Save notes and
+screenshots as `evidence/01-host/`.
+
+- Apple menu > About This Mac: chip, memory, macOS version and build.
+- System Settings > General > About: model and storage.
+- Safari > About Safari and Chrome > About Google Chrome: exact versions.
+- Note the display and audio output device used for the listening checks.
+
+Record the artifact name, size and SHA-256 exactly as supplied. No shell
+command is required for this kit.
+
+## 1. Unsigned launch and control window
+
+1. In Finder, open the downloaded ZIP (or mount the DMG) and drag `PALM.app`
+   to `~/Applications`. Do not use `sudo`.
+2. Double-click `PALM.app`. If Gatekeeper blocks the first launch, right-click
+   the app, choose **Open**, then confirm **Open**. If macOS still blocks it,
+   open System Settings > Privacy & Security and use **Open Anyway**.
+3. Do not remove quarantine with a terminal command; record the exact
+   Gatekeeper/Privacy message if the graphical Open flow cannot proceed.
+
+Expected:
+
+- no Terminal window appears;
+- the PALM control window opens;
+- the window shows a status such as `Running at http://127.0.0.1:<port>`;
+- it shows the data root (`Data: ~/Library/Application Support/palm`);
+- the browser opens at the same loopback URL;
+- buttons are visible: **Open browser**, **View logs**, **Quit**,
+  **Check for updates**, **Uninstall**.
+
+Save `evidence/02-control/launch.png`. If a Terminal window appears or the app
+cannot open the control window, record that as a FAIL for the no-terminal
+requirement and stop.
+
+## 2. Licence review and consent
+
+In the browser setup page, review **Before downloading** before installing
+anything. It must list every downloadable component with version, licence,
+source link, size and Required/Optional state, including:
+
+- managed FFmpeg/FFprobe;
+- Sonic Annotator and the Vamp Plugin Pack;
+- the CPU inference environment;
+- the Demucs model.
+
+Open at least one licence and one Source link for each group and confirm they
+open in a new tab. Record the components, sizes and licence names in
+`evidence/03-licences/summary.txt`; screenshot the summary and full licence
+text.
+
+Accept the group licences required by the page:
+
+- media tools (FFmpeg/FFprobe);
+- analysis/GPL tools (Sonic Annotator and the Vamp Plugin Pack);
+- CPU environment;
+- Demucs model.
+
+Do not accept a licence whose text you have not reviewed. Record the exact
+**Install recommended setup** state before and after consent; it must be
+disabled until the required consents are given.
+
+## 3. Recommended setup, managed FFmpeg and automatic Vamp
+
+Press **Install recommended setup** and follow its four visible steps:
+
+1. Media tools (FFmpeg/FFprobe).
+2. Analysis tools (Sonic Annotator and Vamp plugins).
+3. CPU environment.
+4. Demucs model.
+
+Expected:
+
+- PALM downloads FFmpeg and FFprobe into its data root. Do not install FFmpeg
+  or set `PALM_FFMPEG`/`PALM_FFPROBE`.
+- Sonic Annotator and the Vamp Plugin Pack install automatically. Do not copy
+  plugin files, run a separate package installer or grant administrator
+  rights.
+- CPU is selected; CUDA must not be offered as a working macOS choice.
+- Demucs is visibly selected while all model cards remain editable.
+- Each of the four progress steps and its completion message is recorded.
+
+If macOS shows an elevation prompt for a tool, stop and record the exact
+message; the kit does not grant admin rights. Save screenshots in
+`evidence/04-setup/`. If a step fails, capture its Retry/Open setup action and
+do not use a shell workaround.
+
+After setup, confirm the setup page reports media tools, analysis tools, CPU
+environment and Demucs installed/ready.
+
+## 4. CPU analysis
+
+Import a short local recording you own (5 to 30 seconds) and use Analyse.
+Record:
+
+- import succeeds and duration is shown;
+- key and BPM are populated;
+- chord ribbon is populated;
+- bar/beat grid is visible;
+- no missing-FFmpeg, missing-tool or `PiperUnavailable` error appears.
+
+Save `evidence/05-analysis/` and the control window's **View logs** tail. A
+failure must include the exact banner, log text and whether the app stayed
+responsive; do not retry silently more than once.
+
+## 5. Short CPU separation
+
+Select the installed Demucs model and separate the same short recording.
+Record:
+
+- the model is selectable without reopening the app;
+- progress stages and completion;
+- the expected stem lanes (drums/bass/other/vocals, plus guitar/piano if the
+  model provides them);
+- at least one stem plays;
+- elapsed wall time and any memory warning.
+
+Save screenshots and the **View logs** tail in `evidence/06-separation/`. A
+failure must include the exact error, model id, duration and whether the
+control window remained usable.
+
+## 6. Safari and Chrome playback
+
+Test both **Safari** and **Google Chrome** at the control window's URL. For
+each:
+
+- the library loads and a project opens;
+- Play starts audio and the position advances;
+- 0.5x and 1.5x change speed while pitch remains usable;
+- metronome and count-in are audible;
+- a selected section loops;
+- closing only the browser tab leaves the control window and server running
+  (reopen the URL to confirm).
+
+Save one screenshot per browser in `evidence/07-browser/` and state whether
+audio was actually audible. A moving position alone is not proof of
+audibility.
+
+## 7. Control-window quit, update check and uninstall
+
+All three actions must be done from **`PALM.app`**, not Terminal.
+
+### Quit
+
+Click **Quit** in the control window. Expected: the window closes, the server
+stops, and the browser URL no longer responds. The data folder and logs remain.
+Relaunch `PALM.app` and confirm the library reopens with the same data root;
+quit again before the update check.
+
+Save `evidence/08-control/quit.txt` and screenshots.
+
+### Check for updates
+
+Relaunch `PALM.app`, wait for Running, and click **Check for updates**. Record
+the exact detail text and any dialog. Expected: a clear up-to-date/no-update
+result, or a specific update/error message. A message that update metadata is
+**not configured** is a FAIL for this experimental app, not a pass.
+
+If a verified update is offered, record its version and checksum but do not
+install it during this run unless the owner explicitly asks. Save
+`evidence/08-control/update-check.png`.
+
+### Uninstall
+
+After the update check, click **Uninstall** in the control window. Expected:
+
+- the app stops first;
+- an external helper removes `PALM.app` and any shortcut;
+- practice data under `~/Library/Application Support/palm` is kept by default;
+- the window reports the helper result or closes cleanly.
+
+Record the exact detail text and screenshot. In Finder confirm that
+`PALM.app` is gone and the data folder still exists. Do not delete the data
+folder unless the owner explicitly chooses the separate delete-data option;
+if tested, back up `projects`, `assets` and `uploads` first.
+
+If the control window says the uninstall helper is not configured, record that
+as a FAIL with the screenshot; do not delete the app manually and call it a
+pass.
+
+## 8. Evidence and logs
+
+The control window's **View logs** button exposes the server log. The data root
+shown in the window (normally `~/Library/Application Support/palm`) contains:
+
+```text
+logs/launcher.log
+logs/server.log
+run/server.json
+setup.json
+```
+
+Copy or screenshot the relevant logs before uninstall. Do not send audio you
+do not own and remove personal names or paths from screenshots.
+
+Expected evidence folder:
 
 ```text
 evidence/macos-experimental/
-  01-host.txt
-  02-launch.png
-  03-setup/
-  04-analysis.png
-  05-separation.png
-  06-browser/
-  07-status.txt
-  08-logs/
+  01-host/
+  02-control/launch.png
+  03-licences/summary.txt
+  04-setup/
+  05-analysis/
+  06-separation/
+  07-browser/
+  08-control/quit.txt
+  08-control/update-check.png
+  08-control/uninstall.png
   checklist.md
-  zip-sha256.txt
+  artifact.txt
 ```
 
-Uninstall after evidence is copied:
+## 9. Checklist and timebox
 
-```sh
-"$HOME/Applications/PALM.app/Contents/MacOS/palm" --stop || true
-rm -rf "$HOME/Applications/PALM.app"
-# Optional; this permanently deletes practice data, so back up projects first:
-# rm -rf "$HOME/Library/Application Support/palm"
-```
+Mark PASS, FAIL or BLOCKED with the evidence filename:
 
-Remove any `PALM_FFMPEG`, `PALM_FFPROBE` or `PALM_DATA_DIR` exports you added.
-No system service, installer or admin action is involved.
+- [ ] Artifact size/SHA-256 recorded; extraction and launch use no admin and
+      no Terminal.
+- [ ] `PALM.app` opens the control window with no Terminal; the browser opens.
+- [ ] Licence summary lists every component with licence, source, size and
+      Required/Optional; group consents gate installation.
+- [ ] Install recommended setup completes media tools, analysis tools, CPU and
+      Demucs without a separate FFmpeg install or plugin copy.
+- [ ] Managed FFmpeg/FFprobe are reported ready; no `PALM_FFMPEG` override was
+      needed.
+- [ ] macOS Vamp installation is automatic; no manual plugin copy or admin
+      action was required.
+- [ ] CPU analysis returns key, BPM, chords and bars with no missing-tool or
+      missing-FFmpeg error.
+- [ ] Separation returns expected stems and at least one stem plays.
+- [ ] Safari playback passes play/speed/metronome/loop.
+- [ ] Chrome playback passes play/speed/metronome/loop.
+- [ ] Closing the browser alone leaves the control window/server running.
+- [ ] Control-window Quit stops the server and preserves data.
+- [ ] Check for updates reports a real result, not "not configured".
+- [ ] Control-window Uninstall removes the app/shortcut, keeps data by default,
+      and needs no Terminal or admin action.
+- [ ] No Terminal, shell command, manual FFmpeg install or manual plugin copy
+      was required.
 
-## 8. Checklist and timebox
+The target is 45 to 60 minutes total; stop at 60 and report. If any step fails,
+do not debug or patch on the Mac: capture the step, exact GUI text, **View
+logs** tail, screenshot, host details and artifact hash, then stop.
 
-Mark PASS, FAIL or BLOCKED with the evidence filename. The target is 45 to 60
-minutes total; stop at 60 and report.
+## 10. Failure report
 
-- [ ] 0-5 min: host/version/CPU fields and ZIP SHA-256 recorded.
-- [ ] 5-15 min: unsigned right-click Open succeeds without admin.
-- [ ] 15-25 min: CPU setup, tools and one model complete; data root is
-      `~/Library/Application Support/palm`.
-- [ ] 25-35 min: CPU analysis gives key, BPM, chords and bars.
-- [ ] 35-45 min: short separation produces the expected stems.
-- [ ] 45-55 min: Safari and Chrome playback checks pass in both.
-- [ ] 55-60 min: `--status`, Ctrl+C and `--stop` clean up; evidence copied.
-- [ ] Uninstall removes the app and no admin prompt appeared.
+For every failure record:
 
-The mac-only session is capped at 60 minutes. **Do not debug or patch on the
-Mac.** Capture the failing step, exact command/error, log tails, screenshot and
-host details, then stop. Fixes are made in the Linux/CI tree and re-tested
-there; this document remains unaccepted until the friend supplies this
-one-shot evidence.
+1. Step number and the exact control-window/browser text.
+2. The full error, button state and whether the app stayed responsive.
+3. Screenshots of the control window, browser and **View logs** tail.
+4. macOS version/build, chip, memory, Safari/Chrome versions and artifact
+   SHA-256.
+5. Whether Gatekeeper, Privacy & Security, a UAC-like prompt, a network retry
+   or any workaround appeared.
 
-## 9. Failure report
-
-For each failure include:
-
-1. Step number, exact command and exit code.
-2. Exact error text or wrong visual result.
-3. Tails of `logs/launcher.log` and `logs/server.log`.
-4. Screenshot or short recording.
-5. macOS version/build, chip, memory, Safari/Chrome versions and ZIP SHA-256.
-6. Whether a workaround (quarantine removal, portable FFmpeg, retry) was used.
-
-Do not claim macOS support or acceptance from this kit; the evidence is
-reviewed separately. Windows and Linux results are not macOS acceptance.
+Send the evidence to the maintainer through the agreed channel. Keep this
+document Status **NOT RUN** and do not claim macOS support until the owner has
+run it and supplied the evidence. Windows/Linux/CI results are not macOS
+acceptance.
