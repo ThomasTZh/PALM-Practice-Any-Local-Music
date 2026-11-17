@@ -86,9 +86,9 @@ def swap_app(
     try:
         replacement = extract(asset, str(plan.get("kind", "tar.gz")), temp)
         if replacement != app_root:
-            app_root.mkdir()
-            for child in replacement.iterdir():
-                shutil.move(str(child), app_root / child.name)
+            # Move the whole extracted bundle/folder, not just its children.
+            # This is required for macOS PALM.app swaps and keeps the shell.
+            shutil.move(str(replacement), str(app_root))
         if restart is not None and plan.get("restart"):
             restart(list(plan["restart"]))
     except Exception:

@@ -21,6 +21,7 @@ from basseparate.updater import (
     UninstallPlan,
     UpdateError,
     check_for_update,
+    launch_helper,
     launch_uninstall_helper,
     load_metadata,
     stage_update,
@@ -54,6 +55,7 @@ class ControlWindow:
         update_action: Callable[[], str] | None = None,
         uninstall_action: Callable[[], str] | None = None,
         confirm_uninstall: Callable[[], bool] | None = None,
+        quit_action: Callable[[], str] | None = None,
     ) -> None:
         self.root = root
         self.controller = controller
@@ -64,6 +66,8 @@ class ControlWindow:
         self._update_action = update_action
         self._uninstall_action = uninstall_action
         self._confirm_uninstall = confirm_uninstall or self._ask_uninstall
+        self._quit_action = quit_action
+        self._quitting = False
         root.title("PALM — Practice Any Local Music")
         root.minsize(520, 360)
         root.protocol("WM_DELETE_WINDOW", self.quit)
@@ -193,10 +197,59 @@ class ControlWindow:
         self.log.configure(state="disabled")
 
     def quit(self) -> None:
+        if self._quitting:
+            return
+        self._quitting = True
+        if self._quit_action is not None:
+            try:
+                self._quit_action()
+            except Exception as error:  # keep quitting even if update launch fails
+                print(f"palm: pending update could not be launched: {error}", file=sys.stderr)
         try:
             self.controller.stop()
         finally:
             self.root.destroy()
+
+
+def _install_root(app_root: Path) -> Path:
+    """Return the unit the updater/uninstaller must replace or delete.
+
+    Linux/Windows use the app directory. A macOS app launches from
+    PALM.app/Contents/Resources/app, but the whole PALM.app bundle must be
+    swapped or removed.
+    """
+    if app_root.name == "app" and app_root.parent.name == "Resources":
+        bundle = app_root.parents[2]
+        if bundle.suffix == ".app":
+            return bundle
+    return app_root
+
+
+def _restart_command(app_root: Path) -> list[str]:
+    if app_root.suffix == ".app":
+        wrapper = app_root / "Contents" / "MacOS" / "palm"
+        return [str(wrapper), "--window"] if wrapper.is_file() else []
+    if (app_root / "bin" / "palm").is_file():
+        return [str(app_root / "bin" / "palm"), "--window"]
+    if (app_root / "PALM.exe").is_file():
+        return [str(app_root / "PALM.exe")]
+    return []
+
+
+def launch_pending_update(
+    paths: LauncherPaths,
+    *,
+    popen: Callable[..., Any] | None = None,
+) -> str:
+    """Launch the staged update helper, if any, before the app exits."""
+    plan = paths.runtime.data_root / "updates" / "pending.json"
+    if not plan.is_file():
+        return "No pending update."
+    try:
+        launch_helper(plan, popen=popen)
+    except UpdateError as error:
+        return f"Pending update could not be launched: {error}"
+    return "Update helper launched; PALM will swap and restart after Quit."
 
 
 def uninstall_app(
@@ -209,13 +262,13 @@ def uninstall_app(
 ) -> Path:
     """Stop the app, then launch the external uninstall helper (default keep data)."""
     controller.stop()
-    executable = helper or paths.runtime.app_root.parent / "uninstall-helper.py"
+    executable = helper or _external_helper(paths, "uninstall_helper.py")
     shortcuts = (
         Path.home() / ".local/share/applications/palm.desktop",
         Path.home() / ".local/bin/palm",
     )
     plan = UninstallPlan(
-        app_root=paths.runtime.app_root,
+        app_root=_install_root(paths.runtime.app_root),
         data_root=paths.runtime.data_root,
         delete_data=delete_data is True,
         pid=os.getpid(),
@@ -226,13 +279,21 @@ def uninstall_app(
 
 def _external_helper(paths: LauncherPaths, name: str) -> Path:
     """Copy a packaged updater/helper below the writable data root."""
-    source = paths.runtime.app_root / "updaters" / name
+    roots = (
+        paths.runtime.app_root / "updaters",
+        paths.runtime.app_root.parent / "updaters",
+        paths.runtime.app_root.parents[1] / "updaters"
+        if len(paths.runtime.app_root.parents) > 1
+        else paths.runtime.app_root.parent / "updaters",
+    )
     destination = paths.runtime.data_root / "updates" / "helpers" / name
-    if source.is_file():
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-        destination.chmod(0o755)
-        return destination
+    for root in roots:
+        source = root / name
+        if source.is_file():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            destination.chmod(0o755)
+            return destination
     return paths.runtime.app_root.parent / name
 
 
@@ -262,7 +323,15 @@ def check_for_updates(
         helper = _external_helper(paths, "update_helper.py")
         if not helper.is_file():
             return "Update is available but the external update helper is missing."
-        write_plan(metadata, candidate, staged, helper)
+        app_root = _install_root(paths.runtime.app_root)
+        write_plan(
+            metadata,
+            candidate,
+            staged,
+            helper,
+            app_root=app_root,
+            restart=_restart_command(app_root),
+        )
     except (UpdateError, OSError) as error:
         return f"Update could not be staged: {error}"
     return f"Update {candidate.version} staged; quit PALM to install and restart."
@@ -303,7 +372,7 @@ def run_control(
             return check_for_updates(paths)
 
         def uninstall_action() -> str:
-            helper = _external_helper(paths, "uninstall-helper.py")
+            helper = _external_helper(paths, "uninstall_helper.py")
             uninstall_app(controller, paths, helper=helper)
             return "Uninstall helper launched; your data is kept."
 
@@ -314,6 +383,7 @@ def run_control(
             tk=tk,
             update_action=update_action,
             uninstall_action=uninstall_action,
+            quit_action=lambda: launch_pending_update(paths),
         )
         root.mainloop()
         return 0

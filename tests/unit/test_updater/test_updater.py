@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import tarfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -283,3 +284,37 @@ def test_uninstall_app_stops_then_launches_external_helper(tmp_path: Path) -> No
     assert controller.stopped == 1
     assert calls and "--plan" in calls[0]
     assert plan.read_text().find('"delete_data": false') >= 0
+
+
+def test_swap_whole_macos_app_bundle(tmp_path: Path) -> None:
+    helper = load_helper()
+    bundle = tmp_path / "PALM.app"
+    app = bundle / "Contents/Resources/app"
+    data = tmp_path / "data"
+    app.mkdir(parents=True)
+    data.mkdir()
+    (app / "old.txt").write_text("old")
+    archive = tmp_path / "new.zip"
+    new_app = tmp_path / "new/PALM.app/Contents/Resources/app"
+    new_app.mkdir(parents=True)
+    (new_app / "new.txt").write_text("new")
+    with zipfile.ZipFile(archive, "w") as bundle_file:
+        bundle_file.write(new_app / "new.txt", "PALM.app/Contents/Resources/app/new.txt")
+    plan = {
+        "app_root": str(bundle),
+        "asset": str(archive),
+        "data_root": str(data),
+        "kind": "zip",
+        "pid": 0,
+    }
+    assert helper.swap_app(plan, wait=lambda _pid: None)
+    assert (app / "new.txt").read_text() == "new"
+    assert not (app / "old.txt").exists()
+    assert not list(tmp_path.glob("PALM.app.palm-backup"))
+
+
+def test_uninstall_packaged_helper_names_match_layout() -> None:
+    root = Path(__file__).resolve().parents[3]
+    assert (root / "packaging/updaters/update_helper.py").is_file()
+    assert (root / "packaging/updaters/uninstall_helper.py").is_file()
+    assert "update_helper" in (root / "packaging/updaters/uninstall_helper.py").read_text()

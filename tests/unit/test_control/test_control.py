@@ -254,6 +254,7 @@ def test_control_window_starts_and_quits_with_shared_controller() -> None:
         update_action=lambda: "checked",
         uninstall_action=lambda: actions.append("uninstall") or "launched",
         confirm_uninstall=lambda: cancelled.append(True) or False,
+        quit_action=lambda: actions.append("quit") or "launched",
     )
     window.start()
     assert "Running at" in window.status.value
@@ -266,6 +267,7 @@ def test_control_window_starts_and_quits_with_shared_controller() -> None:
     assert actions == ["uninstall"]
     assert root.callback is not None
     window.quit()
+    assert actions == ["uninstall", "quit"]
     assert controller.stopped == 1
     assert root.destroyed
 
@@ -352,3 +354,66 @@ def test_check_for_updates_stages_verified_asset(
     assert "staged" in message
     assert (paths.runtime.data_root / "updates/helpers/update_helper.py").is_file()
     assert (paths.runtime.data_root / "updates/pending.json").is_file()
+
+
+def test_macos_helper_layout_and_install_root(tmp_path: Path) -> None:
+    bundle = tmp_path / "PALM.app"
+    app = bundle / "Contents" / "Resources" / "app"
+    data = tmp_path / "data"
+    app.mkdir(parents=True)
+    data.mkdir()
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    (bundle / "Contents" / "MacOS" / "palm").write_text("#!/bin/sh\n")
+    (bundle / "Contents" / "Resources" / "updaters").mkdir()
+    helper = bundle / "Contents" / "Resources" / "updaters" / "uninstall_helper.py"
+    helper.write_text("# helper")
+    runtime = runtime_paths(mode="packaged", app_root=app, data_root=data)
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    copied = control._external_helper(paths, "uninstall_helper.py")
+    assert copied == data / "updates/helpers/uninstall_helper.py"
+    assert copied.read_text() == "# helper"
+    assert control._install_root(app) == bundle
+    assert control._restart_command(bundle) == [str(bundle / "Contents/MacOS/palm"), "--window"]
+
+
+def test_launch_pending_update_and_no_pending(paths: LauncherPaths) -> None:
+    assert control.launch_pending_update(paths) == "No pending update."
+    helper = paths.runtime.data_root / "updates/helpers/update_helper.py"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("# helper")
+    plan = paths.runtime.data_root / "updates/pending.json"
+    plan.write_text(
+        '{"app_root": "'
+        + str(paths.runtime.app_root)
+        + '", "data_root": "'
+        + str(paths.runtime.data_root)
+        + '", "helper": "'
+        + str(helper)
+        + '"}'
+    )
+    calls: list[list[str]] = []
+    message = control.launch_pending_update(
+        paths, popen=lambda command, **kw: calls.append(command)
+    )
+    assert "launched" in message
+    assert calls and "--plan" in calls[0]
+
+
+def test_windows_helper_layout_copies_outside_app(tmp_path: Path) -> None:
+    app = tmp_path / "PALM app ü"
+    data = tmp_path / "data"
+    app.mkdir()
+    data.mkdir()
+    (app / "updaters").mkdir()
+    (app / "updaters" / "update_helper.py").write_text("# update")
+    (app / "updaters" / "uninstall_helper.py").write_text("# uninstall")
+    runtime = runtime_paths(mode="packaged", app_root=app, data_root=data)
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    for name in ("update_helper.py", "uninstall_helper.py"):
+        copied = control._external_helper(paths, name)
+        assert copied == data / "updates/helpers" / name
+        assert copied.is_file()
+        assert not copied.resolve().is_relative_to(app.resolve())
+    assert control._install_root(app) == app

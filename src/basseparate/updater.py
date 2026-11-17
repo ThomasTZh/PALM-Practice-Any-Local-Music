@@ -168,24 +168,26 @@ def write_plan(
     helper: Path,
     *,
     restart: list[str] | None = None,
+    app_root: Path | None = None,
 ) -> Path:
     """Write a pending plan; the app is still untouched."""
     directory = metadata.data_root / "updates"
     directory.mkdir(parents=True, exist_ok=True)
     plan = directory / "pending.json"
+    target_app_root = app_root or metadata.app_root
     payload = {
         "version": candidate.version,
         "channel": candidate.channel,
         "asset": str(staged),
         "kind": candidate.kind,
-        "app_root": str(metadata.app_root),
+        "app_root": str(target_app_root),
         "data_root": str(metadata.data_root),
         "helper": str(helper),
         "pid": os.getpid(),
         "restart": restart
         or (
-            [str(metadata.app_root / "bin" / "palm"), "--window"]
-            if (metadata.app_root / "bin" / "palm").is_file()
+            [str(target_app_root / "bin" / "palm"), "--window"]
+            if (target_app_root / "bin" / "palm").is_file()
             else []
         ),
     }
