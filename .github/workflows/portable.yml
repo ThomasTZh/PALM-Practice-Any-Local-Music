@@ -154,6 +154,41 @@ jobs:
                   assert (info.external_attr >> 16) & 0o111, suffix
           print('windows install/licence/modes ok')
           "@
+      - name: Packaged update/uninstall helper smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $root = Join-Path $env:RUNNER_TEMP "palm-win-helpers"
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip.FullName -DestinationPath $root
+          $app = Get-ChildItem $root -Directory | Select-Object -First 1
+          $py = Join-Path $app.FullName "python\python.exe"
+          $work = Join-Path $env:RUNNER_TEMP "palm-win-helper-data"
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory $work | Out-Null
+          $app_dir = Join-Path $work "app"
+          New-Item -ItemType Directory $app_dir | Out-Null
+          New-Item -ItemType Directory (Join-Path $work "data") | Out-Null
+          Set-Content (Join-Path $app_dir "old.txt") "old"
+          $plan = @{app_root=$app_dir; data_root=(Join-Path $work "data"); delete_data=$false; pid=0; shortcuts=@()} | ConvertTo-Json
+          $plan_path = Join-Path $work "uninstall.json"
+          Set-Content $plan_path $plan
+          & $py (Join-Path $app.FullName "updaters\uninstall_helper.py") --plan $plan_path
+          if ($LASTEXITCODE -ne 0 -or (Test-Path $app_dir) -or -not (Test-Path (Join-Path $work "data"))) { throw "packaged uninstall helper failed" }
+          $new_app = Join-Path $work "update-app"
+          New-Item -ItemType Directory $new_app | Out-Null
+          Set-Content (Join-Path $new_app "old.txt") "old"
+          $src = Join-Path $work "payload\root"
+          New-Item -ItemType Directory $src | Out-Null
+          Set-Content (Join-Path $src "new.txt") "new"
+          $asset = Join-Path $work "new.zip"
+          Compress-Archive -Path $src -DestinationPath $asset
+          $uplan = @{app_root=$new_app; asset=$asset; data_root=(Join-Path $work "update-data"); kind="zip"; pid=0; restart=@()} | ConvertTo-Json
+          $uplan_path = Join-Path $work "pending.json"
+          Set-Content $uplan_path $uplan
+          & $py (Join-Path $app.FullName "updaters\update_helper.py") --plan $uplan_path
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $new_app "new.txt")) -or (Test-Path $uplan_path)) { throw "packaged update helper failed" }
       - name: Install Playwright browser
         shell: pwsh
         run: pnpm --dir web exec playwright install chromium
