@@ -13,7 +13,7 @@ try {
     if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
         throw "cl.exe not found; open an x64 Native Tools Command Prompt for Visual Studio"
     }
-    cl.exe /nologo /O2 /W4 /DUNICODE /D_UNICODE palm_launcher.c /link /SUBSYSTEM:WINDOWS "/OUT:$Out"
+    cl.exe /nologo /O2 /W4 /DUNICODE /D_UNICODE palm_launcher.c /link /SUBSYSTEM:WINDOWS user32.lib "/OUT:$Out"
     if ($LASTEXITCODE -ne 0) { throw "native launcher build failed" }
     if (-not (Test-Path $Out)) { throw "native launcher was not produced: $Out" }
     Write-Host "built $Out"
