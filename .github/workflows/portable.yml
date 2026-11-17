@@ -133,6 +133,9 @@ jobs:
       - name: Licence/package/update audit
         shell: pwsh
         run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
+      - name: Windows Sonic analysis adapter tests
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_analysis_backend tests/unit/test_sonic_annotator
       - name: Verify Windows archive metadata and modes
         shell: pwsh
         run: |
@@ -154,6 +157,49 @@ jobs:
                   assert (info.external_attr >> 16) & 0o111, suffix
           print('windows install/licence/modes ok')
           "@
+      - name: Download pinned FFmpeg for WAV import smoke
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "palm-win-ffmpeg"
+          Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory $dir | Out-Null
+          $zip = Join-Path $dir "ffmpeg.zip"
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip" -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -ne "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec") { throw "FFmpeg hash mismatch" }
+          Expand-Archive -Path $zip -DestinationPath $dir
+          $bin = Get-ChildItem $dir -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $bin) { throw "ffmpeg.exe missing" }
+          "PALM_FFMPEG=$($bin.FullName)" | Out-File $env:GITHUB_ENV -Append
+          "PALM_FFPROBE=$(Join-Path $bin.Directory 'ffprobe.exe')" | Out-File $env:GITHUB_ENV -Append
+      - name: Windows packaged WAV import smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $root = Join-Path $env:RUNNER_TEMP "palm-win-import"
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip -DestinationPath $root
+          $app = Get-ChildItem $root -Directory | Select-Object -First 1
+          $env:PYTHONPATH = Join-Path $app.FullName "src"
+          $env:PALM_MODE = "packaged"
+          $env:PALM_APP_ROOT = $app.FullName
+          $env:PALM_SMOKE_ROOT = Join-Path $env:RUNNER_TEMP "palm-win-import-data"
+          Remove-Item $env:PALM_SMOKE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          @'
+          import os, wave
+          from pathlib import Path
+          from basseparate.media import import_media
+          root = Path(os.environ["PALM_SMOKE_ROOT"]); root.mkdir(parents=True)
+          wav = root / "take.wav"
+          with wave.open(str(wav), "wb") as handle:
+              handle.setnchannels(1); handle.setsampwidth(2); handle.setframerate(8000)
+              handle.writeframes(bytes(1600))
+          asset = import_media(wav, assets_root=root / "assets")
+          assert asset.frames == 800 and (asset.directory / "pcm.f32").is_file()
+          print("packaged WAV import ok", asset.frames)
+          '@ | Set-Content (Join-Path $env:RUNNER_TEMP "palm-import-smoke.py") -Encoding utf8
+          & (Join-Path $app.FullName "python\python.exe") (Join-Path $env:RUNNER_TEMP "palm-import-smoke.py")
+          if ($LASTEXITCODE -ne 0) { throw "packaged WAV import failed" }
       - name: Packaged update/uninstall helper smoke
         shell: pwsh
         run: |
@@ -268,6 +314,8 @@ jobs:
         run: .venv/bin/python -m pytest -q tests/unit/test_platform_support tests/integration/test_package_macos
       - name: Licence/package/update audit
         run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
+      - name: macOS Sonic analysis adapter tests
+        run: .venv/bin/python -m pytest -q tests/unit/test_analysis_backend tests/unit/test_sonic_annotator
       - name: Install Playwright browser
         run: pnpm --dir web exec playwright install chromium
       - name: Native app and browser smoke
