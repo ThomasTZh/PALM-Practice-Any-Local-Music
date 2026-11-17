@@ -51,6 +51,9 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath $root
           $app = Get-ChildItem $root -Directory | Select-Object -First 1
           $env:PALM_SMOKE_ROOT = Join-Path $env:RUNNER_TEMP "palm-win-export-data"
+          $env:PYTHONPATH = Join-Path $app.FullName "src"
+          $env:PALM_MODE = "packaged"
+          $env:PALM_APP_ROOT = $app.FullName
           Remove-Item $env:PALM_SMOKE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
           @'
           import os, struct
