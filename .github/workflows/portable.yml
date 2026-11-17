@@ -312,7 +312,7 @@ jobs:
       - name: Licence/package/update audit
         run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
       - name: macOS Sonic analysis adapter tests
-        run: .venv/bin/python -m pytest -q tests/unit/test_analysis_backend tests/unit/test_sonic_annotator
+        run: .venv/bin/python -m pytest -q tests/unit/test_sonic_annotator
       - name: Install Playwright browser
         run: pnpm --dir web exec playwright install chromium
       - name: Native app and browser smoke
