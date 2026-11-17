@@ -149,7 +149,7 @@ The lockfiles contain the wheel URLs, hashes and sizes for each target
 platform. psutil is a required app dependency, not a separately downloaded
 tool.
 
-## Download-on-first-run: FFmpeg, FFprobe and 7-Zip
+## Download-on-first-run: FFmpeg and FFprobe
 
 These components are downloaded only after explicit consent and are not
 committed to git or bundled in a release. The manifest records them as
@@ -163,7 +163,6 @@ committed to git or bundled in a release. The manifest records them as
 | FFprobe | 9.0.2 / Martin Riedl 1789931890_9.0.2 | macOS arm64 | https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip | 28,317,701 B | `fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6` | GPL-3.0-or-later |
 | FFmpeg | 8.1.2 / gyan.dev essentials 2026-06-27 | Windows x64 | https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip | 109,728,040 B | `db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec` | GPL-3.0-or-later |
 | FFprobe | 8.1.2 / gyan.dev essentials 2026-06-27 | Windows x64 | https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip | 109,728,040 B | `db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec` | GPL-3.0-or-later |
-| 7-Zip helper | 26.06 | Windows | https://www.7-zip.org/download.html | pinned by downloader | pinned by downloader | LGPL-2.1-or-later with unRAR restriction |
 
 Exact Linux and Windows `ffmpeg -L`/`ffprobe -L` output, and the macOS build
 configuration extracted from the signed Mach-O binary, are in
@@ -193,13 +192,3 @@ additional downloads.
 | demucs-code, demucs-weights | https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5 |
 | msst-code, scnet-weights | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15 |
 | bs-roformer-weights | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1 |
-
-7-Zip 26.06 assets used by the Windows Vamp helper:
-
-- `7z2606-extra.7z` - 1,758,340 B, SHA-256
-  `396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104`
-- `7zr.exe` bootstrap - 600,064 B, SHA-256
-  `e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc`
-
-Both are downloaded only inside the licence-gated setup job, verified before
-use, and persisted below `<data>/tools/7zip`; neither is committed or bundled.

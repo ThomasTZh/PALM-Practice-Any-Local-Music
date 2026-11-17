@@ -9,6 +9,7 @@ data root. No asset is installed system-wide and no elevation is requested.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -44,42 +45,6 @@ class PinnedToolAsset:
     filename: str
     kind: Literal["zip", "tar.gz", "exe", "dmg"]
     install_name: str
-
-
-@dataclass(frozen=True)
-class SevenZipAsset:
-    version: str
-    url: str
-    sha256: str
-    size: int
-    filename: str
-    member: str = "7za.exe"
-    license: str = "LGPL-2.1-or-later"
-    source_url: str = "https://www.7-zip.org/"
-
-
-SEVEN_ZIP = SevenZipAsset(
-    version="26.06",
-    url="https://github.com/ip7z/7zip/releases/download/26.06/7z2606-extra.7z",
-    sha256="396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104",
-    size=1_758_340,
-    filename="7z2606-extra.7z",
-    member="7za.exe",
-    license="LGPL-2.1-or-later with the 7-Zip unRAR restriction",
-    source_url="https://www.7-zip.org/download.html",
-)
-
-
-SEVEN_ZIP_BOOTSTRAP = SevenZipAsset(
-    version="26.06",
-    url="https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
-    sha256="e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc",
-    size=600_064,
-    filename="7zr.exe",
-    member="7zr.exe",
-    license="LGPL-2.1-or-later with the 7-Zip unRAR restriction",
-    source_url="https://www.7-zip.org/download.html",
-)
 
 
 PLATFORM_ASSETS: dict[tuple[str, str], PinnedToolAsset] = {
@@ -206,44 +171,25 @@ def _download(asset: PinnedToolAsset, path: Path) -> None:
     )
 
 
-def _install_seven_zip(
-    runtime: RuntimePaths,
-    downloader: Callable[[SevenZipAsset, Path], None] | None,
-    runner: Runner,
-) -> Path:
-    root = runtime.tools_root / "7zip"
-    helper = root / "7za.exe"
-    if helper.is_file():
-        return helper
-    root.mkdir(parents=True, exist_ok=True)
-    extra = root / SEVEN_ZIP.filename
-    bootstrap = root / SEVEN_ZIP_BOOTSTRAP.filename
-    for asset, path in ((SEVEN_ZIP, extra), (SEVEN_ZIP_BOOTSTRAP, bootstrap)):
-        if downloader is not None:
-            downloader(asset, path)
-        else:
-            download_verified(
-                asset.url,
-                path,
-                size_bytes=asset.size,
-                sha256=asset.sha256,
-            )
-        _verify_archive(asset, path)  # type: ignore[arg-type]
-    result = runner(
-        [
-            str(bootstrap),
-            "x",
-            "-y",
-            f"-o{root}",
-            str(extra),
-        ]
-    )
-    if result is not None and getattr(result, "returncode", 0) not in (0, None):
-        raise SetupInstallError("7-Zip could not unpack its current console helper")
-    if not helper.is_file():
-        raise SetupInstallError("current 7-Zip helper did not contain 7za.exe")
-    helper.chmod(0o755)
-    return helper
+def standard_vamp_dirs() -> tuple[Path, ...]:
+    """Windows' usual Vamp plugin locations, in search order."""
+    directories: list[Path] = []
+    for key in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA", "APPDATA"):
+        base = os.environ.get(key)
+        if base:
+            directories.append(Path(base) / "Vamp Plugins")
+    return tuple(dict.fromkeys(directories))
+
+
+def _copy_vamp_dlls(source_root: Path, target: Path) -> bool:
+    plugin = next(source_root.rglob("qm-vamp-plugins.dll"), None)
+    if plugin is None:
+        return False
+    target.mkdir(parents=True, exist_ok=True)
+    for dll in plugin.parent.glob("*.dll"):
+        if dll.is_file():
+            shutil.copy2(dll, target / dll.name)
+    return (target / "qm-vamp-plugins.dll").is_file()
 
 
 def _install_vamp_windows(
@@ -251,53 +197,40 @@ def _install_vamp_windows(
     archive: Path,
     target: Path,
     runner: Runner,
-    *,
-    seven_zip: Path,
-    work: Path,
 ) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    extracted = work / "vamp-extracted"
-    extracted.mkdir(parents=True, exist_ok=True)
-    extraction_error: str | None = None
-    try:
-        result = runner([str(seven_zip), "x", "-y", f"-o{extracted}", str(archive)])
-        if result is not None and getattr(result, "returncode", 0) not in (0, None):
-            extraction_error = f"7-Zip exited {result.returncode}"
-    except OSError as error:
-        extraction_error = str(error)
-    dlls = [] if extraction_error else sorted(extracted.rglob("*.dll"))
-    plugin = next((path for path in dlls if path.name == "qm-vamp-plugins.dll"), None)
-    if plugin is not None:
-        for dll in dlls:
-            if dll.is_file():
-                shutil.copy2(dll, target / dll.name)
-        if (target / "qm-vamp-plugins.dll").is_file():
-            return
-    # Exactly one explicit elevation fallback. This is the only UAC request.
+    log_path = target.parent / "vamp-install.log"
     quoted_installer = str(archive).replace("'", "''")
     quoted_target = str(target).replace("'", "''")
+    quoted_log = str(log_path).replace("'", "''")
     script = (
         f"$p = Start-Process -FilePath '{quoted_installer}' "
-        f"-ArgumentList @('/S','/D={quoted_target}') -Verb RunAs -Wait -PassThru; "
-        "exit $p.ExitCode"
+        "-ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"
+        f"'/DIR=\"{quoted_target}\"','/LOG=\"{quoted_log}\"') "
+        "-Verb RunAs -Wait -PassThru; exit $p.ExitCode"
     )
     try:
-        uac = runner(["powershell.exe", "-NoProfile", "-Command", script])
+        result = runner(["powershell.exe", "-NoProfile", "-Command", script])
     except OSError as error:
         raise SetupInstallError(
-            "Windows administrator approval could not be requested; retry setup "
-            "and approve the UAC prompt."
+            f"Windows administrator approval could not be requested; see {log_path} "
+            "and retry setup, approving the UAC prompt."
         ) from error
-    if uac is not None and getattr(uac, "returncode", 0) not in (0, None):
+    if result is not None and getattr(result, "returncode", 0) not in (0, None):
         raise SetupInstallError(
-            "Windows administrator approval was denied or the installer failed; "
-            "retry setup and approve the UAC prompt."
+            f"Windows administrator approval was denied or the Inno Setup installer "
+            f"failed; see {log_path} and retry setup, approving the UAC prompt."
         )
-    if not (target / "qm-vamp-plugins.dll").is_file():
-        raise SetupInstallError(
-            "The Windows installer did not produce qm-vamp-plugins.dll after the "
-            "UAC-assisted install; retry setup or choose the Linux/macOS build."
-        )
+    if (target / "qm-vamp-plugins.dll").is_file():
+        return
+    for directory in standard_vamp_dirs():
+        if _copy_vamp_dlls(directory, target):
+            return
+    raise SetupInstallError(
+        f"the Inno Setup installer did not produce qm-vamp-plugins.dll under {target} "
+        f"or the standard Vamp directory; see {log_path} and retry setup, approving "
+        "the UAC prompt."
+    )
 
 
 def _install_vamp_macos(
@@ -380,7 +313,6 @@ def install_vamp_plugin_pack(
     *,
     platform: PlatformName | None = None,
     downloader: Downloader | None = None,
-    helper_downloader: Callable[[SevenZipAsset, Path], None] | None = None,
     runner: Runner | None = None,
 ) -> Path:
     selected = platform or platform_name()
@@ -397,20 +329,18 @@ def install_vamp_plugin_pack(
     )
     cache = runtime.tools_root / "cache"
     cache.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".vamp-pack-", dir=runtime.tools_root) as tmp:
-        archive = cache / asset.filename
-        if downloader is not None:
-            downloader(asset, archive)
-        else:
-            _download(asset, archive)
-        _verify_archive(asset, archive)
-        if selected == "windows":
-            helper = _install_seven_zip(runtime, helper_downloader, run)
-            _install_vamp_windows(asset, archive, target, run, seven_zip=helper, work=Path(tmp))
-        elif selected == "macos":
-            _install_vamp_macos(asset, archive, target, run)
-        else:
-            raise SetupInstallError("Vamp pack platform extraction is only for Windows/macOS")
+    archive = cache / asset.filename
+    if downloader is not None:
+        downloader(asset, archive)
+    else:
+        _download(asset, archive)
+    _verify_archive(asset, archive)
+    if selected == "windows":
+        _install_vamp_windows(asset, archive, target, run)
+    elif selected == "macos":
+        _install_vamp_macos(asset, archive, target, run)
+    else:
+        raise SetupInstallError("Vamp pack platform extraction is only for Windows/macOS")
     if not plugin.is_file():
         raise SetupInstallError(f"Vamp plugin pack did not install {plugin.name} under {target}")
     return target
@@ -443,9 +373,6 @@ def install_platform_tools(
 __all__ = [
     "PLATFORM_ASSETS",
     "PinnedToolAsset",
-    "SEVEN_ZIP",
-    "SEVEN_ZIP_BOOTSTRAP",
-    "SevenZipAsset",
     "asset_for",
     "install_platform_tools",
     "install_sonic_annotator",

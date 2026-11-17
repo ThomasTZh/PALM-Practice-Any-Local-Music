@@ -39,7 +39,6 @@ def test_manifest_matches_platform_docs() -> None:
         "ffprobe-macos-arm64",
         "ffmpeg-windows-x86_64",
         "ffprobe-windows-x86_64",
-        "7zip-helper",
         "sonic-annotator",
         "vamp-plugin-pack",
         "psutil",

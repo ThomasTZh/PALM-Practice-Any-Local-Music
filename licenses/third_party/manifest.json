@@ -20,11 +20,9 @@
     "licenses/third_party/licenses/GPL-3.0-or-later.txt",
     "licenses/third_party/licenses/LGPL-2.1-or-later.txt",
     "licenses/third_party/licenses/MIT.txt",
-    "licenses/third_party/licenses/PSF-2.0.txt",
-    "licenses/third_party/licenses/7-Zip-LGPL-2.1-or-later.txt"
+    "licenses/third_party/licenses/PSF-2.0.txt"
   ],
   "notice_texts": [
-    "licenses/third_party/notices/7zip.txt",
     "licenses/third_party/notices/bs-roformer-weights.txt",
     "licenses/third_party/notices/demucs-weights.txt",
     "licenses/third_party/notices/python-uv.txt",
@@ -206,22 +204,6 @@
       "component_type": "audio",
       "bundled_paths": [
         "web/dist"
-      ]
-    },
-    {
-      "id": "7zip-helper",
-      "name": "7-Zip command-line helper",
-      "version": "26.06",
-      "copyright": "Igor Pavlov, 1999-2026",
-      "license": "LGPL-2.1-or-later",
-      "license_file": "licenses/third_party/licenses/LGPL-2.1-or-later.txt",
-      "notice_file": "licenses/third_party/notices/7zip.txt",
-      "source_url": "https://www.7-zip.org/download.html",
-      "distribution": "downloaded",
-      "component_type": "tool",
-      "download_target": "<data>/tools/7z",
-      "license_files": [
-        "licenses/third_party/licenses/7-Zip-LGPL-2.1-or-later.txt"
       ]
     },
     {

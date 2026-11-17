@@ -19,7 +19,6 @@ REQUIRED_IDS = {
     "ffprobe-macos-arm64",
     "ffmpeg-windows-x86_64",
     "ffprobe-windows-x86_64",
-    "7zip-helper",
     "sonic-annotator",
     "vamp-plugin-pack",
     "demucs-weights",
@@ -103,8 +102,6 @@ def validate(root: Path = Path(), data: dict[str, Any] | None = None) -> None:
             notice = (root / str(component.get("notice_file", ""))).read_text(errors="ignore")
             if "-L" not in notice or "--enable-gpl" not in notice:
                 errors.append(f"{cid}: exact ffmpeg -L/build licence evidence is missing")
-        if cid == "7zip-helper" and component.get("license") != "LGPL-2.1-or-later":
-            errors.append("7zip-helper: must be LGPL-2.1-or-later")
     missing_ids = REQUIRED_IDS - ids
     if missing_ids:
         errors.append("missing required components: " + ", ".join(sorted(missing_ids)))

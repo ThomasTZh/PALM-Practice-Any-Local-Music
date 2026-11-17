@@ -39,14 +39,12 @@ after the licence gate.
 | FFmpeg / FFprobe, Linux x86_64 | Martin Riedl 9.0.2 (build 1789931100_9.0.2) | **GPL-3.0-or-later**; binary also reports `--enable-nonfree` and "not legally redistributable" | Downloaded after explicit consent; never bundled |
 | FFmpeg / FFprobe, macOS arm64 | Martin Riedl 9.0.2 (build 1789931890_9.0.2) | **GPL-3.0-or-later**; `--enable-gpl --enable-version3` | Downloaded after explicit consent; never bundled |
 | FFmpeg / FFprobe, Windows x64 | gyan.dev 8.1.2 essentials (2026-06-27) | **GPL-3.0-or-later** | Downloaded after explicit consent; never bundled |
-| 7-Zip helper | 26.06 | LGPL-2.1-or-later with the 7-Zip unRAR restriction | Downloaded after explicit consent; never bundled |
 
 FFmpeg/FFprobe sources:
 [Martin Riedl builds](https://ffmpeg.martin-riedl.de/) and
 [gyan.dev builds](https://www.gyan.dev/ffmpeg/builds/). Exact per-platform
 `ffmpeg -L`/`ffprobe -L` evidence and pinned hashes are in
 [licenses/third_party/notices/ffmpeg-media-licenses.txt](licenses/third_party/notices/ffmpeg-media-licenses.txt).
-7-Zip source: <https://www.7-zip.org/download.html>.
 
 ## Analysis tools and plugins
 

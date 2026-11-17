@@ -19,9 +19,8 @@ and remain user-downloaded runtime files. The Linux Martin Riedl build reports
 `--enable-nonfree` and states that it is not legally redistributable; it is
 used only as a user-downloaded runtime and is never included in a PALM release.
 
-The same downloaded-only category includes the 7-Zip helper
-(LGPL-2.1-or-later with unRAR restriction), Sonic Annotator/Vamp tools, and the
-Demucs/SCNet/BS-RoFormer weights. None are bundled in the application package.
+The same downloaded-only category includes Sonic Annotator/Vamp tools and
+the Demucs/SCNet/BS-RoFormer weights. None are bundled in the application package.
 
 
 Generated: 2026-10-24T10:41:49.752569+00:00
