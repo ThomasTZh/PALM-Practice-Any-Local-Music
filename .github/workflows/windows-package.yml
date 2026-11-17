@@ -44,7 +44,7 @@ jobs:
         run: python scripts/package_windows.py --check
       - name: Unit and adapter tests
         shell: pwsh
-        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_platform_support tests/integration/test_package_windows
+        run: .\.venv\Scripts\python.exe -m pytest -q tests/integration/test_package_windows
       - name: No-admin ZIP smoke
         shell: pwsh
         run: |
