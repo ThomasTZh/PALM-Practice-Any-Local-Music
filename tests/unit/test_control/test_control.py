@@ -543,3 +543,23 @@ def test_external_python_copies_minimal_runtime_for_all_layouts(
         assert copied.is_file()
         assert not copied.resolve().is_relative_to(data.resolve())
         assert not copied.resolve().is_relative_to(app.resolve())
+
+
+def test_quit_surfaces_pending_update_launch_failure() -> None:
+    from types import SimpleNamespace
+
+    class Root:
+        destroyed = False
+
+        def destroy(self) -> None:
+            self.destroyed = True
+
+    window = control.ControlWindow.__new__(control.ControlWindow)
+    window.root = Root()
+    window.controller = SimpleNamespace(stop=lambda: None)
+    window.detail = SimpleNamespace(values=[], set=lambda value: window.detail.values.append(value))
+    window._quitting = False
+    window._quit_action = lambda: "Pending update could not be launched: boom"
+    window.quit()
+    assert window.root.destroyed is False
+    assert window.detail.values[-1].startswith("Pending update could not be launched")
