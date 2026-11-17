@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import tarfile
 import zipfile
 from pathlib import Path
@@ -353,6 +354,7 @@ def test_swap_cleans_pending_plan_and_staged_asset(tmp_path: Path) -> None:
     assert restarted == [["echo", "restarted"]]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows cannot represent Unix executable bits")
 def test_zip_extraction_restores_macos_executable_modes(tmp_path: Path) -> None:
     helper = load_helper()
     bundle = tmp_path / "PALM.app"
