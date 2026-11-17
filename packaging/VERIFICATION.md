@@ -415,3 +415,40 @@ Status: **PASSED** on the curated `portable-final` branch.
 - Package launch/health/stop, install.json/licence-tree checks and no-terminal
   control smoke are in the Linux/Windows/macOS jobs. No third-party tools,
   models or environments are bundled. No release was published.
+
+## t140 final native rebuild after t144 PASS
+
+Status: **PASSED**, artifacts held only.
+
+- t144 review at `docs/acceptance/code-review-native-r4.md` reports no
+  release-blocking findings; reviewed HEAD 325615d.
+- Fresh artifacts rebuilt from the final tree (Linux tar, Windows ZIP, macOS
+  ZIP/DMG) and verified locally.
+- Clean-runner GitHub Actions run **44191562921** succeeded on branch
+  `t143-runtime`: Linux full gate/tar, Windows ZIP/package/smoke, macOS arm64
+  app/package/smoke; Intel skipped.
+- Windows job verified native PALM.exe launch/health, packaged update and
+  uninstall helpers with real plans, packaged project save/stem-publish/export,
+  licence/package audit and archive modes.
+- macOS job verified package build/check, native app/health/status/stop,
+  `.app` executable modes and flat artifact checksums.
+- Linux job verified full gate, tar package, install.json/licence tree,
+  no-terminal control launch, health/stop and checksums.
+- Downloaded CI artifacts verified from flat SHA256SUMS:
+  - Linux tar 88,422,211 B, SHA-256
+    `f0d311ae1bab52cfe7de83a5462fd69a346b80218f826083f0f7c896269233b7`
+  - Windows ZIP 79,692,002 B, SHA-256
+    `491991f6543c0c0144bd6d0491a01a5e28263ae44df949efc41c80248550b27d`
+  - macOS ZIP 69,376,308 B, SHA-256
+    `c8dabcfcf1782e71d858b195bebb541c817e3aa71c66eae12ad6a0725dac8474`
+  - macOS DMG 82,687,128 B, SHA-256
+    `7a44bc6293422767f720994ae222cf6958974d191295646df5ecb42d5063c4f0`
+- Windows PALM.exe is a Unix 0777 archive entry; macOS Contents/MacOS/palm is
+  0755. No release/tag/asset was published; all artifacts remain held.
+
+Residual non-blocking observations: delete-data can leave a partial helper
+runtime on Windows/Wine; a swap failure is reported in updater.log and
+pending.json.failed rather than the already-closed control detail; uninstall
+auto-quit can also launch a pending update helper; a persistent update-launch
+failure leaves the window open with the server stopped; native CI lacks an HTTP
+import smoke with managed FFmpeg.
