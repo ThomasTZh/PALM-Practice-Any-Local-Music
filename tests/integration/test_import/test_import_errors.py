@@ -102,3 +102,27 @@ def test_decode_failure_returns_client_error(
     detail = response.json()["detail"]
     assert "ffmpeg could not decode" in detail.lower()
     assert "Internal Server Error" not in response.text
+
+
+def test_wav_import_succeeds_when_windows_directory_fsync_is_noop(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+    import types
+
+    from basseparate import platform_support
+
+    monkeypatch.setattr(platform_support, "POSIX", False)
+    monkeypatch.setattr(platform_support, "WINDOWS", True)
+    fake_msvcrt = types.SimpleNamespace(
+        LK_LOCK=1,
+        LK_NBLCK=2,
+        LK_UNLCK=3,
+        locking=lambda *_args: None,
+    )
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    source = tmp_path / "windows take.wav"
+    shutil.copyfile(TONE, source)
+    response = client.post("/api/imports", json={"path": str(source)})
+    assert response.status_code == 201, response.text
+    assert response.json()["audio"]["duration_seconds"] == 2.0

@@ -22,6 +22,7 @@ from basseparate.peaks import PEAK_BUCKET_SIZES, compute_peaks_from_file, encode
 from basseparate.platform_support import (
     ffmpeg_binary,
     ffprobe_binary,
+    fsync_directory,
     hidden_process_kwargs,
 )
 
@@ -545,15 +546,6 @@ def decode_to_pcm(
     return size // frame_size
 
 
-def _fsync_directory(directory: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    descriptor = os.open(directory, flags)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def atomic_write_bytes(path: Path, payload: bytes) -> None:
     """Replace ``path`` atomically: a crash leaves the previous file intact."""
     path = Path(path)
@@ -568,7 +560,7 @@ def atomic_write_bytes(path: Path, payload: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
-        _fsync_directory(path.parent)
+        fsync_directory(path.parent)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise

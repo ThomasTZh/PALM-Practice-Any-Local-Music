@@ -23,7 +23,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from basseparate.peaks import PEAK_HEADER_SIZE
-from basseparate.platform_support import FileLock
+from basseparate.platform_support import FileLock, fsync_directory
 
 PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -213,11 +213,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
-        directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        fsync_directory(path.parent)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise

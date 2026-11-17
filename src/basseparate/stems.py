@@ -63,7 +63,7 @@ from basseparate.peaks import (
     decode_peaks,
     encode_peaks,
 )
-from basseparate.platform_support import hidden_process_kwargs
+from basseparate.platform_support import fsync_directory, hidden_process_kwargs
 from basseparate.projects import Project, ProjectStore, RevisionConflict
 
 DEFAULT_MODEL_ID = "htdemucs_ft"
@@ -460,19 +460,11 @@ def _publish(paths: DataPaths, key: str, stage: Path, *, force: bool) -> StemsSe
                 return cached
         shutil.rmtree(final, ignore_errors=True)
     stage.rename(final)
-    _fsync_directory(final.parent)
+    fsync_directory(final.parent)
     return None
 
 
 StemsSetOrNone = StemSet | None
-
-
-def _fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 def _stderr_tail(stream: IO[bytes] | None) -> str:

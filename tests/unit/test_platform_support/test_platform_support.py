@@ -284,3 +284,31 @@ class FakeBoundProcess:
 
     def cmdline(self) -> list[str]:
         return self.command.split()
+
+
+def test_fsync_directory_is_posix_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from basseparate import platform_support
+
+    events: list[tuple[str, int]] = []
+    real_open = platform_support.os.open
+    real_close = platform_support.os.close
+
+    def open_dir(path, flags):
+        descriptor = real_open(path, flags)
+        events.append(("open", descriptor))
+        return descriptor
+
+    def fsync_dir(descriptor: int) -> None:
+        events.append(("fsync", descriptor))
+
+    monkeypatch.setattr(platform_support.os, "open", open_dir)
+    monkeypatch.setattr(platform_support.os, "fsync", fsync_dir)
+    monkeypatch.setattr(platform_support.os, "close", real_close)
+    monkeypatch.setattr(platform_support, "POSIX", True)
+    platform_support.fsync_directory(tmp_path)
+    assert [kind for kind, _ in events] == ["open", "fsync"]
+
+    events.clear()
+    monkeypatch.setattr(platform_support, "POSIX", False)
+    platform_support.fsync_directory(tmp_path)
+    assert events == []

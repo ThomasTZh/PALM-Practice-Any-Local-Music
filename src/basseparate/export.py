@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from basseparate.platform_support import fsync_directory
 from basseparate.projects import Project
 
 BYTES_PER_SAMPLE = 2
@@ -381,14 +382,6 @@ def export_filename(project: Project) -> str:
     return f"{_safe_name(project)}.wav"
 
 
-def _fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def export_mixdown(
     project: Project,
     *,
@@ -438,7 +431,7 @@ def export_mixdown(
         if written != frames:
             raise ExportError(f"mixdown wrote {written} frames, expected {frames}")
         temporary.replace(destination)
-        _fsync_directory(destination.parent)
+        fsync_directory(destination.parent)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise

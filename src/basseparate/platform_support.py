@@ -207,6 +207,17 @@ class FileLock:
         self.release()
 
 
+def fsync_directory(directory: Path) -> None:
+    """Durably persist a directory entry; Windows has no directory fsync."""
+    if not POSIX:
+        return
+    descriptor = os.open(Path(directory), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 @contextlib.contextmanager
 def file_lock(path: Path) -> Iterator[None]:
     lock = FileLock(path, blocking=True)
@@ -319,6 +330,7 @@ __all__ = [
     "ffmpeg_binary",
     "ffprobe_binary",
     "file_lock",
+    "fsync_directory",
     "hidden_process_kwargs",
     "kill_process",
     "managed_media_binary",
