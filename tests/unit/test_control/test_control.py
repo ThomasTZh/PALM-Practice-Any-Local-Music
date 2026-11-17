@@ -382,9 +382,12 @@ def test_launch_pending_update_and_no_pending(paths: LauncherPaths) -> None:
     helper = paths.runtime.data_root / "updates/helpers/update_helper.py"
     helper.parent.mkdir(parents=True)
     helper.write_text("# helper")
+    (paths.runtime.app_root / "install.json").write_text(
+        '{"channel": "linux-x86_64", "version": "0.1.0", "assets": {}}'
+    )
     plan = paths.runtime.data_root / "updates/pending.json"
     plan.write_text(
-        '{"app_root": "'
+        '{"version": "0.2.0", "app_root": "'
         + str(paths.runtime.app_root)
         + '", "data_root": "'
         + str(paths.runtime.data_root)
@@ -417,3 +420,91 @@ def test_windows_helper_layout_copies_outside_app(tmp_path: Path) -> None:
         assert copied.is_file()
         assert not copied.resolve().is_relative_to(app.resolve())
     assert control._install_root(app) == app
+
+
+def test_copied_uninstall_helper_runs_with_real_plan(paths: LauncherPaths) -> None:
+    import subprocess
+    import sys as _sys
+
+    from basseparate.updater import UninstallPlan, write_uninstall_plan
+
+    app = paths.runtime.app_root
+    helper = app / "updaters" / "uninstall_helper.py"
+    helper.parent.mkdir()
+    source_root = Path(__file__).resolve().parents[3] / "packaging/updaters"
+    for name in ("update_helper.py", "uninstall_helper.py"):
+        (app / "updaters" / name).write_text((source_root / name).read_text())
+    copied = control._external_helper(paths, "uninstall_helper.py")
+    assert (copied.parent / "update_helper.py").is_file()
+    plan = write_uninstall_plan(UninstallPlan(app, paths.runtime.data_root, False, 0, ()), copied)
+    result = subprocess.run([_sys.executable, str(copied), "--plan", str(plan)], check=False)
+    assert result.returncode == 0
+    assert not app.exists()
+    assert paths.runtime.data_root.is_dir()
+
+
+def test_stale_and_second_quit_do_not_relaunch(paths: LauncherPaths) -> None:
+    helper = paths.runtime.data_root / "updates/helpers/update_helper.py"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("# helper")
+    (paths.runtime.app_root / "install.json").write_text(
+        '{"channel": "linux-x86_64", "version": "0.2.0", "assets": {}}'
+    )
+    plan = paths.runtime.data_root / "updates/pending.json"
+    plan.write_text(
+        '{"version": "0.1.0", "app_root": "'
+        + str(paths.runtime.app_root)
+        + '", "data_root": "'
+        + str(paths.runtime.data_root)
+        + '", "asset": "'
+        + str(paths.runtime.data_root / "updates/old.tar.gz")
+        + '", "helper": "'
+        + str(helper)
+        + '"}'
+    )
+    assert "No newer" in control.launch_pending_update(paths)
+    assert not plan.exists()
+    plan.write_text(
+        '{"version": "0.3.0", "app_root": "'
+        + str(paths.runtime.app_root)
+        + '", "data_root": "'
+        + str(paths.runtime.data_root)
+        + '", "helper": "'
+        + str(helper)
+        + '"}'
+    )
+    calls: list[list[str]] = []
+    assert "launched" in control.launch_pending_update(
+        paths, popen=lambda command, **kw: calls.append(command)
+    )
+    assert "already been launched" in control.launch_pending_update(
+        paths, popen=lambda command, **kw: calls.append(command)
+    )
+    assert len(calls) == 1
+
+
+def test_uninstall_action_auto_closes_window(paths: LauncherPaths) -> None:
+    # The existing fake-window test covers confirmation; this checks the
+    # scheduled quit callback is installed after a successful action.
+    from types import SimpleNamespace
+
+    class Root:
+        destroyed = False
+        callback: Any = None
+
+        def after(self, _delay: int, callback: Any) -> None:
+            self.callback = callback
+
+        def destroy(self) -> None:
+            self.destroyed = True
+
+    window = control.ControlWindow.__new__(control.ControlWindow)
+    window.root = Root()
+    window.controller = SimpleNamespace(stop=lambda: None)
+    window.detail = SimpleNamespace(set=lambda _value: None)
+    window._confirm_uninstall = lambda: True
+    window._uninstall_action = lambda: "launched"
+    window._quitting = False
+    window._quit_action = None
+    window.uninstall()
+    assert window.root.callback is not None

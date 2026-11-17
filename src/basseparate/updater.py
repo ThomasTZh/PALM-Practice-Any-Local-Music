@@ -201,7 +201,11 @@ def helper_path(app_root: Path) -> Path:
 
 
 def launch_helper(
-    plan: Path, *, python: Path | None = None, popen: Callable[..., Any] | None = None
+    plan: Path,
+    *,
+    python: Path | None = None,
+    popen: Callable[..., Any] | None = None,
+    log_path: Path | None = None,
 ) -> None:
     """Launch an external, detached helper; the running app is not replaced."""
     try:
@@ -215,17 +219,24 @@ def launch_helper(
         raise UpdateError("update helper must live outside the app folder")
     executable = str(python or sys.executable)
     factory = popen or subprocess.Popen
+    log = None
+    if log_path is None:
+        log_path = Path(str(payload.get("data_root", "."))) / "logs" / "updater.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = log_path.open("ab")
     try:
         factory(
             [executable, str(helper), "--plan", str(plan)],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
             start_new_session=True,
             **hidden_process_kwargs(),
         )
     except OSError as error:
         raise UpdateError(f"cannot launch update helper: {error}") from error
+    finally:
+        log.close()
 
 
 def check_for_update(
@@ -285,6 +296,7 @@ def launch_uninstall_helper(
     *,
     python: Path | None = None,
     popen: Callable[..., Any] | None = None,
+    log_path: Path | None = None,
 ) -> Path:
     """Write and launch the external uninstall helper after the app exits."""
     if not helper.is_file():
@@ -294,17 +306,22 @@ def launch_uninstall_helper(
     path = write_uninstall_plan(plan, helper)
     executable = str(python or sys.executable)
     factory = popen or subprocess.Popen
+    log_path = log_path or plan.data_root / "logs" / "updater.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = log_path.open("ab")
     try:
         factory(
             [executable, str(helper), "--plan", str(path)],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
             start_new_session=True,
             **hidden_process_kwargs(),
         )
     except OSError as error:
         raise UpdateError(f"cannot launch uninstall helper: {error}") from error
+    finally:
+        log.close()
     return path
 
 

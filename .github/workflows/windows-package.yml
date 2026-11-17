@@ -42,6 +42,43 @@ jobs:
       - name: Validate Windows ZIP
         shell: pwsh
         run: python scripts/package_windows.py --check
+      - name: Packaged interpreter project/export smoke
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $root = Join-Path $env:RUNNER_TEMP "palm-win-export"
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip.FullName -DestinationPath $root
+          $app = Get-ChildItem $root -Directory | Select-Object -First 1
+          $env:PALM_SMOKE_ROOT = Join-Path $env:RUNNER_TEMP "palm-win-export-data"
+          Remove-Item $env:PALM_SMOKE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          @'
+          import os, struct
+          from pathlib import Path
+          from basseparate.projects import AudioInfo, Project, ProjectStore
+          from basseparate.export import export_mixdown
+          root = Path(os.environ["PALM_SMOKE_ROOT"])
+          assets = root / "assets"
+          pcm_dir = assets / "smoke"
+          pcm_dir.mkdir(parents=True)
+          frames, channels = 800, 1
+          (pcm_dir / "pcm.f32").write_bytes(struct.pack("<f", 0.25) * (frames * channels))
+          audio = AudioInfo(asset_id="smoke", source_name="smoke.wav", source_format="wav",
+                            sample_rate=8000, channels=channels, frames=frames,
+                            duration_seconds=frames / 8000, content_sha256="a" * 64)
+          project = Project(id="smoke", name="Smoke", created_at="2026-01-01T00:00:00Z",
+                            updated_at="2026-01-01T00:00:00Z", revision=1, audio=audio,
+                            document={"stems": [{"id": "bass", "pcm_path": "assets/smoke/pcm.f32"}]})
+          store = ProjectStore(root / "projects")
+          store.create(project)
+          saved = store.save(project)
+          result = export_mixdown(saved, assets_root=assets, destination=root / "export.wav")
+          assert result.frames == frames and result.path.is_file()
+          assert (root / "projects" / "smoke.json").is_file()
+          print("packaged project/save/stem/export ok", result.sha256[:12])
+          '@ | Set-Content (Join-Path $env:RUNNER_TEMP "palm-export-smoke.py") -Encoding utf8
+          & (Join-Path $app.FullName "python\python.exe") (Join-Path $env:RUNNER_TEMP "palm-export-smoke.py")
+          if ($LASTEXITCODE -ne 0) { throw "packaged project/export smoke failed" }
       - name: Unit and adapter tests
         shell: pwsh
         run: .\.venv\Scripts\python.exe -m pytest -q tests/integration/test_package_windows

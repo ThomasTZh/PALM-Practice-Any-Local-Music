@@ -34,9 +34,9 @@ open /Applications/PALM.app
 Do not claim the app is signed or notarized. The wrapper sets
 `PALM_DATA_DIR="$HOME/Library/Application Support/palm"` unless it is already
 set, so data stays in the native macOS root rather than the XDG
-`~/.local/share/palm` path. Finder starts the app without a tty; the launcher
-opens Terminal.app through `osascript` for logs and Ctrl+C, then opens the
-browser. `--status` and `--stop` pass through the wrapper.
+`~/.local/share/palm` path. Finder starts the app without a tty; the launcher opens the PALM control
+window and browser, with no Terminal.app window. `--status` and `--stop` pass
+through the wrapper for recovery only.
 
 No FFmpeg, Sonic Annotator, Vamp plugin pack, model weights, inference
 environments or test audio are bundled. The setup wizard downloads what the

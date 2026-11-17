@@ -154,28 +154,6 @@ jobs:
                   assert (info.external_attr >> 16) & 0o111, suffix
           print('windows install/licence/modes ok')
           "@
-      - name: Windows Vamp extraction report
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $dir = Join-Path $env:RUNNER_TEMP "palm-vamp-extract"
-          Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $dir | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe" -OutFile "$dir\7zr.exe"
-          if ((Get-FileHash "$dir\7zr.exe" -Algorithm SHA256).Hash.ToLower() -ne "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc") { throw "7zr hash mismatch" }
-          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-extra.7z" -OutFile "$dir\extra.7z"
-          if ((Get-FileHash "$dir\extra.7z" -Algorithm SHA256).Hash.ToLower() -ne "396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104") { throw "7z extra hash mismatch" }
-          Invoke-WebRequest -Uri "https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer.2.0.exe" -OutFile "$dir\vamp.exe"
-          if ((Get-FileHash "$dir\vamp.exe" -Algorithm SHA256).Hash.ToLower() -ne "24d12812ffde04a20e7acbeb543860552d7aa05a729d9e9123b33c6e097c4d5f") { throw "Vamp installer hash mismatch" }
-          & "$dir\7zr.exe" x "$dir\extra.7z" "-o$dir\seven" -y | Out-Null
-          $seven = Get-ChildItem "$dir\seven" -Filter 7za.exe -Recurse | Select-Object -First 1
-          if (-not $seven) { throw "7za.exe not extracted" }
-          $result = "EXTRACTION_FAILED; one-UAC fallback documented (no no-admin claim)"
-          & $seven.FullName x "$dir\vamp.exe" "-o$dir\vamp" -y | Out-Null
-          if (Test-Path "$dir\vamp\qm-vamp-plugins.dll") { $result = "EXTRACTION_OK" }
-          $result | Set-Content dist\vamp-extraction.txt -Encoding ascii
-          Write-Host $result
-          exit 0
       - name: Install Playwright browser
         shell: pwsh
         run: pnpm --dir web exec playwright install chromium

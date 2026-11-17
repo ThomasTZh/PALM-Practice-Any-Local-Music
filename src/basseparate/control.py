@@ -9,7 +9,9 @@ lazily so a server-only environment can still use the diagnostic CLI.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import sys
 from collections.abc import Callable
@@ -165,6 +167,9 @@ class ControlWindow:
             self.detail.set(self._uninstall_action())
         except Exception as error:  # user-facing helper errors must not crash Tk
             self.detail.set(f"Uninstall failed: {error}")
+            return
+        # The helper waits for this process; close the control window now.
+        self.root.after(50, self.quit)
 
     def open_browser(self) -> None:
         if not self.controller.open_browser():
@@ -200,15 +205,16 @@ class ControlWindow:
         if self._quitting:
             return
         self._quitting = True
+        try:
+            self.controller.stop()
+        except Exception as error:
+            print(f"palm: server did not stop cleanly: {error}", file=sys.stderr)
         if self._quit_action is not None:
             try:
                 self._quit_action()
             except Exception as error:  # keep quitting even if update launch fails
                 print(f"palm: pending update could not be launched: {error}", file=sys.stderr)
-        try:
-            self.controller.stop()
-        finally:
-            self.root.destroy()
+        self.root.destroy()
 
 
 def _install_root(app_root: Path) -> Path:
@@ -236,6 +242,40 @@ def _restart_command(app_root: Path) -> list[str]:
     return []
 
 
+def _external_python(paths: LauncherPaths) -> Path:
+    """Return an interpreter outside app_root, copying the bundled runtime if needed."""
+    executable = Path(sys.executable).resolve()
+    app_root = paths.runtime.app_root.resolve()
+    try:
+        relative = executable.relative_to(app_root)
+    except ValueError:
+        return executable
+    source = (
+        executable.parent
+        if executable.name.lower() in {"python.exe", "pythonw.exe"}
+        else executable.parent.parent
+    )
+    destination = paths.runtime.data_root / "updates" / "runtime" / "python"
+    if not destination.exists():
+        shutil.copytree(source, destination, symlinks=True)
+    copied = destination / relative.relative_to(source)
+    if not copied.is_file():
+        raise UpdateError(f"external helper runtime is incomplete: {copied}")
+    return copied
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value))
+
+
+def _clear_pending(plan: Path, payload: dict[str, Any]) -> None:
+    plan.unlink(missing_ok=True)
+    plan.with_name(plan.name + ".launched").unlink(missing_ok=True)
+    asset = payload.get("asset")
+    if isinstance(asset, str):
+        Path(asset).unlink(missing_ok=True)
+
+
 def launch_pending_update(
     paths: LauncherPaths,
     *,
@@ -243,11 +283,29 @@ def launch_pending_update(
 ) -> str:
     """Launch the staged update helper, if any, before the app exits."""
     plan = paths.runtime.data_root / "updates" / "pending.json"
+    marker = plan.with_name(plan.name + ".launched")
+    if marker.is_file():
+        return "Update helper has already been launched."
     if not plan.is_file():
         return "No pending update."
     try:
-        launch_helper(plan, popen=popen)
-    except UpdateError as error:
+        payload = json.loads(plan.read_text(encoding="utf-8"))
+        metadata = load_metadata(paths.runtime.app_root, paths.runtime.data_root)
+        version = str(payload.get("version", ""))
+        if version and _version_key(version) <= _version_key(metadata.version):
+            _clear_pending(plan, payload)
+            return "No newer update pending; removed stale plan."
+        executable = _external_python(paths)
+        launch_helper(plan, python=executable, popen=popen)
+        marker.write_text("launched\n", encoding="utf-8")
+    except (UpdateError, OSError, json.JSONDecodeError) as error:
+        try:
+            log = paths.runtime.data_root / "logs" / "updater.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(f"pending update launch failed: {error}\n")
+        except OSError:
+            pass
         return f"Pending update could not be launched: {error}"
     return "Update helper launched; PALM will swap and restart after Quit."
 
@@ -274,7 +332,13 @@ def uninstall_app(
         pid=os.getpid(),
         shortcuts=shortcuts,
     )
-    return launch_uninstall_helper(plan, executable, popen=popen)
+    return launch_uninstall_helper(
+        plan,
+        executable,
+        python=_external_python(paths),
+        popen=popen,
+        log_path=paths.runtime.data_root / "logs" / "updater.log",
+    )
 
 
 def _external_helper(paths: LauncherPaths, name: str) -> Path:
@@ -291,8 +355,12 @@ def _external_helper(paths: LauncherPaths, name: str) -> Path:
         source = root / name
         if source.is_file():
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-            destination.chmod(0o755)
+            for helper_name in ("update_helper.py", "uninstall_helper.py"):
+                sibling = root / helper_name
+                if sibling.is_file():
+                    copied = destination.parent / helper_name
+                    shutil.copy2(sibling, copied)
+                    copied.chmod(0o755)
             return destination
     return paths.runtime.app_root.parent / name
 
@@ -324,7 +392,7 @@ def check_for_updates(
         if not helper.is_file():
             return "Update is available but the external update helper is missing."
         app_root = _install_root(paths.runtime.app_root)
-        write_plan(
+        pending = write_plan(
             metadata,
             candidate,
             staged,
@@ -332,6 +400,7 @@ def check_for_updates(
             app_root=app_root,
             restart=_restart_command(app_root),
         )
+        pending.with_name(pending.name + ".launched").unlink(missing_ok=True)
     except (UpdateError, OSError) as error:
         return f"Update could not be staged: {error}"
     return f"Update {candidate.version} staged; quit PALM to install and restart."

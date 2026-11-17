@@ -318,3 +318,36 @@ def test_uninstall_packaged_helper_names_match_layout() -> None:
     assert (root / "packaging/updaters/update_helper.py").is_file()
     assert (root / "packaging/updaters/uninstall_helper.py").is_file()
     assert "update_helper" in (root / "packaging/updaters/uninstall_helper.py").read_text()
+
+
+def test_swap_cleans_pending_plan_and_staged_asset(tmp_path: Path) -> None:
+    helper = load_helper()
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    app.mkdir()
+    data.mkdir()
+    archive = tmp_path / "new.zip"
+    source = tmp_path / "new/root"
+    source.mkdir(parents=True)
+    (source / "new.txt").write_text("new")
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.write(source / "new.txt", "root/new.txt")
+    plan_path = data / "updates/pending.json"
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text("{}")
+    plan = {
+        "app_root": str(app),
+        "asset": str(archive),
+        "data_root": str(data),
+        "kind": "zip",
+        "pid": 0,
+        "restart": ["echo", "restarted"],
+    }
+    restarted: list[list[str]] = []
+    assert helper.swap_app(
+        plan, wait=lambda _pid: None, plan_path=plan_path, restart=restarted.append
+    )
+    assert not plan_path.exists()
+    assert not archive.exists()
+    assert (app / "new.txt").read_text() == "new"
+    assert restarted == [["echo", "restarted"]]
