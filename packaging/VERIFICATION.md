@@ -452,3 +452,27 @@ pending.json.failed rather than the already-closed control detail; uninstall
 auto-quit can also launch a pending update helper; a persistent update-launch
 failure leaves the window open with the server stopped; native CI lacks an HTTP
 import smoke with managed FFmpeg.
+
+## t140 final clean-runner rerun
+
+Clean-runner GitHub Actions run **44194142489** succeeded on branch
+`t143-runtime`:
+- Linux full gate/tar, Windows ZIP/package/smoke, macOS arm64 app/package/smoke;
+  Intel skipped.
+- Windows: native PALM.exe launch/health/browser, packaged update and uninstall
+  helpers with real plans, packaged WAV import (`packaged WAV import ok 800`),
+  packaged project/save/stem-publish/export, licence/package audit.
+- macOS: 12 Sonic adapter tests passed, app health/status/stop, artifact
+  executable-mode check and checksum verification.
+- Final held artifacts (flat SHA256SUMS verified):
+  - Linux tar 88,422,211 B,
+    `f0d311ae1bab52cfe7de83a5462fd69a346b80218f826083f0f7c896269233b7`
+  - Windows ZIP 79,692,002 B,
+    `db1d3960d5ead858ea0779e2ea73cfa973522cb56a1e99fdb3eda8a497e906cb`
+  - macOS ZIP 69,376,308 B,
+    `c8dabcfcf1782e71d858b195bebb541c817e3aa71c66eae12ad6a0725dac8474`
+  - macOS DMG 83,342,360 B,
+    `31ee8fe39f5649ddc0ce61df3582530b0613140001645401bf627249d445aba5`
+- Windows PALM.exe archive entry is 0777/Unix; macOS wrapper mode is checked by
+  the artifact-mode step. No release/tag/asset was created; candidates remain
+  held.
