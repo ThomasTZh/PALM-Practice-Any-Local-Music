@@ -1,13 +1,10 @@
-"""Internal analysis backend seam and the default Piper implementation.
+"""Internal analysis backend seam.
 
 The feature parser, cache and HTTP result are backend-neutral. A backend turns
 a mono signal into the raw Chordino/Key Detector/Bar and Beat Tracker feature
-maps; :class:`PiperBackend` is the Linux default and preserves the existing
-PiperPaths callers. The backend id and version are part of the feature cache
-identity, so a future Sonic backend can coexist with Piper without colliding.
-
-Only Piper is implemented here. Other platforms raise
-:class:`AnalysisBackendUnavailable` until their backend exists.
+maps. Linux defaults to the preserved Piper host; Windows and macOS default to
+the installed Sonic Annotator backend. The backend id and version are part of
+the feature cache identity, so Piper and Sonic entries cannot collide.
 """
 
 from __future__ import annotations
@@ -201,17 +198,23 @@ class PiperBackend:
 
 
 def default_backend() -> AnalysisBackend:
-    """Return the default backend for this platform.
+    """Return the installed backend for this platform.
 
-    Linux uses the preserved Piper pipeline. No Windows/macOS backend exists
-    yet, so those platforms get an actionable error rather than a silent
-    different analysis.
+    Linux uses the preserved Piper pipeline. Windows and macOS use Sonic
+    Annotator plus the Vamp Plugin Pack installed by PALM Setup; a missing
+    installation is reported when the backend first checks its tools.
     """
-    if sys.platform.startswith("linux"):
+    platform = f"{sys.platform}"
+    if platform.startswith("linux"):
         return PiperBackend()
+    if platform.startswith(("win", "darwin")):
+        # Lazy import: sonic_annotator imports the result types from this module.
+        from basseparate.sonic_annotator import SonicAnnotatorBackend
+
+        return SonicAnnotatorBackend()
     raise AnalysisBackendUnavailable(
-        f"no analysis backend is implemented for {sys.platform}; "
-        "the Piper backend is available on Linux"
+        f"no analysis backend is implemented for {platform}; "
+        "install the Linux Piper host or use Windows/macOS Sonic Annotator"
     )
 
 

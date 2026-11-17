@@ -45,6 +45,7 @@ from basseparate.projects import (
     RevisionConflict,
     utc_now,
 )
+from basseparate.sonic_annotator import SonicCancelled
 
 ANALYSIS_SCHEMA_VERSION = 1
 ANALYSIS_CACHE_DIR = "analysis"
@@ -228,7 +229,7 @@ def analyze_project(
             on_progress=report,
             source_name=project.audio.source_name,
         )
-    except AnalysisCancelled as error:
+    except (AnalysisCancelled, SonicCancelled) as error:
         raise JobCancelled(str(error)) from error
 
 

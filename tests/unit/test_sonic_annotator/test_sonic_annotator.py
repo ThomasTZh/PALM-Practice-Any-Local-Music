@@ -11,7 +11,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from basseparate import features
+from basseparate import features, sonic_annotator
+from basseparate.config import RuntimePaths
 from basseparate.sonic_annotator import (
     SonicAnnotatorBackend,
     SonicAnnotatorUnavailable,
@@ -203,6 +204,41 @@ def test_header_and_headerless_csv_parsing(tmp_path: Path) -> None:
         parse_csv_features(bad, default_columns=("time", "label"))
 
 
+def test_platform_binary_and_plugins_resolve_under_writable_tools_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    assert sonic_annotator is not None
+    for platform, executable_name in (
+        ("win32", "sonic-annotator.exe"),
+        ("darwin", "sonic-annotator"),
+    ):
+        data = tmp_path / platform / "data"
+        app = tmp_path / platform / "app"
+        executable = data / "tools" / "sonic-annotator-1.7.0" / executable_name
+        executable.parent.mkdir(parents=True)
+        executable.write_text("binary", encoding="utf-8")
+        executable.chmod(0o755)
+        runtime = RuntimePaths(mode="packaged", app_root=app, data_root=data)
+        monkeypatch.setattr(sonic_annotator, "runtime_paths", lambda runtime=runtime: runtime)
+        monkeypatch.setattr(sonic_annotator, "sys", SimpleNamespace(platform=platform))
+        backend = SonicAnnotatorBackend()
+        try:
+            assert backend.binary == executable
+            assert backend.plugin_paths == (data / "tools" / "vamp-plugins",)
+            assert backend.tools_root == data / "tools"
+            from basseparate.setup.tools import tool_paths
+
+            setup_binary, setup_plugin = tool_paths(
+                runtime, platform="windows" if platform == "win32" else "macos"
+            )
+            assert backend.binary == setup_binary
+            assert setup_plugin.parent in backend.plugin_paths
+        finally:
+            backend.close()
+
+
 def test_missing_plugins_and_binary_are_clear(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -210,7 +246,7 @@ def test_missing_plugins_and_binary_are_clear(
     monkeypatch.setenv("FAKE_MISSING", "1")
     # The fake list still has all plugins; this test verifies the missing binary path.
     backend.binary = tmp_path / "does-not-exist"
-    with pytest.raises(SonicAnnotatorUnavailable, match="not found"):
+    with pytest.raises(SonicAnnotatorUnavailable, match="not installed.*PALM Setup"):
         backend.discover_plugins()
     binary = fake_binary(tmp_path / "other")
     missing = SonicAnnotatorBackend(binary=binary, plugin_paths=(tmp_path,))
@@ -222,7 +258,7 @@ def test_missing_plugins_and_binary_are_clear(
         '#!/bin/sh\nprintf "vamp:qm-vamp-plugins:qm-keydetector:key\\n"\n', encoding="utf-8"
     )
     only.chmod(0o755)
-    with pytest.raises(SonicPluginError, match="required Vamp plugins are missing"):
+    with pytest.raises(SonicPluginError, match="Vamp Plugin Pack"):
         SonicAnnotatorBackend(binary=only, plugin_paths=(tmp_path,)).discover_plugins()
 
 

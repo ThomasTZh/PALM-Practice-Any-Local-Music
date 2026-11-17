@@ -92,9 +92,16 @@ class FakeBackend:
         )
 
 
-def test_default_backend_is_piper_on_linux(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_backend_platform_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(default_backend(), PiperBackend)
-    monkeypatch.setattr(analysis_backend, "sys", SimpleNamespace(platform="win32"))
+    from basseparate.sonic_annotator import SonicAnnotatorBackend
+
+    for platform in ("win32", "darwin"):
+        monkeypatch.setattr(analysis_backend, "sys", SimpleNamespace(platform=platform))
+        backend = default_backend()
+        assert isinstance(backend, SonicAnnotatorBackend)
+        backend.close()
+    monkeypatch.setattr(analysis_backend, "sys", SimpleNamespace(platform="aix"))
     with pytest.raises(AnalysisBackendUnavailable, match="no analysis backend"):
         default_backend()
 
@@ -239,9 +246,11 @@ def test_piper_backend_routes_through_piper_session_and_pads_beats(
     ]
 
 
-def test_non_linux_default_is_actionable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(analysis_backend, "sys", SimpleNamespace(platform="darwin"))
-    with pytest.raises(AnalysisBackendUnavailable, match="Piper backend is available on Linux"):
-        features.analyze_signal(
-            np.zeros(8, dtype=np.float32), sample_rate=8, source_sha256="c" * 64
-        )
+def test_non_linux_default_is_sonic(monkeypatch: pytest.MonkeyPatch) -> None:
+    from basseparate.sonic_annotator import SonicAnnotatorBackend
+
+    for platform in ("win32", "darwin"):
+        monkeypatch.setattr(analysis_backend, "sys", SimpleNamespace(platform=platform))
+        backend = default_backend()
+        assert isinstance(backend, SonicAnnotatorBackend)
+        backend.close()

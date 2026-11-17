@@ -19,6 +19,7 @@ import os
 import re
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
@@ -255,7 +256,7 @@ def write_float_wav(path: Path, signal: NDArray[np.float32], sample_rate: int) -
 
 
 class SonicAnnotatorBackend:
-    """Linux Gate 0 backend using Sonic Annotator and the preserved Vamp pack."""
+    """Sonic Annotator + Vamp backend for Linux, Windows and macOS."""
 
     id = SONIC_BACKEND_ID
     version = SONIC_BACKEND_VERSION
@@ -269,18 +270,28 @@ class SonicAnnotatorBackend:
         tmp_root: Path | None = None,
     ) -> None:
         tools_root = runtime_paths().tools_root
-        self.binary = (
-            Path(binary)
-            if binary is not None
-            else Path(
-                os.environ.get("BASSEPARATE_SONIC_ANNOTATOR", tools_root / SONIC_EXTRACTED_RELATIVE)
-            )
-        )
-        if plugin_paths is None:
-            plugin_paths = (
+        self.tools_root = tools_root
+        platform = f"{sys.platform}"
+        default_plugin_paths: tuple[Path, ...]
+        if platform.startswith("win"):
+            default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
+            default_plugin_paths = (tools_root / "vamp-plugins",)
+        elif platform.startswith("darwin"):
+            default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
+            default_plugin_paths = (tools_root / "vamp-plugins",)
+        else:
+            default_binary = tools_root / SONIC_EXTRACTED_RELATIVE
+            default_plugin_paths = (
                 tools_root / "vamp-plugins",
                 tools_root / "plugins",
             )
+        self.binary = (
+            Path(binary)
+            if binary is not None
+            else Path(os.environ.get("BASSEPARATE_SONIC_ANNOTATOR", default_binary))
+        )
+        if plugin_paths is None:
+            plugin_paths = default_plugin_paths
         paths = [Path(item) for item in plugin_paths]
         for item in os.environ.get("VAMP_PATH", "").split(os.pathsep):
             if item:
@@ -298,6 +309,13 @@ class SonicAnnotatorBackend:
         (self._home / ".local" / "share" / "QMUL" / "Sonic Annotator" / "log").mkdir(
             parents=True, exist_ok=True
         )
+        (self._home / "Library" / "Application Support" / "QMUL" / "Sonic Annotator" / "log").mkdir(
+            parents=True, exist_ok=True
+        )
+        for appdata in ("Roaming", "Local"):
+            (self._home / "AppData" / appdata / "QMUL" / "Sonic Annotator" / "log").mkdir(
+                parents=True, exist_ok=True
+            )
         self._resolved: ResolvedPlugins | None = None
         self._versions: dict[str, str] = {}
 
@@ -310,6 +328,8 @@ class SonicAnnotatorBackend:
         env["VAMP_PATH"] = os.pathsep.join(str(path) for path in self.plugin_paths)
         env["HOME"] = str(self._home)
         env["XDG_DATA_HOME"] = str(self._home / ".local" / "share")
+        env["APPDATA"] = str(self._home / "AppData" / "Roaming")
+        env["LOCALAPPDATA"] = str(self._home / "AppData" / "Local")
         return env
 
     def close(self) -> None:
@@ -318,8 +338,9 @@ class SonicAnnotatorBackend:
     def _check_binary(self) -> None:
         if not self.binary.is_file():
             raise SonicAnnotatorUnavailable(
-                f"Sonic Annotator not found at {self.binary}; install the preserved "
-                "Linux static build under storage/tools"
+                f"Sonic Annotator is not installed at {self.binary}. Install "
+                f"'Sonic Annotator' and 'Vamp Plugin Pack' with PALM Setup under "
+                f"{self.tools_root}."
             )
         if not os.access(self.binary, os.X_OK):
             raise SonicAnnotatorUnavailable(f"Sonic Annotator is not executable: {self.binary}")
@@ -371,6 +392,7 @@ class SonicAnnotatorBackend:
             raise SonicPluginError(
                 "required Vamp plugins are missing from sonic-annotator --list: "
                 + ", ".join(missing)
+                + f". Install 'Vamp Plugin Pack' with PALM Setup under {self.tools_root}."
             )
         self._resolved = ResolvedPlugins(
             chord=chord,
