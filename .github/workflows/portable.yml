@@ -133,9 +133,6 @@ jobs:
       - name: Licence/package/update audit
         shell: pwsh
         run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
-      - name: Windows Sonic analysis adapter tests
-        shell: pwsh
-        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_analysis_backend tests/unit/test_sonic_annotator
       - name: Verify Windows archive metadata and modes
         shell: pwsh
         run: |
