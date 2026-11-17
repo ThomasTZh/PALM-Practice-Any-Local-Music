@@ -155,8 +155,14 @@ describe("SetupWizard", () => {
   it("shows bundled components, full PSF/Apache/MIT/BSD texts and the FFmpeg caveat", () => {
     renderWizard();
 
+    expect(
+      screen.getByTestId("setup-download-licence-details"),
+    ).not.toHaveAttribute("open");
+    expect(screen.getByTestId("setup-bundled-components")).not.toHaveAttribute(
+      "open",
+    );
     const bundled = screen.getByTestId("setup-bundled-components");
-    expect(bundled).toHaveTextContent("Bundled components");
+    expect(bundled).toHaveTextContent("Bundled third-party components");
     expect(screen.getByTestId("bundled-component-python")).toHaveTextContent(
       "3.11.15",
     );
@@ -419,6 +425,49 @@ describe("SetupWizard", () => {
       screen.getByLabelText("Accept CUDA environment licence"),
     ).not.toBeChecked();
     expect(screen.getByTestId("setup-env-install")).toBeDisabled();
+  });
+
+  it("states missing consents and accepts required licences explicitly", () => {
+    renderWizard();
+
+    const recommended = screen.getByTestId("setup-recommended-install");
+    expect(recommended).toBeDisabled();
+    const reason = screen.getByTestId("setup-recommended-reason");
+    expect(reason).toHaveTextContent("accept the FFmpeg/FFprobe licence");
+    expect(reason).toHaveTextContent("accept the analysis tool licences");
+    expect(reason).toHaveTextContent("select CPU and accept");
+    expect(reason).toHaveTextContent("accept the Demucs licence");
+
+    for (const id of [
+      "setup-recommended-links",
+      "setup-media-links",
+      "setup-tools-links",
+      "setup-env-links",
+      "setup-model-links",
+    ]) {
+      const links = within(screen.getByTestId(id)).getAllByRole("link");
+      expect(links.length).toBeGreaterThanOrEqual(2);
+      for (const link of links) {
+        expect(link).toHaveAttribute("target", "_blank");
+        expect(link).toHaveAttribute("rel", "noopener noreferrer");
+        expect(link.getAttribute("href")).toMatch(/^https:\/\//);
+      }
+    }
+
+    fireEvent.click(screen.getByTestId("setup-accept-required"));
+    expect(screen.getByLabelText("Accept media tools licences")).toBeChecked();
+    expect(screen.getByLabelText("Accept GPL tool licences")).toBeChecked();
+    expect(screen.getByLabelText("CPU environment")).toBeChecked();
+    expect(
+      screen.getByLabelText("Accept CPU environment licence"),
+    ).toBeChecked();
+    expect(
+      screen.getByLabelText("Accept Demucs htdemucs_ft licence"),
+    ).toBeChecked();
+    expect(screen.getByTestId("setup-recommended-reason")).toHaveTextContent(
+      "All required licences are accepted",
+    );
+    expect(screen.getByTestId("setup-recommended-install")).toBeEnabled();
   });
 
   it("installs the recommended stack and visibly selects editable Demucs", async () => {

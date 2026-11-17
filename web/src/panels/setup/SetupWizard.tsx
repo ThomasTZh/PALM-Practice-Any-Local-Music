@@ -152,6 +152,16 @@ export function SetupWizard({
     );
   }
 
+  function acceptRequiredLicences(): void {
+    setMediaConsent(true);
+    setToolsConsent(true);
+    setVariant("cpu");
+    setEnvironmentConsent("cpu");
+    setModelConsents((current) =>
+      current.includes("htdemucs_ft") ? current : [...current, "htdemucs_ft"],
+    );
+  }
+
   function installMediaTools(): void {
     void runJob(
       "media",
@@ -297,6 +307,23 @@ export function SetupWizard({
   );
   const canInstallModels =
     selectedMissing.length > 0 && allSelectedConsented && !busy;
+  const recommendedMissing: string[] = [];
+  if (!mediaToolsInstalled && !mediaConsent) {
+    recommendedMissing.push("accept the FFmpeg/FFprobe licence");
+  }
+  if (!toolsInstalled && !toolsConsent) {
+    recommendedMissing.push("accept the analysis tool licences");
+  }
+  if (
+    status.environments.cpu?.installed !== true &&
+    environmentConsent !== "cpu"
+  ) {
+    recommendedMissing.push("select CPU and accept its environment licence");
+  }
+  if (demucs?.installed !== true && !modelConsents.includes("htdemucs_ft")) {
+    recommendedMissing.push("accept the Demucs licence");
+  }
+
   const progress = job === null ? 0 : Math.round(job.progress * 100);
   const licenceComponents = setupLicenceComponents(status);
   const bundledComponents = setupBundledComponents();
@@ -309,6 +336,15 @@ export function SetupWizard({
     new Set(
       bundledComponents.flatMap((component) => component.licenceTextKeys),
     ),
+  );
+  const mediaLicence = licenceComponents.find(
+    (component) => component.id === "media-ffmpeg",
+  );
+  const environmentLicence = licenceComponents.find(
+    (component) => component.id === "environment-cpu",
+  );
+  const demucsLicence = licenceComponents.find(
+    (component) => component.id === "model-htdemucs_ft",
   );
 
   return (
@@ -418,72 +454,80 @@ export function SetupWizard({
             Review every component this setup can download. No download starts
             until each group is accepted below.
           </p>
-          <ul className="setup-component-list">
-            {licenceComponents.map((component) => (
-              <li
-                key={component.id}
-                data-testid={`licence-component-${component.id}`}
-                data-required={component.required}
-              >
-                <div className="setup-component-main">
-                  <strong>{component.name}</strong>
-                  <span>{component.version}</span>
-                </div>
-                <div className="setup-component-meta">
-                  <a
-                    href={component.licenceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {component.licence}
-                  </a>
-                  <a
-                    data-testid={`licence-source-${component.id}`}
-                    href={component.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Source
-                  </a>
-                  <span>{component.size}</span>
-                  <span
-                    className="setup-requirement"
-                    data-required={component.required}
-                  >
-                    {component.requirementLabel}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="setup-caveat" data-testid="setup-ffmpeg-nonfree">
-            <strong>FFmpeg build licence:</strong> GPL-3.0-or-later. Linux x64
-            and macOS arm64 use Martin Riedl 9.0.2; the Linux build is
-            configured with <code>--enable-nonfree</code> and is not legally
-            redistributable. PALM downloads it at setup time and does not bundle
-            or redistribute it. Windows uses gyan.dev 8.1.2 essentials.
-          </div>
           <details
-            className="setup-licence-texts"
-            data-testid="setup-licence-texts"
+            className="setup-licence-details"
+            data-testid="setup-download-licence-details"
           >
-            <summary>Full bundled licence texts</summary>
-            {licenceTextKeys.map((key) => (
-              <section key={key}>
-                <h3>{key}</h3>
-                <pre data-testid={`licence-text-${key}`}>
-                  {LICENCE_TEXTS[key]}
-                </pre>
-              </section>
-            ))}
+            <summary>Downloadable components and full licence texts</summary>
+            <ul className="setup-component-list">
+              {licenceComponents.map((component) => (
+                <li
+                  key={component.id}
+                  data-testid={`licence-component-${component.id}`}
+                  data-required={component.required}
+                >
+                  <div className="setup-component-main">
+                    <strong>{component.name}</strong>
+                    <span>{component.version}</span>
+                  </div>
+                  <div className="setup-component-meta">
+                    <a
+                      href={component.licenceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {component.licence}
+                    </a>
+                    <a
+                      data-testid={`licence-source-${component.id}`}
+                      href={component.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Source
+                    </a>
+                    <span>{component.size}</span>
+                    <span
+                      className="setup-requirement"
+                      data-required={component.required}
+                    >
+                      {component.requirementLabel}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="setup-caveat" data-testid="setup-ffmpeg-nonfree">
+              <strong>FFmpeg build licence:</strong> GPL-3.0-or-later. Linux x64
+              and macOS arm64 use Martin Riedl 9.0.2; the Linux build is
+              configured with <code>--enable-nonfree</code> and is not legally
+              redistributable. PALM downloads it at setup time and does not
+              bundle or redistribute it. Windows uses gyan.dev 8.1.2 essentials.
+            </div>
+            <details
+              className="setup-licence-texts"
+              data-testid="setup-licence-texts"
+            >
+              <summary>Full bundled licence texts</summary>
+              {licenceTextKeys.map((key) => (
+                <section key={key}>
+                  <h3>{key}</h3>
+                  <pre data-testid={`licence-text-${key}`}>
+                    {LICENCE_TEXTS[key]}
+                  </pre>
+                </section>
+              ))}
+            </details>
           </details>
         </section>
 
-        <section
-          className="setup-section"
+        <details
+          className="setup-section setup-bundled-details"
           data-testid="setup-bundled-components"
         >
-          <h2>Bundled components</h2>
+          <summary>
+            Bundled third-party components ({bundledComponents.length})
+          </summary>
           <p className="setup-note">
             These third-party components are already included in the packaged
             app; they are not downloads.
@@ -532,7 +576,7 @@ export function SetupWizard({
               </section>
             ))}
           </details>
-        </section>
+        </details>
 
         <section className="setup-recommended" data-testid="setup-recommended">
           <div>
@@ -542,17 +586,115 @@ export function SetupWizard({
               htdemucs_ft. Demucs is selected visibly and the model cards stay
               editable.
             </p>
+            <div
+              className="setup-action-links"
+              data-testid="setup-recommended-links"
+            >
+              {mediaLicence && (
+                <>
+                  <a
+                    href={mediaLicence.licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    FFmpeg licence
+                  </a>
+                  <a
+                    href={mediaLicence.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    FFmpeg source
+                  </a>
+                </>
+              )}
+              <a
+                href={toolLicenceLink("vamp_plugin_pack").licenceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Vamp licence
+              </a>
+              <a
+                href={toolLicenceLink("vamp_plugin_pack").sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Vamp source
+              </a>
+              {environmentLicence && (
+                <>
+                  <a
+                    href={environmentLicence.licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Environment licence
+                  </a>
+                  <a
+                    href={environmentLicence.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Environment source
+                  </a>
+                </>
+              )}
+              {demucsLicence && (
+                <>
+                  <a
+                    href={demucsLicence.licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Demucs licence
+                  </a>
+                  <a
+                    href={demucsLicence.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Demucs source
+                  </a>
+                </>
+              )}
+            </div>
+            {recommendedMissing.length > 0 ? (
+              <p
+                className="setup-recommended-reason"
+                data-testid="setup-recommended-reason"
+              >
+                To enable: {recommendedMissing.join("; ")}.
+              </p>
+            ) : (
+              <p
+                className="setup-recommended-reason setup-recommended-ready"
+                data-testid="setup-recommended-reason"
+              >
+                All required licences are accepted.
+              </p>
+            )}
           </div>
-          <button
-            type="button"
-            data-testid="setup-recommended-install"
-            disabled={!canInstallRecommended}
-            onClick={() => {
-              void installRecommended();
-            }}
-          >
-            Install recommended setup
-          </button>
+          <div className="setup-recommended-actions">
+            <button
+              type="button"
+              data-testid="setup-accept-required"
+              disabled={busy || recommendedMissing.length === 0}
+              onClick={acceptRequiredLicences}
+            >
+              Accept required licences
+            </button>
+            <button
+              type="button"
+              data-testid="setup-recommended-install"
+              disabled={!canInstallRecommended}
+              onClick={() => {
+                void installRecommended();
+              }}
+            >
+              Install recommended setup
+            </button>
+          </div>
         </section>
 
         <section className="setup-section" data-testid="setup-media-tools">
@@ -594,6 +736,24 @@ export function SetupWizard({
               ? "Media tools installed"
               : "Install media tools"}
           </button>
+          {mediaLicence && (
+            <div className="setup-action-links" data-testid="setup-media-links">
+              <a
+                href={mediaLicence.licenceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Licence
+              </a>
+              <a
+                href={mediaLicence.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Source
+              </a>
+            </div>
+          )}
         </section>
 
         <section className="setup-section" data-testid="setup-checks">
@@ -675,6 +835,29 @@ export function SetupWizard({
           >
             {toolsInstalled ? "Tools installed" : "Install optional tools"}
           </button>
+          <div className="setup-action-links" data-testid="setup-tools-links">
+            <a
+              href={toolLicenceLink("sonic_visualiser").licenceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Sonic licence
+            </a>
+            <a
+              href={toolLicenceLink("vamp_plugin_pack").licenceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Vamp licence
+            </a>
+            <a
+              href={toolLicenceLink("vamp_plugin_pack").sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Source
+            </a>
+          </div>
         </section>
 
         <section className="setup-section" data-testid="setup-environments">
@@ -744,6 +927,24 @@ export function SetupWizard({
               ? `${variant?.toUpperCase()} environment installed`
               : "Install environment"}
           </button>
+          {environmentLicence && (
+            <div className="setup-action-links" data-testid="setup-env-links">
+              <a
+                href={environmentLicence.licenceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Licence
+              </a>
+              <a
+                href={environmentLicence.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Source
+              </a>
+            </div>
+          )}
         </section>
 
         <section className="setup-section" data-testid="setup-models">
@@ -839,6 +1040,24 @@ export function SetupWizard({
           >
             Install selected models
           </button>
+          {demucsLicence && (
+            <div className="setup-action-links" data-testid="setup-model-links">
+              <a
+                href={demucsLicence.licenceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Licence
+              </a>
+              <a
+                href={demucsLicence.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Source
+              </a>
+            </div>
+          )}
           {selectedMissing.length > 0 && !allSelectedConsented && (
             <p className="setup-note">
               Accept each selected model's licence before installing.

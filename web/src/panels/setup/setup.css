@@ -468,3 +468,61 @@ button:disabled {
 .setup-caveat code {
   color: var(--text);
 }
+
+/* Compact licence actions and collapsed component inventories */
+.setup-action-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  margin-top: 0.45rem;
+  font-size: 0.68rem;
+}
+
+.setup-action-links a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.setup-licence-details,
+.setup-bundled-details {
+  margin-top: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.setup-licence-details summary,
+.setup-bundled-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.76rem;
+}
+
+.setup-licence-details .setup-component-list {
+  margin-top: 0.5rem;
+}
+
+.setup-recommended-reason {
+  margin: 0.4rem 0 0;
+  color: var(--danger);
+  font-size: 0.74rem;
+}
+
+.setup-recommended-ready {
+  color: var(--accent);
+}
+
+.setup-recommended-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+}
+
+.setup-recommended-actions button[data-testid="setup-accept-required"] {
+  background: var(--panel-raised);
+  color: var(--text);
+  border-color: var(--line-strong);
+  font-weight: 500;
+}

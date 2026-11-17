@@ -2561,3 +2561,36 @@ overflow. Tests assert Python 3.11.15/PSF, uv 0.12 MIT/Apache, representative
 Python/frontend dependencies and source links, full PSF/MIT/Apache/BSD texts,
 the nonfree notice and page scrolling. make test-web, make build-web and make
 e2e (2 specs, Firefox+Chromium) pass. No dependency added.
+
+## 2026-11-17 — compact licence actions and recommended-enable guidance (t131)
+
+### Compact layout
+
+The default first-run view no longer renders the long component inventories.
+The downloadable component list/full texts and the 23 bundled components are
+inside closed <details> blocks ("Downloadable components and full licence
+texts"; "Bundled third-party components (23)"). The FFmpeg build caveat and
+Windows UAC note remain visible.
+
+Each install/recommended area now has compact Licence/Source links at the
+button: recommended (FFmpeg, Vamp, environment, Demucs), media tools, GPL tools,
+environment and model install. Full texts remain behind the details views.
+
+### Recommended enablement
+
+The recommended panel shows an exact missing-consent sentence, e.g. "To enable:
+accept the FFmpeg/FFprobe licence; accept the analysis tool licences; select CPU
+and accept its environment licence; accept the Demucs licence." A visible
+"Accept required licences" action checks those consents (media, tools, CPU
+environment, Demucs) without downloading; the reason becomes "All required
+licences are accepted" and Install recommended setup enables. Consent remains
+explicit and unchecked actions stay disabled.
+
+### Verification
+
+Firefox mock at 1280x720 and 1600x900: both component details closed by default,
+8 compact links beside recommended, page scrollHeight 1875 vs client 720/900,
+no horizontal overflow. Accept required licences switched the reason and enabled
+recommended. Tests assert closed inventories, compact action links, exact missing
+reasons, accepting consents, UAC text and scroll styling. make test-web, make
+build-web and make e2e (2 specs, Firefox+Chromium) pass. No dependency added.
