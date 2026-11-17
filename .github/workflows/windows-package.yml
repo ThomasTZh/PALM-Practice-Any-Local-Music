@@ -60,6 +60,7 @@ jobs:
           from pathlib import Path
           from basseparate.projects import AudioInfo, Project, ProjectStore
           from basseparate.export import export_mixdown
+          from basseparate.stems import StemFile, StemSet, publish_project_stems
           root = Path(os.environ["PALM_SMOKE_ROOT"])
           assets = root / "assets"
           pcm_dir = assets / "smoke"
@@ -77,8 +78,14 @@ jobs:
           saved = store.save(project)
           result = export_mixdown(saved, assets_root=assets, destination=root / "export.wav")
           assert result.frames == frames and result.path.is_file()
+          stem = StemFile(label="bass", path=assets / "smoke" / "pcm.f32", frames=frames, channels=channels)
+          stem_set = StemSet(key="smoke", directory=assets / "stems" / "smoke", sample_rate=8000,
+                             channels=channels, frames=frames, stems=(stem,), device="cpu",
+                             elapsed_seconds=0.0, cached=False, metadata={})
+          published = publish_project_stems(store, "smoke", stem_set)
+          assert published.document["stems"][0]["label"] == "bass"
           assert (root / "projects" / "smoke.json").is_file()
-          print("packaged project/save/stem/export ok", result.sha256[:12])
+          print("packaged project/save/stem-publish/export ok", result.sha256[:12])
           '@ | Set-Content (Join-Path $env:RUNNER_TEMP "palm-export-smoke.py") -Encoding utf8
           & (Join-Path $app.FullName "python\python.exe") (Join-Path $env:RUNNER_TEMP "palm-export-smoke.py")
           if ($LASTEXITCODE -ne 0) { throw "packaged project/export smoke failed" }

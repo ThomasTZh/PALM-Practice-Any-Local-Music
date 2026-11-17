@@ -508,3 +508,38 @@ def test_uninstall_action_auto_closes_window(paths: LauncherPaths) -> None:
     window._quit_action = None
     window.uninstall()
     assert window.root.callback is not None
+
+
+def test_external_python_copies_minimal_runtime_for_all_layouts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cases = {
+        "windows": ("app", "python/python.exe", ["python311.dll", "python311.zip"]),
+        "linux": ("app", "python/bin/python3.11", ["python/lib/libpython3.11.so"]),
+        "macos": (
+            "PALM.app/Contents/Resources/app",
+            "python/bin/python3.11",
+            ["python/lib/libpython3.11.dylib"],
+        ),
+    }
+    for name, (app_rel, exe_rel, extras) in cases.items():
+        root = tmp_path / name
+        app = root / app_rel
+        data = root / "data"
+        exe = root / app_rel / exe_rel
+        exe.parent.mkdir(parents=True)
+        exe.write_text("exe")
+        for extra in extras:
+            target = root / app_rel / extra
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("lib")
+        if name == "windows":
+            (root / app_rel / "python311.zip").write_text("stdlib")
+        runtime = runtime_paths(mode="packaged", app_root=app, data_root=data)
+        paths = LauncherPaths.from_runtime(runtime)
+        paths.ensure()
+        monkeypatch.setattr(control.sys, "executable", str(exe))
+        copied = control._external_python(paths)
+        assert copied.is_file()
+        assert not copied.resolve().is_relative_to(data.resolve())
+        assert not copied.resolve().is_relative_to(app.resolve())

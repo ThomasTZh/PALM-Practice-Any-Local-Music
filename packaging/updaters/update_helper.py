@@ -69,6 +69,13 @@ def _extract(asset: Path, kind: str, destination: Path) -> Path:
     if kind in {"zip", "macos-app"}:
         with zipfile.ZipFile(asset) as archive:
             archive.extractall(destination)
+            for info in archive.infolist():
+                mode = (info.external_attr >> 16) & 0o777
+                if not mode or info.is_dir():
+                    continue
+                target = destination / info.filename
+                if target.exists():
+                    target.chmod(mode)
         if kind == "macos-app":
             for path in destination.iterdir():
                 if path.suffix == ".app":
@@ -88,7 +95,15 @@ def _clear_plan(plan_path: Path | None, asset: Path) -> None:
     if plan_path is not None:
         plan_path.unlink(missing_ok=True)
         plan_path.with_name(plan_path.name + ".launched").unlink(missing_ok=True)
+        plan_path.with_name(plan_path.name + ".failed").unlink(missing_ok=True)
     asset.unlink(missing_ok=True)
+
+
+def _mark_failed(plan_path: Path | None, error: Exception) -> None:
+    if plan_path is None:
+        return
+    plan_path.with_name(plan_path.name + ".launched").unlink(missing_ok=True)
+    plan_path.with_name(plan_path.name + ".failed").write_text(f"{error}\n", encoding="utf-8")
 
 
 def swap_app(
@@ -122,6 +137,7 @@ def swap_app(
             # This is required for macOS PALM.app swaps and keeps the shell.
             shutil.move(str(replacement), str(app_root))
     except Exception as error:
+        _mark_failed(plan_path, error)
         _log(data_root, f"swap failed for {asset}: {error}; rolling back")
         shutil.rmtree(app_root, ignore_errors=True)
         if backup.exists():
@@ -161,8 +177,11 @@ def uninstall(
     _log(data_root, "uninstall removed the application and shortcuts; data kept")
     if plan_path is not None:
         plan_path.unlink(missing_ok=True)
-    if plan.get("delete_data") is True and data_root.exists():
-        shutil.rmtree(data_root)
+    if plan.get("delete_data") is True:
+        runtime = data_root.parent / ".palm-helper-runtime"
+        shutil.rmtree(runtime, ignore_errors=True)
+        if data_root.exists():
+            shutil.rmtree(data_root)
     return True
 
 

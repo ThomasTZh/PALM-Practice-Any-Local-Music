@@ -351,3 +351,74 @@ def test_swap_cleans_pending_plan_and_staged_asset(tmp_path: Path) -> None:
     assert not archive.exists()
     assert (app / "new.txt").read_text() == "new"
     assert restarted == [["echo", "restarted"]]
+
+
+def test_zip_extraction_restores_macos_executable_modes(tmp_path: Path) -> None:
+    helper = load_helper()
+    bundle = tmp_path / "PALM.app"
+    app = bundle / "Contents/Resources/app"
+    data = tmp_path / "data"
+    app.mkdir(parents=True)
+    data.mkdir()
+    archive = tmp_path / "new.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        info = zipfile.ZipInfo("PALM.app/Contents/MacOS/palm")
+        info.external_attr = (0o100755) << 16
+        z.writestr(info, "#!/bin/sh\nexit 0\n")
+    plan = {
+        "app_root": str(bundle),
+        "asset": str(archive),
+        "data_root": str(data),
+        "kind": "zip",
+        "pid": 0,
+    }
+    assert helper.swap_app(plan, wait=lambda _pid: None)
+    wrapper = bundle / "Contents/MacOS/palm"
+    assert wrapper.is_file()
+    assert wrapper.stat().st_mode & 0o111
+
+
+def test_failed_swap_marks_retry_and_runtime_cleanup(tmp_path: Path) -> None:
+    helper = load_helper()
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    plan_path = data / "updates/pending.json"
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text("{}")
+    plan_path.with_name("pending.json.launched").write_text("x")
+    app.mkdir()
+    data.mkdir(exist_ok=True)
+    bad = tmp_path / "bad.zip"
+    bad.write_bytes(b"bad")
+    plan = {
+        "app_root": str(app),
+        "asset": str(bad),
+        "data_root": str(data),
+        "kind": "zip",
+        "pid": 0,
+    }
+    assert not helper.swap_app(plan, wait=lambda _pid: None, plan_path=plan_path)
+    assert not plan_path.with_name("pending.json.launched").exists()
+    assert plan_path.with_name("pending.json.failed").is_file()
+    assert plan_path.is_file()
+    good = tmp_path / "good.zip"
+    source = tmp_path / "new/root"
+    source.mkdir(parents=True)
+    (source / "ok.txt").write_text("ok")
+    with zipfile.ZipFile(good, "w") as bundle:
+        bundle.write(source / "ok.txt", "root/ok.txt")
+    plan["asset"] = str(good)
+    assert helper.swap_app(plan, wait=lambda _pid: None, plan_path=plan_path)
+    assert (app / "ok.txt").is_file()
+    assert not plan_path.exists()
+    runtime = data.parent / ".palm-helper-runtime"
+    runtime.mkdir()
+    plan["delete_data"] = False
+    assert helper.uninstall(plan, wait=lambda _pid: None, plan_path=plan_path)
+    assert runtime.exists()
+    assert data.exists()
+    runtime.mkdir(exist_ok=True)
+    plan["delete_data"] = True
+    assert helper.uninstall(plan, wait=lambda _pid: None, plan_path=plan_path)
+    assert not runtime.exists()
+    assert not data.exists()

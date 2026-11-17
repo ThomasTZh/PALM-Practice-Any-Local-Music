@@ -209,11 +209,19 @@ class ControlWindow:
             self.controller.stop()
         except Exception as error:
             print(f"palm: server did not stop cleanly: {error}", file=sys.stderr)
+        update_failed = False
         if self._quit_action is not None:
             try:
-                self._quit_action()
+                result = self._quit_action()
             except Exception as error:  # keep quitting even if update launch fails
-                print(f"palm: pending update could not be launched: {error}", file=sys.stderr)
+                result = f"Pending update could not be launched: {error}"
+                update_failed = True
+            if isinstance(result, str) and "could not be launched" in result:
+                self.detail.set(result)
+                update_failed = True
+        if update_failed:
+            self._quitting = False
+            return
         self.root.destroy()
 
 
@@ -243,11 +251,17 @@ def _restart_command(app_root: Path) -> list[str]:
 
 
 def _external_python(paths: LauncherPaths) -> Path:
-    """Return an interpreter outside app_root, copying the bundled runtime if needed."""
+    """Return a helper interpreter outside app_root/data_root.
+
+    The app's bundled Python is copied into a side directory outside the data
+    root (so delete-data cannot remove a running helper). Only the interpreter,
+    shared library/DLLs and standard-library payload are copied, not the large
+    site-packages tree.
+    """
     executable = Path(sys.executable).resolve()
     app_root = paths.runtime.app_root.resolve()
     try:
-        relative = executable.relative_to(app_root)
+        executable.relative_to(app_root)
     except ValueError:
         return executable
     source = (
@@ -255,13 +269,45 @@ def _external_python(paths: LauncherPaths) -> Path:
         if executable.name.lower() in {"python.exe", "pythonw.exe"}
         else executable.parent.parent
     )
-    destination = paths.runtime.data_root / "updates" / "runtime" / "python"
-    if not destination.exists():
-        shutil.copytree(source, destination, symlinks=True)
-    copied = destination / relative.relative_to(source)
+    destination = paths.runtime.data_root.parent / ".palm-helper-runtime"
+    log = paths.runtime.data_root / "logs" / "updater.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if not (destination / executable.relative_to(source)).is_file():
+            if destination.exists():
+                shutil.rmtree(destination, ignore_errors=True)
+            destination.mkdir(parents=True)
+            _copy_helper_runtime(source, destination)
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(f"helper runtime copied to {destination}\n")
+        copied = destination / executable.relative_to(source)
+    except (OSError, ValueError) as error:
+        raise UpdateError(f"helper runtime could not be prepared: {error}") from error
     if not copied.is_file():
-        raise UpdateError(f"external helper runtime is incomplete: {copied}")
+        raise UpdateError(f"helper runtime is incomplete: {copied}")
     return copied
+
+
+def _copy_helper_runtime(source: Path, destination: Path) -> None:
+    """Copy only the interpreter/shared libraries/stdlib needed by helpers."""
+    for entry in source.iterdir():
+        name = entry.name.lower()
+        if entry.is_dir():
+            if name in {"site-packages", "test", "tests", "__pycache__", "include"}:
+                continue
+            if name in {"dlls", "lib", "bin"}:
+                shutil.copytree(
+                    entry,
+                    destination / entry.name,
+                    symlinks=True,
+                    ignore=shutil.ignore_patterns(
+                        "site-packages", "test", "tests", "__pycache__", "*.pyc"
+                    ),
+                )
+        elif name in {"python.exe", "pythonw.exe"} or name.endswith(
+            (".dll", ".dylib", ".so", ".zip", ".pyd")
+        ):
+            shutil.copy2(entry, destination / entry.name)
 
 
 def _version_key(value: str) -> tuple[int, ...]:
@@ -298,7 +344,7 @@ def launch_pending_update(
         executable = _external_python(paths)
         launch_helper(plan, python=executable, popen=popen)
         marker.write_text("launched\n", encoding="utf-8")
-    except (UpdateError, OSError, json.JSONDecodeError) as error:
+    except (UpdateError, OSError, ValueError, json.JSONDecodeError) as error:
         try:
             log = paths.runtime.data_root / "logs" / "updater.log"
             log.parent.mkdir(parents=True, exist_ok=True)
