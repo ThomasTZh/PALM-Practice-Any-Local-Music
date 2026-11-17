@@ -14,5 +14,7 @@ Build it from an x64 Native Tools Command Prompt with:
 
 `palm.cmd` remains the diagnostic console fallback and invokes the launcher
 with `--console`. The control window is the default GUI; the native exe passes
-`--window` explicitly. No binary is committed to git; package builders compile
-it for the Windows release.
+`--window` explicitly. The built `PALM.exe` is tracked at
+`packaging/windows/PALM.exe` for the Windows package; rebuild it from the
+checked-in source with `build_launcher.ps1` and keep the source, script and
+binary together. The package audit allows this one first-party executable.

@@ -55,7 +55,9 @@ rights are used. `palm.cmd` is only the diagnostic fallback in the appendix.
 
 Drag **`PALM.app`** to `~/Applications` and double-click it. If Gatekeeper
 blocks the unsigned app, right-click **Open** or use System Settings > Privacy
-& Security > **Open Anyway**. No Terminal window is involved.
+& Security > **Open Anyway**. Finder starts the control window; when it has no
+TTY the wrapper may open Terminal.app for logs. Pass `--no-terminal` to keep
+the launch windowless.
 
 ## Appendix: diagnostic console and recovery commands
 
@@ -137,8 +139,9 @@ it manually; the packaged ZIP/DMG already contains it.
 The wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`, the native
 `PALM_DATA_DIR` (`~/Library/Application Support/palm` unless overridden) and
 `PYTHONPATH`, then executes `Contents/Resources/app/bin/palm --window`. Finder
-starts the control window directly; no Terminal.app window is opened. The
-control window starts the server, waits for health, opens the browser once and
+starts the control window; the launcher may open Terminal.app for logs when it
+has no TTY, and `--no-terminal` suppresses that. The control window starts the
+server, waits for health, opens the browser once and
 offers Open browser, View logs, Quit, Check for updates and Uninstall.
 `--status`, `--stop`, `--no-browser`, `--no-terminal` and `--data-dir` remain
 advanced recovery flags.

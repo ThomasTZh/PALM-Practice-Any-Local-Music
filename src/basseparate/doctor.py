@@ -27,6 +27,8 @@ from basseparate.model_registry import (
     verify_registry,
 )
 from basseparate.platform_support import (
+    MACOS,
+    WINDOWS,
     ffmpeg_binary,
     ffprobe_binary,
     hidden_process_kwargs,
@@ -109,6 +111,11 @@ class DoctorLayout:
     @property
     def piper(self) -> Path:
         return self.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
+
+    @property
+    def sonic_annotator(self) -> Path:
+        name = "sonic-annotator.exe" if WINDOWS else "sonic-annotator"
+        return self.tools_root / "sonic-annotator-1.7.0" / name
 
     @property
     def analysis_python(self) -> Path:
@@ -338,6 +345,26 @@ def _check_native_host(layout: DoctorLayout) -> DoctorCheck:
     )
 
 
+def _check_sonic_annotator(layout: DoctorLayout) -> DoctorCheck:
+    path = layout.sonic_annotator
+    if not path.is_file():
+        return _check(
+            "sonic_annotator",
+            "Sonic Annotator",
+            False,
+            f"missing {path}",
+            path=path,
+        )
+    executable = path.is_file() if WINDOWS else os.access(path, os.X_OK)
+    return _check(
+        "sonic_annotator",
+        "Sonic Annotator",
+        executable,
+        f"{path}{' executable' if executable else ' not executable'}",
+        path=path,
+    )
+
+
 def _check_piper(layout: DoctorLayout) -> DoctorCheck:
     if not layout.piper.is_file():
         return _check(
@@ -431,7 +458,7 @@ def diagnose(
         _directory_check(layout, "data_root", "Data directory", layout.data_root, required=True),
         _check_model_bundle(layout),
         _check_plugin_pack(layout),
-        _check_piper(layout),
+        _check_sonic_annotator(layout) if (WINDOWS or MACOS) else _check_piper(layout),
         _check_analysis(layout),
         _directory_check(layout, "vamp_sdk", "Vamp SDK", layout.vamp_sdk, required=False),
         _check_native_host(layout),

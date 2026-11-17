@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import ValidationError
@@ -33,6 +34,18 @@ from basseparate.projects import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["library"])
+
+
+def decode_upload_text(value: str | None) -> str | None:
+    """Recover UTF-8 or percent-encoded multipart names from Latin-1 headers."""
+    if value is None:
+        return None
+    decoded = unquote(value)
+    try:
+        return decoded.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return decoded
+
 
 ProgressCallback = Callable[[float, str], None]
 CancelCallback = Callable[[], bool]
@@ -179,7 +192,9 @@ async def _import_upload(
                 status_code=400, detail="multipart upload must include a 'file' part"
             )
         uploaded = form.files.get("file") or next(iter(form.files.values()))
-        display_name = name or form.fields.get("name") or Path(uploaded.filename).stem
+        display_name = decode_upload_text(
+            name or form.fields.get("name") or Path(uploaded.filename).stem
+        )
         effective_rate = validate_sample_rate_value(sample_rate)
         if effective_rate is None:
             effective_rate = parse_sample_rate_text(form.fields.get("sample_rate"))

@@ -29,8 +29,9 @@ launcher:
   from the desktop environment), which opens the PALM control window.
 - **Windows beta:** double-click **`PALM.exe`** at the root of the extracted
   ZIP. No console is required; `palm.cmd` is only a diagnostic fallback.
-- **macOS experimental:** double-click **`PALM.app`**. No Terminal window is
-  involved.
+- **macOS experimental:** double-click **`PALM.app`**. The control window is
+  the normal UI; when Finder starts it without a TTY it may open Terminal.app
+  for logs, and `--no-terminal` suppresses that.
 
 The control window starts the local server, waits for health, opens the browser
 once and offers **Open browser**, **View logs**, **Quit**, **Check for updates**
@@ -99,7 +100,8 @@ Each platform has its own asset plus checksums and notes:
 - Windows beta: `PALM-<version>-windows-x86_64.zip` (extract, double-click
   `PALM.exe`; no console or administrator rights)
 - macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg` (double-click
-  the unsigned `PALM.app` for Apple Silicon; no Terminal)
+  the unsigned `PALM.app` for Apple Silicon; it may open Terminal.app for logs
+  when started without a TTY; `--no-terminal` suppresses it)
 
 Every bundle contains the app, built UI, analysis workers/registry,
 environment definitions, launcher, setup code and licences. Model weights,

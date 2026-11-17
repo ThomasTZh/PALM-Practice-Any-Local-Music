@@ -126,3 +126,26 @@ def test_wav_import_succeeds_when_windows_directory_fsync_is_noop(
     response = client.post("/api/imports", json={"path": str(source)})
     assert response.status_code == 201, response.text
     assert response.json()["audio"]["duration_seconds"] == 2.0
+
+
+def test_multipart_utf8_filename_preserves_cafe_demo(client: TestClient) -> None:
+    with TONE.open("rb") as handle:
+        response = client.post(
+            "/api/library/import",
+            files={"file": ("café demo.wav", handle, "audio/wav")},
+        )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["entry"]["title"] == "café demo"
+    assert body["project"]["name"] == "café demo"
+
+
+def test_multipart_percent_encoded_filename_is_decoded(client: TestClient) -> None:
+    with TONE.open("rb") as handle:
+        response = client.post(
+            "/api/library/import",
+            files={"file": ("caf%C3%A9%20demo.wav", handle, "audio/wav")},
+        )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["entry"]["title"] == "café demo"
