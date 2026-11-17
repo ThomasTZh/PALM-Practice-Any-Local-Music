@@ -225,6 +225,35 @@ def copy_tree(source: Path, destination: Path) -> None:
     )
 
 
+def build_launcher(destination: Path) -> None:
+    """Build PALM.exe from source on Windows; use the committed fallback elsewhere."""
+    source = ROOT / "packaging" / "windows" / "palm_launcher.c"
+    script = ROOT / "packaging" / "windows" / "build_launcher.ps1"
+    if not source.is_file() or not script.is_file():
+        raise PackageError("native launcher source/build script is missing")
+    if os.name == "nt":
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-Out",
+                str(destination),
+            ],
+            check=False,
+        )
+        if completed.returncode != 0 or not destination.is_file():
+            raise PackageError("building PALM.exe from palm_launcher.c failed")
+        return
+    fallback = ROOT / "packaging" / "windows" / "PALM.exe"
+    if not fallback.is_file():
+        raise PackageError("prebuilt PALM.exe is missing on this non-Windows host")
+    copy_file(fallback, destination)
+
+
 def copy_file(source: Path, destination: Path) -> None:
     if not source.is_file():
         raise PackageError(f"missing staging input {source}")
@@ -267,7 +296,7 @@ def stage(stage: Path, manifest: dict[str, Any], requirements: Path, *, online: 
     copy_tree(ROOT / "licenses" / "third_party", stage / "licenses" / "third_party")
     for name in ("update_helper.py", "uninstall_helper.py"):
         copy_file(ROOT / "packaging" / "updaters" / name, stage / "updaters" / name)
-    copy_file(ROOT / "packaging" / "windows" / "PALM.exe", stage / "PALM.exe")
+    build_launcher(stage / "PALM.exe")
     copy_file(ROOT / "pyproject.toml", stage / "pyproject.toml")
     write_install_json(stage / "install.json", "windows-x86_64", version())
     copy_file(ROOT / "README.md", stage / "README.md")

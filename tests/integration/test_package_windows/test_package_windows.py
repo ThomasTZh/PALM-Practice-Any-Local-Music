@@ -112,3 +112,23 @@ def test_built_zip_has_only_allowed_payload_when_present() -> None:
     assert not any(
         len(Path(name).parts) >= 2 and Path(name).parts[1] in root_forbidden for name in lower
     )
+
+
+def test_native_launcher_builds_and_sets_packaged_environment() -> None:
+    source = (ROOT / "packaging/windows/palm_launcher.c").read_text()
+    script = (ROOT / "packaging/windows/build_launcher.ps1").read_text()
+    packager = (ROOT / "scripts/package_windows.py").read_text()
+    assert "PALM_MODE" in source and "packaged" in source
+    assert "PALM_APP_ROOT" in source
+    assert "PALM_DATA_DIR" in source
+    assert "PYTHONPATH" in source
+    assert "PYTHONUTF8" in source
+    assert "pythonw.exe" in source
+    assert "WaitForSingleObject" in source
+    assert "exit code %lu" in source
+    assert "palm.cmd --help" in source
+    assert "palm_launcher.c" in script and "$Out" in script and "SUBSYSTEM:WINDOWS" in script
+    assert "build_launcher" in packager and "palm_launcher.c" in packager
+    binary = (ROOT / "packaging/windows/PALM.exe").read_bytes()
+    assert binary[:2] == b"MZ"
+    assert len(binary) > 4096

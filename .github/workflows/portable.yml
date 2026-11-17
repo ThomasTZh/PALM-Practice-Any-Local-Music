@@ -115,6 +115,12 @@ jobs:
       - name: Install pinned Python environment
         shell: pwsh
         run: uv sync --frozen
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build native PALM.exe from source
+        shell: pwsh
+        run: .\packaging\windows\build_launcher.ps1 -Out .\packaging\windows\PALM.exe
       - name: Build Windows ZIP
         shell: pwsh
         run: .\.venv\Scripts\python.exe scripts/package_windows.py --online
@@ -183,16 +189,19 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath $root
           $app = Get-ChildItem $root -Directory | Select-Object -First 1
           $palm = Join-Path $app.FullName "palm.cmd"
+          $native = Join-Path $app.FullName "PALM.exe"
+          if (-not (Test-Path $native)) { throw "PALM.exe missing from ZIP" }
           $data = Join-Path $env:RUNNER_TEMP "palm-win-browser-data"
           Remove-Item $data -Recurse -Force -ErrorAction SilentlyContinue
           & $palm --help
           if ($LASTEXITCODE -ne 0) { throw "palm.cmd --help failed" }
-          $proc = Start-Process -FilePath $palm -ArgumentList @("--no-browser", "--no-terminal", "--port", "0", "--data-dir", $data) -PassThru
+          $env:PALM_DATA_DIR = $data
+          $proc = Start-Process -FilePath $native -PassThru
           try {
             $state = Join-Path $data "run\server.json"
             $deadline = (Get-Date).AddSeconds(90)
             while (-not (Test-Path $state) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
-            if (-not (Test-Path $state)) { throw "server state was not written" }
+            if (-not (Test-Path $state)) { throw "PALM.exe did not write server state" }
             $url = (Get-Content $state -Raw | ConvertFrom-Json).url
             $health = Invoke-RestMethod -Uri ($url.TrimEnd('/') + "/api/health") -TimeoutSec 30
             if ($health.status -ne "ok") { throw "health was not ok" }
@@ -204,6 +213,7 @@ jobs:
             if (Test-Path $state) { throw "run state was not removed" }
           } finally {
             if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+            Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           }
           $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
           "$hash  $($zip.Name)" | Set-Content dist\SHA256SUMS -Encoding ascii
