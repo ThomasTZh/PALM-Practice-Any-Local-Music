@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from basseparate.api.models import InvalidRequest
 from basseparate.api.uploads import UploadError
 from basseparate.jobs import JobNotFound
-from basseparate.media import MediaError, RangeError
+from basseparate.media import MediaError, MediaInternalError, RangeError
 from basseparate.projects import (
     ProjectAlreadyExists,
     ProjectError,
@@ -24,6 +24,16 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(MediaError)
     async def media_error(request: Request, error: MediaError) -> JSONResponse:
+        if isinstance(error, MediaInternalError):
+            return JSONResponse(
+                {
+                    "detail": (
+                        "Import failed unexpectedly. Try again; if it keeps failing, "
+                        "open Setup and check the application logs."
+                    )
+                },
+                status_code=500,
+            )
         return JSONResponse({"detail": str(error)}, status_code=400)
 
     @app.exception_handler(InvalidRequest)

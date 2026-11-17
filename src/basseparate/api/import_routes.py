@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import uuid
 from collections.abc import Callable, Mapping
@@ -21,7 +22,7 @@ from basseparate.api.models import (
 from basseparate.api.uploads import parse_multipart_upload
 from basseparate.config import DataPaths, Settings
 from basseparate.jobs import Job, JobContext, JobManager
-from basseparate.media import import_media
+from basseparate.media import MediaError, MediaInternalError, import_media
 from basseparate.projects import (
     Project,
     ProjectStore,
@@ -30,6 +31,7 @@ from basseparate.projects import (
     project_response,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["library"])
 
 ProgressCallback = Callable[[float, str], None]
@@ -60,7 +62,39 @@ def import_source(
     progress: ProgressCallback | None = None,
     is_cancelled: CancelCallback | None = None,
 ) -> Project:
-    """One import path shared by the synchronous route and the background job."""
+    """Import one source, preserving actionable media errors and logging the rest."""
+    try:
+        return _import_source(
+            settings=settings,
+            paths=paths,
+            store=store,
+            source=source,
+            name=name,
+            sample_rate=sample_rate,
+            progress=progress,
+            is_cancelled=is_cancelled,
+        )
+    except MediaError:
+        raise
+    except Exception as error:  # noqa: BLE001 - unexpected import boundary
+        logger.exception("unexpected import failure for %s", source)
+        raise MediaInternalError(
+            "Import failed unexpectedly. Try again; if it keeps failing, open Setup "
+            "and check the application logs."
+        ) from error
+
+
+def _import_source(
+    *,
+    settings: Settings,
+    paths: DataPaths,
+    store: ProjectStore,
+    source: Path,
+    name: str | None = None,
+    sample_rate: int | None = None,
+    progress: ProgressCallback | None = None,
+    is_cancelled: CancelCallback | None = None,
+) -> Project:
     asset = import_media(
         source,
         assets_root=paths.assets,

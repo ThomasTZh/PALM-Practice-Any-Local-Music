@@ -40,6 +40,13 @@ class MediaCancelled(MediaError):
     """The caller asked to stop; the partial result has been removed."""
 
 
+class MediaInternalError(MediaError):
+    """An unexpected media failure; the HTTP layer maps it to a safe 500."""
+
+
+MEDIA_SETUP_HINT = "Open Setup and install the managed FFmpeg/FFprobe tools, then retry."
+
+
 class RangeError(MediaError):
     """The requested range is outside the asset; maps to HTTP 416."""
 
@@ -347,7 +354,11 @@ def probe_media(path: Path, *, ffprobe: str | None = None) -> MediaInfo:
             **hidden_process_kwargs(),
         )
     except FileNotFoundError as error:
-        raise MediaError(f"{ffprobe} is not installed") from error
+        raise MediaError(f"FFprobe is not available at {ffprobe}. {MEDIA_SETUP_HINT}") from error
+    except PermissionError as error:
+        raise MediaError(f"FFprobe is not executable at {ffprobe}. {MEDIA_SETUP_HINT}") from error
+    except OSError as error:
+        raise MediaError(f"FFprobe could not be started ({error}). {MEDIA_SETUP_HINT}") from error
     except subprocess.TimeoutExpired as error:
         raise MediaError(f"ffprobe timed out reading {path.name}") from error
     if result.returncode != 0:
@@ -499,7 +510,11 @@ def decode_to_pcm(
                         progress(fraction, "decoding audio")
             returncode = process.wait(timeout=timeout_seconds)
     except FileNotFoundError as error:
-        raise MediaError(f"{ffmpeg} is not installed") from error
+        raise MediaError(f"FFmpeg is not available at {ffmpeg}. {MEDIA_SETUP_HINT}") from error
+    except PermissionError as error:
+        raise MediaError(f"FFmpeg is not executable at {ffmpeg}. {MEDIA_SETUP_HINT}") from error
+    except OSError as error:
+        raise MediaError(f"FFmpeg could not be started ({error}). {MEDIA_SETUP_HINT}") from error
     except subprocess.TimeoutExpired as error:
         raise MediaError(f"ffmpeg timed out decoding {source.name}") from error
     finally:

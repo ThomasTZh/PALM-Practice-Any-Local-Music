@@ -86,7 +86,16 @@ export function LibraryPanel({
 
       {error !== null && (
         <p className="library-error" role="alert">
-          {error}
+          {error}{" "}
+          {onSetup !== undefined && (
+            <button
+              type="button"
+              aria-label="Open setup after import error"
+              onClick={onSetup}
+            >
+              Open setup
+            </button>
+          )}
         </p>
       )}
       {!canImport && (

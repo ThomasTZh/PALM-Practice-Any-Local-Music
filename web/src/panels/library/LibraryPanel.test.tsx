@@ -77,6 +77,36 @@ describe("LibraryPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("offline");
   });
 
+  it("shows the server's setup error with an Open setup path", async () => {
+    const api = createFakeApi({
+      listLibrary: async () => [],
+      importRecording: async () => {
+        throw new Error(
+          "FFmpeg is not available. Open Setup and install the managed FFmpeg/FFprobe tools, then retry.",
+        );
+      },
+    });
+    const onSetup = vi.fn();
+    render(<LibraryPanel api={api} onOpen={vi.fn()} onSetup={onSetup} />);
+
+    await screen.findByText("No recordings yet.");
+    fireEvent.change(screen.getByLabelText("Import recording"), {
+      target: {
+        files: [
+          new File([new Uint8Array([1])], "take.wav", { type: "audio/wav" }),
+        ],
+      },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "FFmpeg is not available",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open setup after import error" }),
+    );
+    expect(onSetup).toHaveBeenCalledOnce();
+  });
+
   it("imports a recording and opens it", async () => {
     const api = createFakeApi({
       listLibrary: async () => [],
