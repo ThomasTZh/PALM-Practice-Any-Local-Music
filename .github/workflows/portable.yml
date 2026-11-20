@@ -43,7 +43,7 @@ jobs:
       - name: Backend tests without optional assets
         run: make test-backend TESTS="tests/unit --ignore=tests/unit/test_models"
       - name: Licence/package/update audit
-        run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
+        run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit
       - name: Web tests and build
         run: |
           make test-web
@@ -135,7 +135,7 @@ jobs:
         run: .\.venv\Scripts\python.exe -m pytest -q tests/integration/test_package_windows
       - name: Licence/package/update audit
         shell: pwsh
-        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
+        run: .\.venv\Scripts\python.exe -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit
       - name: Verify Windows archive metadata and modes
         shell: pwsh
         run: |
@@ -320,7 +320,7 @@ jobs:
       - name: Unit and adapter tests
         run: .venv/bin/python -m pytest -q tests/unit/test_platform_support tests/integration/test_package_macos
       - name: Licence/package/update audit
-        run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit tests/unit/test_updater
+        run: .venv/bin/python -m pytest -q tests/unit/test_licenses tests/integration/test_package_audit
       - name: macOS Sonic analysis adapter tests
         run: .venv/bin/python -m pytest -q tests/unit/test_sonic_annotator
       - name: Install Playwright browser
