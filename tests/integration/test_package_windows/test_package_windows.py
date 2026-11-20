@@ -189,6 +189,7 @@ def test_native_installer_install_upgrade_uninstall(tmp_path: Path) -> None:
     assert (app_dir / "PALM.exe").is_file()
     assert marker.exists()
     assert keep.is_file()
+    marker.unlink()
     uninstaller = app_dir / "unins000.exe"
     assert (
         subprocess.run(
