@@ -154,7 +154,7 @@ Deleting `cache/` is safe. Deleting `models/`, `tools/` or `environments/`
 means running setup again. Back up `projects/`, `assets/` and `uploads/` before
 removing a data root.
 
-Uninstall:
+Uninstall (OS-level; no custom uninstaller):
 
 ```sh
 ./bin/palm --stop

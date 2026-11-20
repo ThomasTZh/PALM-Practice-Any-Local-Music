@@ -57,8 +57,6 @@ REQUIRED = (
     "PALM.app/Contents/Resources/app/licenses/third_party/manifest.json",
     "PALM.app/Contents/Resources/app/install.json",
     "PALM.app/Contents/Resources/app/runtime-requirements.txt",
-    "PALM.app/Contents/Resources/updaters/update_helper.py",
-    "PALM.app/Contents/Resources/updaters/uninstall_helper.py",
 )
 
 
@@ -280,11 +278,6 @@ def stage(stage_root: Path, data: dict[str, Any], requirements: Path, *, online:
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, app / "licenses" / name)
     copy_tree(ROOT / "licenses" / "third_party", app / "licenses" / "third_party")
-    for name in ("update_helper.py", "uninstall_helper.py"):
-        copy_file(
-            ROOT / "packaging" / "updaters" / name,
-            bundle / "Contents" / "Resources" / "updaters" / name,
-        )
     write_install_json(app / "install.json", "macos-arm64", version())
     copy_file(ROOT / "README.md", app / "README.md")
     copy_file(requirements, app / "runtime-requirements.txt")

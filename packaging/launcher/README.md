@@ -107,6 +107,7 @@ root with `--data-dir` or `PALM_DATA_DIR`/`BASSEPARATE_DATA_DIR`.
 Stop PALM before cleanup. `<data>/cache/` is safe to delete (downloads/uv cache
 is rebuilt); `<data>/models/`, `<data>/tools/` and `<data>/environments/`
 require setup again; `projects/`, `assets/` and `uploads/` are user data and
-must be backed up. Uninstall by stopping PALM, removing the app directory and,
-only if you accept losing practice data, the data root. Never delete a data
-root while PALM is running.
+must be backed up. Uninstall is OS-level and keep-data by default: stop PALM,
+remove the app directory with the file manager or OS uninstaller, and leave the
+data root in place. Delete the data root only if you accept losing practice
+data. Never delete a data root while PALM is running.

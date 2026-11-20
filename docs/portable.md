@@ -41,7 +41,7 @@ Extract the tar, install the included desktop entry if desired, and launch
 PALM from the desktop menu or by double-clicking `bin/palm`. The control window
 opens; no console is required. The window starts the existing server, waits for
 health, opens the browser once and offers **Open browser**, **View logs**,
-**Quit**, **Check for updates** and **Uninstall**. The server listens on
+**Quit** and **Check for updates**. The server listens on
 loopback only and writes `run/server.json`, `logs/launcher.log` and
 `logs/server.log` below the data root.
 
@@ -92,20 +92,15 @@ or unrelated records are reported and never kill an arbitrary process. Use
 Your projects, models, tools and environments live in the data root, not the
 app folder, so replacing the app does not download them again.
 
-**Check for updates** reads `install.json`, selects the installed channel's
-asset, verifies its SHA-256 and stages it below `<data>/updates`; the running
-app is untouched. The external helper waits for Quit, swaps the app with a
-rollback backup and restarts the control window. The helper keeps the data root
-and does not replace a running binary. If the check reports no update or a
-network/staging error, the exact message stays in the control window detail.
+**Check for updates** reads `install.json`, identifies the installed channel
+and version, and opens the matching release/download page in the browser with
+manual instructions. It does not download, stage, swap or replace the app, and
+there is no custom update helper.
 
-**Uninstall** asks for confirmation, stops the server first, launches an
-external helper and removes the app folder and shortcuts. It keeps projects,
-models, tools and environments by default; deleting the data root is a separate
-explicit choice. Never delete the data root during an update.
-
-Manual tar replacement remains an advanced recovery path only; normal users
-should use Check for updates and Uninstall.
+To update, quit PALM, download the matching asset and `SHA256SUMS`, verify it,
+and replace the app folder/bundle. The data root is unchanged. There is no
+custom Uninstall button; remove the app with the OS tools and preserve the data
+root unless you explicitly choose to delete your projects.
 
 ## Windows beta
 
@@ -115,7 +110,7 @@ profile, for example `%LOCALAPPDATA%\Programs\PALM`, and double-click
 shell, system installer, service or machine-wide PATH change is required.
 `PALM.exe` starts the control window, which starts the server, waits for health,
 opens the browser once and offers Open browser, View logs, Quit, Check for
-updates and Uninstall. `PALM_DATA_DIR` defaults to `%LOCALAPPDATA%\palm`; paths
+updates. `PALM_DATA_DIR` defaults to `%LOCALAPPDATA%\palm`; paths
 with spaces and non-ASCII characters are handled by the native launcher.
 
 FFmpeg and ffprobe are **not** an external prerequisite: setup downloads managed
@@ -142,7 +137,7 @@ The wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`, the native
 starts the control window; the launcher may open Terminal.app for logs when it
 has no TTY, and `--no-terminal` suppresses that. The control window starts the
 server, waits for health, opens the browser once and
-offers Open browser, View logs, Quit, Check for updates and Uninstall.
+offers Open browser, View logs, Quit and Check for updates.
 `--status`, `--stop`, `--no-browser`, `--no-terminal` and `--data-dir` remain
 advanced recovery flags.
 
@@ -305,15 +300,14 @@ The downloaded size/SHA-256 must match the registry pins.
 
 ## Upgrade and uninstall
 
-**Upgrade:** use **Check for updates** in the control window. It verifies and
-stages the asset, then the external helper swaps after Quit, can roll back, and
-keeps the data root. Manual folder replacement is an advanced recovery path.
+**Upgrade:** use **Check for updates** to open the release page, quit PALM,
+download and verify the asset, then replace the app folder/bundle. The data root
+is preserved.
 
-**Uninstall:** use **Uninstall** in the control window. It confirms, stops the
-server, launches the external helper and removes the app and shortcuts while
-keeping the data root by default. Deleting practice data is a separate explicit
-choice; the manual commands below are only for advanced recovery after
-backing up projects:
+**Uninstall:** quit PALM and remove the app with the OS (Windows Installed
+apps/Explorer, macOS Trash, Linux file manager) or the commands below for a
+portable folder. Projects, models and tools remain in the data root; delete it
+only if you explicitly intend to remove practice data after backing up:
 
 ```sh
 # Linux

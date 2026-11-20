@@ -59,8 +59,6 @@ REQUIRED = (
     "runtime-requirements.txt",
     "install.json",
     "PALM.exe",
-    "updaters/update_helper.py",
-    "updaters/uninstall_helper.py",
 )
 
 
@@ -294,8 +292,6 @@ def stage(stage: Path, manifest: dict[str, Any], requirements: Path, *, online: 
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, stage / "licenses" / name)
     copy_tree(ROOT / "licenses" / "third_party", stage / "licenses" / "third_party")
-    for name in ("update_helper.py", "uninstall_helper.py"):
-        copy_file(ROOT / "packaging" / "updaters" / name, stage / "updaters" / name)
     build_launcher(stage / "PALM.exe")
     copy_file(ROOT / "pyproject.toml", stage / "pyproject.toml")
     write_install_json(stage / "install.json", "windows-x86_64", version())

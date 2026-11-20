@@ -34,10 +34,12 @@ launcher:
   for logs, and `--no-terminal` suppresses that.
 
 The control window starts the local server, waits for health, opens the browser
-once and offers **Open browser**, **View logs**, **Quit**, **Check for updates**
-and **Uninstall**. Quit stops the server; closing only the browser leaves it
-running. Uninstall removes the app and shortcuts but keeps projects, models and
-tools by default; deleting data is a separate explicit choice.
+once and offers **Open browser**, **View logs**, **Quit** and **Check for
+updates**. Quit stops the server; closing only the browser leaves it running.
+Check for updates opens the matching release page with manual download
+instructions; PALM never replaces itself. Remove the app with the OS tools
+(Windows Installed apps/Explorer, macOS Trash, Linux file manager); projects,
+models and tools in the data root are preserved.
 
 On first run the browser opens the licence and setup screen. Review the
 component licences, then use **Install recommended setup**: PALM downloads and
@@ -137,11 +139,11 @@ Normal use is entirely in the native control window: it starts the server,
 opens the browser once, shows status and logs, and **Quit** stops the server.
 Closing only the browser does not stop PALM.
 
-**Check for updates** reads the installed channel from `install.json`, verifies
-and stages a new asset below the data root, and waits for Quit before the
-external helper swaps it with rollback. **Uninstall** confirms the action,
-stops the server, launches the external helper and keeps projects, models and
-tools by default; deleting the data root is a separate explicit choice.
+**Check for updates** reads the installed channel from `install.json` and opens
+the matching release/download page with instructions. It does not download or
+replace the running app. There is no custom uninstaller: quit PALM, then remove
+the app folder/bundle with the OS (Installed apps/Explorer, Trash, or the file
+manager). The data root holding projects, models and tools is preserved.
 
 The packaged data root defaults to `~/.local/share/palm`; a source checkout uses
 `~/.local/share/basseparate`, so using both can duplicate model/tool downloads.

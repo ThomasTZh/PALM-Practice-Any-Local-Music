@@ -67,8 +67,6 @@ REQUIRED_TAR_PARTS = (
     "palm.svg",
     "runtime-requirements.txt",
     "install.json",
-    "updaters/update_helper.py",
-    "updaters/uninstall_helper.py",
     "licenses/third_party/manifest.json",
 )
 
@@ -301,8 +299,6 @@ def stage_app(stage: Path, manifest: dict[str, Any]) -> None:
     for name in ("LICENSE", "NOTICES.md", "components.json"):
         copy_file(ROOT / "licenses" / name, stage / "licenses" / name)
     copy_tree_filtered(ROOT / "licenses" / "third_party", stage / "licenses" / "third_party")
-    for name in ("update_helper.py", "uninstall_helper.py"):
-        copy_file(ROOT / "packaging" / "updaters" / name, stage / "updaters" / name)
     write_install_json(stage / "install.json", "linux-x86_64", version())
     copy_file(ROOT / "packaging" / "README.release.md", stage / "README.md")
     copy_file(ROOT / "docs" / "portable.md", stage / "docs" / "portable.md")

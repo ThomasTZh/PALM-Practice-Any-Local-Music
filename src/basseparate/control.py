@@ -1,34 +1,22 @@
 """Small Tk control window for the packaged PALM launcher.
 
-The window is deliberately a thin client over ``LauncherController``: process,
-health, state and logging behavior is shared with the native Windows/macOS
-wrappers. It also wires Check for updates to install.json-based staging and
-Uninstall to an external helper that keeps user data by default. Tk is imported
-lazily so a server-only environment can still use the diagnostic CLI.
+The window is a thin client over ``LauncherController``: process, health, state
+and logging behavior is shared with the native Windows/macOS wrappers. It keeps
+Open browser, View logs and Quit, and Check for updates opens the matching
+release/download page with manual replacement instructions. PALM does not
+replace itself and has no custom uninstaller; remove the app with the OS tools
+and keep the data root.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import re
-import shutil
 import sys
+import webbrowser
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from basseparate.launcher import LauncherController, LauncherError, LauncherPaths
-from basseparate.updater import (
-    UninstallPlan,
-    UpdateError,
-    check_for_update,
-    launch_helper,
-    launch_uninstall_helper,
-    load_metadata,
-    stage_update,
-    write_plan,
-)
 
 
 def _load_tk() -> Any:
@@ -39,12 +27,13 @@ def _load_tk() -> Any:
 
 
 class ControlWindow:
-    """Status/start/stop window with wired update and uninstall actions.
+    """Status window with Open browser, View logs, Quit and Check for updates.
 
-    Check for updates reads install.json, verifies and stages the channel asset,
-    and leaves the running app untouched until Quit. Uninstall asks for
-    confirmation, stops the server and launches the external helper; projects,
-    models and tools are kept unless delete-data is explicitly chosen.
+    Check for updates reads ``install.json`` and opens the release/download page
+    in a browser with manual instructions. It never downloads, swaps or restarts
+    anything. Uninstall is an OS-level action: remove the app bundle/folder or
+    use the OS uninstaller; projects, models and tools live below the data root
+    and are preserved unless the user removes that directory explicitly.
     """
 
     def __init__(
@@ -55,9 +44,6 @@ class ControlWindow:
         ttk: Any,
         tk: Any,
         update_action: Callable[[], str] | None = None,
-        uninstall_action: Callable[[], str] | None = None,
-        confirm_uninstall: Callable[[], bool] | None = None,
-        quit_action: Callable[[], str] | None = None,
     ) -> None:
         self.root = root
         self.controller = controller
@@ -66,12 +52,8 @@ class ControlWindow:
         self._started = False
         self._log_window: Any | None = None
         self._update_action = update_action
-        self._uninstall_action = uninstall_action
-        self._confirm_uninstall = confirm_uninstall or self._ask_uninstall
-        self._quit_action = quit_action
-        self._quitting = False
         root.title("PALM — Practice Any Local Music")
-        root.minsize(520, 360)
+        root.minsize(520, 340)
         root.protocol("WM_DELETE_WINDOW", self.quit)
         self.status = tk.StringVar(root, value="Starting…")
         self.detail = tk.StringVar(root, value="Preparing the local server")
@@ -95,7 +77,7 @@ class ControlWindow:
         )
         buttons = ttk.Frame(frame)
         buttons.grid(row=3, column=0, sticky="ew")
-        for column in range(4):
+        for column in range(3):
             buttons.columnconfigure(column, weight=1)
         ttk.Button(buttons, text="Open browser", command=self.open_browser).grid(
             row=0, column=0, padx=3, pady=3, sticky="ew"
@@ -108,9 +90,6 @@ class ControlWindow:
         )
         ttk.Button(buttons, text="Check for updates", command=self.check_update).grid(
             row=1, column=0, padx=3, pady=3, sticky="ew"
-        )
-        ttk.Button(buttons, text="Uninstall", command=self.uninstall).grid(
-            row=1, column=1, padx=3, pady=3, sticky="ew"
         )
         self.log = self._tk.Text(frame, height=8, wrap="none", state="disabled")
         self.log.grid(row=4, column=0, sticky="nsew", pady=(12, 0))
@@ -134,42 +113,12 @@ class ControlWindow:
 
     def check_update(self) -> None:
         if self._update_action is None:
-            self.detail.set("Update metadata is not configured for this install.")
+            self.detail.set("Update information is unavailable for this install.")
             return
         try:
             self.detail.set(self._update_action())
         except Exception as error:  # user-facing helper errors must not crash Tk
             self.detail.set(f"Update check failed: {error}")
-
-    def _ask_uninstall(self) -> bool:
-        try:
-            from tkinter import messagebox
-
-            return bool(
-                messagebox.askyesno(
-                    "Uninstall PALM?",
-                    "Stop PALM and remove the application?\n\n"
-                    "Your projects, models and tools are kept by default. "
-                    "Delete data separately only if you intend to remove them.",
-                )
-            )
-        except Exception:
-            return False
-
-    def uninstall(self) -> None:
-        if not self._confirm_uninstall():
-            self.detail.set("Uninstall cancelled; PALM is still running.")
-            return
-        if self._uninstall_action is None:
-            self.detail.set("Uninstall helper is not configured for this install.")
-            return
-        try:
-            self.detail.set(self._uninstall_action())
-        except Exception as error:  # user-facing helper errors must not crash Tk
-            self.detail.set(f"Uninstall failed: {error}")
-            return
-        # The helper waits for this process; close the control window now.
-        self.root.after(50, self.quit)
 
     def open_browser(self) -> None:
         if not self.controller.open_browser():
@@ -202,254 +151,52 @@ class ControlWindow:
         self.log.configure(state="disabled")
 
     def quit(self) -> None:
-        if self._quitting:
-            return
-        self._quitting = True
         try:
             self.controller.stop()
-        except Exception as error:
-            print(f"palm: server did not stop cleanly: {error}", file=sys.stderr)
-        update_failed = False
-        if self._quit_action is not None:
-            try:
-                result = self._quit_action()
-            except Exception as error:  # keep quitting even if update launch fails
-                result = f"Pending update could not be launched: {error}"
-                update_failed = True
-            if isinstance(result, str) and "could not be launched" in result:
-                self.detail.set(result)
-                update_failed = True
-        if update_failed:
-            self._quitting = False
-            return
-        self.root.destroy()
+        finally:
+            self.root.destroy()
 
 
-def _install_root(app_root: Path) -> Path:
-    """Return the unit the updater/uninstaller must replace or delete.
-
-    Linux/Windows use the app directory. A macOS app launches from
-    PALM.app/Contents/Resources/app, but the whole PALM.app bundle must be
-    swapped or removed.
-    """
-    if app_root.name == "app" and app_root.parent.name == "Resources":
-        bundle = app_root.parents[2]
-        if bundle.suffix == ".app":
-            return bundle
-    return app_root
-
-
-def _restart_command(app_root: Path) -> list[str]:
-    if app_root.suffix == ".app":
-        wrapper = app_root / "Contents" / "MacOS" / "palm"
-        return [str(wrapper), "--window"] if wrapper.is_file() else []
-    if (app_root / "bin" / "palm").is_file():
-        return [str(app_root / "bin" / "palm"), "--window"]
-    if (app_root / "PALM.exe").is_file():
-        return [str(app_root / "PALM.exe")]
-    return []
-
-
-def _external_python(paths: LauncherPaths) -> Path:
-    """Return a helper interpreter outside app_root/data_root.
-
-    The app's bundled Python is copied into a side directory outside the data
-    root (so delete-data cannot remove a running helper). Only the interpreter,
-    shared library/DLLs and standard-library payload are copied, not the large
-    site-packages tree.
-    """
-    executable = Path(sys.executable).resolve()
-    app_root = paths.runtime.app_root.resolve()
+def release_page(paths: LauncherPaths) -> tuple[str, str, str]:
+    """Return (page_url, channel, version) from install.json."""
+    path = paths.runtime.app_root / "install.json"
     try:
-        executable.relative_to(app_root)
-    except ValueError:
-        return executable
-    source = (
-        executable.parent
-        if executable.name.lower() in {"python.exe", "pythonw.exe"}
-        else executable.parent.parent
-    )
-    destination = paths.runtime.data_root.parent / ".palm-helper-runtime"
-    log = paths.runtime.data_root / "logs" / "updater.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if not (destination / executable.relative_to(source)).is_file():
-            if destination.exists():
-                shutil.rmtree(destination, ignore_errors=True)
-            destination.mkdir(parents=True)
-            _copy_helper_runtime(source, destination)
-            with log.open("a", encoding="utf-8") as handle:
-                handle.write(f"helper runtime copied to {destination}\n")
-        copied = destination / executable.relative_to(source)
-    except (OSError, ValueError) as error:
-        raise UpdateError(f"helper runtime could not be prepared: {error}") from error
-    if not copied.is_file():
-        raise UpdateError(f"helper runtime is incomplete: {copied}")
-    return copied
-
-
-def _copy_helper_runtime(source: Path, destination: Path) -> None:
-    """Copy only the interpreter/shared libraries/stdlib needed by helpers."""
-    for entry in source.iterdir():
-        name = entry.name.lower()
-        if entry.is_dir():
-            if name in {"site-packages", "test", "tests", "__pycache__", "include"}:
-                continue
-            if name in {"dlls", "lib", "bin"}:
-                shutil.copytree(
-                    entry,
-                    destination / entry.name,
-                    symlinks=True,
-                    ignore=shutil.ignore_patterns(
-                        "site-packages", "test", "tests", "__pycache__", "*.pyc"
-                    ),
-                )
-        elif name in {"python.exe", "pythonw.exe"} or name.endswith(
-            (".dll", ".dylib", ".so", ".zip", ".pyd")
-        ):
-            shutil.copy2(entry, destination / entry.name)
-
-
-def _version_key(value: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\d+", value))
-
-
-def _clear_pending(plan: Path, payload: dict[str, Any]) -> None:
-    plan.unlink(missing_ok=True)
-    plan.with_name(plan.name + ".launched").unlink(missing_ok=True)
-    asset = payload.get("asset")
-    if isinstance(asset, str):
-        Path(asset).unlink(missing_ok=True)
-
-
-def launch_pending_update(
-    paths: LauncherPaths,
-    *,
-    popen: Callable[..., Any] | None = None,
-) -> str:
-    """Launch the staged update helper, if any, before the app exits."""
-    plan = paths.runtime.data_root / "updates" / "pending.json"
-    marker = plan.with_name(plan.name + ".launched")
-    if marker.is_file():
-        return "Update helper has already been launched."
-    if not plan.is_file():
-        return "No pending update."
-    try:
-        payload = json.loads(plan.read_text(encoding="utf-8"))
-        metadata = load_metadata(paths.runtime.app_root, paths.runtime.data_root)
-        version = str(payload.get("version", ""))
-        if version and _version_key(version) <= _version_key(metadata.version):
-            _clear_pending(plan, payload)
-            return "No newer update pending; removed stale plan."
-        executable = _external_python(paths)
-        launch_helper(plan, python=executable, popen=popen)
-        marker.write_text("launched\n", encoding="utf-8")
-    except (UpdateError, OSError, ValueError, json.JSONDecodeError) as error:
-        try:
-            log = paths.runtime.data_root / "logs" / "updater.log"
-            log.parent.mkdir(parents=True, exist_ok=True)
-            with log.open("a", encoding="utf-8") as handle:
-                handle.write(f"pending update launch failed: {error}\n")
-        except OSError:
-            pass
-        return f"Pending update could not be launched: {error}"
-    return "Update helper launched; PALM will swap and restart after Quit."
-
-
-def uninstall_app(
-    controller: LauncherController,
-    paths: LauncherPaths,
-    *,
-    delete_data: bool = False,
-    helper: Path | None = None,
-    popen: Callable[..., Any] | None = None,
-) -> Path:
-    """Stop the app, then launch the external uninstall helper (default keep data)."""
-    controller.stop()
-    executable = helper or _external_helper(paths, "uninstall_helper.py")
-    shortcuts = (
-        Path.home() / ".local/share/applications/palm.desktop",
-        Path.home() / ".local/bin/palm",
-    )
-    plan = UninstallPlan(
-        app_root=_install_root(paths.runtime.app_root),
-        data_root=paths.runtime.data_root,
-        delete_data=delete_data is True,
-        pid=os.getpid(),
-        shortcuts=shortcuts,
-    )
-    return launch_uninstall_helper(
-        plan,
-        executable,
-        python=_external_python(paths),
-        popen=popen,
-        log_path=paths.runtime.data_root / "logs" / "updater.log",
-    )
-
-
-def _external_helper(paths: LauncherPaths, name: str) -> Path:
-    """Copy a packaged updater/helper below the writable data root."""
-    roots = (
-        paths.runtime.app_root / "updaters",
-        paths.runtime.app_root.parent / "updaters",
-        paths.runtime.app_root.parents[1] / "updaters"
-        if len(paths.runtime.app_root.parents) > 1
-        else paths.runtime.app_root.parent / "updaters",
-    )
-    destination = paths.runtime.data_root / "updates" / "helpers" / name
-    for root in roots:
-        source = root / name
-        if source.is_file():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            for helper_name in ("update_helper.py", "uninstall_helper.py"):
-                sibling = root / helper_name
-                if sibling.is_file():
-                    copied = destination.parent / helper_name
-                    shutil.copy2(sibling, copied)
-                    copied.chmod(0o755)
-            return destination
-    return paths.runtime.app_root.parent / name
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read install metadata {path}: {error}") from error
+    channel = payload.get("channel")
+    version = payload.get("version")
+    assets = payload.get("assets")
+    if not isinstance(channel, str) or not channel or not isinstance(version, str):
+        raise ValueError("install metadata needs channel and version")
+    raw = assets.get(channel, {}) if isinstance(assets, dict) else {}
+    asset_url = str(raw.get("url", "")) if isinstance(raw, dict) else ""
+    marker = "/releases/download/"
+    if marker in asset_url:
+        page = asset_url.split(marker, 1)[0] + f"/releases/tag/v{version}"
+    elif asset_url:
+        page = asset_url
+    else:
+        page = f"https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/v{version}"
+    return page, channel, version
 
 
 def check_for_updates(
     paths: LauncherPaths,
     *,
-    fetch_release: Callable[[str], Any] | None = None,
-    download: Callable[[str, Path], None] | None = None,
+    open_url: Callable[[str], Any] = webbrowser.open,
 ) -> str:
-    """Read install.json, check the channel and stage a verified update."""
+    """Open the matching release page; never download or replace the app."""
     try:
-        metadata = load_metadata(paths.runtime.app_root, paths.runtime.data_root)
-    except UpdateError as error:
+        page, channel, version = release_page(paths)
+        open_url(page)
+    except (ValueError, OSError) as error:
         return f"Update check failed: {error}"
-    release_url = os.environ.get(
-        "PALM_UPDATE_MANIFEST",
-        "https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/latest/download/release.json",
+    return (
+        f"Opened the {channel} {version} release page. Download the matching "
+        "asset and SHA256SUMS, quit PALM, then replace the app folder. Your "
+        "data root (projects, models and tools) is preserved."
     )
-    try:
-        candidate = check_for_update(metadata, fetch_release=fetch_release, release_url=release_url)
-    except (UpdateError, OSError) as error:
-        return f"Update check failed: {error}"
-    if candidate is None:
-        return f"No update available for {metadata.channel} (installed {metadata.version})."
-    try:
-        staged = stage_update(candidate, paths.runtime.data_root, download=download)
-        helper = _external_helper(paths, "update_helper.py")
-        if not helper.is_file():
-            return "Update is available but the external update helper is missing."
-        app_root = _install_root(paths.runtime.app_root)
-        pending = write_plan(
-            metadata,
-            candidate,
-            staged,
-            helper,
-            app_root=app_root,
-            restart=_restart_command(app_root),
-        )
-        pending.with_name(pending.name + ".launched").unlink(missing_ok=True)
-    except (UpdateError, OSError) as error:
-        return f"Update could not be staged: {error}"
-    return f"Update {candidate.version} staged; quit PALM to install and restart."
 
 
 def run_control(
@@ -486,19 +233,12 @@ def run_control(
         def update_action() -> str:
             return check_for_updates(paths)
 
-        def uninstall_action() -> str:
-            helper = _external_helper(paths, "uninstall_helper.py")
-            uninstall_app(controller, paths, helper=helper)
-            return "Uninstall helper launched; your data is kept."
-
         ControlWindow(
             root,
             controller,
             ttk=ttk,
             tk=tk,
             update_action=update_action,
-            uninstall_action=uninstall_action,
-            quit_action=lambda: launch_pending_update(paths),
         )
         root.mainloop()
         return 0

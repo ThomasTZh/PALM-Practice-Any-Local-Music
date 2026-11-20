@@ -66,8 +66,6 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "palm-0.1.0-dev-windows-x86_64/licenses/third_party/manifest.json",
         "palm-0.1.0-dev-windows-x86_64/install.json",
         "palm-0.1.0-dev-windows-x86_64/PALM.exe",
-        "palm-0.1.0-dev-windows-x86_64/updaters/update_helper.py",
-        "palm-0.1.0-dev-windows-x86_64/updaters/uninstall_helper.py",
         "palm-0.1.0-dev-windows-x86_64/runtime-requirements.txt",
     ]
     with zipfile.ZipFile(archive, "w") as bundle:
@@ -102,7 +100,6 @@ def test_built_zip_has_only_allowed_payload_when_present() -> None:
     assert any(name.endswith("analysis/envs/cpu-windows/uv.lock") for name in lower)
     assert any(name.endswith("/palm.exe") for name in lower)
     assert any(name.endswith("/install.json") for name in lower)
-    assert any(name.endswith("/updaters/update_helper.py") for name in lower)
     assert any(name.endswith("/licenses/third_party/manifest.json") for name in lower)
     assert not any(
         ("/ffmpeg" in name or "/sonic-annotator" in name) and "/licenses/" not in name

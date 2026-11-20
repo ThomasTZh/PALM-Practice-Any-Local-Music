@@ -476,3 +476,13 @@ Clean-runner GitHub Actions run **44194142489** succeeded on branch
 - Windows PALM.exe archive entry is 0777/Unix; macOS wrapper mode is checked by
   the artifact-mode step. No release/tag/asset was created; candidates remain
   held.
+
+
+## t145 helper retirement
+
+The custom updater/uninstall helper system was retired after t140. The runtime
+no longer ships `updater.py`, `packaging/updaters`, pending plans, helper
+runtimes, swap/restart code or a custom Uninstall button. Check for updates now
+opens the matching release/download page; removal is OS-level and keeps the
+data root by default. Historical t140 entries above describe the held artifacts
+built before this retirement.

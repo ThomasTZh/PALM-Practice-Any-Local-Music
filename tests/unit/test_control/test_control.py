@@ -244,30 +244,19 @@ def test_control_window_starts_and_quits_with_shared_controller() -> None:
 
     root = Root()
     controller = Controller()
-    actions: list[str] = []
-    cancelled: list[bool] = []
     window = control.ControlWindow(  # type: ignore[arg-type]
         root,
         controller,
         ttk=Ttk,
         tk=Tk,
-        update_action=lambda: "checked",
-        uninstall_action=lambda: actions.append("uninstall") or "launched",
-        confirm_uninstall=lambda: cancelled.append(True) or False,
-        quit_action=lambda: actions.append("quit") or "launched",
+        update_action=lambda: "release page opened",
     )
     window.start()
     assert "Running at" in window.status.value
     window.check_update()
-    assert window.detail.value == "checked"
-    window.uninstall()
-    assert actions == []
-    window._confirm_uninstall = lambda: True
-    window.uninstall()
-    assert actions == ["uninstall"]
+    assert window.detail.value == "release page opened"
     assert root.callback is not None
     window.quit()
-    assert actions == ["uninstall", "quit"]
     assert controller.stopped == 1
     assert root.destroyed
 
@@ -296,270 +285,17 @@ def test_window_and_console_are_explicit_modes(
     assert len(called) == 1
 
 
-def test_check_for_updates_reports_no_update_and_network_error(
-    paths: LauncherPaths, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from types import SimpleNamespace
-
-    from basseparate.updater import UpdateError
-
-    metadata = SimpleNamespace(
-        channel="linux-x86_64",
-        version="0.1.0",
-        app_root=paths.runtime.app_root,
-        data_root=paths.runtime.data_root,
+def test_check_for_updates_opens_release_page(paths: LauncherPaths) -> None:
+    (paths.runtime.app_root / "install.json").write_text(
+        '{"channel":"linux-x86_64","version":"0.2.0","assets":{"linux-x86_64":'
+        '{"url":"https://github.com/o/r/releases/download/v0.2.0/PALM.tar.gz"}}}'
     )
-    monkeypatch.setattr(control, "load_metadata", lambda *_a, **_k: metadata)
-    monkeypatch.setattr(control, "check_for_update", lambda *_a, **_k: None)
-    assert "No update available" in control.check_for_updates(paths)
+    opened: list[str] = []
+    message = control.check_for_updates(paths, open_url=lambda url: opened.append(url) or True)
+    assert opened == ["https://github.com/o/r/releases/tag/v0.2.0"]
+    assert "Download" in message and "quit PALM" in message
 
-    def network_error(*_a: Any, **_k: Any) -> Any:
-        raise UpdateError("network unavailable")
 
-    monkeypatch.setattr(control, "check_for_update", network_error)
-    message = control.check_for_updates(paths)
+def test_check_for_updates_reports_metadata_error(paths: LauncherPaths) -> None:
+    message = control.check_for_updates(paths, open_url=lambda _url: True)
     assert message.startswith("Update check failed")
-    assert "network unavailable" in message
-
-
-def test_check_for_updates_stages_verified_asset(
-    paths: LauncherPaths, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from types import SimpleNamespace
-
-    from basseparate.updater import UpdateAsset
-
-    metadata = SimpleNamespace(
-        channel="linux-x86_64",
-        version="0.1.0",
-        app_root=paths.runtime.app_root,
-        data_root=paths.runtime.data_root,
-    )
-    candidate = UpdateAsset(
-        channel="linux-x86_64",
-        version="0.2.0",
-        name="PALM-0.2.0-linux-x86_64.tar.gz",
-        url="https://example.invalid/new.tar.gz",
-        sha256="a" * 64,
-        kind="tar.gz",
-    )
-    staged = paths.runtime.data_root / "updates/0.2.0/new.tar.gz"
-    helper = paths.runtime.app_root / "updaters/update_helper.py"
-    helper.parent.mkdir()
-    helper.write_text("# helper")
-    monkeypatch.setattr(control, "load_metadata", lambda *_a, **_k: metadata)
-    monkeypatch.setattr(control, "check_for_update", lambda *_a, **_k: candidate)
-    monkeypatch.setattr(control, "stage_update", lambda *_a, **_k: staged)
-    message = control.check_for_updates(paths)
-    assert "staged" in message
-    assert (paths.runtime.data_root / "updates/helpers/update_helper.py").is_file()
-    assert (paths.runtime.data_root / "updates/pending.json").is_file()
-
-
-def test_macos_helper_layout_and_install_root(tmp_path: Path) -> None:
-    bundle = tmp_path / "PALM.app"
-    app = bundle / "Contents" / "Resources" / "app"
-    data = tmp_path / "data"
-    app.mkdir(parents=True)
-    data.mkdir()
-    (bundle / "Contents" / "MacOS").mkdir(parents=True)
-    (bundle / "Contents" / "MacOS" / "palm").write_text("#!/bin/sh\n")
-    (bundle / "Contents" / "Resources" / "updaters").mkdir()
-    helper = bundle / "Contents" / "Resources" / "updaters" / "uninstall_helper.py"
-    helper.write_text("# helper")
-    runtime = runtime_paths(mode="packaged", app_root=app, data_root=data)
-    paths = LauncherPaths.from_runtime(runtime)
-    paths.ensure()
-    copied = control._external_helper(paths, "uninstall_helper.py")
-    assert copied == data / "updates/helpers/uninstall_helper.py"
-    assert copied.read_text() == "# helper"
-    assert control._install_root(app) == bundle
-    assert control._restart_command(bundle) == [str(bundle / "Contents/MacOS/palm"), "--window"]
-
-
-def test_launch_pending_update_and_no_pending(paths: LauncherPaths) -> None:
-    assert control.launch_pending_update(paths) == "No pending update."
-    helper = paths.runtime.data_root / "updates/helpers/update_helper.py"
-    helper.parent.mkdir(parents=True)
-    helper.write_text("# helper")
-    (paths.runtime.app_root / "install.json").write_text(
-        '{"channel": "linux-x86_64", "version": "0.1.0", "assets": {}}'
-    )
-    plan = paths.runtime.data_root / "updates/pending.json"
-    plan.write_text(
-        '{"version": "0.2.0", "app_root": "'
-        + str(paths.runtime.app_root)
-        + '", "data_root": "'
-        + str(paths.runtime.data_root)
-        + '", "helper": "'
-        + str(helper)
-        + '"}'
-    )
-    calls: list[list[str]] = []
-    message = control.launch_pending_update(
-        paths, popen=lambda command, **kw: calls.append(command)
-    )
-    assert "launched" in message
-    assert calls and "--plan" in calls[0]
-
-
-def test_windows_helper_layout_copies_outside_app(tmp_path: Path) -> None:
-    app = tmp_path / "PALM app ü"
-    data = tmp_path / "data"
-    app.mkdir()
-    data.mkdir()
-    (app / "updaters").mkdir()
-    (app / "updaters" / "update_helper.py").write_text("# update")
-    (app / "updaters" / "uninstall_helper.py").write_text("# uninstall")
-    runtime = runtime_paths(mode="packaged", app_root=app, data_root=data)
-    paths = LauncherPaths.from_runtime(runtime)
-    paths.ensure()
-    for name in ("update_helper.py", "uninstall_helper.py"):
-        copied = control._external_helper(paths, name)
-        assert copied == data / "updates/helpers" / name
-        assert copied.is_file()
-        assert not copied.resolve().is_relative_to(app.resolve())
-    assert control._install_root(app) == app
-
-
-def test_copied_uninstall_helper_runs_with_real_plan(paths: LauncherPaths) -> None:
-    import subprocess
-    import sys as _sys
-
-    from basseparate.updater import UninstallPlan, write_uninstall_plan
-
-    app = paths.runtime.app_root
-    helper = app / "updaters" / "uninstall_helper.py"
-    helper.parent.mkdir()
-    source_root = Path(__file__).resolve().parents[3] / "packaging/updaters"
-    for name in ("update_helper.py", "uninstall_helper.py"):
-        (app / "updaters" / name).write_text((source_root / name).read_text())
-    copied = control._external_helper(paths, "uninstall_helper.py")
-    assert (copied.parent / "update_helper.py").is_file()
-    plan = write_uninstall_plan(UninstallPlan(app, paths.runtime.data_root, False, 0, ()), copied)
-    result = subprocess.run([_sys.executable, str(copied), "--plan", str(plan)], check=False)
-    assert result.returncode == 0
-    assert not app.exists()
-    assert paths.runtime.data_root.is_dir()
-
-
-def test_stale_and_second_quit_do_not_relaunch(paths: LauncherPaths) -> None:
-    helper = paths.runtime.data_root / "updates/helpers/update_helper.py"
-    helper.parent.mkdir(parents=True)
-    helper.write_text("# helper")
-    (paths.runtime.app_root / "install.json").write_text(
-        '{"channel": "linux-x86_64", "version": "0.2.0", "assets": {}}'
-    )
-    plan = paths.runtime.data_root / "updates/pending.json"
-    plan.write_text(
-        '{"version": "0.1.0", "app_root": "'
-        + str(paths.runtime.app_root)
-        + '", "data_root": "'
-        + str(paths.runtime.data_root)
-        + '", "asset": "'
-        + str(paths.runtime.data_root / "updates/old.tar.gz")
-        + '", "helper": "'
-        + str(helper)
-        + '"}'
-    )
-    assert "No newer" in control.launch_pending_update(paths)
-    assert not plan.exists()
-    plan.write_text(
-        '{"version": "0.3.0", "app_root": "'
-        + str(paths.runtime.app_root)
-        + '", "data_root": "'
-        + str(paths.runtime.data_root)
-        + '", "helper": "'
-        + str(helper)
-        + '"}'
-    )
-    calls: list[list[str]] = []
-    assert "launched" in control.launch_pending_update(
-        paths, popen=lambda command, **kw: calls.append(command)
-    )
-    assert "already been launched" in control.launch_pending_update(
-        paths, popen=lambda command, **kw: calls.append(command)
-    )
-    assert len(calls) == 1
-
-
-def test_uninstall_action_auto_closes_window(paths: LauncherPaths) -> None:
-    # The existing fake-window test covers confirmation; this checks the
-    # scheduled quit callback is installed after a successful action.
-    from types import SimpleNamespace
-
-    class Root:
-        destroyed = False
-        callback: Any = None
-
-        def after(self, _delay: int, callback: Any) -> None:
-            self.callback = callback
-
-        def destroy(self) -> None:
-            self.destroyed = True
-
-    window = control.ControlWindow.__new__(control.ControlWindow)
-    window.root = Root()
-    window.controller = SimpleNamespace(stop=lambda: None)
-    window.detail = SimpleNamespace(set=lambda _value: None)
-    window._confirm_uninstall = lambda: True
-    window._uninstall_action = lambda: "launched"
-    window._quitting = False
-    window._quit_action = None
-    window.uninstall()
-    assert window.root.callback is not None
-
-
-def test_external_python_copies_minimal_runtime_for_all_layouts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cases = {
-        "windows": ("app", "python/python.exe", ["python311.dll", "python311.zip"]),
-        "linux": ("app", "python/bin/python3.11", ["python/lib/libpython3.11.so"]),
-        "macos": (
-            "PALM.app/Contents/Resources/app",
-            "python/bin/python3.11",
-            ["python/lib/libpython3.11.dylib"],
-        ),
-    }
-    for name, (app_rel, exe_rel, extras) in cases.items():
-        root = tmp_path / name
-        app = root / app_rel
-        data = root / "data"
-        exe = root / app_rel / exe_rel
-        exe.parent.mkdir(parents=True)
-        exe.write_text("exe")
-        for extra in extras:
-            target = root / app_rel / extra
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("lib")
-        if name == "windows":
-            (root / app_rel / "python311.zip").write_text("stdlib")
-        runtime = runtime_paths(mode="packaged", app_root=app, data_root=data)
-        paths = LauncherPaths.from_runtime(runtime)
-        paths.ensure()
-        monkeypatch.setattr(control.sys, "executable", str(exe))
-        copied = control._external_python(paths)
-        assert copied.is_file()
-        assert not copied.resolve().is_relative_to(data.resolve())
-        assert not copied.resolve().is_relative_to(app.resolve())
-
-
-def test_quit_surfaces_pending_update_launch_failure() -> None:
-    from types import SimpleNamespace
-
-    class Root:
-        destroyed = False
-
-        def destroy(self) -> None:
-            self.destroyed = True
-
-    window = control.ControlWindow.__new__(control.ControlWindow)
-    window.root = Root()
-    window.controller = SimpleNamespace(stop=lambda: None)
-    window.detail = SimpleNamespace(values=[], set=lambda value: window.detail.values.append(value))
-    window._quitting = False
-    window._quit_action = lambda: "Pending update could not be launched: boom"
-    window.quit()
-    assert window.root.destroyed is False
-    assert window.detail.values[-1].startswith("Pending update could not be launched")

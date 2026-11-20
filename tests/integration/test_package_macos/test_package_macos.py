@@ -105,8 +105,6 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "PALM.app/Contents/Resources/app/licenses/third_party/manifest.json",
         "PALM.app/Contents/Resources/app/install.json",
         "PALM.app/Contents/Resources/app/runtime-requirements.txt",
-        "PALM.app/Contents/Resources/updaters/update_helper.py",
-        "PALM.app/Contents/Resources/updaters/uninstall_helper.py",
     ]
     with zipfile.ZipFile(archive, "w") as bundle:
         for name in required:
@@ -175,7 +173,6 @@ def test_built_macos_zip_when_present() -> None:
     lower = [name.lower() for name in names]
     assert any(name.endswith("palm.app/contents/macos/palm") for name in lower)
     assert any(name.endswith("resources/app/install.json") for name in lower)
-    assert any(name.endswith("resources/updaters/update_helper.py") for name in lower)
     assert any(name.endswith("resources/app/licenses/third_party/manifest.json") for name in lower)
     assert any(name.endswith("resources/app/python/bin/python3.11") for name in lower)
     assert any(name.endswith("resources/app/bin/uv") for name in lower)
