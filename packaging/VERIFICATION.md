@@ -486,3 +486,38 @@ runtimes, swap/restart code or a custom Uninstall button. Check for updates now
 opens the matching release/download page; removal is OS-level and keeps the
 data root by default. Historical t140 entries above describe the held artifacts
 built before this retirement.
+
+## t162 final held artifacts (analysis-blocked beta)
+
+Product tree: 202ee3f (review report), built at CI checkout c0b2de9, which adds
+only Windows/macOS workflow assertions. Clean-runner portable run
+**44765809960** succeeded Linux, Windows and macOS arm64 jobs (Intel skipped).
+
+Artifacts held in `/home/thomas/Documents/basseparate/dist/`:
+
+| Asset | Size (bytes) | SHA-256 |
+| --- | ---: | --- |
+| PALM-0.1.0-dev-linux-x86_64.tar.gz | 88,417,381 | `3f17975de1e111a462e3ffd66d038dcce137005610cab7e7c7b69e76ca3f4876` |
+| PALM-0.1.0-dev-windows-x86_64-installer.exe | 50,573,744 | `e129cbe2ee57da3583e5675ca0e7907dfa59bfb9d34af812d28343b4029c9b26` |
+| PALM-0.1.0-dev-windows-x86_64.zip | 79,688,568 | `a86a3c5095120b0235d1aa79e11964597c6ca020c04496f3ce69748bbbb01185` |
+| PALM-0.1.0-dev-macos-arm64.zip | 69,372,901 | `886aad3a87c0e39168845879a375282ef6a14143eec79c6946e3b50758a27e11` |
+| PALM-0.1.0-dev-macos-arm64.dmg | 83,741,939 | `f72ed5f457714be239cba53787a9601c2db77d196c83fc35236d43e7abda9d63` |
+
+`dist/SHA256SUMS` is one combined manifest for all five assets; `sha256sum -c`
+passes.
+
+Native evidence:
+- Windows: Inno Setup built the 50,573,744 B installer from the shared stage;
+  native package tests 7 passed (silent per-user install, Start Menu shortcut,
+  installed PALM.exe launch, upgrade, app-only uninstall keeping data). The
+  Windows smoke queried `/api/setup/status`: platform windows, `tools` empty,
+  and media/environment/model paths present; Windows analysis is blocked.
+- macOS: 24 package tests passed, including native DMG mount, Applications
+  symlink, PALM.app/0755 checks; native app health/browser smoke passed.
+- Linux: full gate/tar/control smoke passed.
+- No custom updater/uninstall helper is present. No Vamp/Sonic/FFmpeg/model
+  payload is shipped; only licence notices are included. `PALM.exe` is 0777 in
+  the ZIP and the macOS wrapper is 0755.
+- No release or tag was published; the temporary CI tag was deleted. The
+  analysis-blocked Windows label and managed-FFmpeg wording are in the shipped
+  README/release notes.
