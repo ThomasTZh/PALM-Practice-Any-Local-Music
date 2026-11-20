@@ -6,6 +6,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -197,5 +198,9 @@ def test_native_installer_install_upgrade_uninstall(tmp_path: Path) -> None:
         ).returncode
         == 0
     )
+    for _ in range(60):
+        if not app_dir.exists():
+            break
+        time.sleep(0.5)
     assert not app_dir.exists()
     assert keep.is_file()
