@@ -119,7 +119,8 @@ jobs:
           python -c "import hashlib,pathlib; p=pathlib.Path('sonic.zip'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '%SONIC_SHA256%'"
           powershell -NoProfile -Command "Expand-Archive -Path sonic.zip -DestinationPath . -Force"
           set VAMP_PATH=%CD%\bundle
-          sonic-annotator-win64\sonic-annotator.exe --list > plugins.txt
+          sonic-annotator-win64\sonic-annotator.exe --list > plugins.txt 2> sonic.err
+          type sonic.err
           type plugins.txt
           findstr /C:":chordino:simplechord" plugins.txt || exit /b 1
           findstr /C:":qm-keydetector:key" plugins.txt || exit /b 1
