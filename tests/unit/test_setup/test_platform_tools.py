@@ -155,7 +155,17 @@ def test_windows_vamp_uses_inno_silent_flags_and_target(
     assert (target / "qm-vamp-plugins.dll").is_file()
     assert sum("powershell.exe" in command[0] for command in commands) == 1
     script = commands[0][-1]
-    for flag in ("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=", "/LOG="):
+    for flag in (
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/SP-",
+        "/TYPE=full",
+        "/COMPONENTS=*",
+        "/TASKS=*",
+        "/DIR=",
+        "/LOG=",
+    ):
         assert flag in script
     assert str(runtime.tools_root / "vamp-install.log") in script
 
@@ -382,3 +392,57 @@ def test_windows_macos_tool_status_paths(tmp_path: Path, monkeypatch: pytest.Mon
     assert status["sonic_visualiser"]["name"] == "Sonic Annotator"
     assert status["sonic_visualiser"]["path"] == str(windows_exe)
     assert status["vamp_plugin_pack"]["path"] == str(windows_plugin)
+
+
+def test_inno_arguments_are_fully_silent_and_select_all_components(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "Vamp Plugins"
+    log = tmp_path / "vamp-install.log"
+    arguments = tool_assets._inno_arguments(target, log)
+    assert arguments == (
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/SP-",
+        "/TYPE=full",
+        "/COMPONENTS=*",
+        "/TASKS=*",
+        f'/DIR="{target}"',
+        f'/LOG="{log}"',
+    )
+
+
+def test_missing_explicit_component_selection_is_a_silent_install_regression(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    target = tmp_path / "data" / "tools" / "vamp-plugins"
+    asset = tool_assets.PLATFORM_ASSETS[("windows", "vamp_plugin_pack")]
+    archive = tmp_path / "installer.exe"
+    archive.write_bytes(b"installer")
+    monkeypatch.setattr(
+        tool_assets,
+        "_inno_arguments",
+        lambda _target, _log: (
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+        ),
+    )
+
+    def runner(command: list[str]):
+        script = command[-1]
+        if "/COMPONENTS=*" in script:
+            target.mkdir(parents=True)
+            (target / "qm-vamp-plugins.dll").write_bytes(b"dll")
+        return
+
+    with pytest.raises(SetupInstallError) as caught:
+        tool_assets._install_vamp_windows(asset, archive, target, runner)
+    message = str(caught.value)
+    assert "required Vamp plugins" in message
+    assert str(target.parent / "vamp-install.log") in message

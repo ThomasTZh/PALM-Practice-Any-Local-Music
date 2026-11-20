@@ -181,15 +181,40 @@ def standard_vamp_dirs() -> tuple[Path, ...]:
     return tuple(dict.fromkeys(directories))
 
 
+VAMP_REQUIRED_WINDOWS_DLLS = ("qm-vamp-plugins.dll",)
+
+
+def _inno_arguments(target: Path, log_path: Path) -> tuple[str, ...]:
+    """The exact silent Inno arguments; explicit components/tasks avoid pages."""
+    return (
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/SP-",
+        "/TYPE=full",
+        "/COMPONENTS=*",
+        "/TASKS=*",
+        f'/DIR="{target}"',
+        f'/LOG="{log_path}"',
+    )
+
+
+def _missing_vamp_dlls(target: Path) -> list[str]:
+    return [name for name in VAMP_REQUIRED_WINDOWS_DLLS if not (target / name).is_file()]
+
+
 def _copy_vamp_dlls(source_root: Path, target: Path) -> bool:
-    plugin = next(source_root.rglob("qm-vamp-plugins.dll"), None)
-    if plugin is None:
+    source = next(
+        (directory for name in VAMP_REQUIRED_WINDOWS_DLLS for directory in source_root.rglob(name)),
+        None,
+    )
+    if source is None:
         return False
     target.mkdir(parents=True, exist_ok=True)
-    for dll in plugin.parent.glob("*.dll"):
+    for dll in source.parent.glob("*.dll"):
         if dll.is_file():
             shutil.copy2(dll, target / dll.name)
-    return (target / "qm-vamp-plugins.dll").is_file()
+    return not _missing_vamp_dlls(target)
 
 
 def _install_vamp_windows(
@@ -201,12 +226,12 @@ def _install_vamp_windows(
     target.mkdir(parents=True, exist_ok=True)
     log_path = target.parent / "vamp-install.log"
     quoted_installer = str(archive).replace("'", "''")
-    quoted_target = str(target).replace("'", "''")
-    quoted_log = str(log_path).replace("'", "''")
+    arguments = ",".join(
+        "'" + item.replace("'", "''") + "'" for item in _inno_arguments(target, log_path)
+    )
     script = (
         f"$p = Start-Process -FilePath '{quoted_installer}' "
-        "-ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"
-        f"'/DIR=\"{quoted_target}\"','/LOG=\"{quoted_log}\"') "
+        f"-ArgumentList @({arguments}) "
         "-Verb RunAs -Wait -PassThru; exit $p.ExitCode"
     )
     try:
@@ -221,15 +246,16 @@ def _install_vamp_windows(
             f"Windows administrator approval was denied or the Inno Setup installer "
             f"failed; see {log_path} and retry setup, approving the UAC prompt."
         )
-    if (target / "qm-vamp-plugins.dll").is_file():
+    if not _missing_vamp_dlls(target):
         return
     for directory in standard_vamp_dirs():
         if _copy_vamp_dlls(directory, target):
             return
+    missing = ", ".join(_missing_vamp_dlls(target))
     raise SetupInstallError(
-        f"the Inno Setup installer did not produce qm-vamp-plugins.dll under {target} "
-        f"or the standard Vamp directory; see {log_path} and retry setup, approving "
-        "the UAC prompt."
+        f"the Inno Setup installer did not produce required Vamp plugins ({missing}) "
+        f"under {target} or the standard Vamp directory; see {log_path} and retry "
+        "setup, approving the UAC prompt."
     )
 
 
