@@ -1,0 +1,24 @@
+PALM Windows 64-bit Vamp plugin bundle
+
+Components: QM Key Detector, QM Bar and Beat Tracker (qm-vamp-plugins),
+Chordino and NNLS-Chroma (nnls-chroma), with the Vamp Plugin SDK.
+Version: 1.0.0
+Copyright: Queen Mary University of London; Matthias Mauch and contributors.
+Licence: GPL-2.0-or-later. Full text:
+licenses/third_party/licenses/GPL-2.0-or-later.txt
+
+Built in PALM's Windows CI from pinned upstream source commits using MSVC
+(QM plugin) and MinGW-w64 x64 (Chordino). The bundle contains the two plugin
+DLLs, their catalogs and the upstream licence texts. It is downloaded by
+setup into <data>/tools/vamp-plugins and is never committed or bundled in the
+PALM installer/ZIP/DMG.
+
+Source repositories:
+  https://github.com/c4dm/qm-vamp-plugins
+  https://github.com/c4dm/qm-dsp
+  https://github.com/c4dm/nnls-chroma
+  https://github.com/vamp-plugins/vamp-plugin-sdk
+Release:
+  https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/plugins-win64-v1
+SHA-256:
+  08b287daae9aa0c0c8339adc96858941f8d8cb18f4869d98d8cc902b4e97a15e

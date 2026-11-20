@@ -52,7 +52,8 @@ FFmpeg/FFprobe sources:
 | --- | --- | --- | --- |
 | Sonic Visualiser / Piper host | 5.2.1 | GPL-2.0-or-later | Linux analysis host, installed below the data root by setup |
 | Sonic Annotator | 1.7 | GPL-2.0-or-later | Windows/macOS analysis backend, installed below the data root by setup |
-| Vamp Plugin Pack | 2.0 | AGPL-3.0 for the pack; individual plugins GPL/AGPL | Chord/key/beat plugins on Linux and macOS; Windows blocked because the official pack is a 32-bit GUI and no 64-bit redistributable QM build exists |
+| Vamp Plugin Pack | 2.0 | AGPL-3.0 for the pack; individual plugins GPL/AGPL | Chord/key/beat plugins on Linux and macOS |
+| PALM Windows 64-bit Vamp bundle (`palm-vamp-plugins-win64`) | 1.0.0 | GPL-2.0-or-later | Native QM Key/BarBeat and Chordino/NNLS-Chroma for Windows x64, built in CI from pinned sources |
 | NNLS-Chroma / Chordino | pack 2.0 | GPL-2.0-or-later | Chord analysis |
 | QM Key Detector, QM Bar and Beat Tracker | pack 2.0 | GPL-2.0-or-later | Key, beats and bars |
 | BeatRoot | pack 2.0 | GPL-2.0-or-later | Beat analysis |
@@ -60,8 +61,11 @@ FFmpeg/FFprobe sources:
 These are separate executables/libraries, downloaded from pinned upstream
 releases and extracted into the writable data root. They are not committed to
 this repository and are not system-installed. Their source is available from
-the upstream projects listed in the download record. The manifest marks tools
-as `downloaded`; the release-audit test rejects a `bundled` tool or model.
+the upstream projects listed in the download record. The Windows 64-bit Vamp
+bundle is built by `.github/workflows/plugins-windows.yml` from the pinned QM,
+QM-DSP, NNLS-Chroma and Vamp SDK commits; the GPL source offer is recorded in
+`THIRD_PARTY_DOWNLOADS.md` and the bundle notice. The manifest marks tools as
+`downloaded`; the release-audit test rejects a `bundled` tool or model.
 
 ## Model weights
 

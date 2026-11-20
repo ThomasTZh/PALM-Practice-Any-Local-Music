@@ -61,6 +61,22 @@ def test_all_platform_assets_are_pinned() -> None:
         assert asset.size > 0
 
 
+def test_windows_vamp_bundle_pin_matches_license_manifest() -> None:
+    import json
+
+    asset = PLATFORM_ASSETS[("windows", "vamp_plugin_pack")]
+    manifest = json.loads(
+        (Path(__file__).resolve().parents[3] / "licenses/third_party/manifest.json").read_text()
+    )
+    component = next(
+        item for item in manifest["components"] if item["id"] == "palm-vamp-plugins-win64"
+    )
+    assert component["sha256"] == asset.sha256
+    assert component["size_bytes"] == asset.size
+    assert asset.url.endswith("/vamp-plugins-win64.zip")
+    assert component["license"] == "GPL-2.0-or-later"
+
+
 def test_windows_sonic_zip_extracts_into_data_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
