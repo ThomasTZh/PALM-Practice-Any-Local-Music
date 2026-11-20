@@ -83,9 +83,12 @@ installing anything. It must list every downloadable component with its
 version, licence, source link, size and Required/Optional state, including:
 
 - managed FFmpeg/FFprobe;
-- Sonic Annotator and the Vamp Plugin Pack;
 - the CPU inference environment;
 - the Demucs model.
+
+Windows Sonic/Vamp analysis is temporarily blocked while the 64-bit plugin
+bundle is rebuilt, so no Vamp/Sonic component or licence is offered on this
+platform.
 
 Open at least one licence and one Source link for each group and confirm they
 open in a new tab. Record the listed components, sizes and licence names in
@@ -95,7 +98,6 @@ licence text.
 Accept the group licences required by the page:
 
 - media tools (FFmpeg/FFprobe);
-- analysis/GPL tools (Sonic Annotator and the Vamp Plugin Pack);
 - CPU environment;
 - Demucs model.
 
@@ -129,24 +131,22 @@ Save screenshots of each step and the final setup state in
 `evidence/04-setup/`. If a step fails, save the exact error and its Retry or
 Open setup action; do not skip the step and do not use a terminal workaround.
 
-After setup, confirm in the setup page that media tools, analysis tools, CPU
-environment and Demucs show installed/ready.
+After setup, confirm in the setup page that media tools, CPU environment and
+Demucs show installed/ready. Analysis remains BLOCKED on this platform.
 
-## 6. CPU analysis
+## 6. Import, playback and separation (analysis blocked)
 
 Import a short local recording you own (5 to 30 seconds). Use the normal
-import and Analyse actions. Record:
+import, playback and Separate actions. Record:
 
 - import succeeds and the duration is shown;
-- chord ribbon is populated;
-- key and BPM are populated;
-- bar/beat grid is visible;
-- no missing-FFmpeg, missing-tool or `PiperUnavailable` error appears.
+- playback, speed, pitch, loop and metronome work;
+- separation returns stem lanes and at least one stem plays;
+- the Analyse control reports the Windows analysis blocker, with no UAC,
+  administrator or manual-DLL workaround.
 
-Screenshot the result in `evidence/05-analysis/`. Copy the control window's
-**View logs** view (or the relevant log screenshot) showing the analysis
-stages. If analysis fails, record the exact banner, log text and whether the
-app stayed responsive; do not retry silently more than once.
+Screenshot the result in `evidence/05-analysis-blocked/`. Do not claim chord,
+key, BPM or bar analysis on Windows; it is not part of this beta.
 
 ## 7. Short CPU separation
 
@@ -235,7 +235,7 @@ evidence\windows-beta\
   02-control\launch.png
   03-licences\summary.txt
   04-setup\
-  05-analysis\
+  05-analysis-blocked\
   06-separation\
   07-browser\
   08-control\quit.txt
@@ -254,14 +254,14 @@ Mark PASS, FAIL or BLOCKED with the evidence filename:
 - [ ] `PALM.exe` opens the control window with no console; the browser opens.
 - [ ] Licence summary lists every component with licence, source, size and
       Required/Optional; group consents gate installation.
-- [ ] Install recommended setup completes media tools, analysis tools, CPU and
-      Demucs without a separate FFmpeg install or DLL copy.
+- [ ] Install recommended setup completes media tools, CPU and Demucs without a
+      separate FFmpeg install or DLL copy.
 - [ ] Managed FFmpeg/FFprobe are reported ready; no `PALM_FFMPEG` override was
       needed.
 - [ ] Windows analysis blocker is clearly reported (temporary plugin-bundle
-      rebuild); no admin/manual-DLL workaround was offered.
-- [ ] CPU separation/downloads still work where the UI permits; analysis is
-      not claimed until the blocker is resolved.
+      rebuild); no admin/manual-DLL workaround was offered, and no Vamp/Sonic
+      component is listed as downloadable.
+- [ ] Import, playback and separation work; analysis is not claimed.
 - [ ] Separation returns the expected stem lanes and at least one stem plays.
 - [ ] Chrome playback passes play/speed/metronome/loop.
 - [ ] Firefox playback passes play/speed/metronome/loop.

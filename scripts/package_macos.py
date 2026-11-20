@@ -26,6 +26,14 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from release_checksums import update_checksums
+except ModuleNotFoundError:  # tests load this file directly via importlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from release_checksums import update_checksums
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "packaging" / "macos" / "build-manifest.toml"
 DIST = ROOT / "dist"
@@ -375,7 +383,7 @@ def build_zip(bundle_parent: Path, output: Path) -> Path:
 
 
 def write_checksums(output_dir: Path, version_value: str) -> Path:
-    """Write a flat SHA256SUMS file with basenames for ZIP/DMG artifacts."""
+    """Merge ZIP/DMG basenames into the shared SHA256SUMS manifest."""
     files = sorted(
         path
         for path in output_dir.glob(f"PALM-{version_value}-macos-arm64.*")
@@ -383,10 +391,8 @@ def write_checksums(output_dir: Path, version_value: str) -> Path:
     )
     if not files:
         raise PackageError(f"no macOS artifacts found in {output_dir}")
-    lines = [f"{sha256(path)}  {path.name}" for path in files]
-    checksums = output_dir / "SHA256SUMS"
-    checksums.write_text("\n".join(lines) + "\n", encoding="ascii")
-    print(f"package-macos: wrote {checksums} ({len(files)} basename entries)")
+    checksums = update_checksums(output_dir, files)
+    print(f"package-macos: wrote {checksums} ({len(files)} mac entries)")
     return checksums
 
 

@@ -31,6 +31,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+try:
+    from release_checksums import update_checksums
+except ModuleNotFoundError:  # tests load this file directly via importlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from release_checksums import update_checksums
+
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 CACHE = ROOT / "storage" / "tmp-package-cache"
@@ -456,9 +464,7 @@ def build_tar(stage: Path, output: Path) -> Path:
 
 
 def write_checksums(dist: Path, assets: Iterable[Path]) -> Path:
-    path = dist / "SHA256SUMS"
-    lines = [f"{sha256(asset)}  {asset.name}" for asset in assets if asset.is_file()]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path = update_checksums(dist, assets)
     print(f"package: wrote {path}")
     return path
 

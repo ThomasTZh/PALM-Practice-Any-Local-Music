@@ -27,6 +27,14 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from release_checksums import update_checksums
+except ModuleNotFoundError:  # tests load this file directly via importlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from release_checksums import update_checksums
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "packaging" / "windows" / "build-manifest.toml"
 DIST = ROOT / "dist"
@@ -446,7 +454,9 @@ def build(args: argparse.Namespace) -> int:
         clean_bytecode(stage_path)
         zip_path = build_zip(stage_path, output_dir / f"PALM-{version_value}-windows-x86_64.zip")
         check_zip(zip_path)
-        build_installer(stage_path, output_dir, version_value)
+        installer = build_installer(stage_path, output_dir, version_value)
+        assets = [zip_path] + ([installer] if installer is not None else [])
+        update_checksums(output_dir, assets)
         return 0
     except (PackageError, OSError, tarfile.TarError, zipfile.BadZipFile) as error:
         print(f"package-windows: {error}", file=sys.stderr)
