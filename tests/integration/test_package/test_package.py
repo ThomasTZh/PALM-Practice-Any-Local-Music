@@ -138,7 +138,24 @@ def test_built_tar_ships_current_readme_and_no_stale_release_text() -> None:
         "`ffmpeg` and `ffprobe` must already be installed",
         "Linux-only build",
         "delete-data",
+        "Windows and macOS are not packaged",
     ):
         assert stale not in combined
     assert "control window" in readme.lower()
     assert "SHA256SUMS" in notes
+
+
+def test_dist_checksum_manifest_covers_all_present_platform_assets() -> None:
+    assets = sorted(
+        path
+        for path in (ROOT / "dist").glob("PALM-*")
+        if path.suffix in {".gz", ".zip", ".exe", ".dmg"}
+    )
+    if not assets:
+        pytest.skip("no dist release assets")
+    manifest = (ROOT / "dist" / "SHA256SUMS").read_text()
+    for asset in assets:
+        digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+        assert f"{digest}  {asset.name}" in manifest, asset.name
+    if len({".dmg" in a.name for a in assets}) and len(assets) > 1:
+        assert len(assets) >= 2

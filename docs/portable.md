@@ -173,10 +173,11 @@ plugin pack are resolved there, not from the read-only app tree.
 1. **Managed FFmpeg/FFprobe** (required for import/decode): downloaded and
    SHA-256 verified into `<data>/tools/ffmpeg`; no external install or
    `PALM_FFMPEG` override is needed.
-2. **Analysis tools** (required for analysis): Sonic Annotator is installed on
-   Windows; Sonic Annotator and the Vamp Plugin Pack (AGPL-3.0; individual
-   plugins GPL/AGPL) are installed on macOS/Linux after consent. Windows
-   analysis remains unavailable because no 64-bit Vamp distribution exists.
+2. **Analysis tools** (required for analysis): Sonic Annotator and the Vamp
+   Plugin Pack (AGPL-3.0; individual plugins GPL/AGPL) are installed on
+   macOS/Linux after consent. Windows analysis is intentionally blocked while
+   the 64-bit bundle is rebuilt; setup shows the blocker and does not offer the
+   GUI pack or a manual DLL/UAC workaround.
 3. **One inference environment**: CPU (about **500 MB download**, works
    everywhere) or CUDA (about **3.5 GB download**, needs an NVIDIA GPU and
    driver). PyTorch wheels come from the pinned CPU or cu128 index.

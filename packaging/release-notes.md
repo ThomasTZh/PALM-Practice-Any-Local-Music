@@ -50,7 +50,9 @@ analysis tools, Python environments, recordings, tests, caches or `.git`.
 - Check for updates only opens the release page. There is no auto-updater.
 - The installer creates per-user Start Menu/desktop shortcuts and an uninstall
   entry. The uninstaller is app-only by default and keeps
-  `%LOCALAPPDATA%\palm`; scripted uninstall never deletes data.
+  `%LOCALAPPDATA%\palm`; scripted uninstall never deletes data. The interactive
+  "also delete data" branch remains a manual acceptance step and is not claimed
+  as CI-verified; do not treat it as verified until manual evidence is attached.
 - Portable ZIP: extract below the user profile and run **PALM.exe**. The control
   window starts the server and browser; Quit stops it. `palm.cmd` is diagnostic
   only.

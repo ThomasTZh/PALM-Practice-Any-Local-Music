@@ -42,8 +42,10 @@ models and tools in the data root are preserved.
 
 On first run the browser opens the licence and setup screen. Review the
 component licences, then use **Install recommended setup**: PALM downloads and
-verifies managed FFmpeg/FFprobe, Sonic Annotator and the Vamp Plugin Pack, the
-CPU environment and the selected model. FFmpeg is not an external prerequisite.
+verifies managed FFmpeg/FFprobe, the CPU environment and the selected model;
+Linux/macOS also install Sonic Annotator and the Vamp Plugin Pack. Windows
+analysis is temporarily blocked while the 64-bit bundle is rebuilt. FFmpeg is
+not an external prerequisite.
 `PALM_FFMPEG`/`PALM_FFPROBE` remain advanced overrides for a custom binary, not
 part of the normal installation.
 
@@ -117,7 +119,9 @@ for the downloads you choose, but does not upload anything:
   the data root. They are not bundled and are not an external prerequisite.
   `PALM_FFMPEG`/`PALM_FFPROBE` are advanced overrides only.
 - **Sonic Annotator and the Vamp Plugin Pack** are installed automatically by
-  setup under the data root after their licence consent.
+  setup under the data root on Linux and macOS after licence consent. Windows
+  analysis is temporarily blocked while the 64-bit plugin bundle is rebuilt;
+  setup shows that blocker and offers no administrator/manual-DLL workaround.
 - At least **5 GiB free** under the data root; the wizard checks this first.
 - Linux only: one environment, **CPU (~500 MB)** or **CUDA (~3.5 GB)** for an
   NVIDIA GPU. Windows uses CPU only. macOS Apple Silicon uses CPU only.

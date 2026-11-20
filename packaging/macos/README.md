@@ -44,5 +44,6 @@ window and browser, with no Terminal.app window. `--status` and `--stop` pass
 through the wrapper for recovery only.
 
 No FFmpeg, Sonic Annotator, Vamp plugin pack, model weights, inference
-environments or test audio are bundled. The setup wizard downloads what the
-user selects later.
+environments or test audio are bundled. The setup wizard downloads and verifies
+managed FFmpeg/FFprobe, Sonic Annotator, the Vamp Plugin Pack, the CPU runtime
+and the selected model after licence consent; FFmpeg is not a prerequisite.

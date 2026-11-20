@@ -1,9 +1,11 @@
 """Pinned Windows/macOS tool assets and per-user extraction.
 
-Linux uses the preserved Sonic Visualiser/Piper AppImage installer. Windows
-and macOS use the official Sonic Annotator and Vamp Plugin Pack releases,
-downloaded only after the setup licence gate and extracted below the writable
-data root. No asset is installed system-wide and no elevation is requested.
+Linux uses the preserved Sonic Visualiser/Piper AppImage installer. macOS uses
+the official Sonic Annotator and Vamp Plugin Pack releases after the setup
+licence gate, extracted below the writable data root. Windows analysis is
+intentionally blocked while the 64-bit plugin bundle is rebuilt; no Windows
+Vamp asset is offered and no elevation/manual DLL path is requested. No asset
+is installed system-wide.
 """
 
 from __future__ import annotations
