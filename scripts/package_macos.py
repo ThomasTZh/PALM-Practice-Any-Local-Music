@@ -389,26 +389,36 @@ def write_checksums(output_dir: Path, version_value: str) -> Path:
 
 
 def build_dmg(bundle: Path, output: Path) -> Path | None:
+    """Create a drag-to-Applications DMG containing PALM.app and /Applications.
+
+    The app is unsigned and not notarized; this is not an installer package.
+    """
     if sys.platform != "darwin":
         print("package-macos: DMG skipped (hdiutil is macOS-only)")
         return None
-    result = subprocess.run(
-        [
-            "hdiutil",
-            "create",
-            "-volname",
-            "PALM",
-            "-srcfolder",
-            str(bundle),
-            "-ov",
-            "-format",
-            "UDZO",
-            str(output),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="palm-dmg-", dir=output.parent) as scratch:
+        root = Path(scratch) / "PALM"
+        root.mkdir()
+        shutil.copytree(bundle, root / bundle.name, symlinks=True)
+        (root / "Applications").symlink_to("/Applications", target_is_directory=True)
+        result = subprocess.run(
+            [
+                "hdiutil",
+                "create",
+                "-volname",
+                "PALM",
+                "-srcfolder",
+                str(root),
+                "-ov",
+                "-format",
+                "UDZO",
+                str(output),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     if result.returncode != 0:
         raise PackageError(f"hdiutil failed: {result.stderr.strip()}")
     return output

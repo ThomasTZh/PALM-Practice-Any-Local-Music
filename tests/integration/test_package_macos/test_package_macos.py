@@ -188,3 +188,40 @@ def test_built_macos_zip_when_present() -> None:
     assert not any(
         len(Path(name).parts) >= 2 and Path(name).parts[1] in root_forbidden for name in lower
     )
+
+
+def test_dmg_source_has_applications_symlink() -> None:
+    source = (ROOT / "scripts/package_macos.py").read_text()
+    assert 'symlink_to("/Applications"' in source
+    assert "-srcfolder" in source
+    assert "PALM.app" in source
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="DMG mount requires macOS")
+def test_native_dmg_mounts_with_applications_link(tmp_path: Path) -> None:
+    module = load_script()
+    bundle = tmp_path / "PALM.app"
+    (bundle / "Contents/MacOS").mkdir(parents=True)
+    wrapper = bundle / "Contents/MacOS/palm"
+    wrapper.write_text("#!/bin/sh\nexit 0\n")
+    wrapper.chmod(0o755)
+    dmg = module.build_dmg(bundle, tmp_path / "PALM-test-macos-arm64.dmg")
+    assert dmg is not None and dmg.is_file()
+    mount = tmp_path / "mount"
+    mount.mkdir()
+    attach = subprocess.run(
+        ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount), str(dmg)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert attach.returncode == 0, attach.stderr
+    try:
+        link = mount / "Applications"
+        assert link.is_symlink()
+        assert link.readlink() == Path("/Applications")
+        app = mount / "PALM.app"
+        assert app.is_dir()
+        assert (app / "Contents/MacOS/palm").stat().st_mode & 0o111
+    finally:
+        subprocess.run(["hdiutil", "detach", str(mount), "-force"], check=False)

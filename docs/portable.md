@@ -53,7 +53,8 @@ rights are used. `palm.cmd` is only the diagnostic fallback in the appendix.
 
 ### macOS experimental
 
-Drag **`PALM.app`** to `~/Applications` and double-click it. If Gatekeeper
+Open the DMG and drag **`PALM.app`** onto the **Applications** shortcut, then
+double-click it. If Gatekeeper
 blocks the unsigned app, right-click **Open** or use System Settings > Privacy
 & Security > **Open Anyway**. Finder starts the control window; when it has no
 TTY the wrapper may open Terminal.app for logs. Pass `--no-terminal` to keep
@@ -128,8 +129,9 @@ support is not claimed.
 `~/Applications` and right-click **Open** the first time; macOS may require
 confirming **Open** or removing quarantine with
 `xattr -dr com.apple.quarantine ~/Applications/PALM.app`. It is not signed or
-notarized. Place the app's payload at `Contents/Resources/app` if you assemble
-it manually; the packaged ZIP/DMG already contains it.
+notarized. The DMG contains `PALM.app` and an `Applications` symlink; the ZIP
+contains the same app. Place the app's payload at `Contents/Resources/app` if
+you assemble it manually; the packaged ZIP/DMG already contains it.
 
 The wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`, the native
 `PALM_DATA_DIR` (`~/Library/Application Support/palm` unless overridden) and
@@ -306,7 +308,8 @@ is preserved.
 
 **Uninstall:** quit PALM and remove the app with the OS (Windows Installed
 apps/Explorer, macOS Trash, Linux file manager) or the commands below for a
-portable folder. Projects, models and tools remain in the data root; delete it
+portable folder. Moving `PALM.app` to the Trash leaves
+`~/Library/Application Support/palm` (projects, models and tools) in place. Projects, models and tools remain in the data root; delete it
 only if you explicitly intend to remove practice data after backing up:
 
 ```sh
