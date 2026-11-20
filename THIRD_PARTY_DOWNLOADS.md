@@ -111,7 +111,13 @@ the writable data root. None are committed or installed system-wide.
 
 Windows setup downloads only the PALM Windows bundle and installs its two
 required DLLs and catalogs; it never downloads or runs the GUI Vamp Plugin Pack
-installer. The bundle is built by `.github/workflows/plugins-windows.yml` from
+installer. The bundle is GPL-2.0-or-later. Source offer: QM Vamp Plugins
+(https://github.com/c4dm/qm-vamp-plugins), QM-DSP
+(https://github.com/c4dm/qm-dsp), NNLS-Chroma/Chordino
+(https://github.com/c4dm/nnls-chroma) and the Vamp Plugin SDK
+(https://github.com/vamp-plugins/vamp-plugin-sdk), built at the pinned commits
+in `licenses/third_party/manifest.json` and archived at the release tag above.
+The full GPL text is `licenses/third_party/licenses/GPL-2.0-or-later.txt`. The bundle is built by `.github/workflows/plugins-windows.yml` from
 pinned QM, QM-DSP, NNLS-Chroma and Vamp SDK commits with MSVC (QM) and
 MinGW-w64 x64 (Chordino). Source repositories: https://github.com/c4dm/qm-vamp-plugins,
 https://github.com/c4dm/qm-dsp, https://github.com/c4dm/nnls-chroma and
