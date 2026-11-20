@@ -121,6 +121,10 @@ jobs:
             $url = (Get-Content $state -Raw | ConvertFrom-Json).url
             $health = Invoke-RestMethod -Uri ($url.TrimEnd('/') + "/api/health") -TimeoutSec 30
             if ($health.status -ne "ok") { throw "health was not ok" }
+            $setup = Invoke-RestMethod -Uri ($url.TrimEnd('/') + "/api/setup/status") -TimeoutSec 30
+            if ($setup.platform -ne "windows") { throw "setup platform was not windows" }
+            if ($setup.tools.PSObject.Properties.Count -ne 0) { throw "Windows setup offered tools" }
+            if (-not $setup.media_tools -or -not $setup.environments -or -not $setup.models) { throw "setup paths missing" }
             & $palm --stop --data-dir $data
             if ($LASTEXITCODE -ne 0) { throw "palm.cmd --stop failed" }
           } finally {
