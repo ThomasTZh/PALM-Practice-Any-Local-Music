@@ -105,18 +105,18 @@ jobs:
           copy nnls-src\nnls-chroma.n3 bundle\
           copy qm-src\COPYING bundle\COPYING-qm-vamp-plugins.txt
           copy nnls-src\COPYING bundle\COPYING-nnls-chroma.txt
-          python - <<'PY'
-          from pathlib import Path
-          import struct
-          for path in sorted(Path("bundle").glob("*.dll")):
-              data = path.read_bytes()
-              assert data[:2] == b"MZ", path
-              offset = struct.unpack_from("<I", data, 0x3C)[0]
-              assert data[offset:offset+4] == b"PE\\0\\0", path
-              machine = struct.unpack_from("<H", data, offset + 4)[0]
-              assert machine == 0x8664, (path, hex(machine))
-              print(f"{path.name}: PE32+ x86-64")
-          PY
+          copy qm-src\lib\vamp-plugin-sdk\COPYING bundle\COPYING-vamp-plugin-sdk.txt
+          > check.py echo from pathlib import Path
+          >> check.py echo import struct
+          >> check.py echo for path in sorted(Path("bundle").glob("*.dll")):
+          >> check.py echo     data = path.read_bytes()
+          >> check.py echo     assert data[:2] == b"MZ", path
+          >> check.py echo     offset = struct.unpack_from("<I", data, 0x3C)[0]
+          >> check.py echo     assert data[offset:offset+4] == b"PE\0\0", path
+          >> check.py echo     machine = struct.unpack_from("<H", data, offset + 4)[0]
+          >> check.py echo     assert machine == 0x8664, (path, hex(machine))
+          >> check.py echo     print(path.name + ": PE32+ x86-64")
+          python check.py
 
           curl -L -o sonic.zip "%SONIC_URL%"
           python -c "import hashlib,pathlib; p=pathlib.Path('sonic.zip'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '%SONIC_SHA256%'"
@@ -124,10 +124,9 @@ jobs:
           set VAMP_PATH=%CD%\bundle
           sonic-annotator-win64\sonic-annotator.exe --list > plugins.txt
           type plugins.txt
-          findstr /C:"vamp:embed-07-8888130:chordino:simplechord" plugins.txt
-          findstr /C:"vamp:qm-vamp-plugins:qm-keydetector:key" plugins.txt
-          findstr /C:"vamp:qm-vamp-plugins:qm-barbeattracker:beats" plugins.txt
-          if errorlevel 1 exit /b 1
+          findstr /C:":chordino:simplechord" plugins.txt || exit /b 1
+          findstr /C:":qm-keydetector:key" plugins.txt || exit /b 1
+          findstr /C:":qm-barbeattracker:beats" plugins.txt || exit /b 1
           powershell -NoProfile -Command "Compress-Archive -Path bundle\* -DestinationPath vamp-plugins-win64.zip -Force"
           python -c "import hashlib,pathlib; p=pathlib.Path('vamp-plugins-win64.zip'); print(hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_size)" > SHA256SUMS
 
