@@ -133,7 +133,7 @@ Only if you intend to remove practice data, delete
 
 ## Known limitations
 
-- Linux x86_64 only in this build. Windows and macOS are not packaged.
+- Linux x86_64 is the supported build. Windows has a separate unsigned CPU-only beta installer/ZIP; macOS has a separate unsigned experimental Apple Silicon app/DMG.
 - The server listens only on the local machine. There are no accounts, cloud
   processing or multi-user features.
 - Pitch shifting is not offered; speed changes keep the pitch.
