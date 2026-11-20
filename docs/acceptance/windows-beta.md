@@ -66,7 +66,7 @@ Expected:
 - the window shows the data root (`Data: ...`);
 - the browser opens the same loopback URL;
 - buttons are visible: **Open browser**, **View logs**, **Quit**,
-  **Check for updates**, **Uninstall**.
+  **Check for updates**.
 
 If Windows SmartScreen appears, choose **More info** > **Run anyway**. Record
 whether SmartScreen appeared. If no control window appears, capture the exact
@@ -182,9 +182,9 @@ Save one screenshot per browser in `evidence/07-browser/` and state whether
 audio was actually audible. A moving position alone is not proof of
 audibility.
 
-## 9. Control-window quit, update check and uninstall
+## 9. Control-window quit, update check and OS removal
 
-All three actions must be done from **`PALM.exe`**, not a terminal.
+Use **`PALM.exe`**, not a terminal.
 
 ### Quit
 
@@ -197,32 +197,17 @@ Save screenshots and note the result in `evidence/08-control/quit.txt`.
 
 ### Check for updates
 
-Relaunch `PALM.exe`, wait for Running, and click **Check for updates**. Record
-the exact detail text in the control window and any dialog. Expected: a clear
-up-to-date/no-update result, or a specific update/error message. A message that
-update metadata is **not configured** is a FAIL for this beta, not a pass.
+Relaunch `PALM.exe`, wait for Running, and click **Check for updates**. Expected:
+the matching release/download page opens in the browser with instructions.
+PALM does not download or replace itself. Record the URL and exact detail text;
+a metadata error is a FAIL. Save `evidence/08-control/update-check.png`.
 
-If a verified update is offered, record the version and checksum but do not
-install it during this run unless the owner explicitly asks. Save a screenshot
-as `evidence/08-control/update-check.png`.
+### Removal (OS-level)
 
-### Uninstall
-
-After the update check, click **Uninstall** in the control window. Expected:
-
-- the app stops first;
-- an external helper removes the extracted app folder and any PALM shortcut;
-- practice data under `%LOCALAPPDATA%\palm` is kept by default;
-- the control window reports the helper result or closes cleanly.
-
-Record the exact detail text and screenshot. In File Explorer confirm that the
-app folder is gone and the data folder still exists. Do not delete the data
-folder unless the owner explicitly chooses the separate delete-data option;
-if that option is tested, back up `projects`, `assets` and `uploads` first.
-
-If the control window says the uninstall helper is not configured, record that
-as a FAIL with the screenshot; do not delete the app manually and call it a
-pass.
+Quit PALM, then remove the extracted app folder with File Explorer (or Windows
+Installed apps if present). Do not delete `%LOCALAPPDATA%\palm`; it contains
+practice data, models and tools. There is no custom Uninstall button or helper.
+Record the folder removed and that the data root remains.
 
 ## 10. Evidence and logs
 
@@ -236,7 +221,7 @@ run\server.json
 setup.json
 ```
 
-Copy or screenshot the relevant logs before uninstall. Do not send audio you
+Copy or screenshot the relevant logs before removal. Do not send audio you
 do not own and remove personal names or paths from screenshots.
 
 Expected evidence folder:
@@ -252,7 +237,7 @@ evidence\windows-beta\
   07-browser\
   08-control\quit.txt
   08-control\update-check.png
-  08-control\uninstall.png
+  08-control/removal.png
   checklist.md
   artifact.txt
 ```
@@ -279,9 +264,9 @@ Mark PASS, FAIL or BLOCKED with the evidence filename:
 - [ ] Firefox playback passes play/speed/metronome/loop.
 - [ ] Closing the browser alone leaves the control window/server running.
 - [ ] Control-window Quit stops the server and preserves data.
-- [ ] Check for updates reports a real result, not "not configured".
-- [ ] Control-window Uninstall removes the app/shortcut, keeps data by default,
-      and needs no terminal or administrator action.
+- [ ] Check for updates opens the release/download page with instructions.
+- [ ] OS-level removal (File Explorer/Installed apps) removes the app and keeps
+      the data root; no custom Uninstall button is expected.
 - [ ] No terminal, `palm.cmd`, manual FFmpeg install or manual DLL copy was
       required.
 

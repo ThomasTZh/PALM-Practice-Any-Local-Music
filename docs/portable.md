@@ -87,7 +87,7 @@ terminates the launcher/server gracefully and removes `run/server.json`; stale
 or unrelated records are reported and never kill an arbitrary process. Use
 `--data-dir` if the instance is not on the default root.
 
-## Updates and uninstall from the control window
+## Updates and OS-level removal
 
 Your projects, models, tools and environments live in the data root, not the
 app folder, so replacing the app does not download them again.

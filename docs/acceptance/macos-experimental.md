@@ -64,7 +64,7 @@ Expected:
 - it shows the data root (`Data: ~/Library/Application Support/palm`);
 - the browser opens at the same loopback URL;
 - buttons are visible: **Open browser**, **View logs**, **Quit**,
-  **Check for updates**, **Uninstall**.
+  **Check for updates**.
 
 Save `evidence/02-control/launch.png`. If a Terminal window appears or the app
 cannot open the control window, record that as a FAIL for the no-terminal
@@ -173,9 +173,9 @@ Save one screenshot per browser in `evidence/07-browser/` and state whether
 audio was actually audible. A moving position alone is not proof of
 audibility.
 
-## 7. Control-window quit, update check and uninstall
+## 7. Control-window quit, update check and OS removal
 
-All three actions must be done from **`PALM.app`**, not Terminal.
+Use **`PALM.app`**, not Terminal.
 
 ### Quit
 
@@ -188,32 +188,17 @@ Save `evidence/08-control/quit.txt` and screenshots.
 
 ### Check for updates
 
-Relaunch `PALM.app`, wait for Running, and click **Check for updates**. Record
-the exact detail text and any dialog. Expected: a clear up-to-date/no-update
-result, or a specific update/error message. A message that update metadata is
-**not configured** is a FAIL for this experimental app, not a pass.
+Relaunch `PALM.app`, wait for Running, and click **Check for updates**. Expected:
+the matching release/download page opens in the browser with instructions.
+PALM does not download or replace itself. Record the URL and exact detail text;
+a metadata error is a FAIL. Save `evidence/08-control/update-check.png`.
 
-If a verified update is offered, record its version and checksum but do not
-install it during this run unless the owner explicitly asks. Save
-`evidence/08-control/update-check.png`.
+### Removal (OS-level)
 
-### Uninstall
-
-After the update check, click **Uninstall** in the control window. Expected:
-
-- the app stops first;
-- an external helper removes `PALM.app` and any shortcut;
-- practice data under `~/Library/Application Support/palm` is kept by default;
-- the window reports the helper result or closes cleanly.
-
-Record the exact detail text and screenshot. In Finder confirm that
-`PALM.app` is gone and the data folder still exists. Do not delete the data
-folder unless the owner explicitly chooses the separate delete-data option;
-if tested, back up `projects`, `assets` and `uploads` first.
-
-If the control window says the uninstall helper is not configured, record that
-as a FAIL with the screenshot; do not delete the app manually and call it a
-pass.
+Quit PALM, then move `PALM.app` from `~/Applications` to the Trash. Do not delete
+`~/Library/Application Support/palm`; it contains practice data, models and
+tools. There is no custom Uninstall button or helper. Record the app removed and
+that the data root remains.
 
 ## 8. Evidence and logs
 
@@ -227,7 +212,7 @@ run/server.json
 setup.json
 ```
 
-Copy or screenshot the relevant logs before uninstall. Do not send audio you
+Copy or screenshot the relevant logs before removal. Do not send audio you
 do not own and remove personal names or paths from screenshots.
 
 Expected evidence folder:
@@ -243,7 +228,7 @@ evidence/macos-experimental/
   07-browser/
   08-control/quit.txt
   08-control/update-check.png
-  08-control/uninstall.png
+  08-control/removal.png
   checklist.md
   artifact.txt
 ```
@@ -270,9 +255,9 @@ Mark PASS, FAIL or BLOCKED with the evidence filename:
 - [ ] Chrome playback passes play/speed/metronome/loop.
 - [ ] Closing the browser alone leaves the control window/server running.
 - [ ] Control-window Quit stops the server and preserves data.
-- [ ] Check for updates reports a real result, not "not configured".
-- [ ] Control-window Uninstall removes the app/shortcut, keeps data by default,
-      and needs no Terminal or admin action.
+- [ ] Check for updates opens the release/download page with instructions.
+- [ ] OS-level removal (Trash) removes PALM.app and keeps the data root; no
+      custom Uninstall button is expected.
 - [ ] No Terminal, shell command, manual FFmpeg install or manual plugin copy
       was required.
 
