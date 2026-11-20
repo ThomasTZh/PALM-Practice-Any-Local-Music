@@ -50,6 +50,7 @@ def _tar_bytes() -> bytes:
 def test_all_platform_assets_are_pinned() -> None:
     expected = {
         ("windows", "sonic_annotator"),
+        ("windows", "vamp_plugin_pack"),
         ("macos", "sonic_annotator"),
         ("macos", "vamp_plugin_pack"),
     }
@@ -117,44 +118,151 @@ def test_bad_hash_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         )
 
 
-def test_windows_vamp_gui_installer_is_blocked(tmp_path: Path) -> None:
+def _pe64(machine: int = 0x8664) -> bytes:
+    data = bytearray(0x100)
+    data[0:2] = b"MZ"
+    data[0x3C:0x40] = (0x80).to_bytes(4, "little")
+    data[0x80:0x84] = b"PE\0\0"
+    data[0x84:0x86] = machine.to_bytes(2, "little")
+    return bytes(data)
+
+
+def _vamp_zip(*, machine: int = 0x8664, omit: str | None = None, extra: bool = True) -> bytes:
+    files = {
+        "qm-vamp-plugins.dll": _pe64(machine),
+        "nnls-chroma.dll": _pe64(machine),
+        "qm-vamp-plugins.cat": b"catalog",
+        "nnls-chroma.cat": b"catalog",
+    }
+    if omit is not None:
+        files.pop(omit)
+    if extra:
+        files["unneeded-plugin.dll"] = _pe64()
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return stream.getvalue()
+
+
+def _fake_sonic_listing(monkeypatch: pytest.MonkeyPatch, stdout: str) -> None:
+    class Result:
+        returncode = 0
+        stderr = ""
+
+        def __init__(self) -> None:
+            self.stdout = stdout
+
+    monkeypatch.setattr(tool_assets.subprocess, "run", lambda *_args, **_kwargs: Result())
+
+
+def _windows_runtime(tmp_path: Path) -> RuntimePaths:
     runtime = RuntimePaths.from_environment(
-        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
+        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data with spaces"
     )
     runtime.app_root.mkdir()
-    calls: list[object] = []
+    (runtime.tools_root / "sonic-annotator-1.7.0").mkdir(parents=True)
+    (runtime.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe").write_bytes(b"exe")
+    return runtime
 
-    def downloader(_asset, path):
-        calls.append(path)
-        raise AssertionError("blocked Windows Vamp must not download a GUI installer")
 
-    with pytest.raises(SetupInstallError) as caught:
+def test_windows_vamp_bundle_installs_only_required_pe64_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = _vamp_zip()
+    monkeypatch.setitem(
+        PLATFORM_ASSETS,
+        ("windows", "vamp_plugin_pack"),
+        _asset("vamp_plugin_pack", "windows", data),
+    )
+    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    _fake_sonic_listing(
+        monkeypatch,
+        "vamp:embed-07:chordino:simplechord\n"
+        "vamp:qm:qm-keydetector:key\n"
+        "vamp:qm:qm-barbeattracker:beats\n",
+    )
+    runtime = _windows_runtime(tmp_path)
+    target = install_vamp_plugin_pack(
+        runtime,
+        platform="windows",
+        downloader=lambda _asset, path: path.write_bytes(data),
+    )
+    assert target == runtime.tools_root / "vamp-plugins"
+    assert {path.name for path in target.iterdir()} == {
+        "qm-vamp-plugins.dll",
+        "nnls-chroma.dll",
+        "qm-vamp-plugins.cat",
+        "nnls-chroma.cat",
+    }
+    assert not (target / "unneeded-plugin.dll").exists()
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"machine": 0x14C}, "not 64-bit x86-64"),
+        ({"omit": "nnls-chroma.dll"}, "missing required Vamp file nnls-chroma.dll"),
+    ],
+)
+def test_windows_vamp_bundle_rejects_bad_archives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kwargs: dict, message: str
+) -> None:
+    data = _vamp_zip(**kwargs)
+    monkeypatch.setitem(
+        PLATFORM_ASSETS,
+        ("windows", "vamp_plugin_pack"),
+        _asset("vamp_plugin_pack", "windows", data),
+    )
+    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    _fake_sonic_listing(monkeypatch, "vamp:qm:qm-keydetector:key\n")
+    runtime = _windows_runtime(tmp_path)
+    with pytest.raises(SetupInstallError, match=message):
         install_vamp_plugin_pack(
             runtime,
             platform="windows",
-            downloader=downloader,
-            runner=lambda command: calls.append(command),
+            downloader=lambda _asset, path: path.write_bytes(data),
         )
-    message = str(caught.value)
-    assert "No redistributable 64-bit qm-vamp-plugins" in message
-    assert "GUI installer will not be run" in message
-    assert calls == []
 
 
-def test_windows_tools_install_sonic_but_refuses_gui_vamp(
+def test_windows_vamp_bundle_requires_all_plugin_ids(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    data = _vamp_zip()
+    monkeypatch.setitem(
+        PLATFORM_ASSETS,
+        ("windows", "vamp_plugin_pack"),
+        _asset("vamp_plugin_pack", "windows", data),
+    )
+    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    _fake_sonic_listing(monkeypatch, "vamp:qm:qm-keydetector:key\n")
+    runtime = _windows_runtime(tmp_path)
+    with pytest.raises(SetupInstallError, match="chordino, qm-barbeattracker"):
+        install_vamp_plugin_pack(
+            runtime,
+            platform="windows",
+            downloader=lambda _asset, path: path.write_bytes(data),
+        )
+
+
+def test_windows_tools_install_both_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = RuntimePaths.from_environment(
         mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
     )
     runtime.app_root.mkdir()
+    calls: list[str] = []
     monkeypatch.setattr(
         tool_assets,
         "install_sonic_annotator",
-        lambda *_args, **_kwargs: runtime.tools_root / "sonic-annotator-1.7.0",
+        lambda *_args, **_kwargs: calls.append("sonic") or runtime.tools_root / "sonic",
     )
-    with pytest.raises(SetupInstallError, match="No redistributable 64-bit"):
-        tool_assets.install_platform_tools(runtime, platform="windows")
+    monkeypatch.setattr(
+        tool_assets,
+        "install_vamp_plugin_pack",
+        lambda *_args, **_kwargs: calls.append("vamp") or runtime.tools_root / "vamp",
+    )
+    tool_assets.install_platform_tools(runtime, platform="windows")
+    assert calls == ["sonic", "vamp"]
 
 
 def test_macos_dmg_uses_hdiutil_and_pkgutil(

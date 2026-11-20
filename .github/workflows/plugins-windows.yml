@@ -1,0 +1,154 @@
+name: Windows Vamp plugin bundle
+
+# Builds the 64-bit Windows Vamp plugin set used by Sonic Annotator on Windows.
+# The bundle is deliberately built in CI and attached to a held release; it is
+# never committed or bundled in the PALM installer.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - plugins-win64-v*
+
+permissions:
+  contents: write
+
+env:
+  VAMP_SDK_COMMIT: 44c2487763eb248a933e9eff9169cfadee375009
+  QM_COMMIT: c918afc070f79489758bb2dab6895972bd82066b
+  QMDSP_COMMIT: e34a3cc188332ed7c33cd9257ef164de5b587191
+  NNLS_COMMIT: 4c5f214a75cb354f8d8c933e161377c5b4d83713
+  SONIC_URL: https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip
+  SONIC_SHA256: c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone pinned Vamp sources
+        shell: cmd
+        run: |
+          git init qm-src
+          cd qm-src
+          git remote add origin https://github.com/c4dm/qm-vamp-plugins.git
+          git fetch --depth 1 origin %QM_COMMIT%
+          git checkout --detach FETCH_HEAD
+          git init lib/vamp-plugin-sdk
+          cd lib/vamp-plugin-sdk
+          git remote add origin https://github.com/vamp-plugins/vamp-plugin-sdk.git
+          git fetch --depth 1 origin %VAMP_SDK_COMMIT%
+          git checkout --detach FETCH_HEAD
+          cd ../../..
+          git init qm-dsp-src
+          cd qm-dsp-src
+          git remote add origin https://github.com/c4dm/qm-dsp.git
+          git fetch --depth 1 origin %QMDSP_COMMIT%
+          git checkout --detach FETCH_HEAD
+          cd ..
+          xcopy /E /I /Y qm-dsp-src qm-src\lib\qm-dsp
+
+      - name: Build QM key/barbeat plugin with MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: MSBuild QM plugins
+        shell: cmd
+        run: |
+          msbuild qm-src\build\msvc\QMVampPlugins.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /m
+          if errorlevel 1 exit /b 1
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-boost
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            make
+            git
+
+      - name: Build Chordino with MinGW-w64 x64
+        shell: msys2 {0}
+        run: |
+          set -e
+          git init nnls-src
+          cd nnls-src
+          git remote add origin https://github.com/c4dm/nnls-chroma.git
+          git fetch --depth 1 origin "$NNLS_COMMIT"
+          git checkout --detach FETCH_HEAD
+          cd ..
+          git clone --depth 1 file://"$PWD/qm-src/lib/vamp-plugin-sdk" vamp-sdk
+          cmake -S vamp-sdk -B vamp-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build vamp-build --target vamp-sdk -j 2
+          cp "$(find vamp-build -name 'libvamp-sdk.a' | head -1)" vamp-sdk/libvamp-sdk.a
+          cd nnls-src
+          make -f Makefile.mingw TOOLPREFIX=x86_64-w64-mingw32- VAMP_SDK_DIR="$PWD/../vamp-sdk" BOOST_ROOT=/mingw64/include -j 2
+          file nnls-chroma.dll
+
+      - name: Assemble and verify plugin bundle
+        shell: cmd
+        run: |
+          mkdir bundle
+          copy qm-src\build\msvc\x64\Release\qm-vamp-plugins.dll bundle\
+          copy nnls-src\nnls-chroma.dll bundle\
+          copy qm-src\qm-vamp-plugins.cat bundle\
+          copy qm-src\qm-vamp-plugins.n3 bundle\
+          copy nnls-src\nnls-chroma.cat bundle\
+          copy nnls-src\nnls-chroma.n3 bundle\
+          copy qm-src\COPYING bundle\COPYING-qm-vamp-plugins.txt
+          copy nnls-src\COPYING bundle\COPYING-nnls-chroma.txt
+          python - <<'PY'
+          from pathlib import Path
+          import struct
+          for path in sorted(Path("bundle").glob("*.dll")):
+              data = path.read_bytes()
+              assert data[:2] == b"MZ", path
+              offset = struct.unpack_from("<I", data, 0x3C)[0]
+              assert data[offset:offset+4] == b"PE\\0\\0", path
+              machine = struct.unpack_from("<H", data, offset + 4)[0]
+              assert machine == 0x8664, (path, hex(machine))
+              print(f"{path.name}: PE32+ x86-64")
+          PY
+
+          curl -L -o sonic.zip "%SONIC_URL%"
+          python -c "import hashlib,pathlib; p=pathlib.Path('sonic.zip'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '%SONIC_SHA256%'"
+          tar -xf sonic.zip
+          set VAMP_PATH=%CD%\bundle
+          sonic-annotator-win64\sonic-annotator.exe --list > plugins.txt
+          type plugins.txt
+          findstr /C:"vamp:embed-07-8888130:chordino:simplechord" plugins.txt
+          findstr /C:"vamp:qm-vamp-plugins:qm-keydetector:key" plugins.txt
+          findstr /C:"vamp:qm-vamp-plugins:qm-barbeattracker:beats" plugins.txt
+          if errorlevel 1 exit /b 1
+          powershell -NoProfile -Command "Compress-Archive -Path bundle\* -DestinationPath vamp-plugins-win64.zip -Force"
+          python -c "import hashlib,pathlib; p=pathlib.Path('vamp-plugins-win64.zip'); print(hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_size)" > SHA256SUMS
+
+      - name: Upload Windows plugin bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: vamp-plugins-win64
+          path: |
+            vamp-plugins-win64.zip
+            SHA256SUMS
+
+      - name: Publish held plugin release
+        if: startsWith(github.ref, 'refs/tags/plugins-win64-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Windows 64-bit Vamp plugin bundle
+          body: |
+            Native 64-bit qm-vamp-plugins (QM Key Detector, QM Bar and Beat
+            Tracker) and NNLS-Chroma (Chordino), built from pinned sources.
+            See SHA256SUMS and the GPL notices in the archive.
+          files: |
+            vamp-plugins-win64.zip
+            SHA256SUMS
