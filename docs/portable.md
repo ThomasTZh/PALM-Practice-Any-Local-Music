@@ -118,11 +118,16 @@ updates. `PALM_DATA_DIR` defaults to `%LOCALAPPDATA%\palm`; paths
 with spaces and non-ASCII characters are handled by the native launcher.
 
 FFmpeg and ffprobe are **not** an external prerequisite: setup downloads managed
-FFmpeg/FFprobe after licence consent, plus Sonic Annotator and the Vamp Plugin
-Pack automatically. Windows setup offers **CPU only**; CUDA is hidden. The beta
-is unsigned, so SmartScreen may ask for confirmation. The installed uninstaller
-offers app-only removal (default, keeps data) or also deleting
-`%LOCALAPPDATA%\palm`; silent uninstall never deletes data. `palm.cmd` and
+FFmpeg/FFprobe after licence consent. Windows chord/key/BPM analysis is
+explicitly unavailable because no 64-bit Vamp plugin distribution is available.
+Setup does not run the GUI Vamp pack and does not ask you to copy DLLs; import,
+playback and stem separation remain available when their media tools and models
+are installed. The setup UI shows that blocker. Windows
+setup offers **CPU only**; CUDA is hidden. The beta is unsigned, so SmartScreen
+may ask for confirmation. The installed uninstaller offers app-only removal
+(default, keeps data) or also deleting the default `%LOCALAPPDATA%\palm`;
+silent uninstall never deletes data. A custom `PALM_DATA_DIR`/`--data-dir` is
+not removed automatically. `palm.cmd` and
 terminal flags are diagnostic fallbacks in the appendix, not normal steps. Full no-admin steps and evidence capture are in
 [docs/acceptance/windows-beta.md](acceptance/windows-beta.md). Stable Windows
 support is not claimed.
@@ -147,8 +152,10 @@ offers Open browser, View logs, Quit and Check for updates.
 `--status`, `--stop`, `--no-browser`, `--no-terminal` and `--data-dir` remain
 advanced recovery flags.
 
-Managed FFmpeg/FFprobe, Sonic Annotator and the Vamp Plugin Pack are installed
-by setup after licence consent, under the data root. `PALM_FFMPEG` and
+Managed FFmpeg/FFprobe and Sonic Annotator are installed by setup after licence
+consent, under the data root. On macOS the Vamp Plugin Pack is installed too;
+Windows analysis is blocked because no 64-bit Vamp distribution is available.
+`PALM_FFMPEG` and
 `PALM_FFPROBE` are advanced overrides only. Setup is CPU-first; CUDA is hidden
 on macOS. The app is experimental and has no stable support, GPU or
 notarization claim until
@@ -166,9 +173,10 @@ plugin pack are resolved there, not from the read-only app tree.
 1. **Managed FFmpeg/FFprobe** (required for import/decode): downloaded and
    SHA-256 verified into `<data>/tools/ffmpeg`; no external install or
    `PALM_FFMPEG` override is needed.
-2. **Analysis tools** (required for analysis): Sonic Annotator and the Vamp
-   Plugin Pack (AGPL-3.0; individual plugins GPL/AGPL) are installed
-   automatically into the data root after their group consent.
+2. **Analysis tools** (required for analysis): Sonic Annotator is installed on
+   Windows; Sonic Annotator and the Vamp Plugin Pack (AGPL-3.0; individual
+   plugins GPL/AGPL) are installed on macOS/Linux after consent. Windows
+   analysis remains unavailable because no 64-bit Vamp distribution exists.
 3. **One inference environment**: CPU (about **500 MB download**, works
    everywhere) or CUDA (about **3.5 GB download**, needs an NVIDIA GPU and
    driver). PyTorch wheels come from the pinned CPU or cu128 index.
@@ -295,9 +303,14 @@ The downloaded size/SHA-256 must match the registry pins.
   output. Check the data root is writable and the network reaches the pinned
   PyTorch index; CPU is the safe fallback. Cancelling stops the `uv` child and
   removes staging.
+- **Windows analysis is unavailable**: this is an explicit platform blocker,
+  not a setup failure. No 64-bit Vamp plugin distribution exists; do not run the
+  GUI pack or copy DLLs. Import, playback and stem separation work when their
+  own media tools and models are installed.
 - **Tools install fails**: the Sonic Visualiser/Vamp downloads are independent;
   retry after checking network/disk. Tools are optional for playback but
-  required for chord/key/BPM analysis.
+  required for chord/key/BPM analysis (except Windows, where analysis is
+  unavailable).
 - **Setup says ready but a feature is gated**: checks, environment, and at least
   one model are required; tools are required for analysis. Use the Setup button
   or `GET /api/setup/status` to see the exact reason.

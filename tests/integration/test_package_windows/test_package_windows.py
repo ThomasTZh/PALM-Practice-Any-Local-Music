@@ -67,6 +67,7 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "palm-0.1.0-dev-windows-x86_64/licenses/LICENSE",
         "palm-0.1.0-dev-windows-x86_64/licenses/third_party/manifest.json",
         "palm-0.1.0-dev-windows-x86_64/install.json",
+        "palm-0.1.0-dev-windows-x86_64/RELEASE-NOTES.md",
         "palm-0.1.0-dev-windows-x86_64/PALM.exe",
         "palm-0.1.0-dev-windows-x86_64/runtime-requirements.txt",
     ]
@@ -184,6 +185,16 @@ def test_native_installer_install_upgrade_uninstall(tmp_path: Path) -> None:
     assert (app_dir / "unins000.exe").is_file()
     start_menu = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/PALM.lnk"
     assert start_menu.exists()
+    env = {**os.environ, "PALM_DATA_DIR": str(data_dir)}
+    proc = subprocess.Popen([str(app_dir / "PALM.exe")], env=env)
+    state = data_dir / "run/server.json"
+    for _ in range(120):
+        if state.is_file():
+            break
+        time.sleep(0.5)
+    assert state.is_file(), "installed PALM.exe did not start"
+    subprocess.run([str(app_dir / "palm.cmd"), "--stop", "--data-dir", str(data_dir)], check=False)
+    proc.terminate()
     marker = app_dir / "upgrade-marker.txt"
     marker.write_text("old")
     assert subprocess.run(base, check=False).returncode == 0

@@ -52,18 +52,17 @@ used to kill an unrelated process. Use `--data-dir` for a non-default root.
 
 ## Windows and macOS
 
-`palm.cmd` is the Windows entry point. It must sit next to the app root and
-uses the embedded `python\python.exe` (or `python\Scripts\python.exe`), sets
-the packaged roots, `PYTHONPATH`, UTF-8 variables and data root, then runs the
-Python launcher in the console. `--status`, `--stop` and all other flags pass
-through; Ctrl+C stops the server.
+On Windows, install with the per-user Inno Setup installer or extract the
+portable ZIP. Double-click **`PALM.exe`**, the native GUI launcher; it starts
+`pythonw.exe --window` with the packaged roots. `palm.cmd` is only a diagnostic
+console fallback, not the normal entry point. `--status`/`--stop` are recovery
+commands.
 
-`packaging/macos/PALM.app` is a Finder wrapper. Put the extracted tar under
-`Contents/Resources/app`; `Contents/MacOS/palm` sets the packaged roots and
-execs `bin/palm`. The app passes `--window`, so Finder opens the graphical
-control window without Terminal. A terminal launch remains available with
-`--console`; if Tk/display is unavailable the launcher falls back to a terminal
-or headless mode and prints the log path.
+`packaging/macos/PALM.app` is a Finder wrapper. Install by dragging it from the
+DMG onto Applications; `Contents/MacOS/palm` sets the packaged roots and execs
+`bin/palm --window`. Finder opens the graphical control window without
+Terminal. If Tk/display is unavailable the launcher falls back to headless mode
+and prints the log path.
 starts it without a tty, and passes `--status`/`--stop` through. No native
 package is produced by this task.
 
@@ -81,9 +80,9 @@ same launcher invocation. The child carries `PALM_TERMINAL_ACTIVE=1` and
 If no emulator is available, PALM prints the log path and continues headless;
 `--no-terminal` / `--detach` skip the terminal attempt explicitly.
 
-The desktop entry uses `Terminal=true`, so a desktop launcher also shows the
-log stream and supports Ctrl+C. Install the launcher on `PATH` first, for
-example:
+The Linux desktop entry uses `Terminal=false` and starts `palm --window`, so a
+desktop launch opens the control window. Install the launcher on `PATH` first,
+for example:
 
 ```sh
 mkdir -p ~/.local/bin ~/.local/share/applications
@@ -91,7 +90,7 @@ ln -sf "$PWD/bin/palm" ~/.local/bin/palm
 install -m644 palm.desktop ~/.local/share/applications/palm.desktop
 ```
 
-The entry's `Exec=palm` resolves through that symlink. If you keep the tar
+The entry's `Exec=palm --window` resolves through that symlink. If you keep the tar
 somewhere else, use an absolute symlink or update `Exec` to the launcher path.
 On a desktop whose file manager cannot launch the control window, run
 `bin/palm --console` from a terminal; `--window` explicitly requests the window

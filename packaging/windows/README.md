@@ -34,9 +34,18 @@ runs package checks, native install/upgrade/uninstall tests and a PALM.exe
 health smoke. Nothing is code-signed or notarized; SmartScreen may ask for
 confirmation.
 
-First launch opens the licence/setup screen. Managed FFmpeg/FFprobe, Sonic
-Annotator, the Vamp Plugin Pack, the CPU environment and selected models are
-downloaded only after consent and verified under `%LOCALAPPDATA%\palm`.
-Windows Vamp setup may show one UAC prompt; the app itself needs no
-administrator rights. Check for updates only opens the release page; there is no
-automatic updater.
+First launch opens the licence/setup screen. Managed FFmpeg/FFprobe, the CPU
+environment and selected models are downloaded only after consent and verified
+under `%LOCALAPPDATA%\palm`. Windows Sonic/Vamp analysis is temporarily
+unavailable in this build while the plugin bundle is rebuilt; the UI reports
+that blocker instead of offering a administrator workaround. The app
+itself needs no administrator rights. Check for updates only opens the release
+page; there is no automatic updater.
+
+The uninstaller removes only the default `%LOCALAPPDATA%\palm` data root when
+the interactive delete-data option is explicitly chosen. If you launched with
+`PALM_DATA_DIR` or `--data-dir`, delete that custom root yourself after backing
+up projects; scripted uninstall never deletes data. The interactive
+"also delete data" branch is a manual acceptance test: install, create a marker
+under `%LOCALAPPDATA%\palm`, run the uninstaller, choose No at the prompt, and
+verify the marker is gone; choose Yes/default for app-only and verify it stays.

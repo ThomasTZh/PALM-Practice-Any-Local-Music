@@ -127,3 +127,22 @@ jobs:
             if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
             Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           }
+
+      - name: Write tag checksums
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem dist\PALM-*-windows-x86_64.zip) + @(Get-ChildItem dist\PALM-*-windows-x86_64-installer.exe)
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($file.Name)"
+          }
+          $lines | Set-Content dist\SHA256SUMS -Encoding ascii
+      - name: Upload Windows tag assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: palm-windows-tag
+          path: |
+            dist/PALM-*-windows-x86_64.zip
+            dist/PALM-*-windows-x86_64-installer.exe
+            dist/SHA256SUMS
+          if-no-files-found: error

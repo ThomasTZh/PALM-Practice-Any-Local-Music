@@ -103,30 +103,27 @@ Do not accept a licence whose text you have not reviewed. The
 **Install recommended setup** button must become enabled only after the
 required consents. Record its exact state before and after consent.
 
-## 5. Recommended setup, managed FFmpeg and automatic Vamp
+## 5. Recommended setup, managed FFmpeg and Windows analysis blocker
 
-Press **Install recommended setup** and follow its four visible steps:
+Press **Install recommended setup** and follow the visible steps:
 
 1. Media tools (FFmpeg/FFprobe).
-2. Analysis tools (Sonic Annotator and Vamp plugins).
-3. CPU environment.
-4. Demucs model.
+2. CPU environment.
+3. Demucs model.
 
 Expected:
 
 - FFmpeg and FFprobe are downloaded by PALM into its data root. Do not install
   FFmpeg separately and do not set `PALM_FFMPEG` or `PALM_FFPROBE`.
-- Sonic Annotator and the Vamp Plugin Pack are installed automatically. Do not
-  copy DLLs, run a separate installer or grant a permanent administrator
-  install.
-- The Windows Vamp step may show **one** UAC prompt. Approve it if it appears;
-  record the prompt text. Denying it is a setup failure, not a prompt to copy
-  files manually.
+- Windows Sonic/Vamp analysis is **temporarily unavailable** in this build
+  while the plugin bundle is rebuilt. The UI must report that blocker clearly;
+  do not use an administrator prompt, separate installer, manual DLL copy or workaround
+  workaround. Record the exact blocker text.
 - CPU is selected; CUDA must not be offered as a working Windows choice.
 - Demucs is visibly selected in the model cards while all model cards remain
   editable.
-- The progress stage and completion message are recorded for each of the four
-  steps.
+- The progress stage and completion message are recorded for each available
+  step.
 
 Save screenshots of each step and the final setup state in
 `evidence/04-setup/`. If a step fails, save the exact error and its Retry or
@@ -204,10 +201,16 @@ a metadata error is a FAIL. Save `evidence/08-control/update-check.png`.
 
 ### Removal (OS-level)
 
-Quit PALM, then remove the extracted app folder with File Explorer (or Windows
-Installed apps if present). Do not delete `%LOCALAPPDATA%\palm`; it contains
-practice data, models and tools. There is no custom Uninstall button or helper.
-Record the folder removed and that the data root remains.
+Quit PALM, then remove the app with Windows Installed apps (installed build) or
+File Explorer (portable ZIP). Do not delete `%LOCALAPPDATA%\palm`; it contains
+practice data, models and tools. There is no custom Uninstall button/helper.
+
+For the installed build, the interactive uninstaller offers app-only (default,
+keeps data) or also deleting the default `%LOCALAPPDATA%\palm`. Test the
+app-only path in the normal run. The delete-data branch is a separate manual
+step: create a marker under `%LOCALAPPDATA%\palm`, run the uninstaller, choose
+No, and confirm only that default root is removed. A custom `PALM_DATA_DIR` or
+`--data-dir` is never removed automatically. Record the exact prompt and result.
 
 ## 10. Evidence and logs
 
@@ -255,10 +258,10 @@ Mark PASS, FAIL or BLOCKED with the evidence filename:
       Demucs without a separate FFmpeg install or DLL copy.
 - [ ] Managed FFmpeg/FFprobe are reported ready; no `PALM_FFMPEG` override was
       needed.
-- [ ] Windows Vamp install ran automatically; at most one UAC prompt appeared
-      and was recorded.
-- [ ] CPU analysis returns key, BPM, chords and bars with no missing-tool or
-      missing-FFmpeg error.
+- [ ] Windows analysis blocker is clearly reported (temporary plugin-bundle
+      rebuild); no admin/manual-DLL workaround was offered.
+- [ ] CPU separation/downloads still work where the UI permits; analysis is
+      not claimed until the blocker is resolved.
 - [ ] Separation returns the expected stem lanes and at least one stem plays.
 - [ ] Chrome playback passes play/speed/metronome/loop.
 - [ ] Firefox playback passes play/speed/metronome/loop.
@@ -278,7 +281,7 @@ For every failure record:
 2. The full error, button state and whether the app stayed responsive.
 3. Screenshots of the control window, browser and **View logs** tail.
 4. Windows edition/build, CPU, RAM, browser versions and artifact SHA-256.
-5. Whether SmartScreen, UAC, a network retry or any workaround appeared.
+5. Whether SmartScreen, a network retry or any workaround appeared.
 
 Send the evidence to the maintainer through the agreed channel. Keep this
 document Status **NOT RUN** and do not claim Windows support until the owner

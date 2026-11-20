@@ -58,6 +58,7 @@ REQUIRED = (
     "licenses/third_party/manifest.json",
     "runtime-requirements.txt",
     "install.json",
+    "RELEASE-NOTES.md",
     "PALM.exe",
 )
 
@@ -296,6 +297,7 @@ def stage(stage: Path, manifest: dict[str, Any], requirements: Path, *, online: 
     copy_file(ROOT / "pyproject.toml", stage / "pyproject.toml")
     write_install_json(stage / "install.json", "windows-x86_64", version())
     copy_file(ROOT / "README.md", stage / "README.md")
+    copy_file(ROOT / "packaging" / "release-notes.md", stage / "RELEASE-NOTES.md")
     copy_file(ROOT / "palm.cmd", stage / "palm.cmd")
     copy_file(requirements, stage / "runtime-requirements.txt")
     copy_file(ROOT / "packaging" / "windows" / "build-manifest.toml", stage / "BUILD-MANIFEST.toml")

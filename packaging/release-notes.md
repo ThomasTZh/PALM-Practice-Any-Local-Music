@@ -31,30 +31,29 @@ CUDA or makes a GPU-performance claim.
 
 ## Download: Linux supported build
 
-| File | Size | SHA-256 |
-| --- | ---: | --- |
-| `PALM-0.1.0-dev-linux-x86_64.tar.gz` | 70,044,949 B | `c1a6edfc75b90ad9540f015395bcc1c68189f43d578bef743f08fea4ae8be408` |
-| `SHA256SUMS` | 101 B | contains the line above |
-
-The archive is under 2 GiB. It contains no model weights, analysis tools,
-Python environments, recordings, tests, caches or `.git`.
+Verify the downloaded file against `SHA256SUMS` (the authoritative sizes and
+hashes are in that file and CI artifact metadata; this note does not duplicate
+a stale copy). The archive is under 2 GiB. It contains no model weights,
+analysis tools, Python environments, recordings, tests, caches or `.git`.
 
 ## Windows x64 beta pre-release (separate channel)
 
 - Assets: `PALM-0.1.0-dev-windows-x86_64-installer.exe` (per-user, no admin) and
   `PALM-0.1.0-dev-windows-x86_64.zip` (portable), plus `SHA256SUMS`.
 - Unsigned, x64 only, CPU inference only. No CUDA/GPU claim.
-- First launch opens the licence/setup screen; managed FFmpeg/FFprobe, analysis
-  tools, CPU environment and models are downloaded only after consent. Windows
-  Vamp setup may show one UAC prompt; the app needs no administrator rights.
+- **The per-user installer is the primary Windows asset**; the portable ZIP is
+  also provided. Both need no administrator rights.
+- First launch opens the licence/setup screen; managed FFmpeg/FFprobe, CPU
+  environment and models are downloaded only after consent. Windows Sonic/Vamp
+  analysis is temporarily unavailable in this build while the plugin bundle is
+  rebuilt; the UI reports the blocker instead of offering a partial install.
 - Check for updates only opens the release page. There is no auto-updater.
-- No administrator install: extract below the user profile and run
-  **PALM.exe**. The control window starts the server and browser; Quit stops it.
-  `palm.cmd` is diagnostic only.
-- FFmpeg and ffprobe are not bundled. Use a trusted Windows build and set
-  `PALM_FFMPEG`/`PALM_FFPROBE` or the user PATH before setup.
-- Setup downloads Sonic Annotator, the Vamp Plugin Pack, one CPU environment
-  and one chosen model below `%LOCALAPPDATA%\palm`.
+- The installer creates per-user Start Menu/desktop shortcuts and an uninstall
+  entry. The uninstaller is app-only by default and keeps
+  `%LOCALAPPDATA%\palm`; scripted uninstall never deletes data.
+- Portable ZIP: extract below the user profile and run **PALM.exe**. The control
+  window starts the server and browser; Quit stops it. `palm.cmd` is diagnostic
+  only.
 - Acceptance is **pending** the no-admin laptop checklist in
   [docs/acceptance/windows-beta.md](../docs/acceptance/windows-beta.md). Do not
   call this a stable or Windows-accepted release before evidence is supplied.
@@ -77,10 +76,10 @@ Python environments, recordings, tests, caches or `.git`.
 
 1. Download the tar and `SHA256SUMS`.
 2. Extract the tar.
-3. Double-click `bin/palm`, or run `./bin/palm` in a terminal.
-4. A terminal opens with the server log; the setup page opens in your browser.
-5. Press Ctrl+C in that terminal when you are finished. Closing only the
-   browser leaves PALM running.
+3. Launch the included desktop entry, or double-click `bin/palm`.
+4. The PALM control window opens, starts the server and opens the browser once.
+5. Click **Quit** in the control window when finished. Closing only the browser
+   leaves PALM running.
 
 Press Space anywhere outside a text field to start or pause playback.
 
@@ -88,26 +87,26 @@ Useful commands:
 
 ```sh
 ./bin/palm --status          # running address, data root and process IDs
-./bin/palm --stop            # stop a server left by a closed terminal
+./bin/palm --stop            # recovery stop for a recorded instance
 ./bin/palm --data-dir DIR    # keep user data somewhere else
 ./bin/palm --no-browser      # do not open a browser
 ```
 
-If no terminal program is available, PALM prints the log location and keeps
-running. Use `--stop` afterwards.
+Normal use is the control window; it shows logs and Quit stops the server.
+Recovery commands are only for a recorded instance that is not responding.
 
 ## Updating from an older Linux build
 
 Your projects, downloaded models, tools and environments live in the data root,
 not in the app folder. Updating replaces only the app folder.
 
-1. Stop the old server: press Ctrl+C in its terminal. If that terminal is gone,
-   run `OLD_FOLDER/bin/palm --stop`.
+1. Quit the old PALM control window (or use recovery `--stop`).
 2. Download the new tar and `SHA256SUMS`, then check the archive.
 3. Extract the new folder next to the old one. Do not extract over the old
    folder, and do not delete the data root.
-4. Start `NEW_FOLDER/bin/palm`. It uses the same default data root, so setup is
-   not repeated and models/tools/projects stay available.
+4. Launch the new desktop entry or `NEW_FOLDER/bin/palm`. It uses the same
+   default data root, so setup is not repeated and models/tools/projects stay
+   available.
 5. If the old launch used `--data-dir` or `PALM_DATA_DIR`, pass the same value
    to the new launcher.
 6. After checking playback and analysis, delete the old app folder. If you
@@ -184,7 +183,7 @@ Measured and verified for this build: packaged launcher health and setup page;
 real network install of the analysis tools; real CPU environment import
 (`torch 2.9.1+cpu`, `msst`, `pydantic`); real analysis with chords, key, tempo
 and bars; model install and separation; setup-page scrolling and licence links;
-terminal log streaming and Ctrl+C; `--status`/`--stop`; second-launch reuse;
+control-window log display and Quit; recovery `--status`/`--stop`; second-launch reuse;
 stale-state handling. The full test gate passed with 381 Python tests and 9
 skipped, plus the web and browser suites.
 

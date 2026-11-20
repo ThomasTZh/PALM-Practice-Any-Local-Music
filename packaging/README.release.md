@@ -13,34 +13,19 @@ edges, especially around setup and less common audio devices.
 
 ## Start it
 
-1. Extract the folder next to this README.
-2. Double-click `bin/palm`. If your file manager asks, choose **Run**.
-3. A terminal window opens with the server log. The setup page opens in your
-   browser.
+1. Extract the tar folder.
+2. Launch the included desktop entry, or double-click `bin/palm`.
+3. The PALM control window opens; it starts the server, opens the browser once
+   and offers **Open browser**, **View logs**, **Quit** and **Check for updates**.
 
-If double-clicking does not run it, open a terminal in this folder and run:
-
-```sh
-./bin/palm
-```
-
-The launcher starts the server, prints the web address, and opens the browser.
-Closing the browser leaves the server running. Press **Ctrl+C** in the terminal
-to stop it.
+Quit stops the server. Closing only the browser leaves it running. Check for
+updates opens the matching release page with manual instructions; PALM does not
+update itself. Remove the app with the file manager or desktop uninstaller;
+your data root is preserved.
 
 Press Space anywhere outside a text field to start or pause playback.
 
-Useful commands:
-
-```sh
-./bin/palm --status          # show the running address and process IDs
-./bin/palm --stop            # stop a server left by a closed terminal
-./bin/palm --data-dir DIR    # keep user data somewhere else
-./bin/palm --no-browser      # do not open a browser
-```
-
-If no terminal program is available, PALM prints the log location and keeps
-running without a terminal window. Use `./bin/palm --stop` later.
+Recovery options are in `docs/portable.md`; normal use does not need a terminal.
 
 ## First time: what setup asks for
 
@@ -57,8 +42,9 @@ after you choose them and accept their licences:
    - SCNet XL IHF (about 204 MB, four parts)
    - BS-RoFormer-SW (about 667 MB, six parts, including guitar and piano)
 
-You need a network connection for whichever pieces you choose. `ffmpeg` and
-`ffprobe` must already be installed. Setup checks for about 5 GiB free space
+You need a network connection for whichever pieces you choose. Managed
+FFmpeg/FFprobe are downloaded and verified by setup; they are not an external
+prerequisite. Setup checks for about 5 GiB free space
 before downloading. You can skip setup and use playback, importing, sections
 and the spectrogram without the optional pieces; the Analyse and Separate
 buttons will explain what is missing and link back to setup.
@@ -98,13 +84,12 @@ in `~/.local/share/applications`.
 Your projects, downloaded models, tools and environments live in the data root,
 not in the app folder. Updating replaces only the app folder.
 
-1. Stop the old server: press Ctrl+C in its terminal. If that terminal is gone,
-   run `OLD_FOLDER/bin/palm --stop`.
+1. Quit the old PALM control window (or use the recovery `--stop` option).
 2. Download the new tar and `SHA256SUMS`, then check the archive.
 3. Extract the new folder next to the old one. Do not extract over the old
    folder, and do not delete the data root.
-4. Start `NEW_FOLDER/bin/palm`. It uses the same default data root, so setup is
-   not repeated and models/tools/projects stay available.
+4. Launch the new folder's desktop entry or `bin/palm`. It uses the same default
+   data root, so setup is not repeated and models/tools/projects stay available.
 5. If the old launch used `--data-dir` or `PALM_DATA_DIR`, pass the same value
    to the new launcher.
 6. After checking playback and analysis, delete the old app folder. If you
@@ -116,22 +101,24 @@ data, not the application.
 
 ## Close, clean up, uninstall
 
-- Closing the browser does not stop the server. Press **Ctrl+C** in the
-  terminal, or run `./bin/palm --stop`.
+- Closing the browser does not stop the server. Click **Quit** in the control
+  window. Recovery: run `./bin/palm --stop`.
 - Deleting `cache/` is safe; setup downloads again if needed.
 - Deleting `models/`, `tools/` or `environments/` means running setup again.
 - Do not delete `projects/`, `assets/` or `uploads/` unless you mean to lose
   those projects. Back them up first.
 
-To uninstall, stop the server, then remove:
+To remove the application, quit PALM, delete the app folder and remove the
+desktop entry/symlink. The data root is separate and is kept by default:
 
 ```sh
-rm -rf ~/.local/share/palm
 rm -rf /path/to/palm-0.1.0-dev-linux-x86_64
 rm -f ~/.local/bin/palm ~/.local/share/applications/palm.desktop
 ```
 
-That deletes all PALM data, including projects. Back up `projects/` and
+Only if you intend to remove practice data, delete
+`~/.local/share/palm` (or your custom `--data-dir`) after backing up
+`projects/`, `assets/` and `uploads/`. Back up `projects/` and
 `assets/` first if you need them.
 
 ## What it does

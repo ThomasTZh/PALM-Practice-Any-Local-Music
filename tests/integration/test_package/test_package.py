@@ -119,3 +119,26 @@ def test_extracted_tar_has_bundled_python_envs_and_tool_installer() -> None:
         assert Path(python_arg) == bundled and Path(python_arg).is_file()
         assert Path(project_arg) == spec.project_dir and Path(project_arg).is_dir()
         assert Path(environment["UV_PROJECT_ENVIRONMENT"]).is_relative_to(runtime.data_root)
+
+
+def test_built_tar_ships_current_readme_and_no_stale_release_text() -> None:
+    tars = sorted((ROOT / "dist").glob("PALM-*-linux-x86_64.tar.gz"))
+    if not tars:
+        pytest.skip("no dist/PALM tar; run make package first")
+    with tarfile.open(tars[-1], "r:gz") as archive:
+        names = archive.getnames()
+        readme_name = next(name for name in names if name.endswith("/README.md"))
+        notes_name = next(name for name in names if name.endswith("/RELEASE-NOTES.md"))
+        readme = archive.extractfile(readme_name).read().decode()  # type: ignore[union-attr]
+        notes = archive.extractfile(notes_name).read().decode()  # type: ignore[union-attr]
+    combined = readme + "\n" + notes
+    for stale in (
+        "Press Ctrl+C",
+        "terminal opens with the server log",
+        "`ffmpeg` and `ffprobe` must already be installed",
+        "Linux-only build",
+        "delete-data",
+    ):
+        assert stale not in combined
+    assert "control window" in readme.lower()
+    assert "SHA256SUMS" in notes

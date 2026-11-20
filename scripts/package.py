@@ -416,35 +416,11 @@ def clean_bytecode(root: Path) -> None:
 
 
 def write_release_notes(stage: Path, version_value: str) -> Path:
+    """Ship the current release notes with the Linux tar (no stale copy)."""
     notes = stage / "RELEASE-NOTES.md"
-    content = f"""# PALM {version_value}
-
-Practice Any Local Music, portable Linux x86_64 build.
-
-**Early version.** Limited testing and quality control; keep backups.
-
-- Launch: `bin/palm` in the tar root. It opens a terminal, starts the server
-  and opens the browser.
-- Stop: Ctrl+C in that terminal, or `./bin/palm --stop` if the terminal was
-  closed. `./bin/palm --status` prints the running address and process IDs.
-- First run: setup offers optional analysis tools, a CPU or CUDA runtime, and
-  three equal separation models with no default. Downloads happen only after
-  you choose them and accept their licences; nothing is bundled here.
-- Contents: application source, built UI, analysis workers/registry and
-  environment definitions, launcher, desktop entry, icon, licences, a bundled
-  Python runtime and `bin/uv`.
-- Not included: model weights, tools, analysis environments, caches,
-  recordings, tests, `.git` or virtual environments.
-- Build repeatability: the archive uses fixed timestamps and no build-time
-  filename, so the same source and locked dependencies produce the same
-  SHA-256. The published SHA256SUMS identifies the tested file.
-- Runtime lock: `runtime-requirements.txt` (hashes from
-  `packaging/app-runtime/uv.lock`).
-
-See `licenses/LICENSE` (MIT for the application) and `licenses/NOTICES.md` for
-third-party notices. Model weights keep their own terms.
-"""
-    notes.write_text(content, encoding="utf-8")
+    source = ROOT / "packaging" / "release-notes.md"
+    body = source.read_text(encoding="utf-8")
+    notes.write_text(f"# PALM {version_value} release notes\n\n{body}", encoding="utf-8")
     return notes
 
 
