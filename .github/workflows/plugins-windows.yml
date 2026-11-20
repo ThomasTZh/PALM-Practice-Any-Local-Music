@@ -75,7 +75,8 @@ jobs:
           cmake -S qm-src\lib\vamp-plugin-sdk -B vamp-msvc -G "Visual Studio 17 2022" -A x64 -DBUILD_SHARED_LIBS=OFF
           cmake --build vamp-msvc --config Release --target vamp-sdk
           if errorlevel 1 exit /b 1
-          for /f "delims=" %%F in ('dir /s /b vamp-msvc\vamp-sdk.lib') do set VAMPLIB=%%F
+          set BOOST=C:\vcpkg\installed\x64-windows
+          set VAMPLIB=vamp-msvc\lib\Release\vamp-sdk.lib
           git init nnls-src
           cd nnls-src
           git remote add origin https://github.com/c4dm/nnls-chroma.git
@@ -83,9 +84,9 @@ jobs:
           git checkout --detach FETCH_HEAD
           cd ..
           cd nnls-src
-          cl /nologo /O2 /EHsc /MD /std:c++17 /D_CRT_SECURE_NO_WARNINGS /I..\qm-src\lib\vamp-plugin-sdk /I..\qm-src\lib\vamp-plugin-sdk\src\vamp-sdk /I%VCPKG_ROOT%\installed\x64-windows\include /c Chordino.cpp NNLSBase.cpp NNLSChroma.cpp Tuning.cpp chromamethods.cpp plugins.cpp viterbi.cpp
+          cl /nologo /O2 /EHsc /MD /std:c++17 /D_CRT_SECURE_NO_WARNINGS /D_USE_MATH_DEFINES /I..\qm-src\lib\vamp-plugin-sdk /I..\qm-src\lib\vamp-plugin-sdk\src\vamp-sdk /I%BOOST%\include /c Chordino.cpp NNLSBase.cpp NNLSChroma.cpp Tuning.cpp chromamethods.cpp plugins.cpp viterbi.cpp
           cl /nologo /O2 /MD /D_CRT_SECURE_NO_WARNINGS /I..\qm-src\lib\vamp-plugin-sdk /c nnls.c
-          link /DLL /OUT:nnls-chroma.dll *.obj "%VAMPLIB%" /LIBPATH:%VCPKG_ROOT%\installed\x64-windows\lib /EXPORT:vampGetPluginDescriptor
+          link /DLL /OUT:nnls-chroma.dll *.obj %VAMPLIB% /LIBPATH:%BOOST%\lib /EXPORT:vampGetPluginDescriptor
           if errorlevel 1 exit /b 1
           cd ..
 
