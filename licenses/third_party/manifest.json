@@ -259,8 +259,8 @@
       "distribution": "downloaded",
       "component_type": "tool",
       "download_target": "<data>/tools/vamp-plugins",
-      "sha256": "08b287daae9aa0c0c8339adc96858941f8d8cb18f4869d98d8cc902b4e97a15e",
-      "size_bytes": 1430288,
+      "sha256": "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863",
+      "size_bytes": 1430285,
       "architecture": "x86_64 PE32+",
       "build_workflow": ".github/workflows/plugins-windows.yml",
       "source_commits": {

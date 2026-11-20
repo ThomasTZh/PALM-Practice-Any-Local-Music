@@ -107,7 +107,7 @@ the writable data root. None are committed or installed system-wide.
 | Sonic Annotator | 1.7 | Windows x64 | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip | `c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693` | 6,618,013 B | GPL-2.0-or-later |
 | Sonic Annotator | 1.7 | macOS | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7.0-macos.tar.gz | `cb54f46af0f6c16b8274998d025019021b3b6c50410b8a8e2024d0aa7e65b040` | 10,638,233 B | GPL-2.0-or-later |
 | Vamp Plugin Pack | 2.0 | macOS | https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer-2.0.dmg | `60e2569ab064dbaf9ca8a4c3cf8465298b91ea3be1b34c5395d45c1ca4c53f10` | 48,745,081 B | AGPL-3.0 pack; plugins GPL/AGPL |
-| PALM Windows 64-bit Vamp bundle | 1.0.0 | Windows x64 | https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/plugins-win64-v1 | `08b287daae9aa0c0c8339adc96858941f8d8cb18f4869d98d8cc902b4e97a15e` | 1,430,288 B | GPL-2.0-or-later |
+| PALM Windows 64-bit Vamp bundle | 1.0.0 | Windows x64 | https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/plugins-win64-v1 | `41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863` | 1,430,285 B | GPL-2.0-or-later |
 
 Windows setup downloads only the PALM Windows bundle and installs its two
 required DLLs and catalogs; it never downloads or runs the GUI Vamp Plugin Pack

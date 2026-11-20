@@ -21,4 +21,4 @@ Source repositories:
 Release:
   https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/plugins-win64-v1
 SHA-256:
-  08b287daae9aa0c0c8339adc96858941f8d8cb18f4869d98d8cc902b4e97a15e
+  41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863
