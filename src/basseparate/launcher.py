@@ -725,9 +725,13 @@ class Launcher:
         self._previous_handlers: dict[int, Any] = {}
 
     def _open_browser(self, url: str) -> bool:
-        if self._should_open_browser:
+        if not self._should_open_browser:
+            return False
+        try:
             return bool(self._browser_open(url))
-        return False
+        except OSError as error:
+            self._write_log(f"browser launch failed: {error}\n")
+            return False
 
     def _write_log(self, line: str) -> None:
         if self._server_log is not None:
@@ -1004,7 +1008,10 @@ class LauncherController:
             )
         self._started = True
         if not self._browser_opened:
-            self._browser_open(self._url)
+            try:
+                self._browser_open(self._url)
+            except OSError as error:
+                self._record_browser_error(error)
             self._browser_opened = True
         return self._url
 
@@ -1032,7 +1039,18 @@ class LauncherController:
             self._url = state.url if state else None
         if self._url is None:
             return False
-        return bool(self._browser_open(self._url))
+        try:
+            return bool(self._browser_open(self._url))
+        except OSError as error:
+            self._record_browser_error(error)
+            return False
+
+    def _record_browser_error(self, error: OSError) -> None:
+        try:
+            with self.paths.launcher_log.open("a", encoding="utf-8") as handle:
+                handle.write(f"{utc_now()} browser launch failed: {error}\n")
+        except OSError:
+            print(f"palm: browser launch failed: {error}", file=sys.stderr)
 
     def open_logs(self) -> Path:
         return self.paths.logs_root

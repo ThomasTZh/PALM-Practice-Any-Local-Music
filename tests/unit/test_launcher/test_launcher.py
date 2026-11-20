@@ -640,3 +640,39 @@ def test_desktop_entry_uses_control_window_without_terminal() -> None:
     readme = (Path(__file__).resolve().parents[3] / "packaging/launcher/README.md").read_text()
     assert "ln -sf" in readme
     assert ".local/share/applications" in readme
+
+
+def test_closed_socket_errors_are_handled_without_masking_other_errors() -> None:
+    from basseparate import cli
+
+    class ClosedSocket:
+        def close(self) -> None:
+            raise OSError(10038, "operation on something that is not a socket")
+
+    cli._safe_close(ClosedSocket(), "shutdown")  # type: ignore[arg-type]
+
+    class BrokenSocket:
+        def close(self) -> None:
+            raise OSError(5, "input/output error")
+
+    with pytest.raises(OSError, match="input/output"):
+        cli._safe_close(BrokenSocket(), "shutdown")  # type: ignore[arg-type]
+
+
+def test_browser_launch_oserror_is_logged_without_traceback(
+    runtime: RuntimePaths, tmp_path: Path
+) -> None:
+    paths = LauncherPaths.from_runtime(runtime)
+    paths.ensure()
+    log = paths.logs_root / "launcher.log"
+    instance = Launcher(
+        paths,
+        open_browser=True,
+        browser_open=lambda _url: (_ for _ in ()).throw(OSError(10038, "closed")),
+    )
+    instance._server_log = log.open("a", encoding="utf-8")
+    try:
+        assert instance._open_browser("http://127.0.0.1:1/") is False
+    finally:
+        instance._server_log.close()
+    assert "browser launch failed" in log.read_text()

@@ -8,6 +8,7 @@ script can read the line and use it immediately without polling a guess.
 from __future__ import annotations
 
 import argparse
+import errno
 import socket
 import sys
 import threading
@@ -71,6 +72,44 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _closed_socket_error(error: OSError) -> bool:
+    """WinError 10038/WSAENOTSOCK and EBADF mean the socket already closed."""
+    return getattr(error, "winerror", None) == 10038 or error.errno in {
+        errno.EBADF,
+        10038,
+    }
+
+
+def _safe_close(sock: socket.socket, context: str) -> None:
+    """Close a socket that uvicorn may already own/closed, without masking real errors.
+
+    ``serve`` binds the socket, passes it to ``uvicorn.Server.run(sockets=[sock])``
+    and then closes it in ``finally``. During uvicorn/asyncio shutdown the
+    listening socket may already be closed; a second ``closesocket`` on Windows
+    reports WSAENOTSOCK/WinError 10038. Suppress only that closed-socket case.
+    """
+    try:
+        sock.close()
+    except OSError as error:
+        if not _closed_socket_error(error):
+            raise
+        print(
+            f"basseparate: {context}: socket was already closed "
+            f"(winerror={getattr(error, 'winerror', None)}, errno={error.errno}); ignoring",
+            file=sys.stderr,
+        )
+
+
+def _open_browser(url: str) -> None:
+    try:
+        webbrowser.open(url)
+    except OSError as error:
+        if _closed_socket_error(error):
+            print(f"basseparate: browser launch socket was closed: {error}", file=sys.stderr)
+            return
+        raise
+
+
 def _bind_socket(host: str, port: int) -> socket.socket:
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     sock = socket.socket(family, socket.SOCK_STREAM)
@@ -79,7 +118,7 @@ def _bind_socket(host: str, port: int) -> socket.socket:
         sock.bind((host, port))
         sock.listen(128)
     except OSError:
-        sock.close()
+        _safe_close(sock, "bind failure")
         raise
     return sock
 
@@ -127,6 +166,14 @@ def serve(args: argparse.Namespace) -> int:
     def run_server() -> None:
         try:
             server.run(sockets=[sock])
+        except OSError as error:  # uvicorn/asyncio may close the passed socket
+            if _closed_socket_error(error):
+                print(
+                    f"basseparate: server socket was already closed during shutdown: {error}",
+                    file=sys.stderr,
+                )
+                return
+            failure.append(error)
         except BaseException as error:  # pragma: no cover - surfaced below
             failure.append(error)
 
@@ -142,13 +189,13 @@ def serve(args: argparse.Namespace) -> int:
             print("basseparate: server did not start in time", file=sys.stderr)
         server.should_exit = True
         thread.join(timeout=5)
-        sock.close()
+        _safe_close(sock, "startup failure")
         return 1
 
     print(f"basseparate studio: {url}", flush=True)
     print(f"bootstrap: {url}", flush=True)
     if not args.no_browser:
-        threading.Timer(0.5, webbrowser.open, args=[url]).start()
+        threading.Timer(0.5, _open_browser, args=[url]).start()
 
     try:
         while thread.is_alive():
@@ -158,7 +205,7 @@ def serve(args: argparse.Namespace) -> int:
         server.should_exit = True
         thread.join(timeout=10)
     finally:
-        sock.close()
+        _safe_close(sock, "server shutdown")
     return 1 if failure else 0
 
 
