@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { setupGates, type SetupStatus } from "../../state/setup";
 
-function status(readiness: Partial<SetupStatus["readiness"]>): SetupStatus {
+function status(
+  readiness: Partial<SetupStatus["readiness"]>,
+  platform = "linux",
+): SetupStatus {
   return {
+    platform,
     checks: {
       ffmpeg: { ok: true },
       ffprobe: { ok: true },
@@ -38,6 +42,16 @@ describe("separation setup gates", () => {
 
   it("enables Separate only when environment and model are ready", () => {
     const gates = setupGates(status({}));
+    expect(gates.canSeparate).toBe(true);
+    expect(gates.separateReason).toBeNull();
+  });
+});
+
+describe("Windows analysis blocker", () => {
+  it("blocks analysis but keeps separation available when its own setup is ready", () => {
+    const gates = setupGates(status({ tools_ready: false }, "windows"));
+    expect(gates.canAnalyze).toBe(false);
+    expect(gates.analyzeReason).toContain("no 64-bit Vamp plugin distribution");
     expect(gates.canSeparate).toBe(true);
     expect(gates.separateReason).toBeNull();
   });

@@ -244,30 +244,7 @@
       "distribution": "downloaded",
       "component_type": "tool",
       "download_target": "<data>/tools/plugins",
-      "notes": "Linux/macOS GUI pack path. Windows uses the separately built 64-bit PALM bundle; the Windows GUI installer is not run."
-    },
-    {
-      "id": "palm-vamp-plugins-win64",
-      "name": "PALM Windows 64-bit Vamp plugin bundle (QM Key/BarBeat and Chordino/NNLS-Chroma)",
-      "version": "1.0.0",
-      "copyright": "Queen Mary University of London; Matthias Mauch and contributors (NNLS-Chroma/Chordino)",
-      "license": "GPL-2.0-or-later",
-      "license_file": "licenses/third_party/licenses/GPL-2.0-or-later.txt",
-      "source_url": "https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/plugins-win64-v1",
-      "distribution": "downloaded",
-      "component_type": "tool",
-      "download_target": "<data>/tools/vamp-plugins",
-      "sha256": "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863",
-      "size_bytes": 1430285,
-      "architecture": "x86_64 PE32+",
-      "build_workflow": ".github/workflows/plugins-windows.yml",
-      "source_commits": {
-        "vamp-plugin-sdk": "44c2487763eb248a933e9eff9169cfadee375009",
-        "qm-vamp-plugins": "c918afc070f79489758bb2dab6895972bd82066b",
-        "qm-dsp": "e34a3cc188332ed7c33cd9257ef164de5b587191",
-        "nnls-chroma": "4c5f214a75cb354f8d8c933e161377c5b4d83713"
-      },
-      "notes": "Built in Windows CI with MSVC (QM) and MinGW-w64 x64 (Chordino) from pinned GPL sources; only required DLLs/catalogs are installed under the writable data root. Not bundled in the installer/ZIP/DMG. GPL source offer and upstream repository list are recorded in THIRD_PARTY_DOWNLOADS.md."
+      "notes": "Linux/macOS pack path. Windows analysis is blocked: no 64-bit Vamp plugin distribution is available; the GUI installer is not run."
     },
     {
       "id": "vamp-plugins",

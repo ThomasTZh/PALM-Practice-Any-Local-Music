@@ -24,6 +24,7 @@ from basseparate.setup.media_tools import (
 )
 from basseparate.setup.models import install_models
 from basseparate.setup.state import SetupStateStore
+from basseparate.setup.tool_assets import platform_name
 from basseparate.setup.tools import ToolInstaller, install_tools, tools_status
 
 Progress = Callable[[float, str], None]
@@ -82,6 +83,7 @@ class SetupService:
         ready = checks_ok and env_ready and model_ready and media_ready and not skipped
         return {
             "mode": self.runtime.mode,
+            "platform": platform_name(),
             "environment_variants": list(available_env_variants()),
             "ready": ready,
             "skipped": skipped,

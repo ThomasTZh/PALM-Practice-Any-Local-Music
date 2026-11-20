@@ -233,6 +233,7 @@ export function parseSetupStatus(value: unknown): SetupStatus {
     models.some((model) => model.installed);
   return {
     mode: firstText(raw, ["mode"]) ?? "source",
+    platform: firstText(raw, ["platform"]) ?? "unknown",
     ready:
       firstBoolean(raw, "ready") ??
       (checksOk &&

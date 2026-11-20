@@ -9,7 +9,6 @@ data root. No asset is installed system-wide and no elevation is requested.
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
 import subprocess
 import sys
@@ -69,17 +68,6 @@ PLATFORM_ASSETS: dict[tuple[str, str], PinnedToolAsset] = {
         filename="sonic-annotator-1.7.0-macos.tar.gz",
         kind="tar.gz",
         install_name="sonic-annotator-1.7.0",
-    ),
-    ("windows", "vamp_plugin_pack"): PinnedToolAsset(
-        tool="vamp_plugin_pack",
-        platform="windows",
-        version="1.0.0",
-        url="https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/download/plugins-win64-v1/vamp-plugins-win64.zip",
-        sha256="41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863",
-        size=1_430_285,
-        filename="vamp-plugins-win64.zip",
-        kind="zip",
-        install_name="vamp-plugins",
     ),
     ("macos", "vamp_plugin_pack"): PinnedToolAsset(
         tool="vamp_plugin_pack",
@@ -171,113 +159,12 @@ def _download(asset: PinnedToolAsset, path: Path) -> None:
     )
 
 
-def standard_vamp_dirs() -> tuple[Path, ...]:
-    """Windows' usual Vamp plugin locations, in search order."""
-    directories: list[Path] = []
-    for key in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA", "APPDATA"):
-        base = os.environ.get(key)
-        if base:
-            directories.append(Path(base) / "Vamp Plugins")
-    return tuple(dict.fromkeys(directories))
-
-
-VAMP_REQUIRED_WINDOWS_DLLS = ("qm-vamp-plugins.dll", "nnls-chroma.dll")
-VAMP_REQUIRED_WINDOWS_CATALOGS = ("qm-vamp-plugins.cat", "nnls-chroma.cat")
-VAMP_REQUIRED_PLUGIN_IDS = ("qm-keydetector", "chordino", "qm-barbeattracker")
-PE32_PLUS_X64 = 0x8664
-
-
-def _pe_machine(path: Path) -> int:
-    """Return the PE COFF machine type, or raise for a non-PE file."""
-    try:
-        data = Path(path).read_bytes()
-    except OSError as error:
-        raise SetupInstallError(f"cannot read plugin library {path}: {error}") from error
-    if len(data) < 0x40 or data[:2] != b"MZ":
-        raise SetupInstallError(f"{path.name} is not a PE library")
-    offset = int.from_bytes(data[0x3C:0x40], "little")
-    if offset + 6 > len(data) or data[offset : offset + 4] != b"PE\0\0":
-        raise SetupInstallError(f"{path.name} has no PE header")
-    return int.from_bytes(data[offset + 4 : offset + 6], "little")
-
-
-def _plugin_ids(listing: str) -> set[str]:
-    ids: set[str] = set()
-    for line in listing.splitlines():
-        parts = line.strip().split(":")
-        if len(parts) >= 4 and parts[0] == "vamp":
-            ids.add(parts[2])
-    return ids
-
-
-def _verify_windows_plugins(target: Path, runtime: RuntimePaths) -> None:
-    sonic = runtime.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
-    if not sonic.is_file():
-        raise SetupInstallError(
-            "Sonic Annotator must be installed before the Windows Vamp plugins "
-            "can be verified; rerun PALM Setup."
-        )
-    env = dict(os.environ)
-    env["VAMP_PATH"] = str(target)
-    try:
-        result = subprocess.run(
-            [str(sonic), "--list"],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-            **hidden_process_kwargs(),
-        )
-    except OSError as error:
-        raise SetupInstallError(
-            f"could not run Sonic Annotator to verify plugins: {error}"
-        ) from error
-    if result.returncode != 0:
-        raise SetupInstallError(
-            "Sonic Annotator could not list the installed Windows Vamp plugins: "
-            f"{result.stderr.strip() or result.returncode}"
-        )
-    missing = sorted(set(VAMP_REQUIRED_PLUGIN_IDS) - _plugin_ids(result.stdout))
-    if missing:
-        raise SetupInstallError(
-            "the Windows Vamp bundle did not expose required plugin ids: " + ", ".join(missing)
-        )
-
-
-def _install_vamp_windows(
-    asset: PinnedToolAsset, archive: Path, target: Path, runtime: RuntimePaths
-) -> None:
-    if not archive.is_file():
-        raise SetupInstallError(f"the {asset.filename} download is missing")
-    runtime.ensure_data_path(runtime.tools_root)
-    staging = Path(tempfile.mkdtemp(prefix=".vamp-windows-", dir=target.parent))
-    try:
-        extracted = staging / "extracted"
-        extracted.mkdir()
-        _extract_zip(archive, extracted)
-        found: dict[str, Path] = {}
-        for filename in (*VAMP_REQUIRED_WINDOWS_DLLS, *VAMP_REQUIRED_WINDOWS_CATALOGS):
-            match = _find(extracted, filename)
-            if match is None:
-                raise SetupInstallError(
-                    f"{asset.filename} is missing required Vamp file {filename}"
-                )
-            found[filename] = match
-        for filename in VAMP_REQUIRED_WINDOWS_DLLS:
-            machine = _pe_machine(found[filename])
-            if machine != PE32_PLUS_X64:
-                raise SetupInstallError(
-                    f"{filename} is not 64-bit x86-64 (PE machine 0x{machine:04x}); "
-                    "the Windows bundle must contain native 64-bit plugins"
-                )
-        published = staging / "published"
-        published.mkdir()
-        for filename, source in found.items():
-            shutil.copy2(source, published / filename)
-        _publish_tree(published, target)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    _verify_windows_plugins(target, runtime)
+WINDOWS_ANALYSIS_BLOCKER = (
+    "Windows analysis is unavailable: no 64-bit Vamp plugin distribution is "
+    "available. Do not use the GUI Vamp Plugin Pack or copy DLLs manually. "
+    "Import, playback and stem separation remain available when their own "
+    "media tools and models are installed."
+)
 
 
 def _install_vamp_macos(
@@ -363,20 +250,12 @@ def install_vamp_plugin_pack(
     runner: Runner | None = None,
 ) -> Path:
     selected = platform or platform_name()
+    if selected == "windows":
+        raise SetupInstallError(WINDOWS_ANALYSIS_BLOCKER)
     asset = asset_for(selected, "vamp_plugin_pack")
     target = runtime.tools_root / asset.install_name
-    if selected == "windows":
-        required = [
-            target / name for name in (*VAMP_REQUIRED_WINDOWS_DLLS, *VAMP_REQUIRED_WINDOWS_CATALOGS)
-        ]
-        if all(path.is_file() for path in required):
-            for path in required:
-                if path.suffix == ".dll" and _pe_machine(path) != PE32_PLUS_X64:
-                    raise SetupInstallError(f"{path.name} is not 64-bit x86-64")
-            _verify_windows_plugins(target, runtime)
-            return target
     plugin = target / f"qm-vamp-plugins{plugin_suffix()}"
-    if selected != "windows" and plugin.is_file():
+    if plugin.is_file():
         return target
     runtime.ensure_data_path(runtime.tools_root)
     run = runner or (
@@ -392,12 +271,10 @@ def install_vamp_plugin_pack(
     else:
         _download(asset, archive)
     _verify_archive(asset, archive)
-    if selected == "windows":
-        _install_vamp_windows(asset, archive, target, runtime)
-    elif selected == "macos":
+    if selected == "macos":
         _install_vamp_macos(asset, archive, target, run)
     else:
-        raise SetupInstallError("Vamp pack platform extraction is only for Windows/macOS")
+        raise SetupInstallError("Vamp pack platform extraction is only for macOS")
     if not plugin.is_file():
         raise SetupInstallError(f"Vamp plugin pack did not install {plugin.name} under {target}")
     return target
@@ -420,6 +297,10 @@ def install_platform_tools(
     install_sonic_annotator(runtime, platform=selected, downloader=downloader)
     if cancel is not None and cancel():
         raise SetupCancelled("tool installation cancelled")
+    if selected == "windows":
+        if progress is not None:
+            progress(1.0, "Sonic Annotator installed; Windows Vamp analysis unavailable")
+        return
     if progress is not None:
         progress(0.6, "installing Vamp plugin pack")
     install_vamp_plugin_pack(runtime, platform=selected, downloader=downloader, runner=runner)
@@ -430,9 +311,7 @@ def install_platform_tools(
 __all__ = [
     "PLATFORM_ASSETS",
     "PinnedToolAsset",
-    "VAMP_REQUIRED_WINDOWS_CATALOGS",
-    "VAMP_REQUIRED_WINDOWS_DLLS",
-    "VAMP_REQUIRED_PLUGIN_IDS",
+    "WINDOWS_ANALYSIS_BLOCKER",
     "asset_for",
     "install_platform_tools",
     "install_sonic_annotator",

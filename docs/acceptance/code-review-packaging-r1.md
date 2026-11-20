@@ -59,10 +59,10 @@ scoped packaging/licence/lifecycle pytest -> 90 passed, 2 skipped
 - **WinError 10038**: `_safe_close`/`_closed_socket_error` suppress only
   closed-socket/EBADF cases, re-raise unrelated errors, log context, and browser
   launch OSErrors are logged; scoped tests pass.
-- **Windows Vamp**: t154 installs the pinned `vamp-plugins-win64.zip`
-  (SHA-256 verified, PE32+ x86-64 check, required QM/Chordino DLLs and catalogs,
-  Sonic `--list` plugin-id verification) with no GUI installer/UAC. The
-  manifest/licence audit and setup tests pass.
+- **Windows Vamp**: t154's `vamp-plugins-win64.zip` release was deleted; t155
+  removes that asset and explicitly blocks Windows Vamp/Sonic analysis. No GUI
+  installer/UAC or manual DLL path is offered; import, playback and separation
+  remain available. Manifest/licence audit and setup tests pass.
 
 ## Blockers
 
@@ -109,15 +109,10 @@ terminal/external-FFmpeg/Linux-only/data-deletion statements.
 `packaging/windows/README.md:40-41`; `packaging/release-notes.md:49`;
 `docs/acceptance/windows-beta.md:122`.
 
-The actual Windows setup downloads the pinned PALM `vamp-plugins-win64.zip`
-(`src/basseparate/setup/tool_assets.py:73-83`) containing `qm-vamp-plugins.dll`
-and `nnls-chroma.dll`, verifies PE32+ and the Sonic plugin ids
-(`tool_assets.py:184-186,247-281`), and never runs an Inno/UAC installer or the
-GUI Vamp Plugin Pack. The licence manifest correctly lists
-`palm-vamp-plugins-win64` as GPL-2.0-or-later with the project source offer
-(`licenses/third_party/manifest.json:250+`, `THIRD_PARTY_DOWNLOADS.md:110`), but
-the setup page tells users to approve a UAC prompt and links an AGPL pack and
-c4dm/qm source that is not what is installed. The UI test at
+The deleted t154 Windows bundle is no longer downloaded or referenced. Setup
+now blocks Windows Vamp/Sonic analysis with a plain message and does not run the
+GUI Vamp Plugin Pack or instruct manual DLL copying. The licence manifest has no
+`palm-vamp-plugins-win64` component/source offer.
 `SetupWizard.test.tsx:145-148` enshrines the stale UAC text.
 
 **Fix:** make the tool name/licence/source links platform-aware (Windows:

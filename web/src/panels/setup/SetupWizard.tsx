@@ -784,11 +784,17 @@ export function SetupWizard({
             Sonic Annotator or Sonic Visualiser and the Vamp plugin pack are
             GPL/AGPL licensed and required for chord and tempo analysis.
           </p>
-          <p className="setup-note" data-testid="setup-windows-uac">
-            On Windows, the Vamp plugin pack may show one UAC prompt. Approve it
-            to finish the tool installation; denying it stops setup and you can
-            retry.
-          </p>
+          {status.platform === "windows" && (
+            <p
+              className="setup-note setup-error"
+              data-testid="setup-windows-vamp-blocker"
+            >
+              Windows analysis is unavailable: no 64-bit Vamp plugin
+              distribution is available. Do not use the GUI Vamp Plugin Pack or
+              copy DLLs manually. Import, playback and stem separation remain
+              available.
+            </p>
+          )}
           <ul className="setup-tool-list">
             {Object.entries(status.tools).map(([name, tool]) => (
               <li key={name}>

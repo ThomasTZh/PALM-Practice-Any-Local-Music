@@ -107,22 +107,12 @@ the writable data root. None are committed or installed system-wide.
 | Sonic Annotator | 1.7 | Windows x64 | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip | `c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693` | 6,618,013 B | GPL-2.0-or-later |
 | Sonic Annotator | 1.7 | macOS | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7.0-macos.tar.gz | `cb54f46af0f6c16b8274998d025019021b3b6c50410b8a8e2024d0aa7e65b040` | 10,638,233 B | GPL-2.0-or-later |
 | Vamp Plugin Pack | 2.0 | macOS | https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer-2.0.dmg | `60e2569ab064dbaf9ca8a4c3cf8465298b91ea3be1b34c5395d45c1ca4c53f10` | 48,745,081 B | AGPL-3.0 pack; plugins GPL/AGPL |
-| PALM Windows 64-bit Vamp bundle | 1.0.0 | Windows x64 | https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/tag/plugins-win64-v1 | `41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863` | 1,430,285 B | GPL-2.0-or-later |
 
-Windows setup downloads only the PALM Windows bundle and installs its two
-required DLLs and catalogs; it never downloads or runs the GUI Vamp Plugin Pack
-installer. The bundle is GPL-2.0-or-later. Source offer: QM Vamp Plugins
-(https://github.com/c4dm/qm-vamp-plugins), QM-DSP
-(https://github.com/c4dm/qm-dsp), NNLS-Chroma/Chordino
-(https://github.com/c4dm/nnls-chroma) and the Vamp Plugin SDK
-(https://github.com/vamp-plugins/vamp-plugin-sdk), built at the pinned commits
-in `licenses/third_party/manifest.json` and archived at the release tag above.
-The full GPL text is `licenses/third_party/licenses/GPL-2.0-or-later.txt`. The bundle is built by `.github/workflows/plugins-windows.yml` from
-pinned QM, QM-DSP, NNLS-Chroma and Vamp SDK commits with MSVC (QM) and
-MinGW-w64 x64 (Chordino). Source repositories: https://github.com/c4dm/qm-vamp-plugins,
-https://github.com/c4dm/qm-dsp, https://github.com/c4dm/nnls-chroma and
-https://github.com/vamp-plugins/vamp-plugin-sdk. macOS uses `hdiutil`/`pkgutil`
-to extract the DMG below the data root; no system package is installed.
+Windows setup installs Sonic Annotator only. Windows chord/key/BPM analysis is
+explicitly blocked because no 64-bit Vamp plugin distribution is available; the
+GUI Vamp Plugin Pack is not run and manual DLL copying is not supported. Windows
+import, playback and stem separation remain available when their own media
+tools and models are installed.
 
 ## Embedded platform Python and uv
 

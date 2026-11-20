@@ -55,6 +55,7 @@ export interface SetupReadiness {
 
 export interface SetupStatus {
   mode: string;
+  platform?: string;
   ready: boolean;
   skipped: boolean;
   requiresModelChoice: boolean;
@@ -471,9 +472,15 @@ export function setupGates(status: SetupStatus | null): SetupGates {
   const environmentReady = status.readiness.environment_ready;
   const modelReady = status.readiness.model_ready;
   const canImport = coreChecksOk && mediaReady;
+  const windowsAnalysisBlocked = status.platform === "windows";
   const canAnalyze =
-    coreChecksOk && mediaReady && toolsReady && environmentReady;
-  const canSeparate = canAnalyze && modelReady;
+    !windowsAnalysisBlocked &&
+    coreChecksOk &&
+    mediaReady &&
+    toolsReady &&
+    environmentReady;
+  const canSeparate =
+    coreChecksOk && mediaReady && environmentReady && modelReady;
   return {
     canImport,
     canAnalyze,
@@ -485,13 +492,15 @@ export function setupGates(status: SetupStatus | null): SetupGates {
         : "Importing needs the managed FFmpeg/FFprobe media tools. Open Setup to install them.",
     analyzeReason: canAnalyze
       ? null
-      : !coreChecksOk
-        ? "Analysis needs the system checks to pass. Open Setup to get the studio ready."
-        : !mediaReady
-          ? "Analysis needs the managed FFmpeg/FFprobe media tools. Open Setup to install them."
-          : !toolsReady
-            ? "Analysis needs the optional GPL tools (Sonic Visualiser and the Vamp plugin pack). Open Setup to install them."
-            : "Analysis needs the CPU or CUDA inference environment. Open Setup to create it.",
+      : windowsAnalysisBlocked
+        ? "Windows analysis is unavailable: no 64-bit Vamp plugin distribution is available. Do not use the GUI pack or copy DLLs manually."
+        : !coreChecksOk
+          ? "Analysis needs the system checks to pass. Open Setup to get the studio ready."
+          : !mediaReady
+            ? "Analysis needs the managed FFmpeg/FFprobe media tools. Open Setup to install them."
+            : !toolsReady
+              ? "Analysis needs the optional GPL tools (Sonic Visualiser and the Vamp plugin pack). Open Setup to install them."
+              : "Analysis needs the CPU or CUDA inference environment. Open Setup to create it.",
     separateReason: canSeparate
       ? null
       : !coreChecksOk

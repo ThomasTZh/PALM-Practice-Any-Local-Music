@@ -50,7 +50,6 @@ def _tar_bytes() -> bytes:
 def test_all_platform_assets_are_pinned() -> None:
     expected = {
         ("windows", "sonic_annotator"),
-        ("windows", "vamp_plugin_pack"),
         ("macos", "sonic_annotator"),
         ("macos", "vamp_plugin_pack"),
     }
@@ -59,22 +58,6 @@ def test_all_platform_assets_are_pinned() -> None:
         assert asset.url.startswith("https://github.com/")
         assert len(asset.sha256) == 64 and int(asset.sha256, 16) >= 0
         assert asset.size > 0
-
-
-def test_windows_vamp_bundle_pin_matches_license_manifest() -> None:
-    import json
-
-    asset = PLATFORM_ASSETS[("windows", "vamp_plugin_pack")]
-    manifest = json.loads(
-        (Path(__file__).resolve().parents[3] / "licenses/third_party/manifest.json").read_text()
-    )
-    component = next(
-        item for item in manifest["components"] if item["id"] == "palm-vamp-plugins-win64"
-    )
-    assert component["sha256"] == asset.sha256
-    assert component["size_bytes"] == asset.size
-    assert asset.url.endswith("/vamp-plugins-win64.zip")
-    assert component["license"] == "GPL-2.0-or-later"
 
 
 def test_windows_sonic_zip_extracts_into_data_root(
@@ -134,151 +117,53 @@ def test_bad_hash_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         )
 
 
-def _pe64(machine: int = 0x8664) -> bytes:
-    data = bytearray(0x100)
-    data[0:2] = b"MZ"
-    data[0x3C:0x40] = (0x80).to_bytes(4, "little")
-    data[0x80:0x84] = b"PE\0\0"
-    data[0x84:0x86] = machine.to_bytes(2, "little")
-    return bytes(data)
-
-
-def _vamp_zip(*, machine: int = 0x8664, omit: str | None = None, extra: bool = True) -> bytes:
-    files = {
-        "qm-vamp-plugins.dll": _pe64(machine),
-        "nnls-chroma.dll": _pe64(machine),
-        "qm-vamp-plugins.cat": b"catalog",
-        "nnls-chroma.cat": b"catalog",
-    }
-    if omit is not None:
-        files.pop(omit)
-    if extra:
-        files["unneeded-plugin.dll"] = _pe64()
-    stream = io.BytesIO()
-    with zipfile.ZipFile(stream, "w") as archive:
-        for name, data in files.items():
-            archive.writestr(name, data)
-    return stream.getvalue()
-
-
-def _fake_sonic_listing(monkeypatch: pytest.MonkeyPatch, stdout: str) -> None:
-    class Result:
-        returncode = 0
-        stderr = ""
-
-        def __init__(self) -> None:
-            self.stdout = stdout
-
-    monkeypatch.setattr(tool_assets.subprocess, "run", lambda *_args, **_kwargs: Result())
-
-
-def _windows_runtime(tmp_path: Path) -> RuntimePaths:
-    runtime = RuntimePaths.from_environment(
-        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data with spaces"
-    )
-    runtime.app_root.mkdir()
-    (runtime.tools_root / "sonic-annotator-1.7.0").mkdir(parents=True)
-    (runtime.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe").write_bytes(b"exe")
-    return runtime
-
-
-def test_windows_vamp_bundle_installs_only_required_pe64_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_windows_vamp_analysis_is_blocked_without_deleted_asset(
+    tmp_path: Path,
 ) -> None:
-    data = _vamp_zip()
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    _fake_sonic_listing(
-        monkeypatch,
-        "vamp:embed-07:chordino:simplechord\n"
-        "vamp:qm:qm-keydetector:key\n"
-        "vamp:qm:qm-barbeattracker:beats\n",
-    )
-    runtime = _windows_runtime(tmp_path)
-    target = install_vamp_plugin_pack(
-        runtime,
-        platform="windows",
-        downloader=lambda _asset, path: path.write_bytes(data),
-    )
-    assert target == runtime.tools_root / "vamp-plugins"
-    assert {path.name for path in target.iterdir()} == {
-        "qm-vamp-plugins.dll",
-        "nnls-chroma.dll",
-        "qm-vamp-plugins.cat",
-        "nnls-chroma.cat",
-    }
-    assert not (target / "unneeded-plugin.dll").exists()
-
-
-@pytest.mark.parametrize(
-    "kwargs, message",
-    [
-        ({"machine": 0x14C}, "not 64-bit x86-64"),
-        ({"omit": "nnls-chroma.dll"}, "missing required Vamp file nnls-chroma.dll"),
-    ],
-)
-def test_windows_vamp_bundle_rejects_bad_archives(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kwargs: dict, message: str
-) -> None:
-    data = _vamp_zip(**kwargs)
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    _fake_sonic_listing(monkeypatch, "vamp:qm:qm-keydetector:key\n")
-    runtime = _windows_runtime(tmp_path)
-    with pytest.raises(SetupInstallError, match=message):
-        install_vamp_plugin_pack(
-            runtime,
-            platform="windows",
-            downloader=lambda _asset, path: path.write_bytes(data),
-        )
-
-
-def test_windows_vamp_bundle_requires_all_plugin_ids(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = _vamp_zip()
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    _fake_sonic_listing(monkeypatch, "vamp:qm:qm-keydetector:key\n")
-    runtime = _windows_runtime(tmp_path)
-    with pytest.raises(SetupInstallError, match="chordino, qm-barbeattracker"):
-        install_vamp_plugin_pack(
-            runtime,
-            platform="windows",
-            downloader=lambda _asset, path: path.write_bytes(data),
-        )
-
-
-def test_windows_tools_install_both_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = Path(__file__).resolve().parents[3]
+    assert ("windows", "vamp_plugin_pack") not in PLATFORM_ASSETS
     runtime = RuntimePaths.from_environment(
         mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
     )
     runtime.app_root.mkdir()
-    calls: list[str] = []
+    called: list[object] = []
+    with pytest.raises(SetupInstallError) as caught:
+        install_vamp_plugin_pack(
+            runtime,
+            platform="windows",
+            downloader=lambda *_args: called.append("download"),
+            runner=lambda *_args: called.append("runner"),
+        )
+    message = str(caught.value)
+    assert "Windows analysis is unavailable" in message
+    assert "no 64-bit Vamp plugin distribution" in message
+    assert "Do not use the GUI Vamp Plugin Pack" in message
+    assert "copy DLLs manually" in message
+    assert called == []
+
+    manifest = (root / "licenses/third_party/manifest.json").read_text()
+    docs = (root / "THIRD_PARTY_DOWNLOADS.md").read_text()
+    assert "palm-vamp-plugins-win64" not in manifest
+    assert "plugins-win64-v1" not in manifest
+    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" not in manifest
+    assert "plugins-win64-v1" not in docs
+    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" not in docs
+
+
+def test_windows_tools_install_sonic_and_leave_analysis_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = RuntimePaths.from_environment(
+        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
+    )
+    runtime.app_root.mkdir()
     monkeypatch.setattr(
         tool_assets,
         "install_sonic_annotator",
-        lambda *_args, **_kwargs: calls.append("sonic") or runtime.tools_root / "sonic",
-    )
-    monkeypatch.setattr(
-        tool_assets,
-        "install_vamp_plugin_pack",
-        lambda *_args, **_kwargs: calls.append("vamp") or runtime.tools_root / "vamp",
+        lambda *_args, **_kwargs: runtime.tools_root / "sonic-annotator-1.7.0",
     )
     tool_assets.install_platform_tools(runtime, platform="windows")
-    assert calls == ["sonic", "vamp"]
+    assert not (runtime.tools_root / "vamp-plugins" / "qm-vamp-plugins.dll").exists()
 
 
 def test_macos_dmg_uses_hdiutil_and_pkgutil(

@@ -95,7 +95,12 @@ describe("SetupWizard", () => {
   });
 
   it("shows every downloadable component and full bundled licences before download", () => {
-    renderWizard();
+    renderWizard(
+      createFakeSetupClient({
+        ...incompleteSetupStatus(),
+        platform: "windows",
+      }),
+    );
     const summary = screen.getByTestId("setup-licence-summary");
     expect(summary).toHaveTextContent("Before downloading");
     for (const id of [
@@ -142,11 +147,11 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("setup-media-tools")).toHaveTextContent(
       "not a system prerequisite",
     );
-    expect(screen.getByTestId("setup-windows-uac")).toHaveTextContent(
-      "may show one UAC prompt",
+    expect(screen.getByTestId("setup-windows-vamp-blocker")).toHaveTextContent(
+      "no 64-bit Vamp plugin distribution",
     );
-    expect(screen.getByTestId("setup-windows-uac")).not.toHaveTextContent(
-      /no admin|no-admin|without.*admin/i,
+    expect(screen.getByTestId("setup-windows-vamp-blocker")).toHaveTextContent(
+      "Do not use the GUI Vamp Plugin Pack",
     );
     expect(screen.getByTestId("setup-media-install")).toBeDisabled();
     expect(screen.getByTestId("setup-recommended-install")).toBeDisabled();
