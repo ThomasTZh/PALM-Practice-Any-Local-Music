@@ -36,6 +36,9 @@ jobs:
       - name: Build native PALM.exe from source
         shell: pwsh
         run: .\packaging\windows\build_launcher.ps1 -Out .\packaging\windows\PALM.exe
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
       - name: Build Windows ZIP
         shell: pwsh
         run: python scripts/package_windows.py --online

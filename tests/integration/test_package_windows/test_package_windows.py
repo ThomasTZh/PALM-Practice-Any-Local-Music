@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import zipfile
@@ -129,3 +130,71 @@ def test_native_launcher_builds_and_sets_packaged_environment() -> None:
     binary = (ROOT / "packaging/windows/PALM.exe").read_bytes()
     assert binary[:2] == b"MZ"
     assert len(binary) > 4096
+
+
+def test_inno_installer_contract() -> None:
+    script = (ROOT / "packaging/windows/PALM.iss").read_text()
+    packager = (ROOT / "scripts/package_windows.py").read_text()
+    for value in (
+        "PrivilegesRequired=lowest",
+        "DefaultDirName={localappdata}\\Programs\\PALM",
+        "AppId={{",
+        "{userprograms}\\PALM",
+        "{userdesktop}\\PALM",
+        "UninstallDisplayIcon={app}\\PALM.exe",
+        "CloseApplications=yes",
+        "UninstallSilent",
+        "MB_DEFBUTTON1",
+        "DeleteData",
+        "{localappdata}\\palm",
+    ):
+        assert value in script, value
+    assert "build_installer" in packager and "ISCC.exe" in packager and "PALM.iss" in packager
+    assert "PALM-{version_value}-windows-x86_64-installer.exe" in packager
+    assert not any(
+        path.name.endswith("-installer.exe")
+        for path in (ROOT / "packaging").rglob("*")
+        if path.is_file()
+    )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native installer test requires Windows")
+def test_native_installer_install_upgrade_uninstall(tmp_path: Path) -> None:
+    installer = next(
+        iter(sorted((ROOT / "dist").glob("PALM-*-windows-x86_64-installer.exe"))), None
+    )
+    if installer is None:
+        pytest.skip("installer has not been built")
+    app_dir = tmp_path / "PALM app"
+    data_dir = Path(os.environ["LOCALAPPDATA"]) / "palm"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    keep = data_dir / "projects" / "keep.txt"
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    keep.write_text("keep")
+    base = [
+        str(installer),
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        f"/DIR={app_dir}",
+    ]
+    assert subprocess.run(base, check=False).returncode == 0
+    assert (app_dir / "PALM.exe").is_file()
+    assert (app_dir / "unins000.exe").is_file()
+    start_menu = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/PALM.lnk"
+    assert start_menu.exists()
+    marker = app_dir / "upgrade-marker.txt"
+    marker.write_text("old")
+    assert subprocess.run(base, check=False).returncode == 0
+    assert (app_dir / "PALM.exe").is_file()
+    assert marker.exists()
+    assert keep.is_file()
+    uninstaller = app_dir / "unins000.exe"
+    assert (
+        subprocess.run(
+            [str(uninstaller), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], check=False
+        ).returncode
+        == 0
+    )
+    assert not app_dir.exists()
+    assert keep.is_file()

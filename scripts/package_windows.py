@@ -389,6 +389,46 @@ def check_zip(path: Path) -> int:
     return 0
 
 
+def find_iscc() -> Path | None:
+    configured = os.environ.get("ISCC")
+    if configured and Path(configured).is_file():
+        return Path(configured)
+    found = shutil.which("ISCC.exe") or shutil.which("ISCC")
+    if found:
+        return Path(found)
+    for candidate in (
+        Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+        Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def build_installer(stage: Path, output_dir: Path, version_value: str) -> Path | None:
+    """Build the Inno Setup installer from the same staged payload as the ZIP."""
+    iscc = find_iscc()
+    if iscc is None:
+        if os.name == "nt":
+            raise PackageError("ISCC.exe not found; install Inno Setup 6 or set ISCC")
+        print("package-windows: ISCC.exe unavailable on this host; installer skipped")
+        return None
+    installer = output_dir / f"PALM-{version_value}-windows-x86_64-installer.exe"
+    command = [
+        str(iscc),
+        f"/DPayloadDir={stage}",
+        f"/DAppVersion={version_value}",
+        f"/DOutputDir={output_dir}",
+        f"/DOutputBaseFilename={installer.stem}",
+        str(ROOT / "packaging" / "windows" / "PALM.iss"),
+    ]
+    completed = subprocess.run(command, check=False)
+    if completed.returncode != 0 or not installer.is_file():
+        raise PackageError("Inno Setup installer build failed")
+    print(f"package-windows: wrote {installer} ({installer.stat().st_size} bytes)")
+    return installer
+
+
 def build(args: argparse.Namespace) -> int:
     manifest = load_manifest()
     version_value = version()
@@ -404,6 +444,7 @@ def build(args: argparse.Namespace) -> int:
         clean_bytecode(stage_path)
         zip_path = build_zip(stage_path, output_dir / f"PALM-{version_value}-windows-x86_64.zip")
         check_zip(zip_path)
+        build_installer(stage_path, output_dir, version_value)
         return 0
     except (PackageError, OSError, tarfile.TarError, zipfile.BadZipFile) as error:
         print(f"package-windows: {error}", file=sys.stderr)
