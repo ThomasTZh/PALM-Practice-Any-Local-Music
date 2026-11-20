@@ -117,6 +117,10 @@ class StemError(RuntimeError):
     """Stem separation failed; the message is safe for the UI."""
 
 
+class SeparationSetupError(StemError):
+    """Separation cannot start until setup supplies its managed runtime."""
+
+
 class StemsCancelled(StemError):
     """The caller cancelled; the child is gone and no cache entry was published."""
 
@@ -536,10 +540,9 @@ def resolve_model(model_id: str, *, registry: Registry | None = None) -> ModelEn
 def require_model_installed(entry: ModelEntry) -> ModelState:
     state = verify_model(entry)
     if not state.installed:
-        raise StemError(
-            f"model {entry.id} is not installed ({state.status}: {state.detail}); "
-            f"install it from the setup screen (POST /api/setup/models) or run "
-            f"{entry.install_command}"
+        raise SeparationSetupError(
+            f"Stem separation needs the {entry.name} model ({state.detail}). "
+            "Open Setup and install a separation model, then retry."
         )
     return state
 
@@ -650,6 +653,49 @@ def _read_worker_line(
     return dict(payload), False
 
 
+def _separation_analysis(runtime: RuntimePaths, engine: str) -> Path:
+    analysis = runtime.environment_python(engine)
+    if analysis.is_file():
+        return analysis
+    if engine == "demucs":
+        # The managed CPU/CUDA environment installs the shared worker runtime;
+        # the legacy per-engine demucs directory is not recreated by setup.
+        return runtime.msst_python
+    return analysis
+
+
+def separation_setup_problem(runtime: RuntimePaths, entry: ModelEntry) -> str | None:
+    """Return actionable setup guidance when separation cannot run yet."""
+    analysis = _separation_analysis(runtime, entry.engine)
+    if not analysis.is_file() or not os.access(analysis, os.X_OK):
+        return (
+            "Stem separation needs the managed CPU environment. "
+            "Open Setup and install the CPU environment, then retry."
+        )
+    worker = runtime.worker(entry.engine)
+    if not worker.is_file():
+        return (
+            f"Stem separation is missing its worker at {worker}. "
+            "Open Setup and repair the application installation."
+        )
+    if entry.engine == "demucs":
+        bundle = runtime.models_root / entry.install_dir
+        if not bundle.is_dir():
+            return (
+                f"Stem separation needs the {entry.name} model. "
+                "Open Setup and install a separation model, then retry."
+            )
+    if runtime.packaged:
+        from basseparate.setup.media_tools import media_tools_ready
+
+        if not media_tools_ready(runtime):
+            return (
+                "Stem separation needs the managed FFmpeg and FFprobe media tools. "
+                "Open Setup and install them, then retry."
+            )
+    return None
+
+
 def separate_asset(
     pcm_path: Path,
     *,
@@ -714,14 +760,14 @@ def separate_asset(
     analysis = (
         Path(analysis_python)
         if analysis_python is not None
-        else runtime.environment_python(entry.engine)
+        else _separation_analysis(runtime, entry.engine)
     )
     worker = Path(worker_script) if worker_script is not None else runtime.worker(entry.engine)
     bundle = Path(bundle_dir) if bundle_dir is not None else runtime.models_root / entry.install_dir
     if not analysis.is_file() or not os.access(analysis, os.X_OK):
-        raise StemError(
-            f"separation interpreter is missing or not executable: {analysis}. "
-            f"Run {entry.install_command}."
+        raise SeparationSetupError(
+            "Stem separation needs the managed CPU environment. "
+            "Open Setup and install the CPU environment, then retry."
         )
     if not worker.is_file():
         raise StemError(f"separation worker is missing: {worker}")
@@ -1068,7 +1114,11 @@ def start_separation(
             status_code=400,
             detail=f"{error}; install or choose a model from the setup screen",
         ) from error
-    store.get(body.project_id)  # 404 before the job is queued
+    project = store.get(body.project_id)  # 404 before the job is queued
+    del project
+    problem = separation_setup_problem(runtime_paths(), entry)
+    if problem is not None:
+        raise HTTPException(status_code=409, detail=problem)
     try:
         job = jobs.submit("separate", body.model_dump())
     except KeyError as error:
@@ -1222,6 +1272,7 @@ __all__ = [
     "SeparateRequest",
     "StemError",
     "StemFile",
+    "SeparationSetupError",
     "StemSet",
     "StemsCancelled",
     "cache_entry",

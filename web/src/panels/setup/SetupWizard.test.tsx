@@ -472,10 +472,23 @@ describe("SetupWizard", () => {
 
   it("installs the recommended stack and visibly selects editable Demucs", async () => {
     const client = createFakeSetupClient(incompleteSetupStatus());
-    const startMediaTools = vi.fn(async () => job("queued", 0));
-    const startTools = vi.fn(async () => job("queued", 0));
-    const startEnvironment = vi.fn(async () => job("queued", 0));
-    const startModels = vi.fn(async () => job("queued", 0));
+    const installOrder: string[] = [];
+    const startMediaTools = vi.fn(async () => {
+      installOrder.push("media");
+      return job("queued", 0);
+    });
+    const startTools = vi.fn(async () => {
+      installOrder.push("tools");
+      return job("queued", 0);
+    });
+    const startEnvironment = vi.fn(async () => {
+      installOrder.push("environment");
+      return job("queued", 0);
+    });
+    const startModels = vi.fn(async () => {
+      installOrder.push("models");
+      return job("queued", 0);
+    });
     client.startMediaTools = startMediaTools;
     client.startTools = startTools;
     client.startEnvironment = startEnvironment;
@@ -499,6 +512,9 @@ describe("SetupWizard", () => {
         ["htdemucs_ft"],
         ["htdemucs_ft"],
       ),
+    );
+    await waitFor(() =>
+      expect(installOrder).toEqual(["media", "tools", "environment", "models"]),
     );
     expect(startMediaTools).toHaveBeenCalledWith(true);
     expect(startTools).toHaveBeenCalledWith(true);

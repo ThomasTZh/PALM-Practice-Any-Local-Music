@@ -332,8 +332,8 @@ def test_separate_endpoint_rejects_unknown_and_missing_models(tmp_path: Path, mo
             "/api/separate", json={"project_id": project.id, "model_id": "bs-roformer-sw"}
         )
         assert missing.status_code == 400
-        assert "not installed" in missing.json()["detail"]
-        assert "make models-install" in missing.json()["detail"]
+        assert "Open Setup" in missing.json()["detail"]
+        assert "make models-install" not in missing.json()["detail"]
         assert client.get("/api/jobs").json()["jobs"] == before
 
 

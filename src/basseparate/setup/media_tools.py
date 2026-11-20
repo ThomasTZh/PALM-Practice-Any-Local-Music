@@ -212,12 +212,21 @@ def install_media_tools(
     """Download and verify managed FFmpeg/FFprobe under the data root."""
     active = runtime or runtime_paths()
     selected = platform or _platform()
+    existing = media_tools_status(active)
+    if all(item["installed"] for item in existing.values()):
+        if progress is not None:
+            progress(1.0, "media tools already installed")
+        return existing
     root = active.ensure_data_path(media_tool_dir(active))
     downloaded: dict[str, Path] = {}
     with tempfile.TemporaryDirectory(prefix=".media-tools-", dir=active.data_root) as tmp:
         for index, tool in enumerate(("ffmpeg", "ffprobe")):
             if cancel is not None and cancel():
                 raise SetupCancelled("media-tool installation cancelled")
+            if existing.get(tool, {}).get("installed"):
+                if progress is not None:
+                    progress(0.1 + 0.4 * index, f"{tool} already installed")
+                continue
             asset = PLATFORM_MEDIA_ASSETS.get((selected, tool))
             if asset is None:
                 raise SetupInstallError(f"no pinned {tool} asset for {selected}")

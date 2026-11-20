@@ -134,3 +134,25 @@ def test_managed_media_binary_preferred_and_override_wins(
     assert platform_support.ffmpeg_binary(which=lambda _name: "/usr/bin/ffmpeg") == str(
         tmp_path / "override"
     )
+
+
+def test_partial_recovery_reuses_installed_media_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = RuntimePaths.from_environment(
+        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
+    )
+    runtime.app_root.mkdir()
+    root = runtime.tools_root / "ffmpeg"
+    root.mkdir(parents=True)
+    for tool in ("ffmpeg", "ffprobe"):
+        (root / tool).write_bytes(b"installed")
+    calls: list[Path] = []
+
+    def must_not_download(_asset, path):
+        calls.append(path)
+        raise AssertionError("completed media tools must not be downloaded again")
+
+    result = install_media_tools(runtime, platform="linux", downloader=must_not_download)
+    assert calls == []
+    assert all(item["installed"] for item in result.values())
