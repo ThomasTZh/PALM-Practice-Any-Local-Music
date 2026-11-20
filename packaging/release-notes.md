@@ -20,8 +20,8 @@ signed, notarized or GPU-capable.
 | Channel | Asset | Status |
 | --- | --- | --- |
 | Linux x86_64 | `PALM-0.1.0-dev-linux-x86_64.tar.gz` | Supported Linux build |
-| Windows x64 | `PALM-0.1.0-dev-windows-x86_64.zip` | Unsigned beta, CPU only, no admin; acceptance pending laptop evidence |
-| macOS Apple Silicon | `PALM-0.1.0-dev-macos-arm64.zip` / `.dmg` | Unsigned experimental arm64, CPU-first; acceptance pending one-shot evidence |
+| Windows x64 | `PALM-0.1.0-dev-windows-x86_64-installer.exe` (per-user) / `.zip` (portable) | Unsigned beta, CPU only, no admin; acceptance pending laptop evidence |
+| macOS Apple Silicon | `PALM-0.1.0-dev-macos-arm64.dmg` (drag to Applications) / `.zip` | Unsigned, non-notarized experimental arm64; acceptance pending one-shot evidence |
 
 Linux is the supported target. The Windows beta is tested on Linux/CI plus
 Wine and must not be called Windows-accepted until the laptop checklist is
@@ -41,10 +41,16 @@ Python environments, recordings, tests, caches or `.git`.
 
 ## Windows x64 beta pre-release (separate channel)
 
-- Asset: `PALM-0.1.0-dev-windows-x86_64.zip`, plus `SHA256SUMS`.
+- Assets: `PALM-0.1.0-dev-windows-x86_64-installer.exe` (per-user, no admin) and
+  `PALM-0.1.0-dev-windows-x86_64.zip` (portable), plus `SHA256SUMS`.
 - Unsigned, x64 only, CPU inference only. No CUDA/GPU claim.
+- First launch opens the licence/setup screen; managed FFmpeg/FFprobe, analysis
+  tools, CPU environment and models are downloaded only after consent. Windows
+  Vamp setup may show one UAC prompt; the app needs no administrator rights.
+- Check for updates only opens the release page. There is no auto-updater.
 - No administrator install: extract below the user profile and run
-  `palm.cmd`. The console shows logs; Ctrl+C or `--stop` stops it.
+  **PALM.exe**. The control window starts the server and browser; Quit stops it.
+  `palm.cmd` is diagnostic only.
 - FFmpeg and ffprobe are not bundled. Use a trusted Windows build and set
   `PALM_FFMPEG`/`PALM_FFPROBE` or the user PATH before setup.
 - Setup downloads Sonic Annotator, the Vamp Plugin Pack, one CPU environment
@@ -56,8 +62,9 @@ Python environments, recordings, tests, caches or `.git`.
 ## macOS Apple Silicon experimental pre-release (separate channel)
 
 - Asset: `PALM-0.1.0-dev-macos-arm64.zip` or `.dmg`, plus `SHA256SUMS`.
-- Apple Silicon arm64 only. Unsigned and not notarized; right-click **Open** or
-  remove quarantine with `xattr -dr com.apple.quarantine ~/Applications/PALM.app`.
+- Apple Silicon arm64 only. Unsigned and not notarized. Open the DMG, drag
+  **PALM.app** onto **Applications**, then right-click **Open** the first time
+  or remove quarantine with `xattr -dr com.apple.quarantine ~/Applications/PALM.app`.
 - CPU-first setup. No CUDA/GPU claim. FFmpeg/ffprobe are prerequisites, not
   bundled.
 - Data stays in `~/Library/Application Support/palm` unless overridden.
@@ -123,7 +130,8 @@ them and accept their licences:
   SCNet XL IHF (about 204 MB, four parts) or BS-RoFormer-SW (about 667 MB, six
   parts including guitar and piano).
 
-`ffmpeg` and `ffprobe` must already be installed. Setup checks for about 5 GiB
+FFmpeg and FFprobe are downloaded and verified by setup (managed), not an
+external prerequisite. Setup checks for about 5 GiB
 free space before downloading. Setup can be skipped; playback, importing,
 sections and the spectrogram work without the optional pieces.
 
@@ -167,10 +175,10 @@ The data-root removal deletes projects, so back them up first.
 
 ## Verification
 
-- Clean-room and asset evidence: [packaging/VERIFICATION.md](packaging/VERIFICATION.md)
-- Full guide: [docs/portable.md](docs/portable.md)
-- Application licence: [licenses/LICENSE](licenses/LICENSE)
-- Third-party notices: [licenses/NOTICES.md](licenses/NOTICES.md)
+- Clean-room and asset evidence: [packaging/VERIFICATION.md](../packaging/VERIFICATION.md)
+- Full guide: [docs/portable.md](../docs/portable.md)
+- Application licence: [licenses/LICENSE](../licenses/LICENSE)
+- Third-party notices: [licenses/NOTICES.md](../licenses/NOTICES.md)
 
 Measured and verified for this build: packaged launcher health and setup page;
 real network install of the analysis tools; real CPU environment import

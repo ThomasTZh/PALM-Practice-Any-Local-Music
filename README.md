@@ -27,17 +27,16 @@ launcher:
 
 - **Linux:** install/launch the included `palm.desktop` entry (or `bin/palm`
   from the desktop environment), which opens the PALM control window.
-- **Windows beta:** double-click **`PALM.exe`** at the root of the extracted
-  ZIP. No console is required; `palm.cmd` is only a diagnostic fallback.
-- **macOS experimental:** double-click **`PALM.app`**. The control window is
-  the normal UI; when Finder starts it without a TTY it may open Terminal.app
-  for logs, and `--no-terminal` suppresses that.
+- **Windows beta:** run the per-user installer, or extract the portable ZIP and
+  double-click **`PALM.exe`**. No console or administrator rights are required.
+- **macOS experimental:** open the DMG, drag **`PALM.app`** onto **Applications**,
+  then double-click it. No Terminal.app window is opened.
 
 The control window starts the local server, waits for health, opens the browser
 once and offers **Open browser**, **View logs**, **Quit** and **Check for
 updates**. Quit stops the server; closing only the browser leaves it running.
 Check for updates opens the matching release page with manual download
-instructions; PALM never replaces itself. Remove the app with the OS tools
+instructions; PALM never replaces itself and has no automatic updater. Remove the app with the OS tools
 (Windows Installed apps/Explorer, macOS Trash, Linux file manager); projects,
 models and tools in the data root are preserved.
 
@@ -84,9 +83,10 @@ and credits. Nothing third-party is committed.
 | Windows x86_64 | **Beta, CPU only** | CPU | None. CUDA is not offered on Windows. |
 | macOS Apple Silicon (arm64) | **Experimental, CPU-first** | CPU | None. CUDA is not offered on macOS. |
 
-Linux is the supported target. The Windows ZIP is an unsigned beta for a
-no-admin user-profile install; Windows acceptance is still pending the
-laptop checklist in [docs/acceptance/windows-beta.md](docs/acceptance/windows-beta.md).
+Linux is the supported target. Windows has a per-user installer (no administrator
+rights) and a portable ZIP; both are unsigned beta builds, CPU only. Windows
+acceptance is still pending the laptop checklist in
+[docs/acceptance/windows-beta.md](docs/acceptance/windows-beta.md).
 The macOS app is an unsigned experimental arm64 build for Apple Silicon; it is
 not notarized and has no stable-support claim until the one-shot checklist in
 [docs/acceptance/macos-experimental.md](docs/acceptance/macos-experimental.md)
@@ -99,11 +99,12 @@ Each platform has its own asset plus checksums and notes:
 
 - Linux: `PALM-<version>-linux-x86_64.tar.gz` (extract; launch the desktop
   entry or `bin/palm` to open the control window)
-- Windows beta: `PALM-<version>-windows-x86_64.zip` (extract, double-click
-  `PALM.exe`; no console or administrator rights)
-- macOS experimental: `PALM-<version>-macos-arm64.zip` or `.dmg` (double-click
-  the unsigned `PALM.app` for Apple Silicon; it may open Terminal.app for logs
-  when started without a TTY; `--no-terminal` suppresses it)
+- Windows beta: `PALM-<version>-windows-x86_64-installer.exe` (per-user Inno
+  installer, no administrator rights) or `PALM-<version>-windows-x86_64.zip`
+  (portable; extract and double-click `PALM.exe`)
+- macOS experimental: `PALM-<version>-macos-arm64.dmg` (open, drag `PALM.app`
+  onto **Applications**) or `.zip` (portable `PALM.app`). Unsigned,
+  non-notarized, no Terminal window
 
 Every bundle contains the app, built UI, analysis workers/registry,
 environment definitions, launcher, setup code and licences. Model weights,
@@ -131,7 +132,7 @@ and offer `Open setup`. The data root is `~/.local/share/palm` on Linux,
 `~/Library/Application Support/palm` on macOS (override with `--data-dir` or
 `PALM_DATA_DIR`). It holds models, tools, environments, logs, run state, setup
 state and projects. See [docs/portable.md](docs/portable.md) for the control
-window, data layout, setup API, update/uninstall and troubleshooting.
+window, data layout, setup API, update/removal and troubleshooting.
 
 ## Control window, updates and cleanup
 

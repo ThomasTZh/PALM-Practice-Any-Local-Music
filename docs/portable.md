@@ -26,7 +26,7 @@ completed. Do not describe either as stable, signed, notarized or GPU-capable.
 | Platform | Asset | Launcher |
 | --- | --- | --- |
 | Linux x86_64 | `PALM-<version>-linux-x86_64.tar.gz` | desktop entry / `bin/palm` control window |
-| Windows x64 beta | `PALM-<version>-windows-x86_64.zip` | double-click `PALM.exe` |
+| Windows x64 beta | `.exe` installer or portable `.zip` | per-user install / double-click `PALM.exe` |
 | macOS arm64 experimental | `PALM-<version>-macos-arm64.zip` / `.dmg` | double-click `PALM.app` |
 
 Each release also provides `SHA256SUMS` and `RELEASE-NOTES.md`. Source release
@@ -56,9 +56,8 @@ rights are used. `palm.cmd` is only the diagnostic fallback in the appendix.
 Open the DMG and drag **`PALM.app`** onto the **Applications** shortcut, then
 double-click it. If Gatekeeper
 blocks the unsigned app, right-click **Open** or use System Settings > Privacy
-& Security > **Open Anyway**. Finder starts the control window; when it has no
-TTY the wrapper may open Terminal.app for logs. Pass `--no-terminal` to keep
-the launch windowless.
+& Security > **Open Anyway**. Finder starts the control window directly, with no
+Terminal.app window.
 
 ## Appendix: diagnostic console and recovery commands
 
@@ -95,8 +94,8 @@ app folder, so replacing the app does not download them again.
 
 **Check for updates** reads `install.json`, identifies the installed channel
 and version, and opens the matching release/download page in the browser with
-manual instructions. It does not download, stage, swap or replace the app, and
-there is no custom update helper.
+manual instructions. It does not download, stage, swap or replace the app;
+there is no custom update helper and no automatic updater.
 
 To update, quit PALM, download the matching asset and `SHA256SUMS`, verify it,
 and replace the app folder/bundle. The data root is unchanged. There is no
@@ -105,10 +104,14 @@ root unless you explicitly choose to delete your projects.
 
 ## Windows beta
 
-The Windows asset is an unsigned x64 portable ZIP. Extract it under your user
-profile, for example `%LOCALAPPDATA%\Programs\PALM`, and double-click
-**`PALM.exe`**. It is a GUI-subsystem launcher: no console window, administrator
-shell, system installer, service or machine-wide PATH change is required.
+The unsigned x64 Windows build is available as a per-user Inno Setup installer
+(`PALM-<version>-windows-x86_64-installer.exe`) and as a portable ZIP. The
+installer uses `PrivilegesRequired=lowest`, installs below
+`%LOCALAPPDATA%\Programs\PALM`, creates per-user Start Menu/desktop shortcuts
+and an uninstall entry. No administrator shell, service or machine-wide PATH
+change is required. The portable ZIP can be extracted under the user profile and
+launched with **`PALM.exe`**. Both paths start the GUI control window with no
+console.
 `PALM.exe` starts the control window, which starts the server, waits for health,
 opens the browser once and offers Open browser, View logs, Quit, Check for
 updates. `PALM_DATA_DIR` defaults to `%LOCALAPPDATA%\palm`; paths
@@ -117,9 +120,10 @@ with spaces and non-ASCII characters are handled by the native launcher.
 FFmpeg and ffprobe are **not** an external prerequisite: setup downloads managed
 FFmpeg/FFprobe after licence consent, plus Sonic Annotator and the Vamp Plugin
 Pack automatically. Windows setup offers **CPU only**; CUDA is hidden. The beta
-is unsigned, so SmartScreen may ask for confirmation. `palm.cmd` and terminal
-flags are diagnostic fallbacks in the troubleshooting appendix, not normal
-steps. Full no-admin steps and evidence capture are in
+is unsigned, so SmartScreen may ask for confirmation. The installed uninstaller
+offers app-only removal (default, keeps data) or also deleting
+`%LOCALAPPDATA%\palm`; silent uninstall never deletes data. `palm.cmd` and
+terminal flags are diagnostic fallbacks in the appendix, not normal steps. Full no-admin steps and evidence capture are in
 [docs/acceptance/windows-beta.md](acceptance/windows-beta.md). Stable Windows
 support is not claimed.
 
@@ -136,8 +140,8 @@ you assemble it manually; the packaged ZIP/DMG already contains it.
 The wrapper sets `PALM_MODE=packaged`, `PALM_APP_ROOT`, the native
 `PALM_DATA_DIR` (`~/Library/Application Support/palm` unless overridden) and
 `PYTHONPATH`, then executes `Contents/Resources/app/bin/palm --window`. Finder
-starts the control window; the launcher may open Terminal.app for logs when it
-has no TTY, and `--no-terminal` suppresses that. The control window starts the
+starts the control window directly, with no Terminal.app window. The control
+window starts the
 server, waits for health, opens the browser once and
 offers Open browser, View logs, Quit and Check for updates.
 `--status`, `--stop`, `--no-browser`, `--no-terminal` and `--data-dir` remain
