@@ -69,8 +69,11 @@ def tool_paths(
 
 def tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
     active = runtime or runtime_paths()
-    executable, plugin = tool_paths(active)
     selected = platform_name()
+    if selected == "windows":
+        # Windows analysis is blocked while the 64-bit plugin bundle is rebuilt.
+        return {}
+    executable, plugin = tool_paths(active)
     return {
         "sonic_visualiser": {
             "name": "Sonic Annotator" if selected != "linux" else "Sonic Visualiser / Piper",
@@ -113,6 +116,11 @@ def install_tools(
 ) -> dict[str, dict[str, object]]:
     """Install the optional GPL tools below the writable tools root."""
     active = runtime or runtime_paths()
+    if platform_name() == "windows":
+        raise SetupInstallError(
+            "Windows analysis is unavailable in this build: the 64-bit Vamp/plugin "
+            "bundle is being rebuilt. Import, playback and separation remain available."
+        )
     active.ensure_data_path(active.tools_root)
     if installer is not None:
         if cancel is not None and cancel():

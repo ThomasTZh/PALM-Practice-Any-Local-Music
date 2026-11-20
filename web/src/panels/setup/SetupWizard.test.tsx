@@ -106,8 +106,6 @@ describe("SetupWizard", () => {
     for (const id of [
       "media-ffmpeg",
       "media-ffprobe",
-      "tool-sonic",
-      "tool-vamp",
       "environment-cpu",
       "environment-cuda",
       "model-htdemucs_ft",
@@ -123,9 +121,8 @@ describe("SetupWizard", () => {
     expect(ffmpeg).toHaveTextContent(/9\.0\.2|8\.1\.2/);
     expect(ffmpeg).toHaveTextContent("GPL-3.0-or-later");
     expect(ffmpeg).toHaveTextContent("Required");
-    expect(screen.getByTestId("licence-component-tool-vamp")).toHaveTextContent(
-      "Optional",
-    );
+    expect(screen.queryByTestId("licence-component-tool-vamp")).toBeNull();
+    expect(screen.queryByTestId("licence-component-tool-sonic")).toBeNull();
     expect(
       screen.getByTestId("licence-source-media-ffmpeg").getAttribute("href"),
     ).toMatch(/ffmpeg\.martin-riedl\.de|gyan\.dev/);
@@ -141,18 +138,16 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("licence-text-GPL-3.0")).toHaveTextContent(
       "GNU GENERAL PUBLIC LICENSE",
     );
-    expect(screen.getByTestId("licence-text-AGPL-3.0")).toHaveTextContent(
-      "GNU AFFERO GENERAL PUBLIC LICENSE",
-    );
+    expect(screen.queryByTestId("licence-text-AGPL-3.0")).toBeNull();
     expect(screen.getByTestId("setup-media-tools")).toHaveTextContent(
       "not a system prerequisite",
     );
-    expect(screen.getByTestId("setup-windows-vamp-blocker")).toHaveTextContent(
-      "no 64-bit Vamp plugin distribution",
-    );
-    expect(screen.getByTestId("setup-windows-vamp-blocker")).toHaveTextContent(
-      "Do not use the GUI Vamp Plugin Pack",
-    );
+    expect(
+      screen.getByTestId("setup-windows-analysis-blocker"),
+    ).toHaveTextContent("Windows analysis is unavailable");
+    expect(screen.queryByLabelText("Accept GPL tool licences")).toBeNull();
+    expect(screen.queryByText("Vamp Plugin Pack")).toBeNull();
+    expect(screen.queryByText("Sonic Annotator")).toBeNull();
     expect(screen.getByTestId("setup-media-install")).toBeDisabled();
     expect(screen.getByTestId("setup-recommended-install")).toBeDisabled();
   });

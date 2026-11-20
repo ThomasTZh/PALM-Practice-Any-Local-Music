@@ -368,7 +368,12 @@ function environmentComponents(status: SetupStatus): LicenceComponent[] {
 export function setupLicenceComponents(
   status: SetupStatus,
 ): LicenceComponent[] {
-  const platform = setupPlatform();
+  const platform: SetupPlatform =
+    status.platform === "windows" ||
+    status.platform === "macos" ||
+    status.platform === "linux"
+      ? status.platform
+      : setupPlatform();
   const media = MEDIA_PINS[platform].map((pin): LicenceComponent => {
     const installed = status.mediaTools[pin.tool];
     return {
@@ -385,49 +390,37 @@ export function setupLicenceComponents(
       licenceTextKeys: ["GPL-3.0"],
     };
   });
-  const tools: LicenceComponent[] = [
-    {
-      id: "tool-sonic",
-      group: "tools",
-      name:
-        platform === "linux" ? "Sonic Visualiser / Piper" : "Sonic Annotator",
-      version: "1.7",
-      licence: "GPL-2.0-or-later",
-      licenceUrl: "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
-      sourceUrl: "https://github.com/sonic-visualiser/sonic-annotator",
-      size: platform === "linux" ? "bundled launcher" : "6-11 MB",
-      required: false,
-      requirementLabel: "Optional (needed for analysis)",
-      licenceTextKeys: ["GPL-2.0"],
-    },
-    {
-      id: "tool-vamp",
-      group: "tools",
-      name: "Vamp Plugin Pack",
-      version: "2.0",
-      licence: "AGPL-3.0 (pack); individual plugins GPL/AGPL",
-      licenceUrl: "https://www.gnu.org/licenses/agpl-3.0.html",
-      sourceUrl: "https://github.com/vamp-plugins/vamp-plugin-pack",
-      size: "33-47 MB",
-      required: false,
-      requirementLabel: "Optional (needed for analysis)",
-      licenceTextKeys: ["AGPL-3.0"],
-    },
-  ];
-  if (platform === "windows") {
-    tools.push({
-      id: "tool-7zip",
-      group: "tools",
-      name: "7-Zip console helper",
-      version: "26.06",
-      licence: "LGPL-2.1-or-later with the unRAR restriction",
-      licenceUrl: "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
-      sourceUrl: "https://www.7-zip.org/download.html",
-      size: "2 MB",
-      required: false,
-      requirementLabel: "Optional (Windows helper)",
-      licenceTextKeys: ["LGPL-2.1"],
-    });
+  const tools: LicenceComponent[] = [];
+  if (platform !== "windows") {
+    tools.push(
+      {
+        id: "tool-sonic",
+        group: "tools",
+        name:
+          platform === "linux" ? "Sonic Visualiser / Piper" : "Sonic Annotator",
+        version: "1.7",
+        licence: "GPL-2.0-or-later",
+        licenceUrl: "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+        sourceUrl: "https://github.com/sonic-visualiser/sonic-annotator",
+        size: platform === "linux" ? "bundled launcher" : "6-11 MB",
+        required: false,
+        requirementLabel: "Optional (needed for analysis)",
+        licenceTextKeys: ["GPL-2.0"],
+      },
+      {
+        id: "tool-vamp",
+        group: "tools",
+        name: "Vamp Plugin Pack",
+        version: "2.0",
+        licence: "AGPL-3.0 (pack); individual plugins GPL/AGPL",
+        licenceUrl: "https://www.gnu.org/licenses/agpl-3.0.html",
+        sourceUrl: "https://github.com/vamp-plugins/vamp-plugin-pack",
+        size: "33-47 MB",
+        required: false,
+        requirementLabel: "Optional (needed for analysis)",
+        licenceTextKeys: ["AGPL-3.0"],
+      },
+    );
   }
   const models = status.models.map((model): LicenceComponent => ({
     id: `model-${model.id}`,
