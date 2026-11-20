@@ -117,7 +117,7 @@ jobs:
 
           curl -L -o sonic.zip "%SONIC_URL%"
           python -c "import hashlib,pathlib; p=pathlib.Path('sonic.zip'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '%SONIC_SHA256%'"
-          tar -xf sonic.zip
+          powershell -NoProfile -Command "Expand-Archive -Path sonic.zip -DestinationPath . -Force"
           set VAMP_PATH=%CD%\bundle
           sonic-annotator-win64\sonic-annotator.exe --list > plugins.txt
           type plugins.txt
