@@ -70,17 +70,6 @@ PLATFORM_ASSETS: dict[tuple[str, str], PinnedToolAsset] = {
         kind="tar.gz",
         install_name="sonic-annotator-1.7.0",
     ),
-    ("windows", "vamp_plugin_pack"): PinnedToolAsset(
-        tool="vamp_plugin_pack",
-        platform="windows",
-        version="2.0",
-        url="https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer.2.0.exe",
-        sha256="24d12812ffde04a20e7acbeb543860552d7aa05a729d9e9123b33c6e097c4d5f",
-        size=35_093_344,
-        filename="Vamp.Plugin.Pack.Installer.2.0.exe",
-        kind="exe",
-        install_name="vamp-plugins",
-    ),
     ("macos", "vamp_plugin_pack"): PinnedToolAsset(
         tool="vamp_plugin_pack",
         platform="macos",
@@ -181,82 +170,17 @@ def standard_vamp_dirs() -> tuple[Path, ...]:
     return tuple(dict.fromkeys(directories))
 
 
-VAMP_REQUIRED_WINDOWS_DLLS = ("qm-vamp-plugins.dll",)
+VAMP_WINDOWS_BLOCKER = (
+    "PALM cannot install the 32-bit Vamp Plugin Pack GUI installer on Windows. "
+    "No redistributable 64-bit qm-vamp-plugins build is available from the "
+    "official qm-vamp-plugins or Vamp Plugin Pack projects. A native 64-bit "
+    "build must be supplied; the GUI installer will not be run."
+)
 
 
-def _inno_arguments(target: Path, log_path: Path) -> tuple[str, ...]:
-    """The exact silent Inno arguments; explicit components/tasks avoid pages."""
-    return (
-        "/VERYSILENT",
-        "/SUPPRESSMSGBOXES",
-        "/NORESTART",
-        "/SP-",
-        "/TYPE=full",
-        "/COMPONENTS=*",
-        "/TASKS=*",
-        f'/DIR="{target}"',
-        f'/LOG="{log_path}"',
-    )
-
-
-def _missing_vamp_dlls(target: Path) -> list[str]:
-    return [name for name in VAMP_REQUIRED_WINDOWS_DLLS if not (target / name).is_file()]
-
-
-def _copy_vamp_dlls(source_root: Path, target: Path) -> bool:
-    source = next(
-        (directory for name in VAMP_REQUIRED_WINDOWS_DLLS for directory in source_root.rglob(name)),
-        None,
-    )
-    if source is None:
-        return False
-    target.mkdir(parents=True, exist_ok=True)
-    for dll in source.parent.glob("*.dll"):
-        if dll.is_file():
-            shutil.copy2(dll, target / dll.name)
-    return not _missing_vamp_dlls(target)
-
-
-def _install_vamp_windows(
-    asset: PinnedToolAsset,
-    archive: Path,
-    target: Path,
-    runner: Runner,
-) -> None:
-    target.mkdir(parents=True, exist_ok=True)
-    log_path = target.parent / "vamp-install.log"
-    quoted_installer = str(archive).replace("'", "''")
-    arguments = ",".join(
-        "'" + item.replace("'", "''") + "'" for item in _inno_arguments(target, log_path)
-    )
-    script = (
-        f"$p = Start-Process -FilePath '{quoted_installer}' "
-        f"-ArgumentList @({arguments}) "
-        "-Verb RunAs -Wait -PassThru; exit $p.ExitCode"
-    )
-    try:
-        result = runner(["powershell.exe", "-NoProfile", "-Command", script])
-    except OSError as error:
-        raise SetupInstallError(
-            f"Windows administrator approval could not be requested; see {log_path} "
-            "and retry setup, approving the UAC prompt."
-        ) from error
-    if result is not None and getattr(result, "returncode", 0) not in (0, None):
-        raise SetupInstallError(
-            f"Windows administrator approval was denied or the Inno Setup installer "
-            f"failed; see {log_path} and retry setup, approving the UAC prompt."
-        )
-    if not _missing_vamp_dlls(target):
-        return
-    for directory in standard_vamp_dirs():
-        if _copy_vamp_dlls(directory, target):
-            return
-    missing = ", ".join(_missing_vamp_dlls(target))
-    raise SetupInstallError(
-        f"the Inno Setup installer did not produce required Vamp plugins ({missing}) "
-        f"under {target} or the standard Vamp directory; see {log_path} and retry "
-        "setup, approving the UAC prompt."
-    )
+def _install_vamp_windows(asset: PinnedToolAsset, archive: Path, target: Path) -> None:
+    del asset, archive, target
+    raise SetupInstallError(VAMP_WINDOWS_BLOCKER)
 
 
 def _install_vamp_macos(
@@ -342,6 +266,8 @@ def install_vamp_plugin_pack(
     runner: Runner | None = None,
 ) -> Path:
     selected = platform or platform_name()
+    if selected == "windows":
+        raise SetupInstallError(VAMP_WINDOWS_BLOCKER)
     asset = asset_for(selected, "vamp_plugin_pack")
     target = runtime.tools_root / asset.install_name
     plugin = target / f"qm-vamp-plugins{plugin_suffix()}"
@@ -361,12 +287,10 @@ def install_vamp_plugin_pack(
     else:
         _download(asset, archive)
     _verify_archive(asset, archive)
-    if selected == "windows":
-        _install_vamp_windows(asset, archive, target, run)
-    elif selected == "macos":
+    if selected == "macos":
         _install_vamp_macos(asset, archive, target, run)
     else:
-        raise SetupInstallError("Vamp pack platform extraction is only for Windows/macOS")
+        raise SetupInstallError("Vamp pack platform extraction is only for macOS")
     if not plugin.is_file():
         raise SetupInstallError(f"Vamp plugin pack did not install {plugin.name} under {target}")
     return target
@@ -389,6 +313,8 @@ def install_platform_tools(
     install_sonic_annotator(runtime, platform=selected, downloader=downloader)
     if cancel is not None and cancel():
         raise SetupCancelled("tool installation cancelled")
+    if selected == "windows":
+        raise SetupInstallError(VAMP_WINDOWS_BLOCKER)
     if progress is not None:
         progress(0.6, "installing Vamp plugin pack")
     install_vamp_plugin_pack(runtime, platform=selected, downloader=downloader, runner=runner)
@@ -399,6 +325,7 @@ def install_platform_tools(
 __all__ = [
     "PLATFORM_ASSETS",
     "PinnedToolAsset",
+    "VAMP_WINDOWS_BLOCKER",
     "asset_for",
     "install_platform_tools",
     "install_sonic_annotator",

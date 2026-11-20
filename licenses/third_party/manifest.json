@@ -234,7 +234,7 @@
     },
     {
       "id": "vamp-plugin-pack",
-      "name": "Vamp Plugin Pack",
+      "name": "Vamp Plugin Pack (Linux/macOS; Windows 64-bit unavailable)",
       "version": "2.0",
       "copyright": "Queen Mary University of London and plugin authors",
       "license": "AGPL-3.0",
@@ -243,7 +243,8 @@
       "source_url": "https://github.com/vamp-plugins/vamp-plugin-pack/releases/tag/v2.0",
       "distribution": "downloaded",
       "component_type": "tool",
-      "download_target": "<data>/tools/plugins"
+      "download_target": "<data>/tools/plugins",
+      "notes": "Windows GUI installer is not run; no redistributable 64-bit QM build is published."
     },
     {
       "id": "vamp-plugins",

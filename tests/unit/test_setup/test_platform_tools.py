@@ -51,7 +51,6 @@ def test_all_platform_assets_are_pinned() -> None:
     expected = {
         ("windows", "sonic_annotator"),
         ("macos", "sonic_annotator"),
-        ("windows", "vamp_plugin_pack"),
         ("macos", "vamp_plugin_pack"),
     }
     assert set(PLATFORM_ASSETS) == expected
@@ -118,168 +117,44 @@ def test_bad_hash_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         )
 
 
-def test_windows_vamp_uses_inno_silent_flags_and_target(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = b"installer"
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    monkeypatch.delenv("ProgramFiles", raising=False)
-    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    monkeypatch.delenv("APPDATA", raising=False)
-    runtime = RuntimePaths.from_environment(
-        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data with spaces"
-    )
-    runtime.app_root.mkdir()
-    commands: list[list[str]] = []
-
-    def runner(command: list[str]):
-        commands.append(command)
-        if "powershell.exe" in command[0]:
-            target = runtime.tools_root / "vamp-plugins"
-            target.mkdir(parents=True, exist_ok=True)
-            (target / "qm-vamp-plugins.dll").write_bytes(b"dll")
-        return
-
-    target = install_vamp_plugin_pack(
-        runtime,
-        platform="windows",
-        downloader=lambda _asset, path: path.write_bytes(data),
-        runner=runner,
-    )
-    assert (target / "qm-vamp-plugins.dll").is_file()
-    assert sum("powershell.exe" in command[0] for command in commands) == 1
-    script = commands[0][-1]
-    for flag in (
-        "/VERYSILENT",
-        "/SUPPRESSMSGBOXES",
-        "/NORESTART",
-        "/SP-",
-        "/TYPE=full",
-        "/COMPONENTS=*",
-        "/TASKS=*",
-        "/DIR=",
-        "/LOG=",
-    ):
-        assert flag in script
-    assert str(runtime.tools_root / "vamp-install.log") in script
-
-
-def test_windows_vamp_finds_standard_vamp_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = b"installer"
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    program_files = tmp_path / "Program Files"
-    monkeypatch.setenv("ProgramFiles", str(program_files))
-    standard = program_files / "Vamp Plugins"
-    standard.mkdir(parents=True)
-    (standard / "qm-vamp-plugins.dll").write_bytes(b"dll")
+def test_windows_vamp_gui_installer_is_blocked(tmp_path: Path) -> None:
     runtime = RuntimePaths.from_environment(
         mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
     )
     runtime.app_root.mkdir()
-    target = install_vamp_plugin_pack(
-        runtime,
-        platform="windows",
-        downloader=lambda _asset, path: path.write_bytes(data),
-        runner=lambda _command: None,
-    )
-    assert (target / "qm-vamp-plugins.dll").is_file()
+    calls: list[object] = []
 
+    def downloader(_asset, path):
+        calls.append(path)
+        raise AssertionError("blocked Windows Vamp must not download a GUI installer")
 
-def test_windows_vamp_uac_denial_names_log_and_retry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = b"installer"
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    runtime = RuntimePaths.from_environment(
-        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
-    )
-    runtime.app_root.mkdir()
-
-    def denied(_command: list[str]):
-        return type("Result", (), {"returncode": 1})()
-
-    with pytest.raises(SetupInstallError) as error:
+    with pytest.raises(SetupInstallError) as caught:
         install_vamp_plugin_pack(
             runtime,
             platform="windows",
-            downloader=lambda _asset, path: path.write_bytes(data),
-            runner=denied,
+            downloader=downloader,
+            runner=lambda command: calls.append(command),
         )
-    message = str(error.value)
-    assert "denied" in message and "retry" in message
-    assert str(runtime.tools_root / "vamp-install.log") in message
-    assert "7-Zip" not in message and "copy" not in message
+    message = str(caught.value)
+    assert "No redistributable 64-bit qm-vamp-plugins" in message
+    assert "GUI installer will not be run" in message
+    assert calls == []
 
 
-def test_windows_vamp_missing_dll_names_log_and_retry(
+def test_windows_tools_install_sonic_but_refuses_gui_vamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    data = b"installer"
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        _asset("vamp_plugin_pack", "windows", data),
-    )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    monkeypatch.delenv("ProgramFiles", raising=False)
-    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    monkeypatch.delenv("APPDATA", raising=False)
     runtime = RuntimePaths.from_environment(
         mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
     )
     runtime.app_root.mkdir()
-    with pytest.raises(SetupInstallError) as error:
-        install_vamp_plugin_pack(
-            runtime,
-            platform="windows",
-            downloader=lambda _asset, path: path.write_bytes(data),
-            runner=lambda _command: None,
-        )
-    message = str(error.value)
-    assert str(runtime.tools_root / "vamp-install.log") in message
-    assert "retry" in message and "7-Zip" not in message
-
-
-def test_windows_vamp_bad_installer_hash_is_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = b"installer"
-    monkeypatch.setitem(
-        PLATFORM_ASSETS,
-        ("windows", "vamp_plugin_pack"),
-        replace(_asset("vamp_plugin_pack", "windows", data), sha256="0" * 64),
+    monkeypatch.setattr(
+        tool_assets,
+        "install_sonic_annotator",
+        lambda *_args, **_kwargs: runtime.tools_root / "sonic-annotator-1.7.0",
     )
-    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
-    runtime = RuntimePaths.from_environment(
-        mode="packaged", app_root=tmp_path / "app", data_root=tmp_path / "data"
-    )
-    runtime.app_root.mkdir()
-    with pytest.raises(SetupInstallError, match="SHA-256"):
-        install_vamp_plugin_pack(
-            runtime,
-            platform="windows",
-            downloader=lambda _asset, path: path.write_bytes(data),
-            runner=lambda _command: None,
-        )
+    with pytest.raises(SetupInstallError, match="No redistributable 64-bit"):
+        tool_assets.install_platform_tools(runtime, platform="windows")
 
 
 def test_macos_dmg_uses_hdiutil_and_pkgutil(
@@ -392,57 +267,3 @@ def test_windows_macos_tool_status_paths(tmp_path: Path, monkeypatch: pytest.Mon
     assert status["sonic_visualiser"]["name"] == "Sonic Annotator"
     assert status["sonic_visualiser"]["path"] == str(windows_exe)
     assert status["vamp_plugin_pack"]["path"] == str(windows_plugin)
-
-
-def test_inno_arguments_are_fully_silent_and_select_all_components(
-    tmp_path: Path,
-) -> None:
-    target = tmp_path / "Vamp Plugins"
-    log = tmp_path / "vamp-install.log"
-    arguments = tool_assets._inno_arguments(target, log)
-    assert arguments == (
-        "/VERYSILENT",
-        "/SUPPRESSMSGBOXES",
-        "/NORESTART",
-        "/SP-",
-        "/TYPE=full",
-        "/COMPONENTS=*",
-        "/TASKS=*",
-        f'/DIR="{target}"',
-        f'/LOG="{log}"',
-    )
-
-
-def test_missing_explicit_component_selection_is_a_silent_install_regression(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("ProgramFiles", raising=False)
-    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    monkeypatch.delenv("APPDATA", raising=False)
-    target = tmp_path / "data" / "tools" / "vamp-plugins"
-    asset = tool_assets.PLATFORM_ASSETS[("windows", "vamp_plugin_pack")]
-    archive = tmp_path / "installer.exe"
-    archive.write_bytes(b"installer")
-    monkeypatch.setattr(
-        tool_assets,
-        "_inno_arguments",
-        lambda _target, _log: (
-            "/VERYSILENT",
-            "/SUPPRESSMSGBOXES",
-            "/NORESTART",
-        ),
-    )
-
-    def runner(command: list[str]):
-        script = command[-1]
-        if "/COMPONENTS=*" in script:
-            target.mkdir(parents=True)
-            (target / "qm-vamp-plugins.dll").write_bytes(b"dll")
-        return
-
-    with pytest.raises(SetupInstallError) as caught:
-        tool_assets._install_vamp_windows(asset, archive, target, runner)
-    message = str(caught.value)
-    assert "required Vamp plugins" in message
-    assert str(target.parent / "vamp-install.log") in message

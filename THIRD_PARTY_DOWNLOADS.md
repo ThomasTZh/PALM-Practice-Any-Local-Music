@@ -106,12 +106,13 @@ the writable data root. None are committed or installed system-wide.
 | --- | --- | --- | --- | ---: | ---: | --- |
 | Sonic Annotator | 1.7 | Windows x64 | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip | `c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693` | 6,618,013 B | GPL-2.0-or-later |
 | Sonic Annotator | 1.7 | macOS | https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7.0-macos.tar.gz | `cb54f46af0f6c16b8274998d025019021b3b6c50410b8a8e2024d0aa7e65b040` | 10,638,233 B | GPL-2.0-or-later |
-| Vamp Plugin Pack | 2.0 | Windows x64 | https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer.2.0.exe | `24d12812ffde04a20e7acbeb543860552d7aa05a729d9e9123b33c6e097c4d5f` | 35,093,344 B | AGPL-3.0 pack; plugins GPL/AGPL |
 | Vamp Plugin Pack | 2.0 | macOS | https://github.com/vamp-plugins/vamp-plugin-pack/releases/download/v2.0/Vamp.Plugin.Pack.Installer-2.0.dmg | `60e2569ab064dbaf9ca8a4c3cf8465298b91ea3be1b34c5395d45c1ca4c53f10` | 48,745,081 B | AGPL-3.0 pack; plugins GPL/AGPL |
 
-Windows uses a per-user extraction below the data root and does not request
-administrator rights. macOS uses `hdiutil`/`pkgutil` to extract the DMG below
-the data root; no system package is installed.
+Windows uses Sonic Annotator only. The Vamp Plugin Pack's Windows installer is
+a 32-bit Qt GUI with no silent interface, and no redistributable 64-bit
+qm-vamp-plugins build is published by the official projects, so Windows setup
+does not download or run that installer. macOS uses `hdiutil`/`pkgutil` to
+extract the DMG below the data root; no system package is installed.
 
 ## Embedded platform Python and uv
 

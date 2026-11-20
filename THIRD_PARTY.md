@@ -52,7 +52,7 @@ FFmpeg/FFprobe sources:
 | --- | --- | --- | --- |
 | Sonic Visualiser / Piper host | 5.2.1 | GPL-2.0-or-later | Linux analysis host, installed below the data root by setup |
 | Sonic Annotator | 1.7 | GPL-2.0-or-later | Windows/macOS analysis backend, installed below the data root by setup |
-| Vamp Plugin Pack | 2.0 | AGPL-3.0 for the pack; individual plugins GPL/AGPL | Chord/key/beat plugins on Linux, Windows and macOS; installed below the data root |
+| Vamp Plugin Pack | 2.0 | AGPL-3.0 for the pack; individual plugins GPL/AGPL | Chord/key/beat plugins on Linux and macOS; Windows blocked because the official pack is a 32-bit GUI and no 64-bit redistributable QM build exists |
 | NNLS-Chroma / Chordino | pack 2.0 | GPL-2.0-or-later | Chord analysis |
 | QM Key Detector, QM Bar and Beat Tracker | pack 2.0 | GPL-2.0-or-later | Key, beats and bars |
 | BeatRoot | pack 2.0 | GPL-2.0-or-later | Beat analysis |
