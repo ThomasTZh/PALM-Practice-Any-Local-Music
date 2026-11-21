@@ -353,6 +353,8 @@ def stage_bundled_tools(stage: Path) -> None:
     ffmpeg_zip = BUNDLED / "ffmpeg-9.0.2-essentials_build.zip"
     sonic_zip = BUNDLED / "sonic-annotator-1.7-win64.zip"
     vamp_zip = BUNDLED / "vamp-plugins-win64.zip"
+    if not vamp_zip.is_file():
+        vamp_zip = PACKAGED_BUNDLED / "vamp-plugins-win64.zip"
     pins = json.loads((ROOT / "packaging" / "bundled-tools" / "manifest.json").read_text())
     for required in (ffmpeg_zip, sonic_zip, vamp_zip):
         if not required.is_file():
