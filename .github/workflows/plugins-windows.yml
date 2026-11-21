@@ -10,9 +10,6 @@ on:
     tags:
       - plugins-win64-v*
 
-permissions:
-  contents: write
-
 env:
   VAMP_SDK_COMMIT: 44c2487763eb248a933e9eff9169cfadee375009
   QM_COMMIT: c918afc070f79489758bb2dab6895972bd82066b
