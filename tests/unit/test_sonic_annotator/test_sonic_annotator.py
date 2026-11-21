@@ -47,6 +47,9 @@ if "--list" in args:
 
 if "-s" in args:
     print("vamp:plugin_version " + chr(34) * 3 + "5" + chr(34) * 3)
+    print(':transform_plugin a vamp:Plugin ; vamp:identifier "chordino" .')
+    print('vamp:parameter [ vamp:identifier "boostn" ] ;')
+    print('vamp:value "0.1"^^xsd:float ;')
     sys.exit(0)
 output = args[args.index("--csv-one-file") + 1]
 if "-t" in args:
@@ -102,6 +105,25 @@ def fake_binary(tmp_path: Path, name: str = "sonic") -> Path:
     binary.write_text(FAKE, encoding="utf-8")
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
     return binary
+
+
+def test_chordino_transform_calibrates_host_skeleton() -> None:
+    from basseparate.sonic_annotator import _chordino_transform
+
+    skeleton = (
+        ":transform a vamp:Transform ;\n"
+        "    vamp:plugin <http://vamp-plugins.org/rdf/plugins/nnls-chroma#chordino> ;\n"
+        "    vamp:parameter_binding [\n"
+        '        vamp:parameter [ vamp:identifier "boostn" ] ;\n'
+        '        vamp:value "0.1"^^xsd:float ;\n'
+        "    ] ;\n"
+        "    vamp:output <http://vamp-plugins.org/rdf/plugins/"
+        "nnls-chroma#chordino_output_simplechord> .\n"
+    )
+    ttl = _chordino_transform(skeleton)
+    assert 'vamp:value "0.2"^^xsd:float' in ttl
+    assert "nnls-chroma#chordino>" in ttl
+    assert "nnls-chroma#chordino_output_simplechord>" in ttl
 
 
 def test_float_wav_header_is_ieee_float_32_mono(tmp_path: Path) -> None:
@@ -242,6 +264,28 @@ def test_platform_binary_and_plugins_resolve_under_writable_tools_root(
             assert setup_plugin.parent in backend.plugin_paths
         finally:
             backend.close()
+
+
+def test_missing_bundled_windows_tools_are_clear(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    app.mkdir()
+    runtime = RuntimePaths(mode="packaged", app_root=app, data_root=data)
+    monkeypatch.setattr(sonic_annotator, "runtime_paths", lambda runtime=runtime: runtime)
+    monkeypatch.setattr(
+        sonic_annotator, "sys", __import__("types").SimpleNamespace(platform="win32")
+    )
+    backend = SonicAnnotatorBackend()
+    try:
+        assert backend.binary == data / "tools" / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
+        assert not backend.binary.exists()
+        assert backend.plugin_paths[0] == app / "tools" / "vamp-plugins"
+        with pytest.raises(SonicAnnotatorUnavailable, match="not installed.*PALM Setup"):
+            backend.discover_plugins()
+    finally:
+        backend.close()
 
 
 def test_missing_plugins_and_binary_are_clear(

@@ -36,6 +36,9 @@ if "--list" in args:
     sys.exit(0)
 if "-s" in args:
     print('vamp:plugin_version """1"""')
+    print(':transform_plugin a vamp:Plugin ; vamp:identifier "chordino" .')
+    print('vamp:parameter [ vamp:identifier "boostn" ] ;')
+    print('vamp:value "0.1"^^xsd:float ;')
     sys.exit(0)
 out = Path(args[args.index("--csv-one-file") + 1])
 transform = "custom:simplechord" if "-t" in args else args[args.index("-d") + 1]

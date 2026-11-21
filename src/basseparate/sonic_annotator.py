@@ -325,6 +325,7 @@ class SonicAnnotatorBackend:
             )
         self._resolved: ResolvedPlugins | None = None
         self._versions: dict[str, str] = {}
+        self._skeletons: dict[str, str] = {}
 
     @property
     def cache_identity(self) -> str:
@@ -411,6 +412,30 @@ class SonicAnnotatorBackend:
         )
         return self._resolved
 
+    def plugin_skeleton(self, plugin: SonicPlugin) -> str:
+        """Return the host-generated RDF skeleton for a transform."""
+        cached = self._skeletons.get(plugin.transform)
+        if cached is not None:
+            return cached
+        try:
+            result = subprocess.run(
+                [str(self.binary), "-s", plugin.transform],
+                capture_output=True,
+                text=True,
+                env=self._env(),
+                timeout=self.timeout_seconds,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise SonicCommandError(f"cannot query plugin skeleton: {error}") from error
+        if result.returncode != 0 or not result.stdout.strip():
+            raise SonicCommandError(
+                f"sonic-annotator -s failed for {plugin.transform}: "
+                f"{_tail(result.stderr) or f'exit {result.returncode}'}"
+            )
+        self._skeletons[plugin.transform] = result.stdout
+        return result.stdout
+
     def plugin_version(self, plugin: SonicPlugin) -> str:
         """Query the actual Vamp plugin version from a Sonic skeleton transform."""
         cached = self._versions.get(plugin.transform)
@@ -453,7 +478,6 @@ class SonicAnnotatorBackend:
         )
         command = [
             str(self.binary),
-            "-q",
             *transform_args,
             "-w",
             "csv",
@@ -525,7 +549,7 @@ class SonicAnnotatorBackend:
             write_float_wav(beats_path, beat_signal, sample_rate)
             chord_ttl = root / "chordino.ttl"
             chord_ttl.write_text(
-                _chordino_transform(self.plugin_version(resolved.chord), resolved.chord.library),
+                _chordino_transform(self.plugin_skeleton(resolved.chord)),
                 encoding="utf-8",
             )
             csv_paths = {
@@ -661,43 +685,22 @@ def _drop_terminal_no_chord(rows: list[CsvFeature]) -> list[CsvFeature]:
     return rows
 
 
-def _chordino_transform(version: str, library: str) -> str:
-    """A Chordino transform calibrated to the Piper host on the fixtures.
+def _chordino_transform(skeleton: str) -> str:
+    """Calibrate a host-generated Chordino skeleton to the Piper boostn value.
 
-    Sonic's default boostn=0.1 reports an Fmaj7 for the click fixture while the
-    Piper host reports only N. boostn=0.2 suppresses that click artifact and
-    leaves the genuine C/Am/F/G progressions unchanged.
+    Sonic's RDF loader accepts the host's own skeleton on both the Linux
+    (blank-node) and Windows (absolute URI) plugin packs. Rebuilding the RDF
+    by hand caused "defines no transforms" on Windows; this edits the host's
+    skeleton instead. boostn=0.2 is the Piper-parity calibration.
     """
-    version_line = f'    vamp:plugin_version """{version}""" ;\n' if version != "unknown" else ""
-    bindings = (
-        ("boostn", CHORDINO_BOOSTN),
-        ("rollon", 0.0),
-        ("s", 0.7),
-        ("tuningmode", 0.0),
-        ("useNNLS", 1.0),
-        ("usehartesyntax", 0.0),
-        ("whitening", 1.0),
+    pattern = re.compile(
+        r'(vamp:identifier "boostn"\s*\][^;]*;\s*vamp:value ")0\.1("\^\^xsd:float)',
+        re.DOTALL,
     )
-    parameters = "\n".join(
-        "    vamp:parameter_binding [ vamp:parameter [ "
-        f'vamp:identifier "{name}" ] ; vamp:value "{value}"^^xsd:float ] ;'
-        for name, value in bindings
-    )
-    return (
-        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
-        "@prefix vamp: <http://purl.org/ontology/vamp/> .\n"
-        "@prefix : <#> .\n"
-        ':transform_plugin a vamp:Plugin ; vamp:identifier "chordino" .\n'
-        f':transform_library a vamp:PluginLibrary ; vamp:identifier "{library}" ; '
-        "vamp:available_plugin :transform_plugin .\n"
-        ":transform a vamp:Transform ;\n"
-        "    vamp:plugin :transform_plugin ;\n"
-        '    vamp:step_size "2048"^^xsd:int ;\n'
-        '    vamp:block_size "16384"^^xsd:int ;\n'
-        f"{version_line}"
-        f"{parameters}\n"
-        '    vamp:output [ vamp:identifier "simplechord" ] .\n'
-    )
+    updated, count = pattern.subn(rf"\g<1>{CHORDINO_BOOSTN}\g<2>", skeleton)
+    if count != 1:
+        raise SonicParseError("Chordino skeleton does not expose the boostn parameter")
+    return updated
 
 
 def _choose(available: Sequence[SonicPlugin], plugin: str, output: str) -> SonicPlugin | None:
