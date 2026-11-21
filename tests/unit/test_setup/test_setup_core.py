@@ -441,3 +441,81 @@ def test_model_retry_resumes_stable_part(tmp_path: Path) -> None:
     assert install_model(entry, runtime=runtime, fetch=fetch).installed
     assert attempts == [0, 4]
     assert not (runtime.models_root / "models/.fake-model.parts").exists()
+
+
+def test_default_run_uv_hides_windows_console_and_keeps_failure_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from basseparate.setup import environments
+
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        returncode = 1
+
+        def __init__(self, *_args: object, **kwargs: object) -> None:
+            captured.update(kwargs)
+            stdout = kwargs["stdout"]
+            stderr = kwargs["stderr"]
+            stdout.write("uv stdout\n")  # type: ignore[union-attr]
+            stderr.write("uv stderr\n")  # type: ignore[union-attr]
+            stdout.flush()  # type: ignore[union-attr]
+            stderr.flush()  # type: ignore[union-attr]
+
+        def poll(self) -> int:
+            return 1
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 1
+
+    sentinel = object()
+    monkeypatch.setattr(
+        environments,
+        "hidden_process_kwargs",
+        lambda: {
+            "creationflags": 0x08000000,
+            "startupinfo": sentinel,
+        },
+    )
+    monkeypatch.setattr(environments.subprocess, "Popen", FakeProcess)
+    with pytest.raises(Exception, match="uv stderr"):
+        environments._default_run_uv(["uv", "sync"], {}, tmp_path, cancel=None, progress=None)
+    assert captured["creationflags"] == 0x08000000
+    assert captured["startupinfo"] is sentinel
+
+
+def test_default_run_uv_cancel_terminates_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from basseparate.setup import environments
+
+    class FakeProcess:
+        returncode = 0
+        terminated = False
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def poll(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            if not self.terminated:
+                raise environments.subprocess.TimeoutExpired("uv", 0.1)
+            return 0
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.terminated = True
+
+    state = {"cancel": False}
+
+    def cancel() -> bool:
+        state["cancel"] = True
+        return True
+
+    monkeypatch.setattr(environments.subprocess, "Popen", FakeProcess)
+    with pytest.raises(SetupCancelled):
+        environments._default_run_uv(["uv", "sync"], {}, tmp_path, cancel=cancel)

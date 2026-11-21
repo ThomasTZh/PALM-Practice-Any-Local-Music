@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from basseparate.config import RuntimePaths, runtime_paths
-from basseparate.platform_support import venv_python
+from basseparate.platform_support import hidden_process_kwargs, venv_python
 from basseparate.setup.errors import SetupCancelled, SetupInstallError
 
 EnvVariant = Literal["cpu", "cuda"]
@@ -130,6 +130,7 @@ def _default_run_uv(
             stdout=stdout_file,
             stderr=stderr_file,
             text=True,
+            **hidden_process_kwargs(),
         )
         if progress is not None:
             progress(0.25, "uv sync running")
