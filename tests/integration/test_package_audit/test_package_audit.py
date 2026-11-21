@@ -33,7 +33,12 @@ def test_no_third_party_binary_or_model_is_tracked() -> None:
         ".zip",
         ".tar.gz",
     )
-    allowed = {"packaging/windows/PALM.exe"}
+    allowed = {
+        "packaging/windows/PALM.exe",
+        # The Windows analysis bundle is intentionally tracked for reproducible
+        # offline packaging; it is SHA-pinned and audited in the licence manifest.
+        "packaging/bundled-tools/vamp-plugins-win64.zip",
+    }
     offenders = [
         name for name in tracked if name.lower().endswith(forbidden) and name not in allowed
     ]
