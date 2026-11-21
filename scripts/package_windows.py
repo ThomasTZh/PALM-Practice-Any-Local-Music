@@ -319,6 +319,33 @@ def stage(stage: Path, manifest: dict[str, Any], requirements: Path, *, online: 
 
 
 BUNDLED = ROOT / "storage" / "bundled-tools"
+PACKAGED_BUNDLED = ROOT / "packaging" / "bundled-tools"
+
+
+def ensure_bundled_assets(online: bool) -> None:
+    """Download pinned Windows bundle assets missing from the build cache."""
+    pins = json.loads((ROOT / "packaging" / "bundled-tools" / "manifest.json").read_text())
+    wanted: list[tuple[Path, str, str]] = []
+    for entry in pins["assets"].values():
+        if entry["file"] == "vamp-plugins-win64.zip":
+            continue
+        wanted.append((BUNDLED / entry["file"], entry["url"], entry["sha256"]))
+    for name, source in pins["sources"].items():
+        wanted.append((BUNDLED / "sources" / name, source["url"], source["sha256"]))
+    for path, url, digest in wanted:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file() and sha256(path) == digest:
+            continue
+        if not online:
+            raise PackageError(f"bundled asset is not cached: {path}")
+        print(f"package-windows: downloading {url}")
+        temporary = path.with_suffix(path.suffix + ".part")
+        with urllib.request.urlopen(url, timeout=300) as response, temporary.open("wb") as out:
+            shutil.copyfileobj(response, out)
+        if sha256(temporary) != digest:
+            temporary.unlink(missing_ok=True)
+            raise PackageError(f"bundled asset hash mismatch: {url}")
+        temporary.replace(path)
 
 
 def stage_bundled_tools(stage: Path) -> None:
@@ -332,11 +359,13 @@ def stage_bundled_tools(stage: Path) -> None:
             raise PackageError(f"bundled Windows tool archive is missing: {required}")
     for entry in pins["assets"].values():
         path = BUNDLED / entry["file"]
+        if not path.is_file() and entry["file"] == "vamp-plugins-win64.zip":
+            path = PACKAGED_BUNDLED / entry["file"]
         if sha256(path) != entry["sha256"]:
             raise PackageError(f"bundled tool pin mismatch: {entry['file']}")
-    for name, digest in pins["sources"].items():
+    for name, source in pins["sources"].items():
         path = BUNDLED / "sources" / name
-        if not path.is_file() or sha256(path) != digest:
+        if not path.is_file() or sha256(path) != source["sha256"]:
             raise PackageError(f"bundled source pin mismatch: {name}")
     tools_root = stage / "tools"
     with zipfile.ZipFile(ffmpeg_zip) as archive:
@@ -525,6 +554,7 @@ def build(args: argparse.Namespace) -> int:
     requirements = output_dir / "runtime-requirements.txt"
     export_requirements(requirements)
     try:
+        ensure_bundled_assets(args.online)
         stage(stage_path, manifest, requirements, online=args.online)
         clean_bytecode(stage_path)
         zip_path = build_zip(stage_path, output_dir / f"PALM-{version_value}-windows-x86_64.zip")

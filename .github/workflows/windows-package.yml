@@ -153,10 +153,10 @@ jobs:
           from basseparate.analysis_backend import default_backend
           result = analyze_file(Path(sys.argv[1]), cache_dir=Path(sys.argv[2]), backend=default_backend())
           assert result.bpm > 0
-          assert result.key
+          assert result.key.label
           assert len(result.chords) >= 2
-          assert len(result.beats) >= 2
-          print("bundled Sonic analysis ok", result.bpm, result.key, len(result.chords), len(result.beats))
+          assert len(result.beats) >= 2 if hasattr(result, "beats") else len(result.grid.beats) >= 2
+          print("bundled Sonic analysis ok", result.bpm, result.key.label, len(result.chords), len(result.grid.beats))
           '@ | Set-Content (Join-Path $env:RUNNER_TEMP "palm-sonic-smoke.py") -Encoding utf8
           $fixture = Join-Path $PWD "tests/fixtures/audio/chords_c_am_f_g.wav"
           & (Join-Path $app.FullName "python\python.exe") (Join-Path $env:RUNNER_TEMP "palm-sonic-smoke.py") $fixture (Join-Path $env:RUNNER_TEMP "palm-win-sonic-cache")

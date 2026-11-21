@@ -26,10 +26,25 @@
     }
   },
   "sources": {
-    "ffmpeg-9.0.2.tar.xz": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
-    "sonic-annotator-master.tar.gz": "3cd27d21d24802e7d8d25e15139554477739df6f8d103bf534eac70612ff5df5",
-    "qm-vamp-plugins.tar.gz": "2d8c4a6f5d781a7d331cf19dc9529e53fa620b3950b0b3224aa75872cf9644e9",
-    "nnls-chroma.tar.gz": "c24e1e2574215f25754d9cdc1c59421f76bcdc00a4a50ab9125df3fa02fcecd2",
-    "vamp-plugin-sdk.tar.gz": "d1a9cacef8f043660c3ad76a06f96ec7e92cc1b67c2c70d0eed8b8163f965e95"
+    "ffmpeg-9.0.2.tar.xz": {
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz"
+    },
+    "sonic-annotator-master.tar.gz": {
+      "sha256": "3cd27d21d24802e7d8d25e15139554477739df6f8d103bf534eac70612ff5df5",
+      "url": "https://github.com/sonic-visualiser/sonic-annotator/archive/refs/heads/master.tar.gz"
+    },
+    "qm-vamp-plugins.tar.gz": {
+      "sha256": "2d8c4a6f5d781a7d331cf19dc9529e53fa620b3950b0b3224aa75872cf9644e9",
+      "url": "https://github.com/c4dm/qm-vamp-plugins/archive/refs/heads/master.tar.gz"
+    },
+    "nnls-chroma.tar.gz": {
+      "sha256": "c24e1e2574215f25754d9cdc1c59421f76bcdc00a4a50ab9125df3fa02fcecd2",
+      "url": "https://github.com/c4dm/nnls-chroma/archive/refs/heads/master.tar.gz"
+    },
+    "vamp-plugin-sdk.tar.gz": {
+      "sha256": "d1a9cacef8f043660c3ad76a06f96ec7e92cc1b67c2c70d0eed8b8163f965e95",
+      "url": "https://github.com/c4dm/vamp-plugin-sdk/archive/refs/heads/master.tar.gz"
+    }
   }
 }
