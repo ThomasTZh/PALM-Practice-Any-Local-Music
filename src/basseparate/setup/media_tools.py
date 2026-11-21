@@ -144,6 +144,36 @@ def _executable_name(tool: str, platform: str) -> str:
 
 def media_tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
     active = runtime or runtime_paths()
+    bundled = active.app_root / "tools" / "ffmpeg"
+    bundled_meta = active.app_root / "tools" / "bundled-tools.json"
+    if (bundled / "ffmpeg.exe").is_file() and (bundled / "ffprobe.exe").is_file():
+        bundled_metadata: dict[str, object] = {}
+        try:
+            loaded = json.loads(bundled_meta.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                bundled_metadata = (
+                    loaded.get("ffmpeg", {}) if isinstance(loaded.get("ffmpeg"), dict) else {}
+                )
+        except (OSError, json.JSONDecodeError):
+            bundled_metadata = {}
+        return {
+            "ffmpeg": {
+                "installed": True,
+                "path": str(bundled / "ffmpeg.exe"),
+                "version": bundled_metadata.get("version", "9.0.2"),
+                "build": "bundled Windows FFmpeg",
+                "license": bundled_metadata.get("license", "GPL-3.0-or-later"),
+                "source_url": bundled_metadata.get("source"),
+            },
+            "ffprobe": {
+                "installed": True,
+                "path": str(bundled / "ffprobe.exe"),
+                "version": bundled_metadata.get("version", "9.0.2"),
+                "build": "bundled Windows FFmpeg",
+                "license": bundled_metadata.get("license", "GPL-3.0-or-later"),
+                "source_url": bundled_metadata.get("source"),
+            },
+        }
     root = media_tool_dir(active)
     metadata: dict[str, object] = {}
     metadata_path = root / "media-tools.json"

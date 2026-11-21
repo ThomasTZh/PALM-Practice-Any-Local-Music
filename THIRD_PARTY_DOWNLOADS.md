@@ -193,3 +193,23 @@ additional downloads.
 | demucs-code, demucs-weights | https://github.com/facebookresearch/demucs/tree/b1ea86542ca11d7695cba4238909f461752283b5 |
 | msst-code, scnet-weights | https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.15 |
 | bs-roformer-weights | https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/tree/2b98254b19bdab07ce225d884ec4aa9dd8aafce1 |
+
+## Windows bundled tools (t163)
+
+The Windows installer/ZIP carries approved, pinned GPL/AGPL binaries under
+`tools/` and their source archives under `licenses/bundled-tools/sources/`:
+
+- FFmpeg/FFprobe 9.0.2 essentials (gyan.dev), SHA-256
+  `60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`.
+- Sonic Annotator 1.7 win64, SHA-256
+  `c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693`.
+- 64-bit QM Vamp plugins + Chordino bundle, SHA-256
+  `41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863`;
+  built from the pinned c4dm/qm-vamp-plugins and nnls-chroma sources.
+- Source archives: FFmpeg 9.0.2, Sonic Annotator, QM Vamp plugins, NNLS-Chroma
+  and the Vamp Plugin SDK. Pins and hashes are in
+  `packaging/bundled-tools/manifest.json`.
+
+These files are staged into the app payload at build time, never into the
+writable data root and never committed to git. Setup detects them and skips
+network/UAC plugin installation; data-root overrides remain supported.

@@ -216,7 +216,12 @@ def test_platform_binary_and_plugins_resolve_under_writable_tools_root(
     ):
         data = tmp_path / platform / "data"
         app = tmp_path / platform / "app"
-        executable = data / "tools" / "sonic-annotator-1.7.0" / executable_name
+        if platform == "win32":
+            executable = app / "tools" / "sonic-annotator" / executable_name
+            plugins = app / "tools" / "vamp-plugins"
+        else:
+            executable = data / "tools" / "sonic-annotator-1.7.0" / executable_name
+            plugins = data / "tools" / "vamp-plugins"
         executable.parent.mkdir(parents=True)
         executable.write_text("binary", encoding="utf-8")
         executable.chmod(0o755)
@@ -226,7 +231,7 @@ def test_platform_binary_and_plugins_resolve_under_writable_tools_root(
         backend = SonicAnnotatorBackend()
         try:
             assert backend.binary == executable
-            assert backend.plugin_paths == (data / "tools" / "vamp-plugins",)
+            assert plugins in backend.plugin_paths
             assert backend.tools_root == data / "tools"
             from basseparate.setup.tools import tool_paths
 

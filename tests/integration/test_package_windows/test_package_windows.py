@@ -70,6 +70,12 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "palm-0.1.0-dev-windows-x86_64/RELEASE-NOTES.md",
         "palm-0.1.0-dev-windows-x86_64/PALM.exe",
         "palm-0.1.0-dev-windows-x86_64/runtime-requirements.txt",
+        "palm-0.1.0-dev-windows-x86_64/tools/ffmpeg/ffmpeg.exe",
+        "palm-0.1.0-dev-windows-x86_64/tools/ffmpeg/ffprobe.exe",
+        "palm-0.1.0-dev-windows-x86_64/tools/sonic-annotator/sonic-annotator.exe",
+        "palm-0.1.0-dev-windows-x86_64/tools/vamp-plugins/qm-vamp-plugins.dll",
+        "palm-0.1.0-dev-windows-x86_64/tools/vamp-plugins/nnls-chroma.dll",
+        "palm-0.1.0-dev-windows-x86_64/licenses/bundled-tools/sources/ffmpeg-9.0.2.tar.xz",
     ]
     with zipfile.ZipFile(archive, "w") as bundle:
         for name in required:
@@ -104,11 +110,10 @@ def test_built_zip_has_only_allowed_payload_when_present() -> None:
     assert any(name.endswith("/palm.exe") for name in lower)
     assert any(name.endswith("/install.json") for name in lower)
     assert any(name.endswith("/licenses/third_party/manifest.json") for name in lower)
-    assert not any(
-        ("/ffmpeg" in name or "/sonic-annotator" in name) and "/licenses/" not in name
-        for name in lower
-    )
-    root_forbidden = {"models", "tools", "environments", "cache", "tests", "storage"}
+    assert any(name.endswith("/tools/ffmpeg/ffmpeg.exe") for name in lower)
+    assert any(name.endswith("/tools/sonic-annotator/sonic-annotator.exe") for name in lower)
+    assert any(name.endswith("/tools/vamp-plugins/qm-vamp-plugins.dll") for name in lower)
+    root_forbidden = {"models", "environments", "cache", "tests", "storage"}
     assert not any(
         len(Path(name).parts) >= 2 and Path(name).parts[1] in root_forbidden for name in lower
     )

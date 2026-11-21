@@ -269,13 +269,20 @@ class SonicAnnotatorBackend:
         timeout_seconds: float = 600.0,
         tmp_root: Path | None = None,
     ) -> None:
-        tools_root = runtime_paths().tools_root
+        runtime = runtime_paths()
+        tools_root = runtime.tools_root
         self.tools_root = tools_root
+        bundled_tools = runtime.app_root / "tools"
         platform = f"{sys.platform}"
         default_plugin_paths: tuple[Path, ...]
         if platform.startswith("win"):
-            default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
-            default_plugin_paths = (tools_root / "vamp-plugins",)
+            default_binary = bundled_tools / "sonic-annotator" / "sonic-annotator.exe"
+            if not default_binary.is_file():
+                default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
+            default_plugin_paths = (
+                bundled_tools / "vamp-plugins",
+                tools_root / "vamp-plugins",
+            )
         elif platform.startswith("darwin"):
             default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
             default_plugin_paths = (tools_root / "vamp-plugins",)

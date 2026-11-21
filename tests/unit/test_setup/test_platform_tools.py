@@ -141,13 +141,11 @@ def test_windows_vamp_analysis_is_blocked_without_deleted_asset(
     assert "copy DLLs manually" in message
     assert called == []
 
-    manifest = (root / "licenses/third_party/manifest.json").read_text()
+    bundled = (root / "packaging/bundled-tools/manifest.json").read_text()
     docs = (root / "THIRD_PARTY_DOWNLOADS.md").read_text()
-    assert "palm-vamp-plugins-win64" not in manifest
-    assert "plugins-win64-v1" not in manifest
-    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" not in manifest
-    assert "plugins-win64-v1" not in docs
-    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" not in docs
+    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" in bundled
+    assert "ffmpeg-9.0.2" in bundled
+    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" in docs
 
 
 def test_windows_tools_install_sonic_and_leave_analysis_blocked(
@@ -274,3 +272,30 @@ def test_windows_macos_tool_status_paths(tmp_path: Path, monkeypatch: pytest.Mon
     runtime = RuntimePaths.from_environment(mode="packaged", app_root=app, data_root=data)
     assert tools_status(runtime) == {}
     assert windows_exe.exists() and windows_plugin.exists()
+
+
+def test_windows_bundled_tools_resolve_from_app_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from basseparate import platform_support
+    from basseparate.setup import media_tools, tools
+
+    app = tmp_path / "app"
+    data = tmp_path / "data"
+    (app / "tools" / "ffmpeg").mkdir(parents=True)
+    (app / "tools" / "sonic-annotator").mkdir(parents=True)
+    (app / "tools" / "vamp-plugins").mkdir(parents=True)
+    (app / "tools" / "ffmpeg" / "ffmpeg.exe").write_bytes(b"MZ")
+    (app / "tools" / "ffmpeg" / "ffprobe.exe").write_bytes(b"MZ")
+    (app / "tools" / "sonic-annotator" / "sonic-annotator.exe").write_bytes(b"MZ")
+    (app / "tools" / "vamp-plugins" / "qm-vamp-plugins.dll").write_bytes(b"MZ")
+    (app / "tools" / "bundled-tools.json").write_text('{"ffmpeg":{"version":"9.0.2"}}')
+    monkeypatch.setattr(platform_support, "WINDOWS", True)
+    monkeypatch.setattr(tool_assets, "plugin_suffix", lambda: ".dll")
+    runtime = RuntimePaths.from_environment(mode="packaged", app_root=app, data_root=data)
+    status = tools.tools_status(runtime)
+    assert status["sonic_visualiser"]["installed"] is True
+    assert status["vamp_plugin_pack"]["installed"] is True
+    media = media_tools.media_tools_status(runtime)
+    assert media["ffmpeg"]["installed"] is True
+    assert media["ffmpeg"]["version"] == "9.0.2"

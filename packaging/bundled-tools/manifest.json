@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "platform": "windows",
+  "cache": "storage/bundled-tools",
+  "assets": {
+    "ffmpeg": {
+      "file": "ffmpeg-9.0.2-essentials_build.zip",
+      "version": "9.0.2",
+      "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+      "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip",
+      "license": "GPL-3.0-or-later"
+    },
+    "sonic_annotator": {
+      "file": "sonic-annotator-1.7-win64.zip",
+      "version": "1.7",
+      "sha256": "c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693",
+      "url": "https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip",
+      "license": "GPL-2.0-or-later"
+    },
+    "vamp_plugins": {
+      "file": "vamp-plugins-win64.zip",
+      "version": "2026-11-20",
+      "sha256": "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863",
+      "url": "built from pinned c4dm/qm-vamp-plugins + nnls-chroma sources",
+      "license": "GPL-2.0-or-later / AGPL-3.0"
+    }
+  },
+  "sources": {
+    "ffmpeg-9.0.2.tar.xz": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+    "sonic-annotator-master.tar.gz": "3cd27d21d24802e7d8d25e15139554477739df6f8d103bf534eac70612ff5df5",
+    "qm-vamp-plugins.tar.gz": "2d8c4a6f5d781a7d331cf19dc9529e53fa620b3950b0b3224aa75872cf9644e9",
+    "nnls-chroma.tar.gz": "c24e1e2574215f25754d9cdc1c59421f76bcdc00a4a50ab9125df3fa02fcecd2",
+    "vamp-plugin-sdk.tar.gz": "d1a9cacef8f043660c3ad76a06f96ec7e92cc1b67c2c70d0eed8b8163f965e95"
+  }
+}

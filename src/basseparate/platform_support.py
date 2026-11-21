@@ -267,9 +267,12 @@ def managed_media_binary(name: str) -> Path | None:
     """The setup-managed FFmpeg/FFprobe under the runtime data root."""
     from basseparate.config import runtime_paths
 
-    candidate = (
-        runtime_paths().data_root / "tools" / "ffmpeg" / f"{name}{'.exe' if WINDOWS else ''}"
-    )
+    active = runtime_paths()
+    suffix = ".exe" if WINDOWS else ""
+    bundled = active.app_root / "tools" / "ffmpeg" / f"{name}{suffix}"
+    if bundled.is_file():
+        return bundled
+    candidate = active.data_root / "tools" / "ffmpeg" / f"{name}{suffix}"
     return candidate if candidate.is_file() else None
 
 

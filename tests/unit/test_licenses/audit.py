@@ -150,12 +150,22 @@ def assert_package_has_no_third_party_payload(path: Path) -> None:
         parts = Path(name).parts
         # Ignore the archive's top-level app directory.
         body = parts[1:] if len(parts) > 1 else parts
-        if body and body[0] in {"models", "tools", "environments", "audio2test", ".git", "cache"}:
+        bundled_windows_tools = (
+            path.name.lower().endswith(".zip")
+            and len(body) >= 2
+            and body[0] == "tools"
+            and body[1] in {"ffmpeg", "sonic-annotator", "vamp-plugins", "bundled-tools.json"}
+        )
+        bundled_source = len(body) >= 3 and body[:3] == ("licenses", "bundled-tools", "sources")
+        if (
+            body
+            and body[0] in {"models", "tools", "environments", "audio2test", ".git", "cache"}
+            and not bundled_windows_tools
+        ):
             raise LicenseAuditError(f"{path.name}: contains forbidden payload {name}")
-        if Path(name).suffix.lower() in PACKAGE_EXTENSIONS and Path(name).suffix.lower() not in {
-            ".so",
-            ".dylib",
-            ".dll",
-            ".exe",
-        }:
+        if (
+            Path(name).suffix.lower() in PACKAGE_EXTENSIONS
+            and Path(name).suffix.lower() not in {".so", ".dylib", ".dll", ".exe"}
+            and not bundled_source
+        ):
             raise LicenseAuditError(f"{path.name}: contains binary/archive {name}")

@@ -132,6 +132,35 @@ jobs:
             Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           }
 
+      - name: Bundled Sonic analysis smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-ChildItem dist\PALM-*-windows-x86_64.zip | Select-Object -First 1
+          $root = Join-Path $env:RUNNER_TEMP "palm-win-sonic"
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip -DestinationPath $root
+          $app = Get-ChildItem $root -Directory | Select-Object -First 1
+          $env:PYTHONPATH = Join-Path $app.FullName "src"
+          $env:PALM_MODE = "packaged"
+          $env:PALM_APP_ROOT = $app.FullName
+          $env:PALM_DATA_DIR = Join-Path $env:RUNNER_TEMP "palm-win-sonic-data"
+          Remove-Item $env:PALM_DATA_DIR -Recurse -Force -ErrorAction SilentlyContinue
+          @'
+          import sys
+          from pathlib import Path
+          from basseparate.features import analyze_file
+          from basseparate.analysis_backend import default_backend
+          result = analyze_file(Path(sys.argv[1]), cache_dir=Path(sys.argv[2]), backend=default_backend())
+          assert result.bpm > 0
+          assert result.key
+          assert len(result.chords) >= 2
+          assert len(result.beats) >= 2
+          print("bundled Sonic analysis ok", result.bpm, result.key, len(result.chords), len(result.beats))
+          '@ | Set-Content (Join-Path $env:RUNNER_TEMP "palm-sonic-smoke.py") -Encoding utf8
+          $fixture = Join-Path $PWD "tests/fixtures/audio/chords_c_am_f_g.wav"
+          & (Join-Path $app.FullName "python\python.exe") (Join-Path $env:RUNNER_TEMP "palm-sonic-smoke.py") $fixture (Join-Path $env:RUNNER_TEMP "palm-win-sonic-cache")
+          if ($LASTEXITCODE -ne 0) { throw "bundled Sonic analysis failed" }
       - name: Write tag checksums
         shell: pwsh
         run: |

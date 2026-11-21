@@ -56,22 +56,26 @@ def tool_paths(
     active = runtime or runtime_paths()
     selected = platform or platform_name()
     if selected == "windows":
-        executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
+        executable = active.app_root / "tools" / "sonic-annotator" / "sonic-annotator.exe"
+        if not executable.is_file():
+            executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
     elif selected == "macos":
         executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
     else:
         executable = (
             active.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
         )
-    plugin = active.tools_root / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"
+    plugin = active.app_root / "tools" / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"
+    if not plugin.is_file():
+        plugin = active.tools_root / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"
     return executable, plugin
 
 
 def tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[str, object]]:
     active = runtime or runtime_paths()
     selected = platform_name()
-    if selected == "windows":
-        # Windows analysis is blocked while the 64-bit plugin bundle is rebuilt.
+    if selected == "windows" and not (active.app_root / "tools" / "vamp-plugins").is_dir():
+        # Windows analysis requires the bundled 64-bit plugin payload.
         return {}
     executable, plugin = tool_paths(active)
     return {
@@ -117,9 +121,14 @@ def install_tools(
     """Install the optional GPL tools below the writable tools root."""
     active = runtime or runtime_paths()
     if platform_name() == "windows":
+        bundled = tools_status(active)
+        if all(bool(item.get("installed")) for item in bundled.values()) and bundled:
+            if progress is not None:
+                progress(1.0, "bundled Windows analysis tools already installed")
+            return bundled
         raise SetupInstallError(
-            "Windows analysis is unavailable in this build: the 64-bit Vamp/plugin "
-            "bundle is being rebuilt. Import, playback and separation remain available."
+            "Windows analysis requires the bundled 64-bit tool payload; this build "
+            "does not offer a download or UAC plugin install."
         )
     active.ensure_data_path(active.tools_root)
     if installer is not None:

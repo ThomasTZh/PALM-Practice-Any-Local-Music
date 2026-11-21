@@ -41,7 +41,6 @@ DIST = ROOT / "dist"
 CACHE = ROOT / "storage" / "tmp-windows-cache"
 FORBIDDEN = {
     "models",
-    "tools",
     "environments",
     "cache",
     "tests",
@@ -68,6 +67,12 @@ REQUIRED = (
     "install.json",
     "RELEASE-NOTES.md",
     "PALM.exe",
+    "tools/ffmpeg/ffmpeg.exe",
+    "tools/ffmpeg/ffprobe.exe",
+    "tools/sonic-annotator/sonic-annotator.exe",
+    "tools/vamp-plugins/qm-vamp-plugins.dll",
+    "tools/vamp-plugins/nnls-chroma.dll",
+    "licenses/bundled-tools/sources/ffmpeg-9.0.2.tar.xz",
 )
 
 
@@ -309,7 +314,85 @@ def stage(stage: Path, manifest: dict[str, Any], requirements: Path, *, online: 
     copy_file(ROOT / "palm.cmd", stage / "palm.cmd")
     copy_file(requirements, stage / "runtime-requirements.txt")
     copy_file(ROOT / "packaging" / "windows" / "build-manifest.toml", stage / "BUILD-MANIFEST.toml")
+    stage_bundled_tools(stage)
     install_runtime(stage, stage / "bin" / "uv.exe", requirements, host_uv=shutil.which("uv"))
+
+
+BUNDLED = ROOT / "storage" / "bundled-tools"
+
+
+def stage_bundled_tools(stage: Path) -> None:
+    """Stage the approved Windows FFmpeg/Sonic/Vamp payload and source offer."""
+    ffmpeg_zip = BUNDLED / "ffmpeg-9.0.2-essentials_build.zip"
+    sonic_zip = BUNDLED / "sonic-annotator-1.7-win64.zip"
+    vamp_zip = BUNDLED / "vamp-plugins-win64.zip"
+    pins = json.loads((ROOT / "packaging" / "bundled-tools" / "manifest.json").read_text())
+    for required in (ffmpeg_zip, sonic_zip, vamp_zip):
+        if not required.is_file():
+            raise PackageError(f"bundled Windows tool archive is missing: {required}")
+    for entry in pins["assets"].values():
+        path = BUNDLED / entry["file"]
+        if sha256(path) != entry["sha256"]:
+            raise PackageError(f"bundled tool pin mismatch: {entry['file']}")
+    for name, digest in pins["sources"].items():
+        path = BUNDLED / "sources" / name
+        if not path.is_file() or sha256(path) != digest:
+            raise PackageError(f"bundled source pin mismatch: {name}")
+    tools_root = stage / "tools"
+    with zipfile.ZipFile(ffmpeg_zip) as archive:
+        for name, destination in (
+            ("ffmpeg-9.0.2-essentials_build/bin/ffmpeg.exe", "ffmpeg/ffmpeg.exe"),
+            ("ffmpeg-9.0.2-essentials_build/bin/ffprobe.exe", "ffmpeg/ffprobe.exe"),
+        ):
+            target = tools_root / destination
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(name) as source, target.open("wb") as out:
+                shutil.copyfileobj(source, out)
+    with zipfile.ZipFile(sonic_zip) as archive:
+        for name in archive.namelist():
+            if name.endswith("/"):
+                continue
+            relative = name.replace("\\", "/").split("/", 1)[-1]
+            target = tools_root / "sonic-annotator" / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(name) as source, target.open("wb") as out:
+                shutil.copyfileobj(source, out)
+    with zipfile.ZipFile(vamp_zip) as archive:
+        for name in archive.namelist():
+            if name.endswith("/") or "/" in name:
+                continue
+            target = tools_root / "vamp-plugins" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(name) as source, target.open("wb") as out:
+                shutil.copyfileobj(source, out)
+    licenses = stage / "licenses" / "bundled-tools"
+    copy_tree(BUNDLED / "licenses", licenses)
+    copy_tree(BUNDLED / "sources", licenses / "sources")
+    (tools_root / "bundled-tools.json").write_text(
+        json.dumps(
+            {
+                "platform": "windows",
+                "ffmpeg": {
+                    "version": "9.0.2",
+                    "source": "https://www.gyan.dev/ffmpeg/builds/",
+                    "license": "GPL-3.0-or-later",
+                    "sha256": sha256(ffmpeg_zip),
+                },
+                "sonic_annotator": {
+                    "version": "1.7",
+                    "source": "https://github.com/sonic-visualiser/sonic-annotator",
+                    "license": "GPL-2.0-or-later",
+                },
+                "vamp_plugins": {
+                    "source": "https://github.com/c4dm/qm-vamp-plugins + nnls-chroma",
+                    "license": "GPL-2.0-or-later / AGPL-3.0",
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def forbidden(name: str) -> bool:
@@ -387,14 +470,6 @@ def check_zip(path: Path) -> int:
     bad = [name for name in names if forbidden(name)]
     if bad:
         raise PackageError(f"ZIP contains excluded paths: {bad[:5]}")
-    payload_names = [
-        name
-        for name in names
-        if "licenses/" not in name.lower()
-        and ("ffmpeg" in name.lower() or "sonic-annotator" in name.lower())
-    ]
-    if payload_names:
-        raise PackageError("ZIP contains FFmpeg/Sonic Annotator payload")
     print(f"package-windows-check: {len(names)} entries, required content present")
     return 0
 
