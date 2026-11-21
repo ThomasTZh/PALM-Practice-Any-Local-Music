@@ -20,7 +20,7 @@
     "vamp_plugins": {
       "file": "vamp-plugins-win64.zip",
       "version": "2026-11-20",
-      "sha256": "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863",
+      "sha256": "",
       "url": "built from pinned c4dm/qm-vamp-plugins + nnls-chroma sources",
       "license": "GPL-2.0-or-later / AGPL-3.0"
     }

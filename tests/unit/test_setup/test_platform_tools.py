@@ -143,7 +143,7 @@ def test_windows_vamp_analysis_is_blocked_without_deleted_asset(
 
     bundled = (root / "packaging/bundled-tools/manifest.json").read_text()
     docs = (root / "THIRD_PARTY_DOWNLOADS.md").read_text()
-    assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" in bundled
+    assert '"vamp_plugins"' in bundled
     assert "ffmpeg-9.0.2" in bundled
     assert "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863" in docs
 

@@ -5,6 +5,7 @@ name: Windows Vamp plugin bundle
 # never committed or bundled in the PALM installer.
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     tags:
       - plugins-win64-v*
@@ -195,16 +196,3 @@ jobs:
             SHA256SUMS
             windows-sonic-evidence.txt
 
-      - name: Publish held plugin release
-        if: startsWith(github.ref, 'refs/tags/plugins-win64-v')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Windows 64-bit Vamp plugin bundle
-          body: |
-            Native 64-bit qm-vamp-plugins (QM Key Detector, QM Bar and Beat
-            Tracker) and NNLS-Chroma (Chordino), built from pinned sources.
-            See SHA256SUMS and the GPL notices in the archive.
-          files: |
-            vamp-plugins-win64.zip
-            SHA256SUMS

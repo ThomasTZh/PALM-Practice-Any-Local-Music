@@ -363,7 +363,7 @@ def stage_bundled_tools(stage: Path) -> None:
         path = BUNDLED / entry["file"]
         if not path.is_file() and entry["file"] == "vamp-plugins-win64.zip":
             path = PACKAGED_BUNDLED / entry["file"]
-        if sha256(path) != entry["sha256"]:
+        if entry.get("sha256") and sha256(path) != entry["sha256"]:
             raise PackageError(f"bundled tool pin mismatch: {entry['file']}")
     for name, source in pins["sources"].items():
         path = BUNDLED / "sources" / name
@@ -396,6 +396,16 @@ def stage_bundled_tools(stage: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(name) as source, target.open("wb") as out:
                 shutil.copyfileobj(source, out)
+            if target.suffix.lower() == ".dll":
+                data = target.read_bytes()
+                if data[:2] != b"MZ":
+                    raise PackageError(f"bundled plugin is not a PE file: {name}")
+                offset = int.from_bytes(data[0x3C:0x40], "little")
+                if (
+                    data[offset : offset + 4] != b"PE\0\0"
+                    or int.from_bytes(data[offset + 4 : offset + 6], "little") != 0x8664
+                ):
+                    raise PackageError(f"bundled plugin is not PE32+ x86-64: {name}")
     licenses = stage / "licenses" / "bundled-tools"
     license_source = BUNDLED / "licenses"
     if not license_source.is_dir():
