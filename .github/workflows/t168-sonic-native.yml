@@ -1,0 +1,65 @@
+name: t168 native Sonic backend smoke
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v0.1.0-t168-sonic"
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download bundled Windows analysis tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tools = Join-Path $env:RUNNER_TEMP "palm-tools"
+          New-Item -ItemType Directory -Force -Path $tools | Out-Null
+          $sonic = Join-Path $tools "sonic.zip"
+          Invoke-WebRequest -Uri "https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7-win64.zip" -OutFile $sonic
+          if ((Get-FileHash $sonic -Algorithm SHA256).Hash.ToLower() -ne "c40717e029210cf1e1c97bc7dadea00cf4386327e67fdf9ca66027a91ea26693") { throw "Sonic hash" }
+          Expand-Archive -Path $sonic -DestinationPath (Join-Path $tools "sonic")
+          $vamp = Join-Path $tools "vamp.zip"
+          Invoke-WebRequest -Uri "https://github.com/ThomasTZh/PALM-Practice-Any-Local-Music/releases/download/plugins-win64-v1/vamp-plugins-win64.zip" -OutFile $vamp
+          if ((Get-FileHash $vamp -Algorithm SHA256).Hash.ToLower() -ne "41475f374966a3d2126c84e0d434fbc774738e427c01b5aeccfd025dfc143863") { throw "Vamp hash" }
+          Expand-Archive -Path $vamp -DestinationPath (Join-Path $tools "vamp")
+          python -m pip install --quiet "numpy==2.4.6" "platformdirs==4.12.1" "pydantic==2.13.5" "pydantic-settings==2.15.0" "psutil==7.2.2"
+      - name: Native packaged backend analysis
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $app = Join-Path $env:RUNNER_TEMP "palm-app"
+          New-Item -ItemType Directory -Force -Path (Join-Path $app "tools") | Out-Null
+          Copy-Item -Recurse (Join-Path $env:RUNNER_TEMP "palm-tools\sonic\sonic-annotator-win64") (Join-Path $app "tools\sonic-annotator")
+          Copy-Item -Recurse (Join-Path $env:RUNNER_TEMP "palm-tools\vamp") (Join-Path $app "tools\vamp-plugins")
+          $env:PYTHONPATH = (Join-Path $PWD "src")
+          $env:PALM_MODE = "packaged"
+          $env:PALM_APP_ROOT = $app
+          $env:PALM_DATA_DIR = Join-Path $env:RUNNER_TEMP "palm-data"
+          $env:FIXTURE = Join-Path $PWD "tests\fixtures\audio\chords_c_am_f_g.wav"
+          @'
+          import os
+          from pathlib import Path
+          from basseparate import features
+          from basseparate.analysis_backend import default_backend
+          backend = default_backend()
+          result = features.analyze_signal(
+              features.load_audio_mono(Path(os.environ["FIXTURE"]))[0],
+              sample_rate=44100,
+              source_sha256="a" * 64,
+              backend=backend,
+          )
+          print("key", result.key, "chords", result.chord_labels, "bpm", result.bpm)
+          print("beats", len(result.grid.beats), "bars", len(result.grid.bars))
+          assert result.key.label == "C major"
+          assert [c.label for c in result.chords if c.label != "N"] == ["C", "Am", "F", "G"]
+          assert abs(result.bpm - 135.999) <= 0.5
+          assert len(result.grid.beats) == 18
+          assert len(result.grid.bars) == 5
+          print("NATIVE_SONIC_BACKEND_OK")
+          '@ | Set-Content (Join-Path $env:RUNNER_TEMP "native_sonic.py") -Encoding utf8
+          python (Join-Path $env:RUNNER_TEMP "native_sonic.py")
+          if ($LASTEXITCODE -ne 0) { throw "native backend failed" }
