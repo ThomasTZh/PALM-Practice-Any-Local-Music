@@ -397,7 +397,10 @@ def stage_bundled_tools(stage: Path) -> None:
             with archive.open(name) as source, target.open("wb") as out:
                 shutil.copyfileobj(source, out)
     licenses = stage / "licenses" / "bundled-tools"
-    copy_tree(BUNDLED / "licenses", licenses)
+    license_source = BUNDLED / "licenses"
+    if not license_source.is_dir():
+        license_source = PACKAGED_BUNDLED / "licenses"
+    copy_tree(license_source, licenses)
     copy_tree(BUNDLED / "sources", licenses / "sources")
     (tools_root / "bundled-tools.json").write_text(
         json.dumps(
