@@ -12,7 +12,7 @@ fetch_source() {
   curl -fsSL "https://github.com/$1/archive/$3.tar.gz" -o "$WORK/source.tar.gz"
   tar -xzf "$WORK/source.tar.gz" -C "$2" --strip-components=1
 }
-fetch_source vamp-plugin-sdk/vamp-plugin-sdk "$WORK/vamp" "$VAMP_COMMIT"
+fetch_source c4dm/vamp-plugin-sdk "$WORK/vamp" "$VAMP_COMMIT"
 fetch_source c4dm/qm-vamp-plugins "$WORK/qm" "$QM_COMMIT"
 fetch_source c4dm/qm-dsp "$WORK/qmdsp" "$QMDSP_COMMIT"
 fetch_source c4dm/nnls-chroma "$WORK/nnls" "$NNLS_COMMIT"
