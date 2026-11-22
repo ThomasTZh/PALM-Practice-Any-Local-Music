@@ -7,11 +7,15 @@ QM_COMMIT=c918afc070f79489758bb2dab6895972bd82066b
 QMDSP_COMMIT=e34a3cc188332ed7c33cd9257ef164de5b587191
 NNLS_COMMIT=4c5f214a75cb354f8d8c933e161377c5b4d83713
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
-clone() { git init -q "$2"; git -C "$2" remote add origin "$1"; git -C "$2" fetch -q --depth 1 origin "$3"; git -C "$2" checkout -q FETCH_HEAD; }
-clone https://github.com/vamp-plugin-sdk/vamp-plugin-sdk.git "$WORK/vamp" "$VAMP_COMMIT"
-clone https://github.com/c4dm/qm-vamp-plugins.git "$WORK/qm" "$QM_COMMIT"
-clone https://github.com/c4dm/qm-dsp.git "$WORK/qmdsp" "$QMDSP_COMMIT"
-clone https://github.com/c4dm/nnls-chroma.git "$WORK/nnls" "$NNLS_COMMIT"
+fetch_source() {
+  mkdir -p "$2"
+  curl -fsSL "https://github.com/$1/archive/$3.tar.gz" -o "$WORK/source.tar.gz"
+  tar -xzf "$WORK/source.tar.gz" -C "$2" --strip-components=1
+}
+fetch_source vamp-plugin-sdk/vamp-plugin-sdk "$WORK/vamp" "$VAMP_COMMIT"
+fetch_source c4dm/qm-vamp-plugins "$WORK/qm" "$QM_COMMIT"
+fetch_source c4dm/qm-dsp "$WORK/qmdsp" "$QMDSP_COMMIT"
+fetch_source c4dm/nnls-chroma "$WORK/nnls" "$NNLS_COMMIT"
 ARCH="-mmacosx-version-min=11 -arch arm64 -stdlib=libc++"
 make -C "$WORK/vamp" -f otherbuilds/Makefile.osx ARCHFLAGS="$ARCH" sdkstatic
 make -C "$WORK/qmdsp" -f build/osx/Makefile.osx ARCHFLAGS="$ARCH"
