@@ -292,8 +292,11 @@ class SonicAnnotatorBackend:
                 tools_root / "vamp-plugins",
             )
         else:
-            default_binary = tools_root / SONIC_EXTRACTED_RELATIVE
+            default_binary = bundled_tools / "sonic-annotator" / "squashfs-root" / "AppRun"
+            if not default_binary.is_file():
+                default_binary = tools_root / SONIC_EXTRACTED_RELATIVE
             default_plugin_paths = (
+                bundled_tools / "vamp-plugins",
                 tools_root / "vamp-plugins",
                 tools_root / "plugins",
             )

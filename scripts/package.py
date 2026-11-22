@@ -50,7 +50,6 @@ FORBIDDEN_ROOT_ENTRIES = {
     "tests",
     "audio2test",
     "models",
-    "tools",
     "cache",
     "storage",
 }
@@ -75,6 +74,12 @@ REQUIRED_TAR_PARTS = (
     "palm.svg",
     "runtime-requirements.txt",
     "install.json",
+    "tools/ffmpeg/ffmpeg",
+    "tools/ffmpeg/ffprobe",
+    "tools/sonic-annotator/squashfs-root/AppRun",
+    "tools/vamp-plugins/qm-vamp-plugins.so",
+    "tools/vamp-plugins/nnls-chroma.so",
+    "licenses/bundled-tools/sources/ffmpeg-9.0.2.tar.xz",
     "licenses/third_party/manifest.json",
 )
 
@@ -282,6 +287,34 @@ def write_install_json(destination: Path, channel: str, version_value: str) -> N
         },
     }
     destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+LINUX_BUNDLED = ROOT / "storage" / "bundled-tools" / "linux"
+
+
+def stage_bundled_tools(stage: Path) -> None:
+    """Stage the approved Linux FFmpeg/Sonic/Vamp payload."""
+    if not (LINUX_BUNDLED / "ffmpeg" / "ffmpeg").is_file():
+        raise PackageError("Linux bundled FFmpeg/FFprobe are missing")
+    copy_tree_filtered(LINUX_BUNDLED / "ffmpeg", stage / "tools" / "ffmpeg")
+    copy_tree_filtered(
+        LINUX_BUNDLED / "sonic-annotator" / "squashfs-root",
+        stage / "tools" / "sonic-annotator" / "squashfs-root",
+    )
+    copy_tree_filtered(LINUX_BUNDLED / "vamp-plugins", stage / "tools" / "vamp-plugins")
+    copy_tree_filtered(LINUX_BUNDLED / "licenses", stage / "licenses" / "bundled-tools")
+    copy_tree_filtered(
+        LINUX_BUNDLED / "sources",
+        stage / "licenses" / "bundled-tools" / "sources",
+    )
+    for executable in (
+        stage / "tools" / "ffmpeg" / "ffmpeg",
+        stage / "tools" / "ffmpeg" / "ffprobe",
+        stage / "tools" / "sonic-annotator" / "squashfs-root" / "AppRun",
+    ):
+        executable.chmod(0o755)
+    for plugin in (stage / "tools" / "vamp-plugins").glob("*.so"):
+        plugin.chmod(0o755)
 
 
 def stage_app(stage: Path, manifest: dict[str, Any]) -> None:
@@ -611,6 +644,7 @@ def build(args: argparse.Namespace) -> int:
         clean_runtime_tests(stage_python)
         clean_bytecode(stage)
         write_release_notes(stage, version_value)
+        stage_bundled_tools(stage)
         tar_path = build_tar(stage, dist / f"PALM-{version_value}-linux-x86_64.tar.gz")
         write_checksums(dist, [tar_path])
         print(f"package: release assets in {dist}")

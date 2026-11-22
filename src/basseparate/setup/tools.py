@@ -64,9 +64,16 @@ def tool_paths(
         if not executable.is_file():
             executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
     else:
-        executable = (
-            active.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"
-        )
+        executable = active.app_root / "tools" / "sonic-annotator" / "squashfs-root" / "AppRun"
+        if not executable.is_file():
+            executable = (
+                active.tools_root
+                / "sv"
+                / "squashfs-root"
+                / "usr"
+                / "bin"
+                / "piper-vamp-simple-server"
+            )
     plugin = active.app_root / "tools" / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"
     if not plugin.is_file():
         plugin = active.tools_root / "vamp-plugins" / f"qm-vamp-plugins{plugin_suffix()}"

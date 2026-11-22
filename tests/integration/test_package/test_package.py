@@ -56,10 +56,16 @@ def test_built_tar_checksum_and_contents_if_present() -> None:
     assert any(name.endswith("/analysis/envs/cpu/uv.lock") for name in names)
     assert any(name.endswith("/analysis/envs/cuda/uv.lock") for name in names)
     assert any(name.endswith("/web/dist/index.html") for name in names)
+    assert any(name.endswith("/tools/ffmpeg/ffmpeg") for name in names)
+    assert any(name.endswith("/tools/sonic-annotator/squashfs-root/AppRun") for name in names)
+    assert any(name.endswith("/tools/vamp-plugins/qm-vamp-plugins.so") for name in names)
+    assert any(
+        name.endswith("/licenses/bundled-tools/sources/ffmpeg-9.0.2.tar.xz") for name in names
+    )
+    assert any(name.endswith("/tools/vamp-plugins/nnls-chroma.so") for name in names)
     assert not any(name.startswith("/") or "/../" in name for name in names)
     forbidden_roots = {
         "models",
-        "tools",
         "tests",
         "audio2test",
         ".git",
