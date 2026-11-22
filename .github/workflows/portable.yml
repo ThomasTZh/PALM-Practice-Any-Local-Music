@@ -91,11 +91,20 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
 
+  plugins:
+    uses: ./.github/workflows/plugins-windows.yml
+
   windows:
     name: Windows x64 package and smoke
+    needs: plugins
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Download pinned Windows Vamp bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: vamp-plugins-win64
+          path: storage/bundled-tools
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
