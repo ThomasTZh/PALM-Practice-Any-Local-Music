@@ -27,7 +27,7 @@ The Mac needs:
 
 - Apple Silicon (arm64), macOS 11 or newer;
 - a normal user account that can write `~/Applications` and `~/Library`;
-- a network connection for the setup downloads;
+- bundled FFmpeg/Sonic/Vamp (no tool download); network only for the CPU runtime/model.
 - Safari and Google Chrome installed.
 
 Do not install FFmpeg, Sonic Annotator, Vamp plugins or Python. PALM's setup

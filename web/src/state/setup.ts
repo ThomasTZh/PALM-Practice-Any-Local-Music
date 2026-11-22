@@ -391,7 +391,7 @@ export function setupLicenceComponents(
     };
   });
   const tools: LicenceComponent[] = [];
-  if (platform !== "windows") {
+  if (platform !== "windows" || Object.keys(status.tools).length > 0) {
     tools.push(
       {
         id: "tool-sonic",
@@ -404,7 +404,10 @@ export function setupLicenceComponents(
         sourceUrl: "https://github.com/sonic-visualiser/sonic-annotator",
         size: platform === "linux" ? "bundled launcher" : "6-11 MB",
         required: false,
-        requirementLabel: "Optional (needed for analysis)",
+        requirementLabel:
+          platform === "windows"
+            ? "Bundled with PALM"
+            : "Optional (needed for analysis)",
         licenceTextKeys: ["GPL-2.0"],
       },
       {
@@ -417,7 +420,10 @@ export function setupLicenceComponents(
         sourceUrl: "https://github.com/vamp-plugins/vamp-plugin-pack",
         size: "33-47 MB",
         required: false,
-        requirementLabel: "Optional (needed for analysis)",
+        requirementLabel:
+          platform === "windows"
+            ? "Bundled with PALM"
+            : "Optional (needed for analysis)",
         licenceTextKeys: ["AGPL-3.0"],
       },
     );
@@ -465,7 +471,9 @@ export function setupGates(status: SetupStatus | null): SetupGates {
   const environmentReady = status.readiness.environment_ready;
   const modelReady = status.readiness.model_ready;
   const canImport = coreChecksOk && mediaReady;
-  const windowsAnalysisBlocked = status.platform === "windows";
+  const windowsAnalysisBlocked =
+    status.platform === "windows" &&
+    Object.keys(status.tools ?? {}).length === 0;
   const canAnalyze =
     !windowsAnalysisBlocked &&
     coreChecksOk &&
@@ -485,15 +493,13 @@ export function setupGates(status: SetupStatus | null): SetupGates {
         : "Importing needs the managed FFmpeg/FFprobe media tools. Open Setup to install them.",
     analyzeReason: canAnalyze
       ? null
-      : windowsAnalysisBlocked
-        ? "Windows analysis is unavailable: no 64-bit Vamp plugin distribution is available. Do not use the GUI pack or copy DLLs manually."
-        : !coreChecksOk
-          ? "Analysis needs the system checks to pass. Open Setup to get the studio ready."
-          : !mediaReady
-            ? "Analysis needs the managed FFmpeg/FFprobe media tools. Open Setup to install them."
-            : !toolsReady
-              ? "Analysis needs the optional GPL tools (Sonic Visualiser and the Vamp plugin pack). Open Setup to install them."
-              : "Analysis needs the CPU or CUDA inference environment. Open Setup to create it.",
+      : !coreChecksOk
+        ? "Analysis needs the system checks to pass. Open Setup to get the studio ready."
+        : !mediaReady
+          ? "Analysis needs the managed FFmpeg/FFprobe media tools. Open Setup to install them."
+          : !toolsReady
+            ? "Analysis needs the bundled Sonic Annotator and Vamp plugin payload. Reinstall PALM; no separate plugin install is required."
+            : "Analysis needs the CPU or CUDA inference environment. Open Setup to create it.",
     separateReason: canSeparate
       ? null
       : !coreChecksOk

@@ -206,6 +206,20 @@ def default_backend() -> AnalysisBackend:
     """
     platform = f"{sys.platform}"
     if platform.startswith("linux"):
+        from basseparate.config import runtime_paths
+
+        tools = runtime_paths().app_root / "tools"
+        if all(
+            path.exists()
+            for path in (
+                tools / "sonic-annotator" / "squashfs-root" / "AppRun",
+                tools / "vamp-plugins",
+                tools / "ffmpeg" / "ffmpeg",
+            )
+        ):
+            from basseparate.sonic_annotator import SonicAnnotatorBackend
+
+            return SonicAnnotatorBackend()
         return PiperBackend()
     if platform.startswith(("win", "darwin")):
         # Lazy import: sonic_annotator imports the result types from this module.

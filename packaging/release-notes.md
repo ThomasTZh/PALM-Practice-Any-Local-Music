@@ -43,10 +43,10 @@ analysis tools, Python environments, recordings, tests, caches or `.git`.
 - Unsigned, x64 only, CPU inference only. No CUDA/GPU claim.
 - **The per-user installer is the primary Windows asset**; the portable ZIP is
   also provided. Both need no administrator rights.
-- First launch opens the licence/setup screen; managed FFmpeg/FFprobe, CPU
-  environment and models are downloaded only after consent. Windows Sonic/Vamp
-  analysis is temporarily unavailable in this build while the plugin bundle is
-  rebuilt; the UI reports the blocker instead of offering a partial install.
+- First launch opens the licence/setup screen. FFmpeg/FFprobe, Sonic Annotator
+  and the required Vamp plugins are bundled with licence/source archives and
+  need no download or UAC. Only the CPU environment and selected model are
+  downloaded after consent; Windows analysis uses the bundled Sonic/Vamp tools.
 - Check for updates only opens the release page. There is no auto-updater.
 - The installer creates per-user Start Menu/desktop shortcuts and an uninstall
   entry. The uninstaller is app-only by default and keeps

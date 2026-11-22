@@ -34,13 +34,12 @@ runs package checks, native install/upgrade/uninstall tests and a PALM.exe
 health smoke. Nothing is code-signed or notarized; SmartScreen may ask for
 confirmation.
 
-First launch opens the licence/setup screen. Managed FFmpeg/FFprobe, the CPU
-environment and selected models are downloaded only after consent and verified
-under `%LOCALAPPDATA%\palm`. Windows Sonic/Vamp analysis is temporarily
-unavailable in this build while the plugin bundle is rebuilt; the UI reports
-that blocker instead of offering a administrator workaround. The app
-itself needs no administrator rights. Check for updates only opens the release
-page; there is no automatic updater.
+FFmpeg/FFprobe, Sonic Annotator and the 64-bit Vamp plugins are bundled under
+`tools/` with licence/source archives. First launch detects them without a
+download, UAC or manual DLL install; Windows analysis uses the bundled Sonic and
+Vamp tools. Only the CPU environment and selected models are downloaded after
+consent. The app needs no administrator rights. Check for updates only opens
+the release page; there is no automatic updater.
 
 The uninstaller removes only the default `%LOCALAPPDATA%\palm` data root when
 the interactive delete-data option is explicitly chosen. If you launched with

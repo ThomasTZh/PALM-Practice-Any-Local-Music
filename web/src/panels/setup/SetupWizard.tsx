@@ -778,108 +778,95 @@ export function SetupWizard({
           )}
         </section>
 
-        {status.platform === "windows" ? (
-          <section className="setup-section" data-testid="setup-tools">
-            <h2>Analysis temporarily unavailable</h2>
-            <p
-              className="setup-note setup-error"
-              data-testid="setup-windows-analysis-blocker"
+        <section className="setup-section" data-testid="setup-tools">
+          <h2>
+            {status.platform === "windows" &&
+            Object.keys(status.tools).length > 0
+              ? "Bundled analysis tools"
+              : "Optional GPL tools"}
+          </h2>
+          <p className="setup-note">
+            Sonic Annotator and the Vamp plugin pack provide chord, key and
+            tempo analysis. On Windows they are bundled with PALM and need no
+            download or administrator install.
+          </p>
+          <ul className="setup-tool-list">
+            {Object.entries(status.tools).map(([name, tool]) => (
+              <li key={name}>
+                <span>{tool.name ?? name.replaceAll("_", " ")}</span>
+                <span className="setup-muted">
+                  <a
+                    data-testid={`tool-licence-${name}`}
+                    href={toolLicenceLink(name).licenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {tool.license}
+                  </a>
+                  {" · "}
+                  <a
+                    data-testid={`tool-source-${name}`}
+                    href={toolLicenceLink(name).sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Source
+                  </a>
+                </span>
+                <span className="setup-status" data-ok={tool.installed}>
+                  {tool.installed ? "Installed" : "Missing"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!(
+            status.platform === "windows" &&
+            Object.keys(status.tools).length > 0
+          ) && (
+            <>
+              <label className="setup-consent">
+                <input
+                  type="checkbox"
+                  aria-label="Accept GPL tool licences"
+                  checked={toolsConsent}
+                  onChange={(event) => setToolsConsent(event.target.checked)}
+                />
+                I accept the GPL/AGPL licences for the optional tools.
+              </label>
+              <button
+                type="button"
+                data-testid="setup-tools-install"
+                disabled={busy || toolsInstalled || !toolsConsent}
+                onClick={installTools}
+              >
+                {toolsInstalled ? "Tools installed" : "Install optional tools"}
+              </button>
+            </>
+          )}
+          <div className="setup-action-links" data-testid="setup-tools-links">
+            <a
+              href={toolLicenceLink("sonic_visualiser").licenceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              Windows analysis is unavailable in this beta while the 64-bit
-              plugin bundle is rebuilt. Import, playback and stem separation
-              remain available. No admin, GUI pack or manual DLL workaround is
-              offered.
-            </p>
-          </section>
-        ) : (
-          <section className="setup-section" data-testid="setup-tools">
-            <h2>Optional GPL tools</h2>
-            <p className="setup-note">
-              Sonic Annotator or Sonic Visualiser and the Vamp plugin pack are
-              GPL/AGPL licensed and required for chord and tempo analysis.
-            </p>
-            {status.platform === "windows" && (
-              <p
-                className="setup-note setup-error"
-                data-testid="setup-windows-vamp-blocker"
-              >
-                Windows analysis is unavailable: no 64-bit Vamp plugin
-                distribution is available. Do not use the GUI Vamp Plugin Pack
-                or copy DLLs manually. Import, playback and stem separation
-                remain available.
-              </p>
-            )}
-            <ul className="setup-tool-list">
-              {Object.entries(status.tools).map(([name, tool]) => (
-                <li key={name}>
-                  <span>{tool.name ?? name.replaceAll("_", " ")}</span>
-                  <span className="setup-muted">
-                    <a
-                      data-testid={`tool-licence-${name}`}
-                      href={toolLicenceLink(name).licenceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {tool.license}
-                    </a>
-                    {" · "}
-                    <a
-                      data-testid={`tool-source-${name}`}
-                      href={toolLicenceLink(name).sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Source
-                    </a>
-                  </span>
-                  <span className="setup-status" data-ok={tool.installed}>
-                    {tool.installed ? "Installed" : "Missing"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <label className="setup-consent">
-              <input
-                type="checkbox"
-                aria-label="Accept GPL tool licences"
-                checked={toolsConsent}
-                onChange={(event) => setToolsConsent(event.target.checked)}
-              />
-              I accept the GPL/AGPL licences for the optional tools.
-            </label>
-            <button
-              type="button"
-              data-testid="setup-tools-install"
-              disabled={busy || toolsInstalled || !toolsConsent}
-              onClick={installTools}
+              Sonic licence
+            </a>
+            <a
+              href={toolLicenceLink("vamp_plugin_pack").licenceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              {toolsInstalled ? "Tools installed" : "Install optional tools"}
-            </button>
-            <div className="setup-action-links" data-testid="setup-tools-links">
-              <a
-                href={toolLicenceLink("sonic_visualiser").licenceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Sonic licence
-              </a>
-              <a
-                href={toolLicenceLink("vamp_plugin_pack").licenceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Vamp licence
-              </a>
-              <a
-                href={toolLicenceLink("vamp_plugin_pack").sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Source
-              </a>
-            </div>
-          </section>
-        )}
+              Vamp licence
+            </a>
+            <a
+              href={toolLicenceLink("vamp_plugin_pack").sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Source
+            </a>
+          </div>
+        </section>
 
         <section className="setup-section" data-testid="setup-environments">
           <h2>Inference environment</h2>

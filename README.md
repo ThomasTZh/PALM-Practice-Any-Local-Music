@@ -41,11 +41,9 @@ instructions; PALM never replaces itself and has no automatic updater. Remove th
 models and tools in the data root are preserved.
 
 On first run the browser opens the licence and setup screen. Review the
-component licences, then use **Install recommended setup**: PALM downloads and
-verifies managed FFmpeg/FFprobe, the CPU environment and the selected model;
-Linux/macOS also install Sonic Annotator and the Vamp Plugin Pack. Windows
-analysis is temporarily blocked while the 64-bit bundle is rebuilt. FFmpeg is
-not an external prerequisite.
+component licences, then use **Install recommended setup**: FFmpeg/FFprobe,
+Sonic Annotator and the Vamp plugins are bundled with every platform package;
+only the CPU/CUDA environment and selected separation model are downloaded.
 `PALM_FFMPEG`/`PALM_FFPROBE` remain advanced overrides for a custom binary, not
 part of the normal installation.
 
@@ -109,19 +107,17 @@ Each platform has its own asset plus checksums and notes:
   non-notarized, no Terminal window
 
 Every bundle contains the app, built UI, analysis workers/registry,
-environment definitions, launcher, setup code and licences. Model weights,
-tools, FFmpeg and Python environments are **not** bundled.
+environment definitions, launcher, setup code and licences. Pinned
+FFmpeg/FFprobe, Sonic Annotator and Vamp plugins are bundled. Model weights and
+Python environments are **not** bundled.
 
 **First run** opens the licence and setup screen. It needs a network connection
 for the downloads you choose, but does not upload anything:
 
-- **Managed FFmpeg/FFprobe** are downloaded and SHA-256 verified by setup, under
-  the data root. They are not bundled and are not an external prerequisite.
-  `PALM_FFMPEG`/`PALM_FFPROBE` are advanced overrides only.
-- **Sonic Annotator and the Vamp Plugin Pack** are installed automatically by
-  setup under the data root on Linux and macOS after licence consent. Windows
-  analysis is temporarily blocked while the 64-bit plugin bundle is rebuilt;
-  setup shows that blocker and offers no administrator/manual-DLL workaround.
+- **FFmpeg/FFprobe, Sonic Annotator and the Vamp plugin pack** are bundled in
+  the app payload for Linux, Windows and macOS, with licence/source archives.
+  Setup detects them and performs no download, UAC or manual plugin install.
+  `PALM_FFMPEG`/`PALM_FFPROBE` remain advanced overrides.
 - At least **5 GiB free** under the data root; the wizard checks this first.
 - Linux only: one environment, **CPU (~500 MB)** or **CUDA (~3.5 GB)** for an
   NVIDIA GPU. Windows uses CPU only. macOS Apple Silicon uses CPU only.

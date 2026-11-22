@@ -126,9 +126,9 @@ covers the launcher, assets, setup API, upgrade/uninstall and licences in full.
 
 ### First run: ffmpeg, disk, network or setup gating
 
-FFmpeg and FFprobe are managed by setup: they are downloaded and SHA-256
-verified under the data root after licence consent, not external prerequisites.
-Setup also checks for at least 5 GiB free under the data root and for glibc. If a feature is
+FFmpeg/FFprobe, Sonic Annotator and the Vamp plugins are bundled in the app
+payload with licence/source archives; setup detects them without download or
+UAC. Setup also checks for at least 5 GiB free under the data root and glibc. If a feature is
 gated, `GET /api/setup/status` lists the exact check/tool/environment/model that
 is missing; use the Setup button or `Skip setup` (skip never hides the reason,
 it returns to the library and leaves the Open setup links visible).

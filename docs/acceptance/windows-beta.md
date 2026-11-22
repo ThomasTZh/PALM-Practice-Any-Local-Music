@@ -82,13 +82,12 @@ In the browser setup page, review the **Before downloading** summary before
 installing anything. It must list every downloadable component with its
 version, licence, source link, size and Required/Optional state, including:
 
-- managed FFmpeg/FFprobe;
+- bundled FFmpeg/FFprobe, Sonic Annotator and the Vamp plugin pack, with
+  licence/source links;
 - the CPU inference environment;
 - the Demucs model.
 
-Windows Sonic/Vamp analysis is temporarily blocked while the 64-bit plugin
-bundle is rebuilt, so no Vamp/Sonic component or licence is offered on this
-platform.
+The bundled tools need no download, UAC or GUI plugin install.
 
 Open at least one licence and one Source link for each group and confirm they
 open in a new tab. Record the listed components, sizes and licence names in
@@ -97,7 +96,6 @@ licence text.
 
 Accept the group licences required by the page:
 
-- media tools (FFmpeg/FFprobe);
 - CPU environment;
 - Demucs model.
 
@@ -105,22 +103,18 @@ Do not accept a licence whose text you have not reviewed. The
 **Install recommended setup** button must become enabled only after the
 required consents. Record its exact state before and after consent.
 
-## 5. Recommended setup, managed FFmpeg and Windows analysis blocker
+## 5. Recommended setup, bundled tools and Windows analysis
 
 Press **Install recommended setup** and follow the visible steps:
 
-1. Media tools (FFmpeg/FFprobe).
-2. CPU environment.
-3. Demucs model.
+1. CPU environment.
+2. Demucs model.
 
 Expected:
 
-- FFmpeg and FFprobe are downloaded by PALM into its data root. Do not install
-  FFmpeg separately and do not set `PALM_FFMPEG` or `PALM_FFPROBE`.
-- Windows Sonic/Vamp analysis is **temporarily unavailable** in this build
-  while the plugin bundle is rebuilt. The UI must report that blocker clearly;
-  do not use an administrator prompt, separate installer, manual DLL copy or workaround
-  workaround. Record the exact blocker text.
+- FFmpeg/FFprobe, Sonic Annotator and the 64-bit Vamp plugins are bundled under
+  the app's `tools/` directory. The setup screen lists them as installed with
+  licence/source links; no download, UAC, GUI pack or manual DLL copy occurs.
 - CPU is selected; CUDA must not be offered as a working Windows choice.
 - Demucs is visibly selected in the model cards while all model cards remain
   editable.
@@ -131,22 +125,21 @@ Save screenshots of each step and the final setup state in
 `evidence/04-setup/`. If a step fails, save the exact error and its Retry or
 Open setup action; do not skip the step and do not use a terminal workaround.
 
-After setup, confirm in the setup page that media tools, CPU environment and
-Demucs show installed/ready. Analysis remains BLOCKED on this platform.
+After setup, confirm in the setup page that bundled tools, CPU environment and
+Demucs show installed/ready.
 
-## 6. Import, playback and separation (analysis blocked)
+## 6. Import, playback, separation and analysis
 
 Import a short local recording you own (5 to 30 seconds). Use the normal
-import, playback and Separate actions. Record:
+import, playback, Analyse and Separate actions. Record:
 
 - import succeeds and the duration is shown;
 - playback, speed, pitch, loop and metronome work;
+- analysis returns key, BPM, chords and bars from bundled Sonic/Vamp;
 - separation returns stem lanes and at least one stem plays;
-- the Analyse control reports the Windows analysis blocker, with no UAC,
-  administrator or manual-DLL workaround.
+- no UAC, administrator or manual-DLL workaround appears.
 
-Screenshot the result in `evidence/05-analysis-blocked/`. Do not claim chord,
-key, BPM or bar analysis on Windows; it is not part of this beta.
+Screenshot the result in `evidence/05-analysis/`.
 
 ## 7. Short CPU separation
 
@@ -235,7 +228,7 @@ evidence\windows-beta\
   02-control\launch.png
   03-licences\summary.txt
   04-setup\
-  05-analysis-blocked\
+  05-analysis\
   06-separation\
   07-browser\
   08-control\quit.txt
@@ -254,14 +247,10 @@ Mark PASS, FAIL or BLOCKED with the evidence filename:
 - [ ] `PALM.exe` opens the control window with no console; the browser opens.
 - [ ] Licence summary lists every component with licence, source, size and
       Required/Optional; group consents gate installation.
-- [ ] Install recommended setup completes media tools, CPU and Demucs without a
-      separate FFmpeg install or DLL copy.
-- [ ] Managed FFmpeg/FFprobe are reported ready; no `PALM_FFMPEG` override was
-      needed.
-- [ ] Windows analysis blocker is clearly reported (temporary plugin-bundle
-      rebuild); no admin/manual-DLL workaround was offered, and no Vamp/Sonic
-      component is listed as downloadable.
-- [ ] Import, playback and separation work; analysis is not claimed.
+- [ ] Setup reports bundled FFmpeg/Sonic/Vamp ready with no download/UAC.
+- [ ] Bundled tools and licence/source links are visible.
+- [ ] Analysis returns key, BPM, chords and beats; no admin/manual-DLL path.
+- [ ] Import, playback and separation work.
 - [ ] Separation returns the expected stem lanes and at least one stem plays.
 - [ ] Chrome playback passes play/speed/metronome/loop.
 - [ ] Firefox playback passes play/speed/metronome/loop.

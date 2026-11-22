@@ -43,7 +43,7 @@ set, so data stays in the native macOS root rather than the XDG
 window and browser, with no Terminal.app window. `--status` and `--stop` pass
 through the wrapper for recovery only.
 
-No FFmpeg, Sonic Annotator, Vamp plugin pack, model weights, inference
-environments or test audio are bundled. The setup wizard downloads and verifies
-managed FFmpeg/FFprobe, Sonic Annotator, the Vamp Plugin Pack, the CPU runtime
-and the selected model after licence consent; FFmpeg is not a prerequisite.
+FFmpeg/FFprobe 9.0.2, Sonic Annotator 1.7 and the required Vamp dylibs are
+bundled under `tools/` with licence/source archives; setup detects them with no
+download or UAC. Only the CPU runtime and selected model are downloaded after
+consent. No models, environments or test audio are bundled.

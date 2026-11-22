@@ -47,12 +47,35 @@ describe("separation setup gates", () => {
   });
 });
 
-describe("Windows analysis blocker", () => {
-  it("blocks analysis but keeps separation available when its own setup is ready", () => {
+describe("Windows bundled analysis", () => {
+  it("enables analysis when bundled Sonic/Vamp tools are present", () => {
+    const base = status({}, "windows") as unknown as SetupStatus & {
+      tools: Record<string, unknown>;
+    };
+    base.tools = {
+      sonic_visualiser: {
+        installed: true,
+        path: "C:/PALM/tools/sonic-annotator",
+        license: "GPL-2.0-or-later",
+      },
+      vamp_plugin_pack: {
+        installed: true,
+        path: "C:/PALM/tools/vamp-plugins",
+        license: "AGPL-3.0",
+      },
+    };
+    const gates = setupGates(base);
+    expect(gates.canAnalyze).toBe(true);
+    expect(gates.analyzeReason).toBeNull();
+    expect(gates.canSeparate).toBe(true);
+  });
+
+  it("reports missing bundled tools without the old platform blocker", () => {
     const gates = setupGates(status({ tools_ready: false }, "windows"));
     expect(gates.canAnalyze).toBe(false);
-    expect(gates.analyzeReason).toContain("no 64-bit Vamp plugin distribution");
+    expect(gates.analyzeReason).not.toContain(
+      "no 64-bit Vamp plugin distribution",
+    );
     expect(gates.canSeparate).toBe(true);
-    expect(gates.separateReason).toBeNull();
   });
 });

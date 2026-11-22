@@ -165,3 +165,34 @@ def test_dist_checksum_manifest_covers_all_present_platform_assets() -> None:
         assert f"{digest}  {asset.name}" in manifest, asset.name
     if len({".dmg" in a.name for a in assets}) and len(assets) > 1:
         assert len(assets) >= 2
+
+
+def test_extracted_tar_default_backend_analyzes_with_bundled_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tempfile
+
+    from basseparate.analysis_backend import default_backend
+    from basseparate.features import analyze_file
+
+    tars = sorted((ROOT / "dist").glob("PALM-*-linux-x86_64.tar.gz"))
+    if not tars:
+        pytest.skip("no dist/PALM tar; run make package first")
+    with tempfile.TemporaryDirectory(prefix="palm-analysis-") as scratch:
+        with tarfile.open(tars[-1], "r:gz") as archive:
+            archive.extractall(scratch, filter="data")
+        app = next(path for path in Path(scratch).iterdir() if path.is_dir())
+        monkeypatch.setenv("PALM_MODE", "packaged")
+        monkeypatch.setenv("PALM_APP_ROOT", str(app))
+        monkeypatch.setenv("PALM_DATA_DIR", str(tmp_path / "data"))
+        backend = default_backend()
+        assert backend.id == "sonic"
+        result = analyze_file(
+            ROOT / "tests" / "fixtures" / "audio" / "chords_c_am_f_g.wav",
+            cache_dir=tmp_path / "cache",
+            backend=backend,
+        )
+        assert result.bpm is not None and result.bpm > 0
+        assert result.key.label == "C major"
+        assert len(result.chords) >= 2
+        assert len(result.grid.beats) >= 2

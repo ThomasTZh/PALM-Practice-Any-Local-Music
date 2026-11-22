@@ -117,12 +117,10 @@ opens the browser once and offers Open browser, View logs, Quit, Check for
 updates. `PALM_DATA_DIR` defaults to `%LOCALAPPDATA%\palm`; paths
 with spaces and non-ASCII characters are handled by the native launcher.
 
-FFmpeg and ffprobe are **not** an external prerequisite: setup downloads managed
-FFmpeg/FFprobe after licence consent. Windows chord/key/BPM analysis is
-explicitly unavailable because no 64-bit Vamp plugin distribution is available.
-Setup does not run the GUI Vamp pack and does not ask you to copy DLLs; import,
-playback and stem separation remain available when their media tools and models
-are installed. The setup UI shows that blocker. Windows
+FFmpeg/FFprobe, Sonic Annotator and the 64-bit Vamp plugins are bundled under
+`tools/` with licence/source archives. Setup detects them and does no download,
+UAC or manual DLL install; Windows chord/key/BPM analysis is available from the
+bundled Sonic/Vamp payload. Windows
 setup offers **CPU only**; CUDA is hidden. The beta is unsigned, so SmartScreen
 may ask for confirmation. The installed uninstaller offers app-only removal
 (default, keeps data) or also deleting the default `%LOCALAPPDATA%\palm`;
@@ -152,10 +150,9 @@ offers Open browser, View logs, Quit and Check for updates.
 `--status`, `--stop`, `--no-browser`, `--no-terminal` and `--data-dir` remain
 advanced recovery flags.
 
-Managed FFmpeg/FFprobe and Sonic Annotator are installed by setup after licence
-consent, under the data root. On macOS the Vamp Plugin Pack is installed too;
-Windows analysis is blocked because no 64-bit Vamp distribution is available.
-`PALM_FFMPEG` and
+FFmpeg/FFprobe, Sonic Annotator and the Vamp plugins are bundled in
+`PALM.app` with licence/source archives; setup detects them, so there is no
+tool download or UAC. `PALM_FFMPEG` and
 `PALM_FFPROBE` are advanced overrides only. Setup is CPU-first; CUDA is hidden
 on macOS. The app is experimental and has no stable support, GPU or
 notarization claim until
@@ -164,20 +161,17 @@ completed on Apple Silicon.
 
 ## First run: network, disk, ffmpeg
 
-The first-run wizard installs three independent pieces. Nothing is downloaded
-until you press Install and accept the relevant licence.
+The first-run wizard installs two downloadable pieces; bundled tools require no
+network.
 
-Installed tools live under `<data>/tools`; in packaged mode Piper and the Vamp
-plugin pack are resolved there, not from the read-only app tree.
+Bundled tools live under `<app>/tools`; in packaged mode FFmpeg, Sonic
+Annotator and the Vamp plugins are resolved from the read-only app payload.
 
-1. **Managed FFmpeg/FFprobe** (required for import/decode): downloaded and
-   SHA-256 verified into `<data>/tools/ffmpeg`; no external install or
-   `PALM_FFMPEG` override is needed.
-2. **Analysis tools** (required for analysis): Sonic Annotator and the Vamp
-   Plugin Pack (AGPL-3.0; individual plugins GPL/AGPL) are installed on
-   macOS/Linux after consent. Windows analysis is intentionally blocked while
-   the 64-bit bundle is rebuilt; setup shows the blocker and does not offer the
-   GUI pack or a manual DLL/UAC workaround.
+1. **FFmpeg/FFprobe** (required for import/decode): pinned 9.0.2 binaries are
+   bundled under `tools/ffmpeg`; no external install or override is needed.
+2. **Analysis tools** (required for analysis): Sonic Annotator 1.7 and the
+   required Vamp plugins are bundled under `tools/`; Windows, macOS and Linux
+   all use them without download or UAC.
 3. **One inference environment**: CPU (about **500 MB download**, works
    everywhere) or CUDA (about **3.5 GB download**, needs an NVIDIA GPU and
    driver). PyTorch wheels come from the pinned CPU or cu128 index.
@@ -304,14 +298,11 @@ The downloaded size/SHA-256 must match the registry pins.
   output. Check the data root is writable and the network reaches the pinned
   PyTorch index; CPU is the safe fallback. Cancelling stops the `uv` child and
   removes staging.
-- **Windows analysis is unavailable**: this is an explicit platform blocker,
-  not a setup failure. No 64-bit Vamp plugin distribution exists; do not run the
-  GUI pack or copy DLLs. Import, playback and stem separation work when their
-  own media tools and models are installed.
-- **Tools install fails**: the Sonic Visualiser/Vamp downloads are independent;
-  retry after checking network/disk. Tools are optional for playback but
-  required for chord/key/BPM analysis (except Windows, where analysis is
-  unavailable).
+- **Bundled analysis tools missing**: the Windows/macOS/Linux package contains
+  `tools/sonic-annotator` and `tools/vamp-plugins`; reinstall the package. Do
+  not run a GUI plugin installer or copy DLLs.
+- **Analysis fails**: check the bundled Sonic/Vamp paths and the selected CPU
+  environment. Import/playback/separation do not require analysis tools.
 - **Setup says ready but a feature is gated**: checks, environment, and at least
   one model are required; tools are required for analysis. Use the Setup button
   or `GET /api/setup/status` to see the exact reason.

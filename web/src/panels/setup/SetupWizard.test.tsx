@@ -99,6 +99,22 @@ describe("SetupWizard", () => {
       createFakeSetupClient({
         ...incompleteSetupStatus(),
         platform: "windows",
+        tools: {
+          sonic_visualiser: {
+            installed: true,
+            path: "C:/PALM/tools/sonic-annotator",
+            license: "GPL-2.0-or-later",
+          },
+          vamp_plugin_pack: {
+            installed: true,
+            path: "C:/PALM/tools/vamp-plugins",
+            license: "AGPL-3.0",
+          },
+        },
+        readiness: {
+          ...incompleteSetupStatus().readiness,
+          tools_ready: true,
+        },
       }),
     );
     const summary = screen.getByTestId("setup-licence-summary");
@@ -106,6 +122,8 @@ describe("SetupWizard", () => {
     for (const id of [
       "media-ffmpeg",
       "media-ffprobe",
+      "tool-sonic",
+      "tool-vamp",
       "environment-cpu",
       "environment-cuda",
       "model-htdemucs_ft",
@@ -121,8 +139,12 @@ describe("SetupWizard", () => {
     expect(ffmpeg).toHaveTextContent(/9\.0\.2|8\.1\.2/);
     expect(ffmpeg).toHaveTextContent("GPL-3.0-or-later");
     expect(ffmpeg).toHaveTextContent("Required");
-    expect(screen.queryByTestId("licence-component-tool-vamp")).toBeNull();
-    expect(screen.queryByTestId("licence-component-tool-sonic")).toBeNull();
+    expect(screen.getByTestId("licence-component-tool-vamp")).toHaveTextContent(
+      "Bundled",
+    );
+    expect(
+      screen.getByTestId("licence-component-tool-sonic"),
+    ).toHaveTextContent("Bundled");
     expect(
       screen.getByTestId("licence-source-media-ffmpeg").getAttribute("href"),
     ).toMatch(/ffmpeg\.martin-riedl\.de|gyan\.dev/);
@@ -138,16 +160,17 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("licence-text-GPL-3.0")).toHaveTextContent(
       "GNU GENERAL PUBLIC LICENSE",
     );
-    expect(screen.queryByTestId("licence-text-AGPL-3.0")).toBeNull();
+    expect(screen.getByTestId("licence-text-AGPL-3.0")).toHaveTextContent(
+      "GNU AFFERO GENERAL PUBLIC LICENSE",
+    );
     expect(screen.getByTestId("setup-media-tools")).toHaveTextContent(
       "not a system prerequisite",
     );
-    expect(
-      screen.getByTestId("setup-windows-analysis-blocker"),
-    ).toHaveTextContent("Windows analysis is unavailable");
+    expect(screen.queryByTestId("setup-windows-analysis-blocker")).toBeNull();
     expect(screen.queryByLabelText("Accept GPL tool licences")).toBeNull();
-    expect(screen.queryByText("Vamp Plugin Pack")).toBeNull();
-    expect(screen.queryByText("Sonic Annotator")).toBeNull();
+    expect(screen.queryByTestId("setup-tools-install")).toBeNull();
+    expect(screen.getByText("Vamp Plugin Pack")).toBeInTheDocument();
+    expect(screen.getByText("Sonic Annotator")).toBeInTheDocument();
     expect(screen.getByTestId("setup-media-install")).toBeDisabled();
     expect(screen.getByTestId("setup-recommended-install")).toBeDisabled();
   });
