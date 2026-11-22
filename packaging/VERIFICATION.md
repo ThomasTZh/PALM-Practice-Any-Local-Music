@@ -578,3 +578,26 @@ Evidence:
 - Linux tar from t173: bundled FFmpeg/Sonic/Vamp, licences and five source
   archives; extracted-tar bundled Sonic returned the same analysis values.
 - No models/environments; no release or persistent tag.
+
+## t176 all-bundled analysis candidate (HEAD 3664d7c)
+
+Held in `dist/` with one combined SHA256SUMS verified:
+
+| Asset | Size (bytes) | SHA-256 |
+| --- | ---: | --- |
+| Linux tar | 203,613,456 | `7b700a73443a11cc30dcc8d3db24e1e78b689e4942f0003e4d99cef82a6a7ee8` |
+| Windows installer | 137,523,417 | `25c294d9b6b3917dd34b7057c4d1b274defa70f7eea582c2848008166d4118d4` |
+| Windows ZIP | 190,872,575 | `382c6704d1bc258581cb8228708247e117f3c704add6b62e5625b63c44650b60` |
+| macOS ZIP | 165,202,321 | `af201f57c8a7327948a3ae5aaa8cf3804b5b90d59b314446b4166d0a99a6bcde` |
+| macOS DMG | 186,395,264 | `664cfacc90a8c560c0e2be7f7dca6b5b4fc2e2f9e4f93b0cd16cb26252e3e0d6` |
+
+- Linux default_backend selects bundled Sonic when `app_root/tools` exists;
+  extracted-tar analysis test and runtime analysis return 135.999 BPM,
+  C major, 5 chords, 18 beats.
+- Windows run 45022455087: 7 native tests, bundled tools detected, Sonic same
+  analysis. macOS run 45022455096: 8 package tests incl DMG/modes/app smoke,
+  Sonic same analysis.
+- Windows setup UI now shows bundled tools/licences without download/UAC and
+  allows analysis. Docs/acceptance kits updated. No models/environments.
+- Source Sonic tests pass in gate; only `v0.1.0-dev` historical tag remains.
+  No release/tag.
