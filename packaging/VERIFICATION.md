@@ -521,3 +521,29 @@ Native evidence:
 - No release or tag was published; the temporary CI tag was deleted. The
   analysis-blocked Windows label and managed-FFmpeg wording are in the shipped
   README/release notes.
+
+## t165 final bundled-tools candidates (HEAD caac212)
+
+Held in `/home/thomas/Documents/basseparate/dist/`; one combined SHA256SUMS
+verified with `sha256sum -c`.
+
+| Asset | Size (bytes) | SHA-256 |
+| --- | ---: | --- |
+| Windows installer | 137,522,877 | `e98efbaea8e783c8c1b25a57b934b3f317b3994a26cf446dee1ecadab1a07164` |
+| Windows ZIP | 190,872,685 | `7af64b2429648bad6d814d6a2894ec64428788ffd5ce62a3bc41034aa97bf7ac` |
+| macOS ZIP | 165,191,206 | `e268211a31d643f96fda07efc36182647e73e714857397be06719eab7989bbe2` |
+| macOS DMG | 190,076,602 | `e883e83eef746f70cc29c17b317b125b1d719c66b3a50e9cc1d841a1acf2833c` |
+| Linux tar | 88,417,736 | `7f308040650ee5e1dbead02cf899848aa503529ba306e1eb6ebb8dc98313db41` |
+
+CI evidence:
+- Windows package run 45011234446: 7 native install/launch/upgrade/uninstall
+  tests; setup detected bundled Sonic/Vamp; Sonic 135.999 BPM/C major/5
+  chords/18 beats; installer 137,529,977 B in that run.
+- macOS package run 45015090102: plugin build and app passed; 8 package tests
+  incl DMG mount/Applications/modes; Sonic 135.999 BPM/C major/5 chords/18
+  beats; app health/status/stop.
+- caac212 portable run 45015090089 built Linux/Windows/macOS artifacts above.
+
+Known limitation: the Linux tar does not yet stage bundled FFmpeg/Sonic/Vamp
+payload; Linux setup still uses managed downloads. Windows/macOS artifacts
+contain pinned tools, licences and source archives. No release/tag.
