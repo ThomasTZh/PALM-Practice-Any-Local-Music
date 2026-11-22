@@ -19,6 +19,7 @@ fetch_source c4dm/nnls-chroma "$WORK/nnls" "$NNLS_COMMIT"
 ARCH="-mmacosx-version-min=11 -arch arm64 -stdlib=libc++"
 make -C "$WORK/vamp" -f otherbuilds/Makefile.osx ARCHFLAGS="$ARCH" sdkstatic
 make -C "$WORK/qmdsp" -f build/osx/Makefile.osx ARCHFLAGS="$ARCH"
+mkdir -p "$WORK/qm/lib"
 rm -rf "$WORK/qm/lib/vamp-plugin-sdk" "$WORK/qm/lib/qm-dsp"
 cp -R "$WORK/vamp" "$WORK/qm/lib/vamp-plugin-sdk"
 cp -R "$WORK/qmdsp" "$WORK/qm/lib/qm-dsp"
