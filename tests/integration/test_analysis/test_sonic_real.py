@@ -11,14 +11,27 @@ from basseparate.sonic_annotator import SonicAnnotatorBackend
 
 ROOT = Path(__file__).resolve().parents[3]
 CHORDS = ROOT / "tests" / "fixtures" / "audio" / "chords_c_am_f_g.wav"
-SONIC = ROOT / "storage" / "tools" / "sonic-annotator-1.7.0" / "squashfs-root" / "AppRun"
+BUNDLED_SONIC = (
+    ROOT / "storage" / "bundled-tools" / "linux" / "sonic-annotator" / "squashfs-root" / "AppRun"
+)
+SONIC = (
+    BUNDLED_SONIC
+    if BUNDLED_SONIC.is_file()
+    else ROOT / "storage" / "tools" / "sonic-annotator-1.7.0" / "squashfs-root" / "AppRun"
+)
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.mark.skipif(not SONIC.is_file(), reason="preserved Sonic Annotator 1.7 is absent")
 def test_sonic_backend_returns_chords_key_beats_and_bars() -> None:
-    backend = SonicAnnotatorBackend()
+    backend = SonicAnnotatorBackend(
+        binary=SONIC,
+        plugin_paths=(
+            ROOT / "storage" / "tools" / "plugins",
+            ROOT / "storage" / "tools" / "vamp-plugins",
+        ),
+    )
     try:
         plugins = backend.discover_plugins()
         assert plugins.chord.plugin == "chordino"

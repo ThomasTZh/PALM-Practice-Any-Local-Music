@@ -66,7 +66,8 @@ analysis tools, Python environments, recordings, tests, caches or `.git`.
 - Apple Silicon arm64 only. Unsigned and not notarized. Open the DMG, drag
   **PALM.app** onto **Applications**, then right-click **Open** the first time
   or remove quarantine with `xattr -dr com.apple.quarantine ~/Applications/PALM.app`.
-- CPU-first setup. No CUDA/GPU claim. Managed FFmpeg/FFprobe are downloaded and
+- CPU-first setup. No CUDA/GPU claim. FFmpeg/FFprobe, Sonic Annotator and Vamp
+  plugins are bundled with licence/source archives; no tool download/UAC.
   verified by setup; they are not external prerequisites.
 - Data stays in `~/Library/Application Support/palm` unless overridden.
 - Acceptance is **pending** the one-shot checklist in
@@ -131,8 +132,8 @@ them and accept their licences:
   SCNet XL IHF (about 204 MB, four parts) or BS-RoFormer-SW (about 667 MB, six
   parts including guitar and piano).
 
-FFmpeg and FFprobe are downloaded and verified by setup (managed), not an
-external prerequisite. Setup checks for about 5 GiB
+Bundled FFmpeg/FFprobe, Sonic Annotator and Vamp plugins need no download and
+are not external prerequisites. Setup checks for about 5 GiB
 free space before downloading. Setup can be skipped; playback, importing,
 sections and the spectrogram work without the optional pieces.
 
@@ -151,7 +152,7 @@ The same layout applies on every platform:
 | `projects/`, `assets/`, `uploads/` | your project data |
 | `stems/` | generated stems |
 | `models/` | downloaded separation models |
-| `tools/` | Sonic Visualiser, Piper and Vamp plugins |
+| `tools/` | writable overrides for bundled FFmpeg/Sonic/Vamp |
 | `environments/` | CPU or CUDA runtime |
 | `cache/` | download and build cache |
 | `logs/`, `run/`, `setup.json` | logs, running instance, setup state |
@@ -207,6 +208,6 @@ identifies the exact tested file.
 ## AppImage
 
 The Linux release is tar-only. The AppImage was removed because it was
-unreliable across desktops. The setup installer extracts the upstream Sonic
+unreliable across desktops. The packaged app uses the bundled Sonic
 Visualiser AppImage itself, so a desktop AppImage integration tool is not
 required. The Windows ZIP and macOS app are separate pre-release channels.

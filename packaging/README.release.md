@@ -29,22 +29,21 @@ Recovery options are in `docs/portable.md`; normal use does not need a terminal.
 
 ## First time: what setup asks for
 
-The app is small. The parts that cannot legally be bundled are downloaded only
-after you choose them and accept their licences:
+FFmpeg/FFprobe 9.0.2, Sonic Annotator 1.7 and the required Vamp plugins are
+bundled in the app payload with licence/source archives. Setup detects them;
+there is no tool download, UAC or manual plugin install. Only these pieces are
+downloaded after you choose them and accept their licences:
 
-1. **Analysis tools** (optional; needed for chords, key, tempo and bars).
-   Sonic Visualiser/Piper and the Vamp plugin pack, from their upstream
-   releases.
-2. **One analysis runtime**: CPU (about 500 MB download, works everywhere) or
+1. **One analysis runtime**: CPU (about 500 MB download, works everywhere) or
    CUDA (about 3.5 GB, needs an NVIDIA card and driver).
-3. **At least one separation model**, with no default:
+2. **At least one separation model**, with no default:
    - Demucs (about 321 MB, four parts)
    - SCNet XL IHF (about 204 MB, four parts)
    - BS-RoFormer-SW (about 667 MB, six parts, including guitar and piano)
 
-You need a network connection for whichever pieces you choose. Managed
-FFmpeg/FFprobe are downloaded and verified by setup; they are not an external
-prerequisite. Setup checks for about 5 GiB free space
+You need a network connection only for the runtime/model you choose. Bundled
+FFmpeg/FFprobe, Sonic Annotator and Vamp plugins need no download and are not
+external prerequisites. Setup checks for about 5 GiB free space
 before downloading. You can skip setup and use playback, importing, sections
 and the spectrogram without the optional pieces; the Analyse and Separate
 buttons will explain what is missing and link back to setup.
@@ -64,7 +63,7 @@ By default the app keeps user data in `~/.local/share/palm`:
 | `assets/` | imported audio |
 | `stems/` | generated stems (can be regenerated) |
 | `models/` | downloaded separation models |
-| `tools/` | Sonic Visualiser, Piper and Vamp plugins |
+| `tools/` | writable overrides for bundled FFmpeg/Sonic/Vamp |
 | `environments/` | CPU or CUDA analysis runtime |
 | `cache/` | download and build cache |
 | `logs/` | launcher and server logs |
@@ -155,10 +154,10 @@ Only if you intend to remove practice data, delete
 
 The folder contains the app, the built web page, analysis workers, setup code,
 the launcher, desktop entry/icon, licence notices and a bundled Python runtime.
-It does not contain model weights, Sonic Visualiser/Piper, Vamp plugins,
+It does not contain model weights, inference environments,
 analysis runtimes, ffmpeg, recordings or tests.
 
 Licences: the PALM source is MIT (`licenses/LICENSE`). Third-party components
-and their terms are listed in `licenses/NOTICES.md`; downloaded tools and
+and their terms are listed in `licenses/NOTICES.md`; bundled tools and
 weights keep their own terms. The full portable guide is in
 `docs/portable.md`.

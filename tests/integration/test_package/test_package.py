@@ -149,6 +149,11 @@ def test_built_tar_ships_current_readme_and_no_stale_release_text() -> None:
         assert stale not in combined
     assert "control window" in readme.lower()
     assert "SHA256SUMS" in notes
+    assert "bundled" in readme.lower()
+    assert "bundled" in notes.lower()
+    assert "analysis is temporarily" not in combined.lower()
+    assert "not bundled" not in combined.lower()
+    assert "downloads ffmpeg" not in combined.lower()
 
 
 def test_dist_checksum_manifest_covers_all_present_platform_assets() -> None:

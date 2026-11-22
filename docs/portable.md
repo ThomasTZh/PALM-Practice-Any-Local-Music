@@ -161,8 +161,8 @@ completed on Apple Silicon.
 
 ## First run: network, disk, ffmpeg
 
-The first-run wizard installs two downloadable pieces; bundled tools require no
-network.
+The first-run wizard downloads only the inference runtime and selected model;
+bundled tools require no network.
 
 Bundled tools live under `<app>/tools`; in packaged mode FFmpeg, Sonic
 Annotator and the Vamp plugins are resolved from the read-only app payload.
@@ -182,10 +182,9 @@ Annotator and the Vamp plugins are resolved from the read-only app payload.
    - `bs-roformer-sw` — 667.0 MiB, six stems (bass, drums, other, vocals,
      guitar, piano)
 
-**FFmpeg and FFprobe are managed by setup**, not external prerequisites. The
-**Install recommended setup** flow downloads both after consent, verifies the
-pinned SHA-256 and records them under `<data>/tools/ffmpeg`. `PALM_FFMPEG` and
-`PALM_FFPROBE` remain advanced overrides for a custom binary, not normal setup.
+**FFmpeg and FFprobe are bundled**, not external prerequisites and not a setup
+download. `PALM_FFMPEG` and `PALM_FFPROBE` remain advanced overrides for a
+custom binary.
 
 Windows is CPU-only. macOS Apple Silicon is CPU-first. CUDA is a Linux-only
 option and is hidden from setup on Windows/macOS.
@@ -194,7 +193,7 @@ option and is hidden from setup on Windows/macOS.
 the three models together are about 1.2 GiB, so choose only the model(s) you
 need. The CPU/CUDA environments and downloaded models live under the data root.
 
-**Network:** use a working connection for the first-run downloads. If the tools,
+**Network:** use a working connection for the runtime/model downloads. If the
 models and environment are already present (for example on a machine restored
 from a backup), setup recognises them and no download is needed. The app itself
 never uploads audio or contacts the network after setup.

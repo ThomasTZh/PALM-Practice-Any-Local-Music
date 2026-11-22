@@ -30,8 +30,8 @@ The Mac needs:
 - bundled FFmpeg/Sonic/Vamp (no tool download); network only for the CPU runtime/model.
 - Safari and Google Chrome installed.
 
-Do not install FFmpeg, Sonic Annotator, Vamp plugins or Python. PALM's setup
-downloads FFmpeg/FFprobe and the analysis tools after consent.
+Do not install FFmpeg, Sonic Annotator, Vamp plugins or Python. PALM uses its
+bundled tools; setup downloads only the CPU runtime and selected model.
 
 ## 0. Host record
 
@@ -76,8 +76,8 @@ In the browser setup page, review **Before downloading** before installing
 anything. It must list every downloadable component with version, licence,
 source link, size and Required/Optional state, including:
 
-- managed FFmpeg/FFprobe;
-- Sonic Annotator and the Vamp Plugin Pack;
+- bundled FFmpeg/FFprobe 9.0.2, Sonic Annotator and Vamp plugins with
+  licence/source links;
 - the CPU inference environment;
 - the Demucs model.
 
@@ -88,8 +88,7 @@ text.
 
 Accept the group licences required by the page:
 
-- media tools (FFmpeg/FFprobe);
-- analysis/GPL tools (Sonic Annotator and the Vamp Plugin Pack);
+- the CPU runtime and selected model;
 - CPU environment;
 - Demucs model.
 
@@ -97,22 +96,21 @@ Do not accept a licence whose text you have not reviewed. Record the exact
 **Install recommended setup** state before and after consent; it must be
 disabled until the required consents are given.
 
-## 3. Recommended setup, managed FFmpeg and automatic Vamp
+## 3. Recommended setup with bundled tools
 
 Press **Install recommended setup** and follow its four visible steps:
 
-1. Media tools (FFmpeg/FFprobe).
-2. Analysis tools (Sonic Annotator and Vamp plugins).
+1. CPU runtime.
+2. Selected model.
 3. CPU environment.
 4. Demucs model.
 
 Expected:
 
-- PALM downloads FFmpeg and FFprobe into its data root. Do not install FFmpeg
-  or set `PALM_FFMPEG`/`PALM_FFPROBE`.
-- Sonic Annotator and the Vamp Plugin Pack install automatically. Do not copy
-  plugin files, run a separate package installer or grant administrator
-  rights.
+- PALM uses bundled FFmpeg/FFprobe, Sonic Annotator and Vamp plugins from the
+  app payload. Do not install FFmpeg or set `PALM_FFMPEG`/`PALM_FFPROBE`.
+- Bundled tools need no download, UAC or separate installer. Do not copy plugin
+  files or grant administrator rights.
 - CPU is selected; CUDA must not be offered as a working macOS choice.
 - Demucs is visibly selected while all model cards remain editable.
 - Each of the four progress steps and its completion message is recorded.
@@ -134,7 +132,8 @@ Record:
 - key and BPM are populated;
 - chord ribbon is populated;
 - bar/beat grid is visible;
-- no missing-FFmpeg, missing-tool or `PiperUnavailable` error appears.
+- no missing-FFmpeg, missing-tool or `PiperUnavailable` error appears; analysis
+  runs from the bundled Sonic/Vamp payload.
 
 Save `evidence/05-analysis/` and the control window's **View logs** tail. A
 failure must include the exact banner, log text and whether the app stayed
@@ -244,9 +243,9 @@ Mark PASS, FAIL or BLOCKED with the evidence filename:
       Required/Optional; group consents gate installation.
 - [ ] Install recommended setup completes media tools, analysis tools, CPU and
       Demucs without a separate FFmpeg install or plugin copy.
-- [ ] Managed FFmpeg/FFprobe are reported ready; no `PALM_FFMPEG` override was
-      needed.
-- [ ] macOS Vamp installation is automatic; no manual plugin copy or admin
+- [ ] Bundled FFmpeg/FFprobe and Sonic/Vamp are reported ready; no
+      `PALM_FFMPEG` override or tool download was needed.
+- [ ] Bundled Vamp detection is automatic; no manual plugin copy or admin
       action was required.
 - [ ] CPU analysis returns key, BPM, chords and bars with no missing-tool or
       missing-FFmpeg error.

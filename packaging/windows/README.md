@@ -16,9 +16,9 @@ The output contains both `PALM-<version>-windows-x86_64-installer.exe` (Inno
 Setup, per-user lowest privileges) and the portable ZIP. Both use the same
 staged payload: `PALM.exe`, `python\python.exe`, `bin\uv.exe`, built web UI,
 analysis workers/registry and Windows env definitions, scripts, licences,
-`install.json` and hashed runtime requirements. No FFmpeg, Sonic Annotator,
-Vamp plugins, models, inference environments or development sources are
-bundled.
+`install.json`, hashed runtime requirements, bundled FFmpeg/FFprobe 9.0.2,
+Sonic Annotator 1.7, the required Vamp plugins, and their licence/source
+archives. No models, inference environments or development sources are bundled.
 
 The installer places PALM under `%LOCALAPPDATA%\Programs\PALM`, creates
 per-user Start Menu/desktop shortcuts and an uninstall entry, and launches the

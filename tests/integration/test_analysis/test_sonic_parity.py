@@ -35,7 +35,14 @@ FIXTURES = (
     "tone_440hz.wav",
     "tone_48k_stereo.wav",
 )
-SONIC = ROOT / "storage" / "tools" / "sonic-annotator-1.7.0" / "squashfs-root" / "AppRun"
+BUNDLED_SONIC = (
+    ROOT / "storage" / "bundled-tools" / "linux" / "sonic-annotator" / "squashfs-root" / "AppRun"
+)
+SONIC = (
+    BUNDLED_SONIC
+    if BUNDLED_SONIC.is_file()
+    else ROOT / "storage" / "tools" / "sonic-annotator-1.7.0" / "squashfs-root" / "AppRun"
+)
 TOLERANCE_SECONDS = 0.025
 BPM_TOLERANCE = 0.5
 
@@ -58,7 +65,13 @@ def backends():
     paths = PiperPaths.for_project(ROOT)
     paths.validate()
     piper = PiperBackend(paths=paths)
-    sonic = SonicAnnotatorBackend()
+    sonic = SonicAnnotatorBackend(
+        binary=SONIC,
+        plugin_paths=(
+            ROOT / "storage" / "tools" / "plugins",
+            ROOT / "storage" / "tools" / "vamp-plugins",
+        ),
+    )
     try:
         yield piper, sonic
     finally:
