@@ -601,3 +601,25 @@ Held in `dist/` with one combined SHA256SUMS verified:
   allows analysis. Docs/acceptance kits updated. No models/environments.
 - Source Sonic tests pass in gate; only `v0.1.0-dev` historical tag remains.
   No release/tag.
+
+## t179 final artifacts after source-test and doc repair (HEAD 4bfe728)
+
+Held in `dist/` with one combined SHA256SUMS verified:
+
+| Asset | Size (bytes) | SHA-256 |
+| --- | ---: | --- |
+| Linux tar | 203,613,068 | `ff640a1198e4724368e8fa28b171393a6b65b89685a1fa51fb6f014a444b10d2` |
+| Windows installer | 137,526,924 | `8fc9eb4bff269b534650c8340c7e24d87960ca0b46be07e8fff371aae4fa0715` |
+| Windows ZIP | 190,872,734 | `9e058dcb4e7abc7f0975124e20dff481a7002a399bc676ed07366ddced45f1d9` |
+| macOS ZIP | 165,192,572 | `f95f61ed85ff3d3c889607c2bb47b29988af57b20019883b6de6f015783cd864` |
+| macOS DMG | 182,634,323 | `f0e20c3d0f7f6c7484fadc8022ae0143af6051941d116e82ce8b30dbaec699a3` |
+
+- Source Sonic tests use the preserved bundled Linux Sonic with the source
+  plugs, avoiding the broken `--list` buffer overflow; gate 513/11.
+- Linux tar README/RELEASE-NOTES assertions require bundled wording and reject
+  tool-download/blocked wording.
+- Windows run 45024688700: 7 native tests, bundled tools detected, Sonic
+  135.999/C major/5/18. macOS run 45024688678: 8 package tests incl
+  DMG/modes/app smoke, same Sonic.
+- t178 socket ownership fix included. No models/environments; no release/tag
+  (only v0.1.0-dev remains).
