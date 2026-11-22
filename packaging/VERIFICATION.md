@@ -555,3 +555,26 @@ NNLS-Chroma plugins, licence texts and five source archives under `tools/` and
 `licenses/bundled-tools/`. Extracted tar analysis with the bundled Sonic backend
 returned 135.999 BPM, C major, 5 chords and 18 beats. Package/audit tests pass;
 no models or environments are bundled.
+
+## t174 final all-platform bundled candidates (HEAD 590db63)
+
+Held in `/home/thomas/Documents/basseparate/dist/`; combined SHA256SUMS
+verified with `sha256sum -c`.
+
+| Asset | Size (bytes) | SHA-256 |
+| --- | ---: | --- |
+| Linux tar | 203,613,487 | `2ac0698479a14f2ae1d910c774fcd3ac62722e4baed340abad604fa856804624` |
+| Windows installer | 137,528,786 | `1d2eefa0e06f1630e385e6d97715e387090b2048d1f224ff20b666273c8b6f6c` |
+| Windows ZIP | 190,872,713 | `f28e90e0402faea5d112db450488130d735120c9c155d51ad9cb4e242c474bd4` |
+| macOS ZIP | 165,191,526 | `673151eff0fc0794b869c5dec937a1890a71acfabbf2657ed3182aa64dba4862` |
+| macOS DMG | 188,361,201 | `ce2051f0a9470724db55034cfb2dc2c2cc4653d6d3e1b094228626017c0fea81` |
+
+Evidence:
+- Windows package run 45018062350: 7 native install/launch/upgrade/uninstall
+  tests; setup detected bundled Sonic/Vamp; bundled Sonic 135.999 BPM,
+  C major, 5 chords, 18 beats.
+- macOS package run 45018062392: 8 package tests including DMG
+  mount/Applications/modes, app smoke, bundled Sonic 135.999 BPM/C major/5/18.
+- Linux tar from t173: bundled FFmpeg/Sonic/Vamp, licences and five source
+  archives; extracted-tar bundled Sonic returned the same analysis values.
+- No models/environments; no release or persistent tag.
