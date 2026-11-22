@@ -533,7 +533,7 @@ verified with `sha256sum -c`.
 | Windows ZIP | 190,872,685 | `7af64b2429648bad6d814d6a2894ec64428788ffd5ce62a3bc41034aa97bf7ac` |
 | macOS ZIP | 165,191,206 | `e268211a31d643f96fda07efc36182647e73e714857397be06719eab7989bbe2` |
 | macOS DMG | 190,076,602 | `e883e83eef746f70cc29c17b317b125b1d719c66b3a50e9cc1d841a1acf2833c` |
-| Linux tar | 88,417,736 | `7f308040650ee5e1dbead02cf899848aa503529ba306e1eb6ebb8dc98313db41` |
+| Linux tar | 203,613,487 | `2ac0698479a14f2ae1d910c774fcd3ac62722e4baed340abad604fa856804624` |
 
 CI evidence:
 - Windows package run 45011234446: 7 native install/launch/upgrade/uninstall
@@ -544,6 +544,14 @@ CI evidence:
   beats; app health/status/stop.
 - caac212 portable run 45015090089 built Linux/Windows/macOS artifacts above.
 
-Known limitation: the Linux tar does not yet stage bundled FFmpeg/Sonic/Vamp
-payload; Linux setup still uses managed downloads. Windows/macOS artifacts
-contain pinned tools, licences and source archives. No release/tag.
+All three platforms now include pinned tools, licences and source archives;
+Linux setup resolves the bundled Sonic/FFmpeg/Vamp payload. No release/tag.
+
+
+## t173 Linux bundled tools
+
+Linux tar stages FFmpeg/FFprobe 9.0.2, extracted Sonic 1.7 AppRun, QM and
+NNLS-Chroma plugins, licence texts and five source archives under `tools/` and
+`licenses/bundled-tools/`. Extracted tar analysis with the bundled Sonic backend
+returned 135.999 BPM, C major, 5 chords and 18 beats. Package/audit tests pass;
+no models or environments are bundled.
