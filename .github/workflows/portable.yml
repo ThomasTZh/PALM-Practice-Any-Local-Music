@@ -223,11 +223,20 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
 
+  plugins-macos:
+    uses: ./.github/workflows/plugins-macos.yml
+
   macos-arm64:
     name: macOS arm64 package and smoke
+    needs: plugins-macos
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Download bundled macOS tools
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-bundled-tools
+          path: storage/bundled-tools/macos
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

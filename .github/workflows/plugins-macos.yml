@@ -1,0 +1,36 @@
+name: macOS Vamp plugin bundle
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    tags:
+      - plugins-macos-v*
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: brew install boost
+      - name: Build pinned 64-bit plugins
+        run: packaging/bundled-tools/build-macos-vamp.sh storage/bundled-tools/macos
+      - name: Add macOS media and source archives
+        run: |
+          set -euo pipefail
+          out=storage/bundled-tools/macos
+          curl -fsSL https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip -o /tmp/ffmpeg.zip
+          curl -fsSL https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip -o /tmp/ffprobe.zip
+          unzip -q /tmp/ffmpeg.zip -d /tmp/ffmpeg && unzip -q /tmp/ffprobe.zip -d /tmp/ffprobe
+          cp /tmp/ffmpeg/ffmpeg "$out/ffmpeg"; cp /tmp/ffprobe/ffprobe "$out/ffprobe"
+          curl -fsSL https://github.com/sonic-visualiser/sonic-annotator/releases/download/sonic-annotator-1.7/sonic-annotator-1.7.0-macos.tar.gz -o "$out/sonic-annotator-1.7.0-macos.tar.gz"
+          curl -fsSL https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz -o "$out/sources/ffmpeg-9.0.2.tar.xz"
+          curl -fsSL https://github.com/sonic-visualiser/sonic-annotator/archive/refs/heads/master.tar.gz -o "$out/sources/sonic-annotator-master.tar.gz"
+          (cd "$out" && zip -q -j vamp-plugins-macos-arm64.zip vamp-plugins/*.dylib vamp-plugins/*.cat vamp-plugins/*.n3)
+      - name: Upload macOS bundled tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-bundled-tools
+          path: storage/bundled-tools/macos
+          if-no-files-found: error

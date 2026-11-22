@@ -7,10 +7,19 @@ on:
       - "v*"
 
 jobs:
+  plugins:
+    uses: ./.github/workflows/plugins-macos.yml
+
   macos:
+    needs: plugins
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Download bundled macOS tools
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-bundled-tools
+          path: storage/bundled-tools/macos
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -37,6 +46,30 @@ jobs:
         run: shasum -a 256 -c dist/SHA256SUMS
       - name: Native package and DMG tests
         run: .venv/bin/python -m pytest -q tests/integration/test_package_macos
+      - name: Native bundled Sonic analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip=$(ls dist/PALM-*-macos-arm64.zip | head -1)
+          root=$(mktemp -d)
+          unzip -q "$zip" -d "$root"
+          app="$root/PALM.app"
+          export PALM_MODE=packaged
+          export PALM_APP_ROOT="$app/Contents/Resources/app"
+          export PALM_DATA_DIR="$root/data"
+          export PYTHONPATH="$PALM_APP_ROOT/src"
+          export SONIC_FIXTURE="$PWD/tests/fixtures/audio/chords_c_am_f_g.wav"
+          export SONIC_CACHE="$root/cache"
+          "$PALM_APP_ROOT/python/bin/python3.11" - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+          from basseparate.analysis_backend import default_backend
+          from basseparate.features import analyze_file
+          result = analyze_file(Path(os.environ["SONIC_FIXTURE"]), cache_dir=Path(os.environ["SONIC_CACHE"]), backend=default_backend())
+          assert result.bpm > 0 and result.key.label and len(result.chords) >= 2
+          print("bundled Sonic analysis ok", result.bpm, result.key.label, len(result.chords), len(result.grid.beats))
+          PY
       - name: Native app smoke
         shell: bash
         run: |

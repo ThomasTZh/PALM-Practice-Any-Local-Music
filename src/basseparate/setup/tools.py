@@ -60,7 +60,9 @@ def tool_paths(
         if not executable.is_file():
             executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator.exe"
     elif selected == "macos":
-        executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
+        executable = active.app_root / "tools" / "sonic-annotator" / "sonic-annotator"
+        if not executable.is_file():
+            executable = active.tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
     else:
         executable = (
             active.tools_root / "sv" / "squashfs-root" / "usr" / "bin" / "piper-vamp-simple-server"

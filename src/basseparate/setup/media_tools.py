@@ -146,7 +146,8 @@ def media_tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[st
     active = runtime or runtime_paths()
     bundled = active.app_root / "tools" / "ffmpeg"
     bundled_meta = active.app_root / "tools" / "bundled-tools.json"
-    if (bundled / "ffmpeg.exe").is_file() and (bundled / "ffprobe.exe").is_file():
+    suffix = ".exe" if platform_name() == "windows" else ""
+    if (bundled / f"ffmpeg{suffix}").is_file() and (bundled / f"ffprobe{suffix}").is_file():
         bundled_metadata: dict[str, object] = {}
         try:
             loaded = json.loads(bundled_meta.read_text(encoding="utf-8"))
@@ -159,7 +160,7 @@ def media_tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[st
         return {
             "ffmpeg": {
                 "installed": True,
-                "path": str(bundled / "ffmpeg.exe"),
+                "path": str(bundled / f"ffmpeg{suffix}"),
                 "version": bundled_metadata.get("version", "9.0.2"),
                 "build": "bundled Windows FFmpeg",
                 "license": bundled_metadata.get("license", "GPL-3.0-or-later"),
@@ -167,7 +168,7 @@ def media_tools_status(runtime: RuntimePaths | None = None) -> dict[str, dict[st
             },
             "ffprobe": {
                 "installed": True,
-                "path": str(bundled / "ffprobe.exe"),
+                "path": str(bundled / f"ffprobe{suffix}"),
                 "version": bundled_metadata.get("version", "9.0.2"),
                 "build": "bundled Windows FFmpeg",
                 "license": bundled_metadata.get("license", "GPL-3.0-or-later"),

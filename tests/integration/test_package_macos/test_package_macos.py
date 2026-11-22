@@ -104,6 +104,11 @@ def test_check_zip_accepts_required_content(tmp_path: Path) -> None:
         "PALM.app/Contents/Resources/app/licenses/LICENSE",
         "PALM.app/Contents/Resources/app/licenses/third_party/manifest.json",
         "PALM.app/Contents/Resources/app/install.json",
+        "PALM.app/Contents/Resources/app/tools/ffmpeg/ffmpeg",
+        "PALM.app/Contents/Resources/app/tools/ffmpeg/ffprobe",
+        "PALM.app/Contents/Resources/app/tools/sonic-annotator/sonic-annotator",
+        "PALM.app/Contents/Resources/app/tools/vamp-plugins/qm-vamp-plugins.dylib",
+        "PALM.app/Contents/Resources/app/licenses/bundled-tools/sources/ffmpeg-9.0.2.tar.xz",
         "PALM.app/Contents/Resources/app/RELEASE-NOTES.md",
         "PALM.app/Contents/Resources/app/runtime-requirements.txt",
     ]

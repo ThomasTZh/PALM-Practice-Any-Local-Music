@@ -40,7 +40,6 @@ DIST = ROOT / "dist"
 CACHE = ROOT / "storage" / "tmp-macos-cache"
 FORBIDDEN_ROOT = {
     "models",
-    "tools",
     "environments",
     "cache",
     "tests",
@@ -49,6 +48,11 @@ FORBIDDEN_ROOT = {
     ".git",
 }
 REQUIRED = (
+    "PALM.app/Contents/Resources/app/tools/ffmpeg/ffmpeg",
+    "PALM.app/Contents/Resources/app/tools/ffmpeg/ffprobe",
+    "PALM.app/Contents/Resources/app/tools/sonic-annotator/sonic-annotator",
+    "PALM.app/Contents/Resources/app/tools/vamp-plugins/qm-vamp-plugins.dylib",
+    "PALM.app/Contents/Resources/app/licenses/bundled-tools/sources/ffmpeg-9.0.2.tar.xz",
     "PALM.app/Contents/MacOS/palm",
     "PALM.app/Contents/Info.plist",
     "PALM.app/Contents/Resources/app/bin/palm",
@@ -318,14 +322,6 @@ def check_zip(path: Path) -> int:
     bad = [name for name in names if forbidden(name)]
     if bad:
         raise PackageError(f"ZIP contains excluded paths: {bad[:5]}")
-    payload_names = [
-        name
-        for name in names
-        if "licenses/" not in name.lower()
-        and ("ffmpeg" in name.lower() or "sonic-annotator" in name.lower())
-    ]
-    if payload_names:
-        raise PackageError("ZIP contains FFmpeg/Sonic Annotator payload")
     print(f"package-macos-check: {len(names)} entries, required content present")
     return 0
 
@@ -357,6 +353,43 @@ def write_install_json(destination: Path, channel: str, version_value: str) -> N
         + "\n",
         encoding="utf-8",
     )
+
+
+MAC_BUNDLED = ROOT / "storage" / "bundled-tools" / "macos"
+
+
+def stage_bundled_tools(app: Path) -> None:
+    """Stage the approved macOS media/analysis payload."""
+    if not (MAC_BUNDLED / "ffmpeg").is_file() or not (MAC_BUNDLED / "ffprobe").is_file():
+        raise PackageError("macOS bundled FFmpeg/FFprobe are missing")
+    tools = app / "tools"
+    (tools / "ffmpeg").mkdir(parents=True, exist_ok=True)
+    copy_file(MAC_BUNDLED / "ffmpeg", tools / "ffmpeg" / "ffmpeg", executable=True)
+    copy_file(MAC_BUNDLED / "ffprobe", tools / "ffmpeg" / "ffprobe", executable=True)
+    sonic_tar = MAC_BUNDLED / "sonic-annotator-1.7.0-macos.tar.gz"
+    if not sonic_tar.is_file():
+        raise PackageError("macOS Sonic Annotator archive is missing")
+    with tarfile.open(sonic_tar, "r:gz") as archive:
+        archive.extractall(tools / "sonic-annotator", filter="data")
+    root = next(p for p in (tools / "sonic-annotator").iterdir() if p.is_dir())
+    for item in list(root.iterdir()):
+        item.rename(tools / "sonic-annotator" / item.name)
+    root.rmdir()
+    plugin_zip = MAC_BUNDLED / "vamp-plugins-macos-arm64.zip"
+    if not plugin_zip.is_file():
+        raise PackageError("macOS Vamp plugin bundle is missing")
+    plugins = tools / "vamp-plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(plugin_zip) as archive:
+        for name in archive.namelist():
+            if name.endswith("/") or "/" in name:
+                continue
+            with archive.open(name) as source, (plugins / name).open("wb") as out:
+                shutil.copyfileobj(source, out)
+    copy_tree(MAC_BUNDLED / "licenses", app / "licenses" / "bundled-tools")
+    copy_tree(MAC_BUNDLED / "sources", app / "licenses" / "bundled-tools" / "sources")
+    for dylib in plugins.glob("*.dylib"):
+        dylib.chmod(0o755)
 
 
 def build_zip(bundle_parent: Path, output: Path) -> Path:
@@ -444,6 +477,7 @@ def build(args: argparse.Namespace) -> int:
     export_requirements(requirements)
     try:
         bundle = stage(stage_root, data, requirements, online=args.online)
+        stage_bundled_tools(bundle / "Contents" / "Resources" / "app")
         zip_path = build_zip(stage_root, output_dir / f"PALM-{version_value}-macos-arm64.zip")
         check_zip(zip_path)
         if args.dmg:

@@ -284,8 +284,13 @@ class SonicAnnotatorBackend:
                 tools_root / "vamp-plugins",
             )
         elif platform.startswith("darwin"):
-            default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
-            default_plugin_paths = (tools_root / "vamp-plugins",)
+            default_binary = bundled_tools / "sonic-annotator" / "sonic-annotator"
+            if not default_binary.is_file():
+                default_binary = tools_root / "sonic-annotator-1.7.0" / "sonic-annotator"
+            default_plugin_paths = (
+                bundled_tools / "vamp-plugins",
+                tools_root / "vamp-plugins",
+            )
         else:
             default_binary = tools_root / SONIC_EXTRACTED_RELATIVE
             default_plugin_paths = (
