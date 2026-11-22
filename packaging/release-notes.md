@@ -67,8 +67,8 @@ analysis tools, Python environments, recordings, tests, caches or `.git`.
   **PALM.app** onto **Applications**, then right-click **Open** the first time
   or remove quarantine with `xattr -dr com.apple.quarantine ~/Applications/PALM.app`.
 - CPU-first setup. No CUDA/GPU claim. FFmpeg/FFprobe, Sonic Annotator and Vamp
-  plugins are bundled with licence/source archives; no tool download/UAC.
-  verified by setup; they are not external prerequisites.
+  plugins are bundled with licence/source archives; no tool download/UAC and
+  they are not external prerequisites.
 - Data stays in `~/Library/Application Support/palm` unless overridden.
 - Acceptance is **pending** the one-shot checklist in
   [docs/acceptance/macos-experimental.md](../docs/acceptance/macos-experimental.md).

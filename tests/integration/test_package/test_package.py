@@ -135,9 +135,11 @@ def test_built_tar_ships_current_readme_and_no_stale_release_text() -> None:
         names = archive.getnames()
         readme_name = next(name for name in names if name.endswith("/README.md"))
         notes_name = next(name for name in names if name.endswith("/RELEASE-NOTES.md"))
+        portable_name = next(name for name in names if name.endswith("/docs/portable.md"))
         readme = archive.extractfile(readme_name).read().decode()  # type: ignore[union-attr]
         notes = archive.extractfile(notes_name).read().decode()  # type: ignore[union-attr]
-    combined = readme + "\n" + notes
+        portable = archive.extractfile(portable_name).read().decode()  # type: ignore[union-attr]
+    combined = readme + "\n" + notes + "\n" + portable
     for stale in (
         "Press Ctrl+C",
         "terminal opens with the server log",
@@ -152,8 +154,13 @@ def test_built_tar_ships_current_readme_and_no_stale_release_text() -> None:
     assert "bundled" in readme.lower()
     assert "bundled" in notes.lower()
     assert "analysis is temporarily" not in combined.lower()
-    assert "not bundled" not in combined.lower()
+    assert "tools are not bundled" not in combined.lower()
+    assert "ffmpeg is not bundled" not in combined.lower()
     assert "downloads ffmpeg" not in combined.lower()
+    assert "does **not** contain ffmpeg" not in portable.lower()
+    assert "verified by setup; they are not external prerequisites" not in combined.lower()
+    assert "no tool download or uac" in portable.lower()
+    assert "bundled" in portable.lower()
 
 
 def test_dist_checksum_manifest_covers_all_present_platform_assets() -> None:

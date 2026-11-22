@@ -1,11 +1,12 @@
 # Portable release guide
 
 PALM ships as platform-specific portable builds. Every bundle contains the
-application, the built UI, the analysis workers/registry, environment
-definitions, the launcher and licences. It does **not** contain FFmpeg, model
-weights, analysis tools, Python environments, caches, recordings, tests, `.git`
-or a virtual environment. The first run downloads what you choose and verifies
-every file.
+application, built UI, analysis workers/registry, environment definitions,
+launcher, licences, and pinned FFmpeg/FFprobe 9.0.2, Sonic Annotator 1.7 and
+the required Vamp plugins with source archives. Setup detects those tools and
+performs no tool download or UAC. Model weights and Python inference
+environments are downloaded only after you choose them; caches, recordings,
+tests, `.git` and virtual environments are not bundled.
 
 ## Support matrix
 
