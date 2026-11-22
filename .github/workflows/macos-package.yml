@@ -43,7 +43,7 @@ jobs:
       - name: Validate macOS ZIP
         run: python scripts/package_macos.py --check
       - name: Verify checksums
-        run: shasum -a 256 -c dist/SHA256SUMS
+        run: cd dist && shasum -a 256 -c SHA256SUMS
       - name: Native package and DMG tests
         run: .venv/bin/python -m pytest -q tests/integration/test_package_macos
       - name: Native bundled Sonic analysis
