@@ -676,3 +676,21 @@ def test_browser_launch_oserror_is_logged_without_traceback(
     finally:
         instance._server_log.close()
     assert "browser launch failed" in log.read_text()
+
+
+def test_uvicorn_owned_socket_is_not_closed_again() -> None:
+    from basseparate import cli
+
+    class Socket:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    owned = Socket()
+    cli._close_if_owned(owned, True, "server shutdown")  # type: ignore[arg-type]
+    assert owned.closed is False
+
+    unowned = Socket()
+    cli._close_if_owned(unowned, False, "server shutdown")  # type: ignore[arg-type]
+    assert unowned.closed is True

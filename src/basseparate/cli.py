@@ -100,6 +100,12 @@ def _safe_close(sock: socket.socket, context: str) -> None:
         )
 
 
+def _close_if_owned(sock: socket.socket, owned_by_server: bool, context: str) -> None:
+    """Close only sockets not already owned/closed by uvicorn."""
+    if not owned_by_server:
+        _safe_close(sock, context)
+
+
 def _open_browser(url: str) -> None:
     try:
         webbrowser.open(url)
@@ -179,6 +185,7 @@ def serve(args: argparse.Namespace) -> int:
 
     thread = threading.Thread(target=run_server, name="basseparate-server", daemon=True)
     thread.start()
+    socket_owned_by_server = False
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while not server.started and thread.is_alive() and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -192,6 +199,7 @@ def serve(args: argparse.Namespace) -> int:
         _safe_close(sock, "startup failure")
         return 1
 
+    socket_owned_by_server = True
     print(f"basseparate studio: {url}", flush=True)
     print(f"bootstrap: {url}", flush=True)
     if not args.no_browser:
@@ -205,7 +213,10 @@ def serve(args: argparse.Namespace) -> int:
         server.should_exit = True
         thread.join(timeout=10)
     finally:
-        _safe_close(sock, "server shutdown")
+        # Once uvicorn/asyncio has taken the listening socket, it closes it as
+        # part of server.run shutdown. Closing it again here is the Windows
+        # WSAENOTSOCK/WinError 10038 path; only close sockets we still own.
+        _close_if_owned(sock, socket_owned_by_server, "server shutdown")
     return 1 if failure else 0
 
 
